@@ -1,0 +1,69 @@
+    def generate_dot_diagram(self) -> str:
+        """
+        Generate a DOT format diagram of the network topology.
+        
+        Returns:
+            str: DOT diagram
+        """
+        dot = ["digraph G {"]
+        dot.append("    graph [overlap=false, splines=true, rankdir=TB];")
+        dot.append("    node [shape=box, style=filled, fontname=Arial, fontsize=10];")
+        dot.append("    edge [fontname=Arial, fontsize=9];")
+        
+        # Add devices
+        for device_id, device in self.devices.items():
+            # Define node style based on device model/name
+            if "udm" in device.model.lower() or "usg" in device.model.lower() or "dream machine" in device.name.lower():
+                color = "#3498db"
+                icon = "🌐"
+            elif "usw" in device.model.lower() or "switch" in device.name.lower():
+                color = "#2ecc71"
+                icon = "🔄"
+            elif "uap" in device.model.lower() or "ap" in device.name.lower() or "u6" in device.model.lower():
+                color = "#e74c3c"
+                icon = "📶"
+            else:
+                color = "#95a5a6"
+                icon = "💻"
+            
+            # Extract location from name
+            location = "unknown"
+            name_parts = device.name.lower().split()
+            for loc in ["office", "lounge", "bedroom", "kitchen", "dining", "shed", "reece"]:
+                if loc in name_parts:
+                    location = loc.capitalize()
+                    break
+            
+            # Add node with location as subgraph
+            label = f"{icon} {device.name}\\n{device.model}"
+            dot.append(f'    "{device_id}" [label="{label}", fillcolor="{color}", group="{location}"];')
+        
+        # Add connections
+        for connection in self.connections:
+            source_id = connection.get('source_device_id')
+            target_id = connection.get('target_device_id')
+            
+            # Skip connections with None IDs
+            if source_id is None or target_id is None:
+                continue
+                
+            source_port = connection.get('source_port_name', 'Auto')
+            target_port = connection.get('target_port_name', 'Auto')
+            
+            # Add connection
+            if source_port == "Auto" and target_port == "Auto":
+                dot.append(f'    "{source_id}" -> "{target_id}";')
+            else:
+                # Shorten port names for readability
+                source_port_short = source_port
+                target_port_short = target_port
+                
+                if len(source_port) > 15:
+                    source_port_short = source_port[:12] + "..."
+                if len(target_port) > 15:
+                    target_port_short = target_port[:12] + "..."
+                
+                dot.append(f'    "{source_id}" -> "{target_id}" [label="{source_port_short} <-> {target_port_short}"];')
+        
+        dot.append("}")
+        return "\n".join(dot)
