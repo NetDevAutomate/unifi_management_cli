@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Wrapper script for unifi_lookup.py
+# This script provides a convenient way to run the UniFi client lookup tool
+
+# Get the directory of this script
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." &> /dev/null && pwd )"
+
+# Check if we're in a virtual environment
+if [ -d "$PROJECT_ROOT/.venv" ]; then
+    # Use the Python from the virtual environment
+    PYTHON="$PROJECT_ROOT/.venv/bin/python"
+else
+    # Use the system Python
+    PYTHON="python3"
+fi
+
+# Run the Python script
+$PYTHON "$PROJECT_ROOT/src/scripts/unifi_lookup.py" "$@"

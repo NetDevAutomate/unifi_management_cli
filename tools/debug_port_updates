@@ -1,0 +1,15 @@
+#!/bin/bash
+# Debug UniFi port update persistence issues
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+cd "$PROJECT_ROOT"
+if command -v python3 &> /dev/null; then
+    python3 src/scripts/debug_port_updates.py "$@"
+elif command -v python &> /dev/null; then
+    python src/scripts/debug_port_updates.py "$@"
+else
+    echo "Error: Python not found. Please install Python 3."
+    exit 1
+fi

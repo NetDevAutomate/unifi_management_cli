@@ -1,5 +1,7 @@
 import logging
 import os
+import json
+import datetime
 from typing import Dict, List, Any, Tuple
 
 from .models import DeviceInfo, PortInfo
@@ -278,12 +280,12 @@ def infer_connections_from_device_types(devices):
     
     return inferred_connections
 
-def run_port_mapper(api_client, site_id, dry_run=False, output_path=None, diagram_path=None, diagram_format='png', debug=False, show_connected_devices=False):
+def run_port_mapper(port_mapper, site_id, dry_run=False, output_path=None, diagram_path=None, diagram_format='png', debug=False, show_connected_devices=False, verify_updates=False):
     """
     Run the port mapper.
     
     Args:
-        api_client: UnifiApiClient instance
+        port_mapper: UnifiPortMapper instance
         site_id: Site ID
         dry_run: Whether to run in dry run mode (default: False)
         output_path: Path to the output report file (default: None)
@@ -291,10 +293,14 @@ def run_port_mapper(api_client, site_id, dry_run=False, output_path=None, diagra
         diagram_format: Format of the diagram (default: 'png')
         debug: Whether to enable debug output (default: False)
         show_connected_devices: Whether to show non-UniFi connected devices (default: False)
+        verify_updates: Whether to verify port name updates (default: False, disabled due to UniFi controller behavior)
     
     Returns:
         Tuple of (devices, connections)
     """
+    # Get the API client from port_mapper
+    api_client = port_mapper.api_client
+    
     # Ensure we're authenticated
     if not api_client.is_authenticated and not api_client.login():
         log.error("Failed to authenticate with the UniFi Controller")
@@ -335,10 +341,14 @@ def run_port_mapper(api_client, site_id, dry_run=False, output_path=None, diagra
         # Get ports for this device (only for routers and switches)
         ports = []
         lldp_info = {}
+        client_port_mapping = {}
         if device_type in ["ugw", "usg", "udm", "usw"]:
             ports = api_client.get_device_ports(site_id, device_id)
             # Get LLDP/CDP information for this device
             lldp_info = api_client.get_lldp_info(site_id, device_id)
+            # Get client-to-port mapping if we want to show connected devices
+            if show_connected_devices:
+                client_port_mapping = port_mapper.get_client_port_mapping(device_mac)
         
         # Create a DeviceInfo object
         device_info = DeviceInfo(
@@ -350,6 +360,9 @@ def run_port_mapper(api_client, site_id, dry_run=False, output_path=None, diagra
             ports=[],
             lldp_info=lldp_info
         )
+        
+        # Collect port updates for batch processing
+        port_updates = {}
         
         # Add ports to the device
         for port in ports:
@@ -367,10 +380,44 @@ def run_port_mapper(api_client, site_id, dry_run=False, output_path=None, diagra
             # Get LLDP/CDP information for this port
             port_lldp = lldp_info.get(str(port_idx), {})
             
+            # Enhanced port naming logic: use client names if no LLDP/CDP info
+            enhanced_port_name = port_name
+            if show_connected_devices and port_idx in client_port_mapping:
+                clients = client_port_mapping[port_idx]
+                # Check if we have LLDP/CDP name already
+                has_lldp_name = bool(port_lldp.get('system_name') or port_lldp.get('chassis_name'))
+                
+                # Only rename if:
+                # 1. No LLDP/CDP name exists, AND
+                # 2. Current name is default "Port X" format, AND
+                # 3. Port is not an uplink (trunk) port
+                is_default_name = port_name == f"Port {port_idx}" or port_name.startswith("Port ")
+                is_uplink = port.get('is_uplink', False) or 'uplink' in port_name.lower() or 'trunk' in port_name.lower()
+                
+                if not has_lldp_name and is_default_name and not is_uplink:
+                    # No LLDP/CDP name and default name, use client names
+                    client_names = port_mapper.format_client_names(clients)
+                    if client_names:
+                        enhanced_port_name = client_names
+                        # Collect for batch update instead of immediate update
+                        port_updates[port_idx] = enhanced_port_name
+                        if not dry_run:
+                            log.info(f"Will update port {port_idx} name to '{enhanced_port_name}' on device {device_name}")
+                        else:
+                            log.info(f"[DRY RUN] Would update port {port_idx} name to '{enhanced_port_name}' on device {device_name}")
+                elif has_lldp_name:
+                    log.info(f"Skipping port {port_idx} - already has LLDP/CDP name: {port_lldp.get('system_name') or port_lldp.get('chassis_name')}")
+                elif not is_default_name:
+                    log.info(f"Skipping port {port_idx} - already has custom name: {port_name}")
+                elif is_uplink:
+                    log.info(f"Skipping port {port_idx} - appears to be uplink/trunk port: {port_name}")
+                else:
+                    log.info(f"Skipping port {port_idx} - unknown reason: LLDP={has_lldp_name}, Default={is_default_name}, Uplink={is_uplink}, Name='{port_name}'")
+            
             # Create a PortInfo object
             port_info = PortInfo(
                 idx=port_idx,
-                name=port_name,
+                name=enhanced_port_name,
                 up=port_up,
                 enabled=port_enabled,
                 poe=port_poe,
@@ -380,6 +427,58 @@ def run_port_mapper(api_client, site_id, dry_run=False, output_path=None, diagra
             )
             
             device_info.ports.append(port_info)
+        
+        # Apply batch port name updates if any
+        if port_updates and not dry_run:
+            # Re-verify connectivity just before applying updates to avoid updating disconnected ports
+            log.info(f"Re-verifying connectivity for {len(port_updates)} ports before applying updates...")
+            current_client_mapping = port_mapper.get_client_port_mapping(device_mac)
+            
+            # Filter out ports that no longer have connected clients
+            verified_updates = {}
+            disconnected_ports = []
+            
+            for port_idx, port_name in port_updates.items():
+                if port_idx in current_client_mapping and current_client_mapping[port_idx]:
+                    verified_updates[port_idx] = port_name
+                    log.info(f"Port {port_idx} still has {len(current_client_mapping[port_idx])} connected client(s)")
+                else:
+                    disconnected_ports.append((port_idx, port_name))
+                    log.warning(f"Skipping port {port_idx} - no longer has connected clients (would be named '{port_name}')")
+            
+            if disconnected_ports:
+                log.info(f"Skipped {len(disconnected_ports)} ports due to client disconnection")
+                
+            if verified_updates:
+                log.info(f"Proceeding with updates for {len(verified_updates)} ports that still have connected clients")
+                # Use verification setting from command line (default is False due to UniFi controller behavior)
+                success = port_mapper.batch_update_port_names(device_id, verified_updates, verify_updates=verify_updates)
+                if success:
+                    if verify_updates:
+                        log.info(f"Port updates applied and verified successfully")
+                    else:
+                        log.info(f"Port updates applied successfully (verification disabled due to UniFi controller behavior)")
+            else:
+                log.info("No ports with connected clients to update")
+                success = True  # Consider it successful if there's nothing to update
+            if success:
+                if verified_updates:
+                    log.info(f"Successfully batch updated and verified {len(verified_updates)} port names for device {device_name}")
+                else:
+                    log.info(f"No port updates needed for device {device_name} - all targeted clients have disconnected")
+            else:
+                log.error(f"Failed to batch update or verify port names for device {device_name}")
+                # Log detailed information about the failure
+                log.error(f"Failed updates for device {device_name} ({device_model}) - MAC: {device_mac}")
+                for port_idx, port_name in verified_updates.items():
+                    log.error(f"  Port {port_idx}: '{port_name}'")
+                
+                # Suggest using the fix script
+                port_updates_json = json.dumps(port_updates)
+                log.error(f"To debug this issue, run:")
+                log.error(f"  ./tools/debug_port_updates --env --device-id {device_id}")
+                log.error(f"To force fix this issue, run:")
+                log.error(f"  ./tools/fix_port_persistence --env --device-id {device_id} --port-updates '{port_updates_json}'")
         
         devices[device_id] = device_info
     

@@ -7,62 +7,100 @@ This script provides a unified interface for:
 2. Mapping ports based on LLDP/CDP information
 3. Generating network topology diagrams
 4. Creating detailed port mapping reports
+5. Network health analysis and monitoring
+6. Security posture assessment
 """
 
 import os
 import sys
 import logging
 import argparse
-import warnings
-import datetime
+from pathlib import Path
+from typing import Optional, Tuple, List, Any
 import urllib3
 
-# Suppress InsecureRequestWarning
+# Suppress InsecureRequestWarning for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Configure logging
+# Configure logging with modern format
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, 
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
 )
 log = logging.getLogger(__name__)
 
 # Add the src directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+src_path = Path(__file__).parent / "src"
+sys.path.insert(0, str(src_path))
 
 # Import the UnifiPortMapper class
-from src.unifi_mapper.port_mapper import UnifiPortMapper
-from src.unifi_mapper.models import DeviceInfo, PortInfo
+from unifi_mapper.port_mapper import UnifiPortMapper
+from unifi_mapper.models import DeviceInfo, PortInfo
 
 
-def load_env_file(env_file=".env"):
+def load_env_file(env_file: str = ".env") -> None:
     """
-    Simple function to load environment variables from a .env file
+    Load environment variables from a .env file with error handling.
+    
+    Args:
+        env_file: Path to the environment file
     """
-    if not os.path.exists(env_file):
+    env_path = Path(env_file)
+    if not env_path.exists():
+        log.debug(f"Environment file {env_file} not found, skipping")
         return
 
-    with open(env_file, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
+    try:
+        with env_path.open("r", encoding="utf-8") as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
 
-            key, value = line.split("=", 1)
-            os.environ[key] = value
+                try:
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")  # Remove quotes
+                    os.environ[key] = value
+                except ValueError:
+                    log.warning(f"Invalid line format in {env_file}:{line_num}: {line}")
+                    continue
+        
+        log.debug(f"Loaded environment variables from {env_file}")
+        
+    except Exception as e:
+        log.error(f"Error reading environment file {env_file}: {e}")
+        raise
 
 
-def main():
-    """Main entry point for the UniFi Network Mapper."""
-    # Load environment variables
-    load_env_file()
+def setup_directories() -> Tuple[Path, Path]:
+    """
+    Create output directories and return default paths.
+    
+    Returns:
+        Tuple of (reports_dir, diagrams_dir)
+    """
+    reports_dir = Path("reports")
+    diagrams_dir = Path("diagrams")
+    
+    reports_dir.mkdir(exist_ok=True)
+    diagrams_dir.mkdir(exist_ok=True)
+    
+    return reports_dir, diagrams_dir
 
-    # Create directories if they don't exist
-    os.makedirs("reports", exist_ok=True)
-    os.makedirs("diagrams", exist_ok=True)
 
-    # Default output paths
-    default_report = os.path.join("reports", "port_mapping_report.md")
-    default_diagram = os.path.join("diagrams", "network_diagram.png")
+def parse_arguments() -> argparse.Namespace:
+    """
+    Parse command line arguments with comprehensive options.
+    
+    Returns:
+        Parsed arguments namespace
+    """
+    reports_dir, diagrams_dir = setup_directories()
+    
+    default_report = reports_dir / "port_mapping_report.md"
+    default_diagram = diagrams_dir / "network_diagram.png"
 
     parser = argparse.ArgumentParser(
         description="UniFi Network Mapper - Visualize and manage UniFi network topology"
@@ -105,7 +143,17 @@ def main():
     parser.add_argument(
         "--connected-devices",
         action="store_true",
-        help="Include non-UniFi connected devices in the diagram",
+        help="Include non-UniFi connected devices in the diagram and enable client-based port naming",
+    )
+    parser.add_argument(
+        "--only-default-ports",
+        action="store_true",
+        help="Only rename ports with default names (Port 1, Port 2, etc.) when using --connected-devices",
+    )
+    parser.add_argument(
+        "--verify-updates",
+        action="store_true",
+        help="Enable verification of port name updates (disabled by default due to UniFi controller behavior)",
     )
 
     args = parser.parse_args()
@@ -139,36 +187,98 @@ def main():
         )
         return 1
 
-    # Create the UniFi Port Mapper
-    port_mapper = UnifiPortMapper(
-        base_url=url,
-        site=site,
-        api_token=token,
-        username=username,
-        password=password,
-        verify_ssl=verify_ssl,
-        timeout=timeout,
-    )
+    # Store configuration for run_unifi_port_mapper
+    args.url = url
+    args.token = token
+    args.username = username
+    args.password = password
+    args.verify_ssl = verify_ssl
+    args.timeout = timeout
 
-    # Run the port mapper
-    from src.unifi_mapper.run_methods import run_port_mapper
+    return args
 
-    devices, connections = run_port_mapper(
-        api_client=port_mapper.api_client,
-        site_id=args.site,
-        dry_run=args.dry_run,
-        output_path=args.output,
-        diagram_path=args.diagram,
-        diagram_format=args.format,
-        debug=args.debug,
-        show_connected_devices=args.connected_devices,
-    )
 
-    # Only print devices and connections in debug mode
-    if args.debug:
-        print(devices, connections)
+def run_unifi_port_mapper(args: argparse.Namespace) -> int:
+    """
+    Execute the UniFi port mapper with the given configuration.
+    
+    Args:
+        args: Parsed command line arguments with configuration
+        
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    try:
+        # Create the UniFi Port Mapper
+        port_mapper = UnifiPortMapper(
+            base_url=args.url,
+            site=args.site,
+            api_token=args.token,
+            username=args.username,
+            password=args.password,
+            verify_ssl=args.verify_ssl,
+            timeout=args.timeout,
+        )
 
-    return 0
+        # Import run_port_mapper function
+        from src.unifi_mapper.run_methods import run_port_mapper
+
+        # Execute the port mapping
+        devices, connections = run_port_mapper(
+            port_mapper=port_mapper,
+            site_id=args.site,
+            dry_run=args.dry_run,
+            output_path=args.output,
+            diagram_path=args.diagram,
+            diagram_format=args.format,
+            debug=args.debug,
+            show_connected_devices=args.connected_devices,
+            verify_updates=args.verify_updates,
+        )
+
+        # Only print devices and connections in debug mode
+        if args.debug:
+            print(f"Devices: {len(devices) if devices else 0}")
+            print(f"Connections: {len(connections) if connections else 0}")
+
+        log.info("UniFi port mapping completed successfully")
+        return 0
+        
+    except Exception as e:
+        log.error(f"Error during port mapping execution: {e}")
+        return 1
+
+
+def main() -> int:
+    """
+    Main entry point for the UniFi Network Mapper.
+    
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    try:
+        # Load environment variables if .env file exists
+        load_env_file()
+        
+        # Parse command line arguments and get configuration
+        args = parse_arguments()
+        if isinstance(args, int):  # Error occurred
+            return args
+            
+        # Configure debug logging if requested
+        if args.debug:
+            logging.getLogger().setLevel(logging.DEBUG)
+            log.debug("Debug logging enabled")
+        
+        # Execute the port mapper
+        return run_unifi_port_mapper(args)
+        
+    except KeyboardInterrupt:
+        log.info("Operation cancelled by user")
+        return 1
+    except Exception as e:
+        log.error(f"Unexpected error in main: {e}")
+        return 1
 
 
 if __name__ == "__main__":
