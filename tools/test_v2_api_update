@@ -1,0 +1,15 @@
+#!/bin/bash
+# Test V2 API updates for UniFi port names
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+cd "$PROJECT_ROOT"
+if command -v python3 &> /dev/null; then
+    python3 src/scripts/test_v2_api_update.py "$@"
+elif command -v python &> /dev/null; then
+    python src/scripts/test_v2_api_update.py "$@"
+else
+    echo "Error: Python not found. Please install Python 3."
+    exit 1
+fi

@@ -1,0 +1,18 @@
+#!/bin/bash
+# Wrapper script for the UniFi IP Conflict Detector
+
+# Get the directory of this script
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." &> /dev/null && pwd )"
+
+# Check if we're in a virtual environment
+if [ -d "$PROJECT_ROOT/.venv" ]; then
+    # Use the Python from the virtual environment
+    PYTHON="$PROJECT_ROOT/.venv/bin/python"
+else
+    # Use the system Python
+    PYTHON="python3"
+fi
+
+# Run the Python script with all arguments passed to this script
+$PYTHON "$PROJECT_ROOT/src/scripts/unifi_ip_conflict_detector.py" "$@"
