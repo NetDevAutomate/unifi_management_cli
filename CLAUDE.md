@@ -1,170 +1,272 @@
-# CLAUDE.md
+# Claude Code Configuration - SPARC Development Environment
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 🚨 CRITICAL: CONCURRENT EXECUTION & FILE MANAGEMENT
 
-## Repository Overview
+**ABSOLUTE RULES**:
+1. ALL operations MUST be concurrent/parallel in a single message
+2. **NEVER save working files, text/mds and tests to the root folder**
+3. ALWAYS organize files in appropriate subdirectories
 
-This is the UniFi Network Topology Visualization Toolkit - a Python-based tool for managing UniFi networks through automatic port mapping, topology visualization, and network analysis.
+### ⚡ GOLDEN RULE: "1 MESSAGE = ALL RELATED OPERATIONS"
 
-## Common Development Commands
+**MANDATORY PATTERNS:**
+- **TodoWrite**: ALWAYS batch ALL todos in ONE call (5-10+ todos minimum)
+- **Task tool**: ALWAYS spawn ALL agents in ONE message with full instructions
+- **File operations**: ALWAYS batch ALL reads/writes/edits in ONE message
+- **Bash commands**: ALWAYS batch ALL terminal operations in ONE message
+- **Memory operations**: ALWAYS batch ALL memory store/retrieve in ONE message
 
-### Installation and Setup
+### 📁 File Organization Rules
+
+**NEVER save to root folder. Use these directories:**
+- `/src` - Source code files
+- `/tests` - Test files
+- `/docs` - Documentation and markdown files
+- `/config` - Configuration files
+- `/scripts` - Utility scripts
+- `/examples` - Example code
+
+## Project Overview
+
+This project uses SPARC (Specification, Pseudocode, Architecture, Refinement, Completion) methodology with Claude-Flow orchestration for systematic Test-Driven Development.
+
+## SPARC Commands
+
+### Core Commands
+- `npx claude-flow sparc modes` - List available modes
+- `npx claude-flow sparc run <mode> "<task>"` - Execute specific mode
+- `npx claude-flow sparc tdd "<feature>"` - Run complete TDD workflow
+- `npx claude-flow sparc info <mode>` - Get mode details
+
+### Batchtools Commands
+- `npx claude-flow sparc batch <modes> "<task>"` - Parallel execution
+- `npx claude-flow sparc pipeline "<task>"` - Full pipeline processing
+- `npx claude-flow sparc concurrent <mode> "<tasks-file>"` - Multi-task processing
+
+### Build Commands
+- `npm run build` - Build project
+- `npm run test` - Run tests
+- `npm run lint` - Linting
+- `npm run typecheck` - Type checking
+
+## SPARC Workflow Phases
+
+1. **Specification** - Requirements analysis (`sparc run spec-pseudocode`)
+2. **Pseudocode** - Algorithm design (`sparc run spec-pseudocode`)
+3. **Architecture** - System design (`sparc run architect`)
+4. **Refinement** - TDD implementation (`sparc tdd`)
+5. **Completion** - Integration (`sparc run integration`)
+
+## Code Style & Best Practices
+
+- **Modular Design**: Files under 500 lines
+- **Environment Safety**: Never hardcode secrets
+- **Test-First**: Write tests before implementation
+- **Clean Architecture**: Separate concerns
+- **Documentation**: Keep updated
+
+## 🚀 Available Agents (54 Total)
+
+### Core Development
+`coder`, `reviewer`, `tester`, `planner`, `researcher`
+
+### Swarm Coordination
+`hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`, `collective-intelligence-coordinator`, `swarm-memory-manager`
+
+### Consensus & Distributed
+`byzantine-coordinator`, `raft-manager`, `gossip-coordinator`, `consensus-builder`, `crdt-synchronizer`, `quorum-manager`, `security-manager`
+
+### Performance & Optimization
+`perf-analyzer`, `performance-benchmarker`, `task-orchestrator`, `memory-coordinator`, `smart-agent`
+
+### GitHub & Repository
+`github-modes`, `pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`, `workflow-automation`, `project-board-sync`, `repo-architect`, `multi-repo-swarm`
+
+### SPARC Methodology
+`sparc-coord`, `sparc-coder`, `specification`, `pseudocode`, `architecture`, `refinement`
+
+### Specialized Development
+`backend-dev`, `mobile-dev`, `ml-developer`, `cicd-engineer`, `api-docs`, `system-architect`, `code-analyzer`, `base-template-generator`
+
+### Testing & Validation
+`tdd-london-swarm`, `production-validator`
+
+### Migration & Planning
+`migration-planner`, `swarm-init`
+
+## 🎯 Claude Code vs MCP Tools
+
+### Claude Code Handles ALL:
+- File operations (Read, Write, Edit, MultiEdit, Glob, Grep)
+- Code generation and programming
+- Bash commands and system operations
+- Implementation work
+- Project navigation and analysis
+- TodoWrite and task management
+- Git operations
+- Package management
+- Testing and debugging
+
+### MCP Tools ONLY:
+- Coordination and planning
+- Memory management
+- Neural features
+- Performance tracking
+- Swarm orchestration
+- GitHub integration
+
+**KEY**: MCP coordinates, Claude Code executes.
+
+## 🚀 Quick Setup
+
 ```bash
-# Create and activate virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate  # Windows
-
-# Install dependencies
-pip install -r requirements.txt
+# Add Claude Flow MCP server
+claude mcp add claude-flow npx claude-flow@alpha mcp start
 ```
 
-### Running the Application
+## MCP Tool Categories
+
+### Coordination
+`swarm_init`, `agent_spawn`, `task_orchestrate`
+
+### Monitoring
+`swarm_status`, `agent_list`, `agent_metrics`, `task_status`, `task_results`
+
+### Memory & Neural
+`memory_usage`, `neural_status`, `neural_train`, `neural_patterns`
+
+### GitHub Integration
+`github_swarm`, `repo_analyze`, `pr_enhance`, `issue_triage`, `code_review`
+
+### System
+`benchmark_run`, `features_detect`, `swarm_monitor`
+
+## 📋 Agent Coordination Protocol
+
+### Every Agent MUST:
+
+**1️⃣ BEFORE Work:**
 ```bash
-# Main entry point - unified interface
-python unifi_network_mapper.py --env
-
-# Enhanced port naming with client device names for PCs
-python unifi_network_mapper.py --env --connected-devices
-
-# Dry run to preview port name changes
-python unifi_network_mapper.py --env --connected-devices --dry-run
-
-# Individual scripts
-python src/scripts/unifi_lookup.py "search_term" --env
-python src/scripts/unifi_ip_conflict_detector.py --env
-
-# Wrapper tools
-./tools/unifi_lookup "search_term" --env
-./tools/unifi_ip_conflict --env
+npx claude-flow@alpha hooks pre-task --description "[task]"
+npx claude-flow@alpha hooks session-restore --session-id "swarm-[id]"
 ```
 
-### Development and Testing
+**2️⃣ DURING Work:**
 ```bash
-# No formal test suite - testing is done through dry runs
-python unifi_network_mapper.py --env --dry-run
-
-# Debug mode with enhanced logging
-python unifi_network_mapper.py --env --debug
+npx claude-flow@alpha hooks post-edit --file "[file]" --memory-key "swarm/[agent]/[step]"
+npx claude-flow@alpha hooks notify --message "[what was done]"
 ```
 
-## Architecture Overview
-
-### Core Components
-
-**Main Entry Points:**
-- `unifi_network_mapper.py` - Unified CLI interface
-- `src/unifi_mapper/main.py` - Core application logic
-
-**Key Modules:**
-- `src/unifi_mapper/api_client.py` - UniFi Controller API communication
-- `src/unifi_mapper/models.py` - Data models (DeviceInfo, PortInfo)
-- `src/unifi_mapper/enhanced_network_topology.py` - Network topology visualization
-- `src/unifi_mapper/port_mapper.py` - Port mapping and naming logic
-- `src/unifi_mapper/report_generator.py` - Report generation
-
-**Utility Scripts:**
-- `src/scripts/unifi_lookup.py` - Client search functionality
-- `src/scripts/unifi_ip_conflict_detector.py` - IP conflict detection
-
-### Data Flow
-
-1. **Authentication** - API client connects to UniFi Controller using token or credentials
-2. **Discovery** - Fetches devices, ports, LLDP/CDP info, and clients
-3. **Topology Building** - Creates network topology from discovered data
-4. **Port Mapping** - Names ports based on connected devices
-5. **Visualization** - Generates diagrams (HTML, PNG, SVG, DOT, Mermaid)
-6. **Reporting** - Creates detailed markdown reports
-
-### Key Data Models
-
-- `DeviceInfo` - Represents UniFi devices (switches, routers, APs)
-- `PortInfo` - Represents individual ports with connection details
-- `NetworkTopology` - Manages device relationships and visualizations
-
-## Configuration
-
-The application uses environment variables loaded from `.env` file:
-
-```env
-UNIFI_URL=https://192.168.1.1
-UNIFI_SITE=default
-UNIFI_CONSOLE_API_TOKEN=your_api_token
-UNIFI_VERIFY_SSL=false
-UNIFI_TIMEOUT=10
-```
-
-Alternative username/password authentication:
-```env
-UNIFI_USERNAME=your_username
-UNIFI_PASSWORD=your_password
-```
-
-## Enhanced Port Naming
-
-The toolkit now supports enhanced port naming that works with both UniFi devices and PC/client connections:
-
-### How It Works
-
-1. **UniFi-to-UniFi Connections**: Uses LLDP/CDP information (existing functionality)
-2. **PC/Client Connections**: Uses client device names from UniFi controller when `--connected-devices` flag is used
-
-### Client Name Priority
-When naming ports connected to PCs/clients, the system uses this priority:
-1. **Custom client name** (set in UniFi controller)
-2. **Hostname** (from DHCP/NetBIOS)
-3. **Device vendor + model** (e.g., "Dell-OptiPlex")
-4. **MAC address** (last 6 characters as fallback)
-
-### Usage Examples
+**3️⃣ AFTER Work:**
 ```bash
-# Enable client-based port naming
-python unifi_network_mapper.py --env --connected-devices
-
-# Preview changes without applying them
-python unifi_network_mapper.py --env --connected-devices --dry-run
+npx claude-flow@alpha hooks post-task --task-id "[task]"
+npx claude-flow@alpha hooks session-end --export-metrics true
 ```
 
-### Port Naming Results
-- **Before**: "Port 3"
-- **After**: "Johns-MacBook" or "Dell-OptiPlex (+2)" for multiple devices
+## 🎯 Concurrent Execution Examples
 
-## Authentication Patterns
+### ✅ CORRECT (Single Message):
+```javascript
+[BatchTool]:
+  // Initialize swarm
+  mcp__claude-flow__swarm_init { topology: "mesh", maxAgents: 6 }
+  mcp__claude-flow__agent_spawn { type: "researcher" }
+  mcp__claude-flow__agent_spawn { type: "coder" }
+  mcp__claude-flow__agent_spawn { type: "tester" }
+  
+  // Spawn agents with Task tool
+  Task("Research agent: Analyze requirements...")
+  Task("Coder agent: Implement features...")
+  Task("Tester agent: Create test suite...")
+  
+  // Batch todos
+  TodoWrite { todos: [
+    {id: "1", content: "Research", status: "in_progress", priority: "high"},
+    {id: "2", content: "Design", status: "pending", priority: "high"},
+    {id: "3", content: "Implement", status: "pending", priority: "high"},
+    {id: "4", content: "Test", status: "pending", priority: "medium"},
+    {id: "5", content: "Document", status: "pending", priority: "low"}
+  ]}
+  
+  // File operations
+  Bash "mkdir -p app/{src,tests,docs}"
+  Write "app/src/index.js"
+  Write "app/tests/index.test.js"
+  Write "app/docs/README.md"
+```
 
-The toolkit supports multiple authentication methods:
-- **API Token** (preferred) - Set `UNIFI_CONSOLE_API_TOKEN`
-- **Username/Password** - Set `UNIFI_USERNAME` and `UNIFI_PASSWORD`
-- **Interactive** - Prompts for credentials if not provided
+### ❌ WRONG (Multiple Messages):
+```javascript
+Message 1: mcp__claude-flow__swarm_init
+Message 2: Task("agent 1")
+Message 3: TodoWrite { todos: [single todo] }
+Message 4: Write "file.js"
+// This breaks parallel coordination!
+```
 
-API client automatically detects UniFi OS vs Classic controller and adjusts endpoints accordingly.
+## Performance Benefits
 
-## Output Files
+- **84.8% SWE-Bench solve rate**
+- **32.3% token reduction**
+- **2.8-4.4x speed improvement**
+- **27+ neural models**
 
-Default output locations:
-- Reports: `reports/port_mapping_report.md`
-- Diagrams: `diagrams/network_diagram.png` (or specified format)
-- Interactive diagrams: `diagrams/network.html`
+## Hooks Integration
 
-## Development Considerations
+### Pre-Operation
+- Auto-assign agents by file type
+- Validate commands for safety
+- Prepare resources automatically
+- Optimize topology by complexity
+- Cache searches
 
-- **SSL Verification** - Disabled by default due to self-signed certificates
-- **Dry Run Mode** - Always test changes before applying to production
-- **Error Handling** - API client handles authentication failures and endpoint detection
-- **Logging** - Uses Python logging module with configurable levels
-- **Cross-platform** - Works on Windows, macOS, and Linux
+### Post-Operation
+- Auto-format code
+- Train neural patterns
+- Update memory
+- Analyze performance
+- Track token usage
 
-## Implementation Details
+### Session Management
+- Generate summaries
+- Persist state
+- Track metrics
+- Restore context
+- Export workflows
 
-### Enhanced Port Naming (New Feature)
-- **Client Detection**: `get_client_port_mapping()` in `port_mapper.py` correlates wired clients to switch ports
-- **Name Formatting**: `format_client_names()` handles multiple clients per port with configurable limits
-- **Integration**: Enhanced logic in `run_methods.py` applies client names when `--connected-devices` is used
-- **Fallback Logic**: Only uses client names when no LLDP/CDP information is available
+## Advanced Features (v2.0.0)
 
-## Important Notes
+- 🚀 Automatic Topology Selection
+- ⚡ Parallel Execution (2.8-4.4x speed)
+- 🧠 Neural Training
+- 📊 Bottleneck Analysis
+- 🤖 Smart Auto-Spawning
+- 🛡️ Self-Healing Workflows
+- 💾 Cross-Session Memory
+- 🔗 GitHub Integration
 
-- The `tmp/` directory contains experimental and backup code - avoid using these files
-- Interactive HTML diagrams use D3.js loaded via CDN
-- LLDP/CDP information is crucial for accurate topology mapping
-- The toolkit can infer connections even when LLDP/CDP data is limited
-- **New**: Use `--connected-devices` flag to enable client-based port naming for PC connections
+## Integration Tips
+
+1. Start with basic swarm init
+2. Scale agents gradually
+3. Use memory for context
+4. Monitor progress regularly
+5. Train patterns from success
+6. Enable hooks automation
+7. Use GitHub tools first
+
+## Support
+
+- Documentation: https://github.com/ruvnet/claude-flow
+- Issues: https://github.com/ruvnet/claude-flow/issues
+
+---
+
+Remember: **Claude Flow coordinates, Claude Code creates!**
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
+Never save working files, text/mds and tests to the root folder.
