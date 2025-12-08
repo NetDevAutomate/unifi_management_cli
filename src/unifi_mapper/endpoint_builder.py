@@ -57,7 +57,9 @@ class UnifiEndpointBuilder:
 
     def self_check(self, site_id: str) -> str:
         """Get self-check endpoint (for authentication verification)."""
-        return f"{self.base_url}{self.prefix}/api/s/{site_id}/self"
+        if self.is_unifi_os:
+            return f"{self.base_url}/proxy/network/api/s/{site_id}/self"
+        return f"{self.base_url}/api/s/{site_id}/self"
 
     def system_check(self) -> str:
         """Get system endpoint (for UniFi OS detection)."""

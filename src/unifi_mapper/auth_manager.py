@@ -132,10 +132,10 @@ class AuthManager:
         """Detect if controller is UniFi OS device."""
         try:
             endpoint = self.endpoint_builder.system_check()
+            timeout = getattr(self.session, 'timeout', 10)
 
             def _check():
-                return requests.get(endpoint, verify=self.session.verify,
-                                  timeout=self.session.timeout if hasattr(self.session, 'timeout') else 10)
+                return requests.get(endpoint, verify=self.session.verify, timeout=timeout)
 
             if self._retry_func:
                 response = self._retry_func(_check)
@@ -182,7 +182,8 @@ class AuthManager:
             endpoint = self.endpoint_builder.self_check(site_id)
 
             def _check():
-                return self.session.get(endpoint)
+                timeout = getattr(self.session, 'timeout', 10)
+                return self.session.get(endpoint, timeout=timeout)
 
             if self._retry_func:
                 response = self._retry_func(_check)
@@ -222,7 +223,8 @@ class AuthManager:
             }
 
             def _login():
-                return self.session.post(endpoint, json=login_data)
+                timeout = getattr(self.session, 'timeout', 10)
+                return self.session.post(endpoint, json=login_data, timeout=timeout)
 
             if self._retry_func:
                 response = self._retry_func(_login)
