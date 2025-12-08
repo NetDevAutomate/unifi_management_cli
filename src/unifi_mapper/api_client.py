@@ -774,7 +774,7 @@ class UnifiApiClient:
                         if self.login():
                             log.info("Re-authentication successful, retrying device details retrieval")
                             # Try again with the same endpoint after re-authentication
-                            response = self.session.get(endpoint, timeout=self.timeout)
+                            response = self._retry_request(_try_get_device_details)
                             if response.status_code == 200:
                                 data = response.json()
                                 if "data" in data and len(data["data"]) > 0:
@@ -983,14 +983,14 @@ class UnifiApiClient:
         
     def get_lldp_info(self, site_id: str, device_id: str) -> Dict[str, Dict[str, Any]]:
         """
-        Get LLDP/CDP information for a device's ports.
+        Get LLDP/CDP information for a device's ports with MAC resolution.
 
         Args:
             site_id: Site ID
             device_id: Device ID
 
         Returns:
-            Dict[str, Dict[str, Any]]: Dictionary of port index to LLDP/CDP information
+            Dict[str, Dict[str, Any]]: Dictionary mapping port index to LLDP information
         """
         # Validate inputs
         try:
@@ -1007,32 +1007,44 @@ class UnifiApiClient:
         port_lldp_info = {}
 
         try:
+            # Build MAC to device name cache if needed
+            if not hasattr(self, '_mac_to_device_cache'):
+                self._mac_to_device_cache = {}
+                self._build_mac_to_device_cache(site_id)
+
             # FIX: LLDP data is already available in device details under 'lldp_table'
-            # No need to call separate endpoints that don't exist
             device_details = self.get_device_details(site_id, device_id)
 
             if device_details and "lldp_table" in device_details:
                 lldp_table = device_details["lldp_table"]
                 log.debug(f"Found lldp_table with {len(lldp_table)} entries for device {device_id}")
 
-                # Process each LLDP entry
-                # Note: lldp_table uses 'local_port_idx' not 'port_idx'
+                # Process each LLDP entry with MAC resolution
                 for entry in lldp_table:
                     local_port_idx = entry.get("local_port_idx")
                     if local_port_idx is not None:
-                        # Map LLDP fields to expected format
+                        chassis_id = entry.get("chassis_id", "")
+                        system_name = entry.get("system_name", "")
+                        chassis_name = entry.get("chassis_name", "")
+
+                        # Resolve MAC to device name if system_name not available
+                        remote_device_name = system_name or chassis_name
+                        if not remote_device_name and chassis_id:
+                            remote_device_name = self._resolve_mac_to_device_name(chassis_id)
+
                         port_lldp_info[str(local_port_idx)] = {
                             "port_idx": local_port_idx,
-                            "chassis_id": entry.get("chassis_id", ""),
+                            "chassis_id": chassis_id,
                             "port_id": entry.get("port_id", ""),
-                            "system_name": entry.get("system_name", ""),
-                            "chassis_name": entry.get("chassis_name", ""),
-                            "remote_device_name": entry.get("system_name", entry.get("chassis_name", "")),
+                            "system_name": system_name,
+                            "chassis_name": chassis_name,
+                            "remote_device_name": remote_device_name,
                             "remote_port_name": entry.get("port_id", ""),
+                            "remote_chassis_id": chassis_id,
                             "is_wired": entry.get("is_wired", True),
                             "local_port_name": entry.get("local_port_name", "")
                         }
-                        log.debug(f"Mapped LLDP info for port {local_port_idx}")
+                        log.debug(f"Mapped LLDP for port {local_port_idx}: {remote_device_name or chassis_id}")
             else:
                 log.debug(f"No lldp_table found in device details for device {device_id}")
 
@@ -1041,6 +1053,42 @@ class UnifiApiClient:
 
         log.info(f"Retrieved LLDP info for {len(port_lldp_info)} ports on device {device_id}")
         return port_lldp_info
+
+    def _build_mac_to_device_cache(self, site_id: str) -> None:
+        """Build cache mapping MAC addresses to device names."""
+        try:
+            devices_response = self.get_devices(site_id)
+            if not devices_response or "data" not in devices_response:
+                return
+
+            for device in devices_response["data"]:
+                mac = device.get("mac", "").lower()
+                name = device.get("name", "Unknown")
+
+                if mac:
+                    self._mac_to_device_cache[mac] = name
+                    self._mac_to_device_cache[mac.replace(":", "")] = name
+                    self._mac_to_device_cache[mac.upper()] = name
+                    self._mac_to_device_cache[mac.upper().replace(":", "")] = name
+
+            log.debug(f"Built MAC cache with {len(devices_response['data'])} devices")
+        except Exception as e:
+            log.error(f"Error building MAC cache: {e}")
+
+    def _resolve_mac_to_device_name(self, chassis_id: str) -> str:
+        """Resolve MAC address to device name."""
+        if not chassis_id:
+            return ""
+
+        mac_formats = [chassis_id.lower(), chassis_id.upper(),
+                      chassis_id.lower().replace(":", ""),
+                      chassis_id.upper().replace(":", "")]
+
+        for mac_format in mac_formats:
+            if mac_format in self._mac_to_device_cache:
+                return self._mac_to_device_cache[mac_format]
+
+        return chassis_id
     
     def update_port_name(self, site_id: str, device_id: str, port_idx: int, name: str) -> bool:
         """
