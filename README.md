@@ -1,10 +1,72 @@
 # UniFi Network Topology Visualization Toolkit
 
+🚀 **UV Project**: Modern Python tooling with fast dependency management and global installation support.
+
 A comprehensive toolkit for visualizing and managing UniFi network topologies, including automatic port mapping, network diagram generation, and device management.
 
 ## Purpose
 
 This toolkit helps UniFi network administrators visualize their network topology, automatically map and name ports based on connected devices, and generate comprehensive reports. It leverages LLDP/CDP information to build accurate network maps and supports multiple visualization formats including interactive HTML diagrams.
+
+## Installation
+
+### Method 1: Global UV Tool Installation (Recommended)
+
+Install once, run from anywhere with different config files:
+
+```bash
+# Install globally with UV
+uv tool install .
+
+# Or from git
+uv tool install git+https://github.com/your-org/unifi-network-mapper
+
+# Run from anywhere
+unifi-mapper --help
+unifi-mapper --config ~/.unifi/prod.env --format png
+```
+
+### Method 2: Local Development
+
+```bash
+# Create UV virtual environment
+uv venv
+
+# Install project
+uv pip install -e .
+
+# Install dev dependencies
+uv pip install --group dev
+
+# Run with uv
+uv run unifi-mapper --config .env
+```
+
+### Method 3: Traditional (Legacy)
+
+```bash
+python unifi_network_mapper.py --env
+```
+
+## Usage
+
+### Global Tool (After uv tool install)
+
+```bash
+# Basic usage with config file
+unifi-mapper --config ~/.unifi/production.env
+
+# Generate PNG diagram
+unifi-mapper --config ~/.unifi/prod.env --format png
+
+# Multiple configs for different networks
+unifi-mapper --config ~/.unifi/office.env --output ~/reports/office.md
+unifi-mapper --config ~/.unifi/homelab.env --output ~/reports/homelab.md
+
+# Run from any directory - outputs relative to current location
+cd ~/Documents/network-reports
+unifi-mapper --config ~/.unifi/prod.env  # Creates ./reports and ./diagrams here
+```
 
 ## Key Features
 
@@ -598,15 +660,6 @@ UNIFI_PASSWORD=your_password
 UNIFI_VERIFY_SSL=false
 UNIFI_TIMEOUT=10
 ```
-
-## Installation
-
-1. Clone the repository
-2. Create a virtual environment: `python -m venv .venv`
-3. Activate the environment: `source .venv/bin/activate` (Linux/Mac) or `.venv\Scripts\activate` (Windows)
-4. Install dependencies: `pip install -r requirements.txt`
-5. Configure your UniFi Controller credentials
-6. Run the toolkit: `python unifi_network_mapper.py --env`
 
 ## Security Features
 

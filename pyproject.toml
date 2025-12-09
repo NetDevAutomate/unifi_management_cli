@@ -67,9 +67,10 @@ test = [
 "Documentation" = "https://github.com/your-org/unifi-network-mapper/blob/main/README.md"
 
 [project.scripts]
-unifi-network-mapper = "unifi_mapper.main:main"
-unifi-lookup = "unifi_mapper.scripts.unifi_lookup:main"
-unifi-ip-conflict = "unifi_mapper.scripts.unifi_ip_conflict_detector:main"
+unifi-mapper = "unifi_mapper.cli:main"
+unifi-network-mapper = "unifi_mapper.cli:main"
+unifi-lookup = "scripts.unifi_lookup:main"
+unifi-ip-conflict = "scripts.unifi_ip_conflict_detector:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/unifi_mapper"]
