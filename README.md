@@ -19,7 +19,7 @@ Install once, run from anywhere with different config files:
 uv tool install .
 
 # Or from git
-uv tool install git+https://github.com/your-org/unifi-network-mapper
+uv tool install git+https://github.com/NetDevAutomate/unifi-network-mapper
 
 # Run from anywhere
 unifi-mapper --help
