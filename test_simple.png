@@ -1,1 +1,0 @@
-PNG generation requires 'graphviz' package. Install with: uv pip install graphviz

@@ -17,22 +17,22 @@
 - **[multi_model_analysis_report.md](multi_model_analysis_report.md)** - 7-model analysis
 - **[implementation_tasks.md](implementation_tasks.md)** - Task breakdown
 
-## 📜 Historical (Reference)
+## 📜 Historical & Technical (Reference)
 
-Phase completions (chronological order):
-1. `progress_summary.md` - Phase 1
-2. `phase2_completion_summary.md` - Phase 2
-3. `session_final_summary.md` - Mid-session
-4. `complete_session_summary.md` - Session complete
-5. `final_accomplishments.md` - All phases
+### Transformation Journey
+Moved to `historical/` subdirectory:
+- Phase completions (5 chronological summaries)
+- See [historical/README.md](historical/README.md) for details
 
-Technical documentation:
-- `port_update_persistence_fix.md` - Port update behavior
+### Technical Notes
+- `port_update_persistence_fix.md` - UniFi port update behavior
 - `improved_port_mapping_report.md` - Report generation
 - `script_structure.md` - Original structure
 - `uml_diagram.md` - Legacy diagrams
 - `Control Plane.md` - Network notes
-- `DETAILED_README.md` - Original README
+- `DETAILED_README.md` - Original detailed README
+
+*These files are kept for reference but superseded by CODEMAP.md and ARCHITECTURE.md*
 
 ## 🗺️ Navigation Guide
 
