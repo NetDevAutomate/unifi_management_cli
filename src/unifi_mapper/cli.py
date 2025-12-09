@@ -58,6 +58,13 @@ def get_default_config_path() -> str:
     """
     Get default config path following XDG Base Directory specification.
 
+    Priority:
+    1. XDG_CONFIG_HOME/unifi_network_mapper/prod.env
+    2. ~/.config/unifi_network_mapper/prod.env
+    3. XDG_CONFIG_HOME/unifi_network_mapper/default.env
+    4. ~/.config/unifi_network_mapper/default.env
+    5. .env (current directory - legacy fallback)
+
     Returns:
         Path to default config file
     """
@@ -68,13 +75,18 @@ def get_default_config_path() -> str:
     else:
         config_dir = Path.home() / ".config" / "unifi_network_mapper"
 
+    # Try prod.env first (most common production use case)
+    prod_config = config_dir / "prod.env"
+    if prod_config.exists():
+        return str(prod_config)
+
+    # Try default.env
     default_config = config_dir / "default.env"
+    if default_config.exists():
+        return str(default_config)
 
-    # Fallback to .env in current directory if XDG config doesn't exist
-    if not default_config.exists():
-        return ".env"
-
-    return str(default_config)
+    # Fallback to .env in current directory (legacy)
+    return ".env"
 
 
 def main():
@@ -108,8 +120,8 @@ def main():
     parser.add_argument(
         "--format",
         choices=["png", "svg", "dot", "mermaid", "html"],
-        default="html",
-        help="Diagram format (default: html)"
+        default=None,  # Will use config file default
+        help="Diagram format (default: from config file or 'png')"
     )
 
     parser.add_argument(
@@ -158,9 +170,27 @@ def main():
         log.error(f"Check your config file: {args.config}")
         sys.exit(1)
 
-    # Set default output paths relative to current directory
-    output_path = args.output or Path.cwd() / "reports" / "port_mapping_report.md"
-    diagram_path = args.diagram or Path.cwd() / "diagrams" / f"network_diagram.{args.format}"
+    # Get format from config or use PNG default
+    diagram_format = args.format or config.default_format
+
+    # Set output paths from config or defaults
+    if args.output:
+        output_path = Path(args.output)
+    elif config.default_output_dir:
+        output_path = Path(config.default_output_dir) / "port_mapping_report.md"
+    else:
+        output_path = Path.cwd() / "reports" / "port_mapping_report.md"
+
+    if args.diagram:
+        diagram_path = Path(args.diagram)
+    elif config.default_diagram_dir:
+        diagram_path = Path(config.default_diagram_dir) / f"network_diagram.{diagram_format}"
+    else:
+        diagram_path = Path.cwd() / "diagrams" / f"network_diagram.{diagram_format}"
+
+    log.info(f"Using format: {diagram_format}")
+    log.info(f"Output: {output_path}")
+    log.info(f"Diagram: {diagram_path}")
 
     # Ensure directories exist
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -185,7 +215,7 @@ def main():
             dry_run=args.dry_run,
             output_path=output_path,
             diagram_path=diagram_path,
-            diagram_format=args.format,
+            diagram_format=diagram_format,
             debug=args.debug,
             show_connected_devices=args.connected_devices,
             verify_updates=False
