@@ -6,10 +6,10 @@ Handles port-related operations (update port names, batch updates).
 
 import logging
 import time
-import requests
-from typing import Dict, List, Any, Optional, Callable
+from typing import Any, Callable, Dict, List, Optional
 
-from .exceptions import UniFiApiError
+import requests
+
 from .endpoint_builder import UnifiEndpointBuilder
 
 log = logging.getLogger(__name__)
@@ -20,10 +20,13 @@ class PortClient:
     Manages port-related operations for UniFi Controller API.
     """
 
-    def __init__(self, endpoint_builder: UnifiEndpointBuilder,
-                 session: requests.Session,
-                 device_client,  # Injected to avoid circular dependency
-                 retry_func: Optional[Callable] = None):
+    def __init__(
+        self,
+        endpoint_builder: UnifiEndpointBuilder,
+        session: requests.Session,
+        device_client,  # Injected to avoid circular dependency
+        retry_func: Optional[Callable] = None,
+    ):
         """
         Initialize PortClient.
 
@@ -39,13 +42,14 @@ class PortClient:
         self._retry_func = retry_func
 
         self.legacy_headers = {
-            'User-Agent': 'UnifiPortMapper/1.0',
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            "User-Agent": "UnifiPortMapper/1.0",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
         }
 
-    def update_port_name(self, site_id: str, device_id: str,
-                        port_idx: int, name: str) -> bool:
+    def update_port_name(
+        self, site_id: str, device_id: str, port_idx: int, name: str
+    ) -> bool:
         """
         Update the name of a single port.
 
@@ -82,8 +86,9 @@ class PortClient:
         # Apply the update
         return self.update_device_port_table(site_id, device_id, port_table)
 
-    def batch_update_port_names(self, site_id: str, device_id: str,
-                               port_updates: Dict[int, str]) -> bool:
+    def batch_update_port_names(
+        self, site_id: str, device_id: str, port_updates: Dict[int, str]
+    ) -> bool:
         """
         Update multiple port names in a single API call.
 
@@ -98,7 +103,9 @@ class PortClient:
         if not port_updates:
             return True
 
-        log.info(f"Batch updating {len(port_updates)} port names for device {device_id}")
+        log.info(
+            f"Batch updating {len(port_updates)} port names for device {device_id}"
+        )
 
         # Get current device details
         device_details = self.device_client.get_device_details(site_id, device_id)
@@ -121,14 +128,15 @@ class PortClient:
                 log.info(f"  Port {port_idx}: '{old_name}' -> '{new_name}'")
 
         if updated_count == 0:
-            log.warning(f"No matching ports found for updates")
+            log.warning("No matching ports found for updates")
             return False
 
         # Apply updates
         return self.update_device_port_table(site_id, device_id, port_table)
 
-    def update_device_port_table(self, site_id: str, device_id: str,
-                                 port_table: List[Dict[str, Any]]) -> bool:
+    def update_device_port_table(
+        self, site_id: str, device_id: str, port_table: List[Dict[str, Any]]
+    ) -> bool:
         """
         Update the entire port table for a device.
 
@@ -148,7 +156,7 @@ class PortClient:
             device_details = self.device_client.get_device_details(site_id, device_id)
 
             if not device_details:
-                log.error(f"Failed to get device config for update")
+                log.error("Failed to get device config for update")
                 return False
 
             # Create update payload with current config
@@ -183,9 +191,14 @@ class PortClient:
             log.error(f"Error updating port table: {e}")
             return False
 
-    def verify_port_update(self, site_id: str, device_id: str,
-                          port_idx: int, expected_name: str,
-                          max_retries: int = 5) -> bool:
+    def verify_port_update(
+        self,
+        site_id: str,
+        device_id: str,
+        port_idx: int,
+        expected_name: str,
+        max_retries: int = 5,
+    ) -> bool:
         """
         Verify that a port name update was applied.
 
@@ -204,10 +217,14 @@ class PortClient:
                 if attempt > 0:
                     time.sleep(3 + attempt)  # Progressive delay
 
-                device_details = self.device_client.get_device_details(site_id, device_id)
+                device_details = self.device_client.get_device_details(
+                    site_id, device_id
+                )
 
                 if not device_details:
-                    log.warning(f"Could not retrieve device for verification (attempt {attempt + 1})")
+                    log.warning(
+                        f"Could not retrieve device for verification (attempt {attempt + 1})"
+                    )
                     continue
 
                 port_table = device_details.get("port_table", [])
@@ -218,7 +235,9 @@ class PortClient:
                             log.info(f"Port {port_idx} verified: '{current_name}'")
                             return True
                         else:
-                            log.warning(f"Port {port_idx} mismatch - Expected: '{expected_name}', Found: '{current_name}'")
+                            log.warning(
+                                f"Port {port_idx} mismatch - Expected: '{expected_name}', Found: '{current_name}'"
+                            )
                             break
 
             except Exception as e:

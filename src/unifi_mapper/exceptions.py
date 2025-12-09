@@ -7,16 +7,19 @@ Provides structured error handling with retry/no-retry classification.
 
 class UniFiApiError(Exception):
     """Base exception for all UniFi API errors."""
+
     pass
 
 
 class UniFiRetryableError(UniFiApiError):
     """Errors that should trigger retry logic (5xx, timeouts, connection issues)."""
+
     pass
 
 
 class UniFiPermanentError(UniFiApiError):
     """Errors that should not be retried (4xx client errors)."""
+
     pass
 
 
@@ -39,24 +42,29 @@ class UniFiAuthenticationError(UniFiPermanentError):
 
 class UniFiConnectionError(UniFiRetryableError):
     """Network connectivity issues (connection refused, DNS failures)."""
+
     pass
 
 
 class UniFiTimeoutError(UniFiRetryableError):
     """Request timeout errors."""
+
     pass
 
 
 class UniFiRateLimitError(UniFiRetryableError):
     """Rate limit (429) errors."""
+
     pass
 
 
 class UniFiValidationError(UniFiPermanentError):
     """Input validation failures (invalid site_id, device_id, etc.)."""
+
     pass
 
 
 class UniFiPermissionError(UniFiPermanentError):
     """Permission denied errors (insufficient API privileges)."""
+
     pass

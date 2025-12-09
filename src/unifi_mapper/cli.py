@@ -4,17 +4,17 @@ CLI entry point for UniFi Network Mapper.
 Enables running from anywhere with config file specification.
 """
 
+import argparse
+import logging
 import os
 import sys
-import argparse
 from pathlib import Path
-import logging
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def get_default_config_path() -> str:
         Path to default config file
     """
     # Use XDG_CONFIG_HOME if set, otherwise ~/.config
-    xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
     if xdg_config_home:
         config_dir = Path(xdg_config_home) / "unifi_network_mapper"
     else:
@@ -95,51 +95,47 @@ def main():
     """
     parser = argparse.ArgumentParser(
         description="UniFi Network Mapper - Run from anywhere with config file",
-        epilog="Example: unifi-mapper --config ~/.config/unifi_network_mapper/prod.env --format png"
+        epilog="Example: unifi-mapper --config ~/.config/unifi_network_mapper/prod.env --format png",
     )
 
     parser.add_argument(
         "--config",
         "-c",
         help="Path to .env configuration file (default: XDG_CONFIG_HOME or .env)",
-        default=get_default_config_path()
+        default=get_default_config_path(),
     )
 
     parser.add_argument(
         "--output",
         "-o",
-        help="Output path for report (default: ./reports/port_mapping_report.md)"
+        help="Output path for report (default: ./reports/port_mapping_report.md)",
     )
 
     parser.add_argument(
         "--diagram",
         "-d",
-        help="Output path for diagram (default: ./diagrams/network_diagram.png)"
+        help="Output path for diagram (default: ./diagrams/network_diagram.png)",
     )
 
     parser.add_argument(
         "--format",
         choices=["png", "svg", "dot", "mermaid", "html"],
         default=None,  # Will use config file default
-        help="Diagram format (default: from config file or 'png')"
+        help="Diagram format (default: from config file or 'png')",
     )
 
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging"
-    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Dry run mode (don't apply port name changes)"
+        help="Dry run mode (don't apply port name changes)",
     )
 
     parser.add_argument(
         "--connected-devices",
         action="store_true",
-        help="Include non-UniFi connected devices"
+        help="Include non-UniFi connected devices",
     )
 
     args = parser.parse_args()
@@ -153,10 +149,10 @@ def main():
 
     # Import after env loaded
     try:
-        from .config import UnifiConfig
         from .api_client import UnifiApiClient
-        from .run_methods import run_port_mapper
+        from .config import UnifiConfig
         from .port_mapper import UnifiPortMapper
+        from .run_methods import run_port_mapper
     except ImportError as e:
         log.error(f"Import error: {e}")
         log.error("Make sure you've installed the package: uv pip install -e .")
@@ -184,7 +180,9 @@ def main():
     if args.diagram:
         diagram_path = Path(args.diagram)
     elif config.default_diagram_dir:
-        diagram_path = Path(config.default_diagram_dir) / f"network_diagram.{diagram_format}"
+        diagram_path = (
+            Path(config.default_diagram_dir) / f"network_diagram.{diagram_format}"
+        )
     else:
         diagram_path = Path.cwd() / "diagrams" / f"network_diagram.{diagram_format}"
 
@@ -218,10 +216,10 @@ def main():
             diagram_format=diagram_format,
             debug=args.debug,
             show_connected_devices=args.connected_devices,
-            verify_updates=False
+            verify_updates=False,
         )
 
-        log.info(f"✅ Completed successfully!")
+        log.info("✅ Completed successfully!")
         log.info(f"Report: {output_path}")
         log.info(f"Diagram: {diagram_path}")
         log.info(f"Devices: {len(devices)}, Connections: {len(connections)}")
@@ -235,6 +233,7 @@ def main():
         log.error(f"Error: {e}")
         if args.debug:
             import traceback
+
             traceback.print_exc()
         return 1
 

@@ -4,10 +4,10 @@ Circuit breaker pattern for UniFi Controller API.
 Prevents cascading failures during controller outages.
 """
 
-import time
 import logging
+import time
 from enum import Enum
-from typing import Callable, Any
+from typing import Any, Callable
 
 from .exceptions import UniFiConnectionError
 
@@ -16,8 +16,9 @@ log = logging.getLogger(__name__)
 
 class CircuitState(Enum):
     """Circuit breaker states."""
-    CLOSED = "closed"        # Normal operation, requests allowed
-    OPEN = "open"            # Circuit tripped, blocking requests
+
+    CLOSED = "closed"  # Normal operation, requests allowed
+    OPEN = "open"  # Circuit tripped, blocking requests
     HALF_OPEN = "half_open"  # Testing recovery, limited requests
 
 
@@ -27,9 +28,12 @@ class CircuitBreaker:
     Opens circuit after threshold failures, attempts recovery after timeout.
     """
 
-    def __init__(self, failure_threshold: int = 5,
-                 recovery_timeout: int = 60,
-                 expected_exception: type = Exception):
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: int = 60,
+        expected_exception: type = Exception,
+    ):
         """
         Initialize circuit breaker.
 
@@ -68,7 +72,9 @@ class CircuitBreaker:
                 log.info("Circuit breaker: Attempting recovery (HALF_OPEN)")
                 self.state = CircuitState.HALF_OPEN
             else:
-                time_remaining = self.recovery_timeout - (time.time() - self.last_failure_time)
+                time_remaining = self.recovery_timeout - (
+                    time.time() - self.last_failure_time
+                )
                 raise UniFiConnectionError(
                     f"Circuit breaker OPEN - controller unavailable. "
                     f"Retry in {time_remaining:.0f}s"
@@ -79,7 +85,7 @@ class CircuitBreaker:
             result = func(*args, **kwargs)
             self._on_success()
             return result
-        except self.expected_exception as e:
+        except self.expected_exception:
             self._on_failure()
             raise
 
@@ -92,7 +98,9 @@ class CircuitBreaker:
     def _on_success(self) -> None:
         """Handle successful execution."""
         if self.failure_count > 0:
-            log.info(f"Circuit breaker: Resetting failure count from {self.failure_count}")
+            log.info(
+                f"Circuit breaker: Resetting failure count from {self.failure_count}"
+            )
 
         self.failure_count = 0
 
@@ -125,11 +133,11 @@ class CircuitBreaker:
             time_since_failure = time.time() - self.last_failure_time
 
         return {
-            'state': self.state.value,
-            'failure_count': self.failure_count,
-            'failure_threshold': self.failure_threshold,
-            'time_since_last_failure': time_since_failure,
-            'recovery_timeout': self.recovery_timeout
+            "state": self.state.value,
+            "failure_count": self.failure_count,
+            "failure_threshold": self.failure_threshold,
+            "time_since_last_failure": time_since_failure,
+            "recovery_timeout": self.recovery_timeout,
         }
 
     def reset(self) -> None:

@@ -62,10 +62,10 @@ def test_cache_hit_statistics():
     assert result3 == "value1"
 
     stats = cache.get_stats()
-    assert stats['hits'] == 2
-    assert stats['misses'] == 1
-    assert stats['sets'] == 1
-    assert stats['size'] == 1
+    assert stats["hits"] == 2
+    assert stats["misses"] == 1
+    assert stats["sets"] == 1
+    assert stats["size"] == 1
 
     print("✅ PASS: Cache statistics tracked correctly")
     return True
@@ -96,12 +96,12 @@ def test_cache_clear():
     cache.set("key3", "value3")
 
     stats_before = cache.get_stats()
-    assert stats_before['size'] == 3
+    assert stats_before["size"] == 3
 
     cache.clear()
 
     stats_after = cache.get_stats()
-    assert stats_after['size'] == 0
+    assert stats_after["size"] == 0
     assert cache.get("key1") is None
     assert cache.get("key2") is None
 
@@ -155,10 +155,10 @@ def test_hit_rate_calculation():
     cache.get("nonexistent")
 
     stats = cache.get_stats()
-    assert stats['hits'] == 3
-    assert stats['misses'] == 1
-    assert stats['total_requests'] == 4
-    assert stats['hit_rate'] == "75.0%"
+    assert stats["hits"] == 3
+    assert stats["misses"] == 1
+    assert stats["total_requests"] == 4
+    assert stats["hit_rate"] == "75.0%"
 
     print("✅ PASS: Hit rate calculated correctly")
     return True
@@ -172,7 +172,7 @@ if __name__ == "__main__":
         test_cache_invalidation,
         test_cache_clear,
         test_cached_decorator,
-        test_hit_rate_calculation
+        test_hit_rate_calculation,
     ]
 
     passed = 0
@@ -188,9 +188,10 @@ if __name__ == "__main__":
             failed += 1
             print(f"❌ ERROR: {test.__name__} - {e}")
             import traceback
+
             traceback.print_exc()
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed} passed, {failed} failed")
 
     if failed == 0:

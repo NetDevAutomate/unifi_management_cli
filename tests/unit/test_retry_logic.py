@@ -7,8 +7,9 @@ import sys
 import time
 from pathlib import Path
 from unittest.mock import Mock, patch
+
 import requests
-from requests.exceptions import ConnectionError, Timeout, HTTPError
+from requests.exceptions import ConnectionError, HTTPError, Timeout
 
 # Add src to path
 src_path = Path(__file__).parent.parent.parent / "src"
@@ -18,17 +19,15 @@ from unifi_mapper.api_client import UnifiApiClient
 from unifi_mapper.exceptions import (
     UniFiAuthenticationError,
     UniFiConnectionError,
+    UniFiPermissionError,
     UniFiTimeoutError,
-    UniFiPermissionError
 )
 
 
 def test_successful_first_attempt():
     """Binary test: Successful request on first attempt makes only 1 call"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        max_retries=3
+        base_url="https://test.local", api_token="test-token", max_retries=3
     )
 
     call_count = 0
@@ -53,7 +52,7 @@ def test_retry_on_connection_error():
         base_url="https://test.local",
         api_token="test-token",
         max_retries=3,
-        retry_delay=0.1  # Fast for testing
+        retry_delay=0.1,  # Fast for testing
     )
 
     call_count = 0
@@ -81,9 +80,7 @@ def test_retry_on_connection_error():
 def test_no_retry_on_auth_error():
     """Binary test: 401/403 errors don't retry (raise immediately)"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        max_retries=5
+        base_url="https://test.local", api_token="test-token", max_retries=5
     )
 
     call_count = 0
@@ -108,9 +105,7 @@ def test_no_retry_on_auth_error():
 def test_no_retry_on_client_errors():
     """Binary test: 4xx errors (except 401/403/408/429) don't retry"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        max_retries=5
+        base_url="https://test.local", api_token="test-token", max_retries=5
     )
 
     test_cases = [400, 404, 422]  # Client errors that shouldn't retry
@@ -145,7 +140,7 @@ def test_retry_exhaustion():
         base_url="https://test.local",
         api_token="test-token",
         max_retries=3,
-        retry_delay=0.05
+        retry_delay=0.05,
     )
 
     call_count = 0
@@ -169,9 +164,7 @@ def test_retry_exhaustion():
 def test_timeout_error_classification():
     """Binary test: Timeout errors raise UniFiTimeoutError"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        max_retries=1
+        base_url="https://test.local", api_token="test-token", max_retries=1
     )
 
     def mock_func():
@@ -193,7 +186,7 @@ def test_exponential_backoff_calculation():
         base_url="https://test.local",
         api_token="test-token",
         max_retries=4,
-        retry_delay=0.1
+        retry_delay=0.1,
     )
 
     call_count = 0
@@ -235,7 +228,7 @@ if __name__ == "__main__":
         test_no_retry_on_client_errors,
         test_retry_exhaustion,
         test_timeout_error_classification,
-        test_exponential_backoff_calculation
+        test_exponential_backoff_calculation,
     ]
 
     passed = 0
@@ -251,9 +244,10 @@ if __name__ == "__main__":
             failed += 1
             print(f"❌ ERROR: {test.__name__} - {e}")
             import traceback
+
             traceback.print_exc()
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed} passed, {failed} failed")
 
     if failed == 0:

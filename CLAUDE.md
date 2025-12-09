@@ -173,12 +173,12 @@ npx claude-flow@alpha hooks session-end --export-metrics true
   mcp__claude-flow__agent_spawn { type: "researcher" }
   mcp__claude-flow__agent_spawn { type: "coder" }
   mcp__claude-flow__agent_spawn { type: "tester" }
-  
+
   // Spawn agents with Task tool
   Task("Research agent: Analyze requirements...")
   Task("Coder agent: Implement features...")
   Task("Tester agent: Create test suite...")
-  
+
   // Batch todos
   TodoWrite { todos: [
     {id: "1", content: "Research", status: "in_progress", priority: "high"},
@@ -187,7 +187,7 @@ npx claude-flow@alpha hooks session-end --export-metrics true
     {id: "4", content: "Test", status: "pending", priority: "medium"},
     {id: "5", content: "Document", status: "pending", priority: "low"}
   ]}
-  
+
   // File operations
   Bash "mkdir -p app/{src,tests,docs}"
   Write "app/src/index.js"

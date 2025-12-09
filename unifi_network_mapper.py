@@ -11,12 +11,13 @@ This script provides a unified interface for:
 6. Security posture assessment
 """
 
+import argparse
+import logging
 import os
 import sys
-import logging
-import argparse
 from pathlib import Path
-from typing import Optional, Tuple, List, Any
+from typing import Tuple
+
 import urllib3
 
 # Suppress InsecureRequestWarning for self-signed certificates
@@ -24,9 +25,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configure logging with modern format
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
 
@@ -36,13 +37,12 @@ sys.path.insert(0, str(src_path))
 
 # Import the UnifiPortMapper class
 from unifi_mapper.port_mapper import UnifiPortMapper
-from unifi_mapper.models import DeviceInfo, PortInfo
 
 
 def load_env_file(env_file: str = ".env") -> None:
     """
     Load environment variables from a .env file with error handling.
-    
+
     Args:
         env_file: Path to the environment file
     """
@@ -66,9 +66,9 @@ def load_env_file(env_file: str = ".env") -> None:
                 except ValueError:
                     log.warning(f"Invalid line format in {env_file}:{line_num}: {line}")
                     continue
-        
+
         log.debug(f"Loaded environment variables from {env_file}")
-        
+
     except Exception as e:
         log.error(f"Error reading environment file {env_file}: {e}")
         raise
@@ -77,28 +77,28 @@ def load_env_file(env_file: str = ".env") -> None:
 def setup_directories() -> Tuple[Path, Path]:
     """
     Create output directories and return default paths.
-    
+
     Returns:
         Tuple of (reports_dir, diagrams_dir)
     """
     reports_dir = Path("reports")
     diagrams_dir = Path("diagrams")
-    
+
     reports_dir.mkdir(exist_ok=True)
     diagrams_dir.mkdir(exist_ok=True)
-    
+
     return reports_dir, diagrams_dir
 
 
 def parse_arguments() -> argparse.Namespace:
     """
     Parse command line arguments with comprehensive options.
-    
+
     Returns:
         Parsed arguments namespace
     """
     reports_dir, diagrams_dir = setup_directories()
-    
+
     default_report = reports_dir / "port_mapping_report.md"
     default_diagram = diagrams_dir / "network_diagram.png"
 
@@ -201,10 +201,10 @@ def parse_arguments() -> argparse.Namespace:
 def run_unifi_port_mapper(args: argparse.Namespace) -> int:
     """
     Execute the UniFi port mapper with the given configuration.
-    
+
     Args:
         args: Parsed command line arguments with configuration
-        
+
     Returns:
         Exit code (0 for success, 1 for error)
     """
@@ -243,7 +243,7 @@ def run_unifi_port_mapper(args: argparse.Namespace) -> int:
 
         log.info("UniFi port mapping completed successfully")
         return 0
-        
+
     except Exception as e:
         log.error(f"Error during port mapping execution: {e}")
         return 1
@@ -252,27 +252,27 @@ def run_unifi_port_mapper(args: argparse.Namespace) -> int:
 def main() -> int:
     """
     Main entry point for the UniFi Network Mapper.
-    
+
     Returns:
         Exit code (0 for success, 1 for error)
     """
     try:
         # Load environment variables if .env file exists
         load_env_file()
-        
+
         # Parse command line arguments and get configuration
         args = parse_arguments()
         if isinstance(args, int):  # Error occurred
             return args
-            
+
         # Configure debug logging if requested
         if args.debug:
             logging.getLogger().setLevel(logging.DEBUG)
             log.debug("Debug logging enabled")
-        
+
         # Execute the port mapper
         return run_unifi_port_mapper(args)
-        
+
     except KeyboardInterrupt:
         log.info("Operation cancelled by user")
         return 1

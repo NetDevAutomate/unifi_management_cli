@@ -185,7 +185,7 @@ if __name__ == "__main__":
         test_open_circuit_blocks_calls,
         test_circuit_attempts_recovery,
         test_half_open_success_closes_circuit,
-        test_manual_reset
+        test_manual_reset,
     ]
 
     passed = 0
@@ -201,9 +201,10 @@ if __name__ == "__main__":
             failed += 1
             print(f"❌ ERROR: {test.__name__} - {e}")
             import traceback
+
             traceback.print_exc()
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed} passed, {failed} failed")
 
     if failed == 0:

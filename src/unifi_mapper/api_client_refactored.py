@@ -5,25 +5,24 @@ Delegates to AuthManager, DeviceClient, PortClient, and LldpClient.
 """
 
 import logging
-import requests
 import time
-from typing import Dict, List, Any, Optional
-from requests.exceptions import RequestException, ConnectionError, Timeout, HTTPError
+from typing import Any, Dict, List
 
+import requests
+from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
+
+from .auth_manager import AuthManager
+from .device_client import DeviceClient
+from .endpoint_builder import UnifiEndpointBuilder
 from .exceptions import (
     UniFiApiError,
     UniFiAuthenticationError,
     UniFiConnectionError,
-    UniFiTimeoutError,
     UniFiPermissionError,
-    UniFiRetryableError,
-    UniFiPermanentError
+    UniFiTimeoutError,
 )
-from .endpoint_builder import UnifiEndpointBuilder
-from .auth_manager import AuthManager
-from .device_client import DeviceClient
-from .port_client import PortClient
 from .lldp_client import LldpClient
+from .port_client import PortClient
 
 log = logging.getLogger(__name__)
 
@@ -34,9 +33,18 @@ class UnifiApiClient:
     Maintains backward compatibility with original interface.
     """
 
-    def __init__(self, base_url: str, site: str = "default", verify_ssl: bool = False,
-                 username: str = None, password: str = None, api_token: str = None,
-                 timeout: int = 10, max_retries: int = 3, retry_delay: float = 1.0):
+    def __init__(
+        self,
+        base_url: str,
+        site: str = "default",
+        verify_ssl: bool = False,
+        username: str = None,
+        password: str = None,
+        api_token: str = None,
+        timeout: int = 10,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+    ):
         """
         Initialize the UnifiApiClient.
 
@@ -52,7 +60,7 @@ class UnifiApiClient:
             retry_delay: Delay between retries in seconds
         """
         # Store configuration
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.site = site.strip() if site else "default"
         self.verify_ssl = verify_ssl
         self.timeout = max(1, min(timeout, 300))
@@ -73,25 +81,23 @@ class UnifiApiClient:
             api_token=api_token,
             username=username,
             password=password,
-            retry_func=self._retry_request
+            retry_func=self._retry_request,
         )
 
         self.device_client = DeviceClient(
             endpoint_builder=self.endpoint_builder,
             session=self.session,
-            retry_func=self._retry_request
+            retry_func=self._retry_request,
         )
 
         self.port_client = PortClient(
             endpoint_builder=self.endpoint_builder,
             session=self.session,
             device_client=self.device_client,
-            retry_func=self._retry_request
+            retry_func=self._retry_request,
         )
 
-        self.lldp_client = LldpClient(
-            device_client=self.device_client
-        )
+        self.lldp_client = LldpClient(device_client=self.device_client)
 
         # Backward compatibility properties
         self.is_authenticated = False
@@ -125,7 +131,7 @@ class UnifiApiClient:
                 if isinstance(e, HTTPError) and e.response.status_code in [401, 403]:
                     raise UniFiAuthenticationError(
                         f"Authentication failed: {e}",
-                        status_code=e.response.status_code
+                        status_code=e.response.status_code,
                     )
 
                 # Don't retry on permanent client errors
@@ -134,10 +140,12 @@ class UnifiApiClient:
                         raise UniFiPermissionError(f"Client error: {e}")
 
                 # Calculate exponential backoff
-                delay = self.retry_delay * (2 ** attempt)
+                delay = self.retry_delay * (2**attempt)
 
                 if attempt < self.max_retries - 1:
-                    log.warning(f"Request failed (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {delay:.1f}s...")
+                    log.warning(
+                        f"Request failed (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {delay:.1f}s..."
+                    )
                     time.sleep(delay)
                 else:
                     log.error(f"Request failed after {self.max_retries} attempts: {e}")
@@ -201,14 +209,24 @@ class UnifiApiClient:
         """Get LLDP/CDP information."""
         return self.lldp_client.get_lldp_info(site_id, device_id)
 
-    def update_port_name(self, site_id: str, device_id: str, port_idx: int, name: str) -> bool:
+    def update_port_name(
+        self, site_id: str, device_id: str, port_idx: int, name: str
+    ) -> bool:
         """Update single port name."""
         return self.port_client.update_port_name(site_id, device_id, port_idx, name)
 
-    def update_device_port_table(self, device_id: str, port_table: List[Dict[str, Any]]) -> bool:
+    def update_device_port_table(
+        self, device_id: str, port_table: List[Dict[str, Any]]
+    ) -> bool:
         """Update device port table."""
-        return self.port_client.update_device_port_table(self.site, device_id, port_table)
+        return self.port_client.update_device_port_table(
+            self.site, device_id, port_table
+        )
 
-    def verify_port_update(self, device_id: str, port_idx: int, expected_name: str, max_retries: int = 5) -> bool:
+    def verify_port_update(
+        self, device_id: str, port_idx: int, expected_name: str, max_retries: int = 5
+    ) -> bool:
         """Verify port update."""
-        return self.port_client.verify_port_update(self.site, device_id, port_idx, expected_name, max_retries)
+        return self.port_client.verify_port_update(
+            self.site, device_id, port_idx, expected_name, max_retries
+        )

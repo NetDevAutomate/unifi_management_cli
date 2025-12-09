@@ -108,7 +108,7 @@ classDiagram
         +configure_logging()
         +handle_self_signed_certs()
     }
-    
+
     class UnifiApiClient {
         -base_url: str
         -site: str
@@ -130,7 +130,7 @@ classDiagram
         +debug_device_config()
         +clear_credentials()
     }
-    
+
     class DeviceInfo {
         +id: str
         +name: str
@@ -143,7 +143,7 @@ classDiagram
         +get_device_type()
         +get_color()
     }
-    
+
     class PortInfo {
         +idx: int
         +name: str
@@ -162,7 +162,7 @@ classDiagram
         +get_lldp_display_name()
         +update_lldp_info()
     }
-    
+
     class NetworkAnalyzer {
         -api_client: UnifiApiClient
         -configuration_history: List[NetworkConfiguration]
@@ -175,11 +175,11 @@ classDiagram
         +_analyze_security_posture()
         +_generate_recommendations()
     }
-    
+
     class NetworkHealthMetrics {
         <<Abstract>>
     }
-    
+
     class DeviceHealthMetrics {
         +device_id: str
         +cpu_usage_percent: float
@@ -193,7 +193,7 @@ classDiagram
         +get_critical_ports()
         +get_warning_ports()
     }
-    
+
     class PortHealthMetrics {
         +port_idx: int
         +device_id: str
@@ -205,7 +205,7 @@ classDiagram
         +get_health_status()
         +add_utilization_sample()
     }
-    
+
     class NetworkConfiguration {
         +timestamp: datetime
         +devices: Dict[str, Dict]
@@ -214,7 +214,7 @@ classDiagram
         +add_connection()
         +compare_with()
     }
-    
+
     class NetworkAnalysisResult {
         +timestamp: datetime
         +device_health: Dict[str, DeviceHealthMetrics]
@@ -226,7 +226,7 @@ classDiagram
         +calculate_summary_stats()
         +get_critical_issues()
     }
-    
+
     class NetworkTopology {
         -devices: Dict[str, DeviceInfo]
         -connections: List[Dict]
@@ -245,7 +245,7 @@ classDiagram
         +generate_mermaid_diagram()
         +analyze_network_health()
     }
-    
+
     class UnifiPortMapper {
         -api_client: UnifiApiClient
         -analyzer: NetworkAnalyzer
@@ -256,7 +256,7 @@ classDiagram
         +generate_diagram()
         +perform_health_check()
     }
-    
+
     class ReportGenerator {
         +generate_port_mapping_report()
         +generate_device_table()
@@ -264,39 +264,39 @@ classDiagram
         +generate_health_report()
         +generate_security_report()
     }
-    
+
     class RunMethods {
         +run_port_mapper()
         +infer_device_connections()
         +run_network_analysis()
         +generate_comprehensive_report()
     }
-    
+
     %% Exception Classes
     class UniFiApiError {
         <<Exception>>
     }
-    
+
     class UniFiAuthenticationError {
         <<Exception>>
     }
-    
+
     class UniFiConnectionError {
         <<Exception>>
     }
-    
+
     class UniFiTimeoutError {
         <<Exception>>
     }
-    
+
     class UniFiPermissionError {
         <<Exception>>
     }
-    
+
     class UniFiValidationError {
         <<Exception>>
     }
-    
+
     %% Relationships
     UnifiNetworkMapper --> UnifiPortMapper: creates
     UnifiNetworkMapper --> RunMethods: calls
@@ -315,14 +315,14 @@ classDiagram
     DeviceHealthMetrics --> PortHealthMetrics: contains
     NetworkHealthMetrics <|-- DeviceHealthMetrics
     NetworkHealthMetrics <|-- PortHealthMetrics
-    
+
     %% Exception Hierarchy
     UniFiApiError <|-- UniFiAuthenticationError
     UniFiApiError <|-- UniFiConnectionError
     UniFiApiError <|-- UniFiTimeoutError
     UniFiApiError <|-- UniFiPermissionError
     UniFiApiError <|-- UniFiValidationError
-    
+
     UnifiApiClient ..> UniFiApiError: throws
 ```
 
@@ -335,28 +335,28 @@ flowchart TD
         A2[Username/Password Auth]
         A3[Session Management]
     end
-    
+
     subgraph "Security Controls"
         S1[Input Validation]
         S2[Credential Sanitization]
         S3[SSL/TLS Verification]
         S4[Secure Memory Management]
     end
-    
+
     subgraph "Error Handling"
         E1[Retry Mechanism]
         E2[Exponential Backoff]
         E3[Custom Exceptions]
         E4[Sanitized Logging]
     end
-    
+
     subgraph "Network Communication"
         N1[Self-signed Cert Support]
         N2[Connection Timeout]
         N3[Request Sanitization]
         N4[Response Validation]
     end
-    
+
     A1 --> S1
     A2 --> S1
     A3 --> S4
@@ -368,7 +368,7 @@ flowchart TD
     N1 --> N2
     N2 --> N3
     N3 --> N4
-    
+
     style S1 fill:#ffebee
     style S2 fill:#ffebee
     style S3 fill:#ffebee
@@ -396,27 +396,27 @@ flowchart TD
     O --> P[Generate Comprehensive Report]
     P --> Q[Save Analysis Results]
     Q --> R[End]
-    
+
     subgraph "Security Layer"
         C1[Input Validation]
         C2[Credential Sanitization]
         C3[SSL Certificate Handling]
         C4[Secure Memory Management]
     end
-    
+
     subgraph "Authentication & Connection"
         C --> C1
         D --> C2
         C3 --> D
         C4 --> D
     end
-    
+
     subgraph "Data Collection with Error Handling"
         E
         F
         G
     end
-    
+
     subgraph "Advanced Network Analysis"
         I
         J
@@ -424,18 +424,18 @@ flowchart TD
         L
         M
     end
-    
+
     subgraph "Enhanced Topology Generation"
         H
         N
     end
-    
+
     subgraph "Rich Output Generation"
         O
         P
         Q
     end
-    
+
     style I fill:#e1f5fe
     style J fill:#e8f5e8
     style K fill:#fff3e0
@@ -454,7 +454,7 @@ flowchart LR
         DH4[Uptime Analysis]
         DH5[Alert Collection]
     end
-    
+
     subgraph "Port Health Analysis"
         PH1[Traffic Statistics]
         PH2[Utilization Calculation]
@@ -462,7 +462,7 @@ flowchart LR
         PH4[Link Stability Check]
         PH5[Performance Metrics]
     end
-    
+
     subgraph "Topology Change Detection"
         TC1[Configuration Snapshots]
         TC2[Historical Comparison]
@@ -470,7 +470,7 @@ flowchart LR
         TC4[Connection Changes]
         TC5[Drift Analysis]
     end
-    
+
     subgraph "Security Analysis"
         SA1[Firmware Version Check]
         SA2[Uptime Security Review]
@@ -478,7 +478,7 @@ flowchart LR
         SA4[Configuration Security]
         SA5[Vulnerability Assessment]
     end
-    
+
     subgraph "Performance Bottleneck Detection"
         PB1[High CPU/Memory Usage]
         PB2[Port Utilization Issues]
@@ -486,7 +486,7 @@ flowchart LR
         PB4[Error Rate Thresholds]
         PB5[Capacity Planning]
     end
-    
+
     subgraph "Health Scoring & Recommendations"
         HS1[Device Health Scores]
         HS2[Port Health Scores]
@@ -494,40 +494,40 @@ flowchart LR
         HS4[Prioritized Recommendations]
         HS5[Action Items]
     end
-    
+
     DH1 --> HS1
     DH2 --> HS1
     DH3 --> PB3
     DH4 --> SA2
     DH5 --> HS1
-    
+
     PH1 --> PH2
     PH2 --> PB2
     PH3 --> PB4
     PH4 --> HS2
     PH5 --> HS2
-    
+
     TC1 --> TC2
     TC2 --> TC3
     TC3 --> TC4
     TC4 --> TC5
-    
+
     SA1 --> SA5
     SA2 --> SA5
     SA3 --> SA5
     SA4 --> SA5
-    
+
     PB1 --> HS4
     PB2 --> HS4
     PB3 --> HS4
     PB4 --> HS4
     PB5 --> HS5
-    
+
     HS1 --> HS3
     HS2 --> HS3
     HS3 --> HS4
     HS4 --> HS5
-    
+
     style HS3 fill:#c8e6c9
     style HS4 fill:#ffecb3
     style HS5 fill:#ffcdd2
