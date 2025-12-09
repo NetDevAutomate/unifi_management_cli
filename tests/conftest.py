@@ -5,6 +5,7 @@ Pytest configuration and shared fixtures for UniFi Network Mapper tests.
 
 import sys
 from pathlib import Path
+
 import pytest
 
 # Add src to Python path
@@ -22,7 +23,7 @@ def mock_unifi_config():
         site="default",
         api_token="mock-token-12345",
         verify_ssl=False,
-        timeout=10
+        timeout=10,
     )
 
 
@@ -37,7 +38,7 @@ def mock_device_data():
         "mac": "aa:bb:cc:dd:ee:ff",
         "ip": "192.168.1.10",
         "adopted": True,
-        "state": 1
+        "state": 1,
     }
 
 
@@ -51,7 +52,7 @@ def mock_lldp_table():
             "local_port_name": "eth0",
             "local_port_idx": 1,
             "system_name": "Router-Main",
-            "is_wired": True
+            "is_wired": True,
         },
         {
             "chassis_id": "77:88:99:aa:bb:cc",
@@ -59,8 +60,8 @@ def mock_lldp_table():
             "local_port_name": "eth4",
             "local_port_idx": 5,
             "system_name": "AP-Office",
-            "is_wired": True
-        }
+            "is_wired": True,
+        },
     ]
 
 
@@ -79,5 +80,5 @@ def mock_client_data():
         "last_seen": 1700000000,
         "dev_cat_name": "Computer",
         "dev_vendor": "Apple",
-        "dev_id": "MacBook"
+        "dev_id": "MacBook",
     }

@@ -3,8 +3,8 @@
 Binary pass/fail tests for UnifiConfig.
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add src to path
@@ -19,7 +19,7 @@ def test_valid_token_config():
     config = UnifiConfig(
         base_url="https://unifi.local:8443",
         site="default",
-        api_token="test-token-12345"
+        api_token="test-token-12345",
     )
 
     assert config.base_url == "https://unifi.local:8443"
@@ -38,7 +38,7 @@ def test_valid_password_config():
         base_url="https://unifi.local:8443",
         site="custom-site",
         username="admin",
-        password="password123"
+        password="password123",
     )
 
     assert config.base_url == "https://unifi.local:8443"
@@ -53,10 +53,7 @@ def test_valid_password_config():
 def test_missing_base_url():
     """Binary test: Missing base_url raises ValueError"""
     try:
-        config = UnifiConfig(
-            base_url="",
-            api_token="test-token"
-        )
+        config = UnifiConfig(base_url="", api_token="test-token")
         print("❌ FAIL: Should have raised ValueError for missing base_url")
         return False
     except ValueError as e:
@@ -68,10 +65,7 @@ def test_missing_base_url():
 def test_invalid_url_format():
     """Binary test: URL without http(s):// raises ValueError"""
     try:
-        config = UnifiConfig(
-            base_url="unifi.local:8443",
-            api_token="test-token"
-        )
+        config = UnifiConfig(base_url="unifi.local:8443", api_token="test-token")
         print("❌ FAIL: Should have raised ValueError for invalid URL format")
         return False
     except ValueError as e:
@@ -83,9 +77,7 @@ def test_invalid_url_format():
 def test_missing_auth_credentials():
     """Binary test: No auth credentials raises ValueError"""
     try:
-        config = UnifiConfig(
-            base_url="https://unifi.local:8443"
-        )
+        config = UnifiConfig(base_url="https://unifi.local:8443")
         print("❌ FAIL: Should have raised ValueError for missing auth")
         return False
     except ValueError as e:
@@ -101,7 +93,7 @@ def test_numeric_value_clamping():
         api_token="test",
         timeout=500,  # Above max (300)
         max_retries=20,  # Above max (10)
-        retry_delay=15.0  # Above max (10.0)
+        retry_delay=15.0,  # Above max (10.0)
     )
 
     assert config.timeout == 300  # Clamped to max
@@ -113,7 +105,7 @@ def test_numeric_value_clamping():
         api_token="test",
         timeout=0,  # Below min (1)
         max_retries=0,  # Below min (1)
-        retry_delay=0.0  # Below min (0.1)
+        retry_delay=0.0,  # Below min (0.1)
     )
 
     assert config2.timeout == 1  # Clamped to min
@@ -126,13 +118,10 @@ def test_numeric_value_clamping():
 
 def test_url_normalization():
     """Binary test: Trailing slashes removed from base_url"""
-    config = UnifiConfig(
-        base_url="https://unifi.local:8443///",
-        api_token="test"
-    )
+    config = UnifiConfig(base_url="https://unifi.local:8443///", api_token="test")
 
     assert config.base_url == "https://unifi.local:8443"
-    assert not config.base_url.endswith('/')
+    assert not config.base_url.endswith("/")
 
     print("✅ PASS: URL normalization works")
     return True
@@ -141,19 +130,16 @@ def test_url_normalization():
 def test_to_dict_export():
     """Binary test: to_dict() returns all configuration values"""
     config = UnifiConfig(
-        base_url="https://unifi.local",
-        site="office",
-        api_token="token123",
-        timeout=15
+        base_url="https://unifi.local", site="office", api_token="token123", timeout=15
     )
 
     config_dict = config.to_dict()
 
-    assert config_dict['base_url'] == "https://unifi.local"
-    assert config_dict['site'] == "office"
-    assert config_dict['api_token'] == "token123"
-    assert config_dict['timeout'] == 15
-    assert 'password' in config_dict  # Key exists even if None
+    assert config_dict["base_url"] == "https://unifi.local"
+    assert config_dict["site"] == "office"
+    assert config_dict["api_token"] == "token123"
+    assert config_dict["timeout"] == 15
+    assert "password" in config_dict  # Key exists even if None
 
     print("✅ PASS: to_dict() export works")
     return True
@@ -168,7 +154,7 @@ if __name__ == "__main__":
         test_missing_auth_credentials,
         test_numeric_value_clamping,
         test_url_normalization,
-        test_to_dict_export
+        test_to_dict_export,
     ]
 
     passed = 0
@@ -184,7 +170,7 @@ if __name__ == "__main__":
             failed += 1
             print(f"❌ ERROR: {test.__name__} - {e}")
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed} passed, {failed} failed")
 
     if failed == 0:

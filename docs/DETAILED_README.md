@@ -67,7 +67,7 @@ classDiagram
         +main()
         +load_env_file()
     }
-    
+
     class UnifiApiClient {
         -base_url: str
         -site: str
@@ -80,7 +80,7 @@ classDiagram
         +get_clients()
         +update_port_name()
     }
-    
+
     class DeviceInfo {
         +id: str
         +name: str
@@ -90,7 +90,7 @@ classDiagram
         +ports: List[PortInfo]
         +lldp_info: Dict
     }
-    
+
     class PortInfo {
         +idx: int
         +name: str
@@ -106,7 +106,7 @@ classDiagram
         +connected_port_name: str
         +poe: bool
     }
-    
+
     class NetworkTopology {
         -devices: Dict[str, DeviceInfo]
         -connections: List[Dict]
@@ -123,7 +123,7 @@ classDiagram
         +generate_dot_diagram()
         +generate_mermaid_diagram()
     }
-    
+
     class UnifiPortMapper {
         -api_client: UnifiApiClient
         -site: str
@@ -132,13 +132,13 @@ classDiagram
         +generate_report()
         +generate_diagram()
     }
-    
+
     class ReportGenerator {
         +generate_port_mapping_report()
         +generate_device_table()
         +generate_port_table()
     }
-    
+
     UnifiNetworkMapper --> UnifiPortMapper: creates
     UnifiPortMapper --> UnifiApiClient: uses
     UnifiPortMapper --> NetworkTopology: creates
@@ -157,30 +157,30 @@ sequenceDiagram
     participant UnifiApiClient
     participant NetworkTopology
     participant ReportGenerator
-    
+
     User->>UnifiNetworkMapper: Run with arguments
     UnifiNetworkMapper->>UnifiPortMapper: Create port mapper
     UnifiPortMapper->>UnifiApiClient: Initialize API client
     UnifiNetworkMapper->>UnifiApiClient: Login
     UnifiApiClient-->>UnifiNetworkMapper: Authentication result
-    
+
     UnifiNetworkMapper->>UnifiApiClient: Get devices
     UnifiApiClient-->>UnifiNetworkMapper: Device list
-    
+
     loop For each router/switch
         UnifiNetworkMapper->>UnifiApiClient: Get device ports
         UnifiApiClient-->>UnifiNetworkMapper: Port information
         UnifiNetworkMapper->>UnifiApiClient: Get LLDP/CDP info
         UnifiApiClient-->>UnifiNetworkMapper: LLDP/CDP information
     end
-    
+
     UnifiNetworkMapper->>UnifiApiClient: Get clients
     UnifiApiClient-->>UnifiNetworkMapper: Client list
-    
+
     UnifiNetworkMapper->>NetworkTopology: Create topology
     NetworkTopology->>NetworkTopology: Process devices and connections
     NetworkTopology->>NetworkTopology: Infer missing connections
-    
+
     alt Generate HTML diagram
         UnifiNetworkMapper->>NetworkTopology: Generate HTML diagram
         NetworkTopology-->>UnifiNetworkMapper: HTML diagram
@@ -191,10 +191,10 @@ sequenceDiagram
         UnifiNetworkMapper->>NetworkTopology: Generate diagram
         NetworkTopology-->>UnifiNetworkMapper: Diagram
     end
-    
+
     UnifiNetworkMapper->>ReportGenerator: Generate report
     ReportGenerator-->>UnifiNetworkMapper: Markdown report
-    
+
     UnifiNetworkMapper-->>User: Output files
 ```
 
@@ -205,19 +205,19 @@ flowchart TD
     A[unifi_network_mapper.py] --> B[src/unifi_mapper/port_mapper.py]
     A --> C[src/unifi_mapper/run_methods.py]
     A --> D[src/unifi_mapper/models.py]
-    
+
     B --> E[src/unifi_mapper/api_client.py]
-    
+
     C --> E
     C --> F[src/unifi_mapper/enhanced_network_topology.py]
     C --> G[src/unifi_mapper/report_generator.py]
-    
+
     F --> D
     E --> D
     G --> D
-    
+
     F --> H[src/unifi_mapper/device_definitions.py]
-    
+
     subgraph Core Modules
         B
         C
@@ -227,7 +227,7 @@ flowchart TD
         G
         H
     end
-    
+
     subgraph Command-line Scripts
         I[src/scripts/topology_generator.py]
         J[src/scripts/port_mapper.py]
@@ -236,7 +236,7 @@ flowchart TD
         M[src/scripts/config_manager.py]
         N[src/scripts/device_definitions.py]
     end
-    
+
     I --> B
     J --> B
     K --> B

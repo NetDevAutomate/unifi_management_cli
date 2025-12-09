@@ -4,8 +4,6 @@ Endpoint builder for UniFi Controller API.
 Centralizes URL construction logic for both UniFi OS and legacy controllers.
 """
 
-from typing import Optional
-
 
 class UnifiEndpointBuilder:
     """
@@ -21,7 +19,7 @@ class UnifiEndpointBuilder:
             base_url: Base URL of UniFi Controller (e.g., https://unifi.local:8443)
             is_unifi_os: Whether this is a UniFi OS device (UDM, UDM Pro, etc.)
         """
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.is_unifi_os = is_unifi_os
         self.prefix = "/proxy/network" if is_unifi_os else ""
 

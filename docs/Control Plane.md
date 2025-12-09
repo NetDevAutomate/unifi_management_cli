@@ -75,17 +75,17 @@ In case of Internal Server Error (core = 500), request ID can be used to track d
 `{`
 
 -   `"statusCode": 400,`
-    
+
 -   `"statusName": "UNAUTHORIZED",`
-    
+
 -   `"message": "Missing credentials",`
-    
+
 -   `"timestamp": "2024-11-27T08:13:46.966Z",`
-    
+
 -   `"requestPath": "/integration/v1/sites/123",`
-    
+
 -   `"requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6"`
-    
+
 
 `}`
 
@@ -247,19 +247,19 @@ application/json
 `{`
 
 -   `"count": "1",`
-    
+
 -   `"name": "string",`
-    
+
 -   `"authorizedGuestLimit": 1,`
-    
+
 -   `"timeLimitMinutes": 1,`
-    
+
 -   `"dataUsageLimitMBytes": 1,`
-    
+
 -   `"rxRateLimitKbps": 2,`
-    
+
 -   `"txRateLimitKbps": 2`
-    
+
 
 `}`
 
@@ -494,15 +494,15 @@ AUTHORIZE\_GUEST\_ACCESS
 `{`
 
 -   `"action": "AUTHORIZE_GUEST_ACCESS",`
-    
+
 -   `"timeLimitMinutes": 1,`
-    
+
 -   `"dataUsageLimitMBytes": 1,`
-    
+
 -   `"rxRateLimitKbps": 2,`
-    
+
 -   `"txRateLimitKbps": 2`
-    
+
 
 `}`
 

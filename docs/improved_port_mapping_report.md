@@ -33,7 +33,7 @@ graph TD
 ## Device Port Details
 
 ### UniFi Dream Machine Pro Max (UDMPROMAX)
-IP:  | MAC: 
+IP:  | MAC:
 
 | Port | Status | Name | Proposed Name | LLDP/CDP Info | Modified |
 |------|--------|------|--------------|--------------|----------|
@@ -49,7 +49,7 @@ IP:  | MAC:
 | 10 (RJ45) | ✅ Up  | Port 10 | LAN 8 | None | ✅ |
 
 ### WAN (Unknown)
-IP:  | MAC: 
+IP:  | MAC:
 
 | Port | Status | Name | Proposed Name | LLDP/CDP Info | Modified |
 |------|--------|------|--------------|--------------|----------|
@@ -59,7 +59,7 @@ IP:  | MAC:
 | 4 (Unknown) | ✅ Up | Port 4 | Port 4 | None | ❌ |
 
 ### Core Switch (Switch)
-IP:  | MAC: 
+IP:  | MAC:
 
 | Port | Status | Name | Proposed Name | LLDP/CDP Info | Modified |
 |------|--------|------|--------------|--------------|----------|
@@ -69,7 +69,7 @@ IP:  | MAC:
 | 4 (Unknown) | ✅ Up  | Port 4 | LAN 4 | None | ✅ |
 
 ### Office Switch (Switch)
-IP:  | MAC: 
+IP:  | MAC:
 
 | Port | Status | Name | Proposed Name | LLDP/CDP Info | Modified |
 |------|--------|------|--------------|--------------|----------|
@@ -79,7 +79,7 @@ IP:  | MAC:
 | 4 (Unknown) | ✅ Up  | Port 4 | LAN 4 | None | ✅ |
 
 ### Living Room AP (Access Point)
-IP:  | MAC: 
+IP:  | MAC:
 
 | Port | Status | Name | Proposed Name | LLDP/CDP Info | Modified |
 |------|--------|------|--------------|--------------|----------|
@@ -89,7 +89,7 @@ IP:  | MAC:
 | 4 (Unknown) | ✅ Up | Port 4 | Port 4 | None | ❌ |
 
 ### Bedroom AP (Access Point)
-IP:  | MAC: 
+IP:  | MAC:
 
 | Port | Status | Name | Proposed Name | LLDP/CDP Info | Modified |
 |------|--------|------|--------------|--------------|----------|
@@ -99,7 +99,7 @@ IP:  | MAC:
 | 4 (Unknown) | ✅ Up | Port 4 | Port 4 | None | ❌ |
 
 ### Kitchen AP (Access Point)
-IP:  | MAC: 
+IP:  | MAC:
 
 | Port | Status | Name | Proposed Name | LLDP/CDP Info | Modified |
 |------|--------|------|--------------|--------------|----------|
@@ -109,7 +109,7 @@ IP:  | MAC:
 | 4 (Unknown) | ✅ Up | Port 4 | Port 4 | None | ❌ |
 
 ### Garage AP (Access Point)
-IP:  | MAC: 
+IP:  | MAC:
 
 | Port | Status | Name | Proposed Name | LLDP/CDP Info | Modified |
 |------|--------|------|--------------|--------------|----------|
@@ -119,7 +119,7 @@ IP:  | MAC:
 | 4 (Unknown) | ✅ Up | Port 4 | Port 4 | None | ❌ |
 
 ### NAS Server (Server)
-IP:  | MAC: 
+IP:  | MAC:
 
 | Port | Status | Name | Proposed Name | LLDP/CDP Info | Modified |
 |------|--------|------|--------------|--------------|----------|

@@ -5,7 +5,7 @@ Handles LLDP/CDP neighbor discovery information extraction.
 """
 
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +52,9 @@ class LldpClient:
 
             if device_details and "lldp_table" in device_details:
                 lldp_table = device_details["lldp_table"]
-                log.debug(f"Found lldp_table with {len(lldp_table)} entries for device {device_id}")
+                log.debug(
+                    f"Found lldp_table with {len(lldp_table)} entries for device {device_id}"
+                )
 
                 # Process each LLDP entry
                 # Note: lldp_table uses 'local_port_idx' not 'port_idx'
@@ -67,7 +69,9 @@ class LldpClient:
                         # Try to resolve MAC to device name if system_name not available
                         remote_device_name = system_name or chassis_name
                         if not remote_device_name and chassis_id:
-                            remote_device_name = self._resolve_mac_to_device_name(chassis_id)
+                            remote_device_name = self._resolve_mac_to_device_name(
+                                chassis_id
+                            )
 
                         # Map LLDP fields to expected format
                         port_lldp_info[str(local_port_idx)] = {
@@ -80,16 +84,22 @@ class LldpClient:
                             "remote_port_name": entry.get("port_id", ""),
                             "remote_chassis_id": chassis_id,  # Add for report compatibility
                             "is_wired": entry.get("is_wired", True),
-                            "local_port_name": entry.get("local_port_name", "")
+                            "local_port_name": entry.get("local_port_name", ""),
                         }
-                        log.debug(f"Mapped LLDP for port {local_port_idx}: {remote_device_name or chassis_id}")
+                        log.debug(
+                            f"Mapped LLDP for port {local_port_idx}: {remote_device_name or chassis_id}"
+                        )
             else:
-                log.debug(f"No lldp_table found in device details for device {device_id}")
+                log.debug(
+                    f"No lldp_table found in device details for device {device_id}"
+                )
 
         except Exception as e:
             log.error(f"Error getting LLDP/CDP information: {e}")
 
-        log.info(f"Retrieved LLDP info for {len(port_lldp_info)} ports on device {device_id}")
+        log.info(
+            f"Retrieved LLDP info for {len(port_lldp_info)} ports on device {device_id}"
+        )
         return port_lldp_info
 
     def _build_mac_to_device_cache(self, site_id: str) -> None:
@@ -139,7 +149,7 @@ class LldpClient:
             chassis_id.lower(),
             chassis_id.upper(),
             chassis_id.lower().replace(":", ""),
-            chassis_id.upper().replace(":", "")
+            chassis_id.upper().replace(":", ""),
         ]
 
         for mac_format in mac_formats:

@@ -4,19 +4,19 @@ Authentication manager for UniFi Controller API.
 Handles login, logout, session management, and UniFi OS detection.
 """
 
+import hashlib
 import logging
+from typing import Callable, Optional
+
 import requests
 import urllib3
-import hashlib
-from typing import Optional, Callable
 
+from .endpoint_builder import UnifiEndpointBuilder
 from .exceptions import (
-    UniFiAuthenticationError,
+    UniFiApiError,
     UniFiConnectionError,
     UniFiValidationError,
-    UniFiApiError
 )
-from .endpoint_builder import UnifiEndpointBuilder
 
 log = logging.getLogger(__name__)
 
@@ -34,12 +34,15 @@ class AuthManager:
     Handles both token-based and username/password authentication.
     """
 
-    def __init__(self, endpoint_builder: UnifiEndpointBuilder,
-                 session: requests.Session,
-                 api_token: Optional[str] = None,
-                 username: Optional[str] = None,
-                 password: Optional[str] = None,
-                 retry_func: Optional[Callable] = None):
+    def __init__(
+        self,
+        endpoint_builder: UnifiEndpointBuilder,
+        session: requests.Session,
+        api_token: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        retry_func: Optional[Callable] = None,
+    ):
         """
         Initialize AuthManager.
 
@@ -59,9 +62,15 @@ class AuthManager:
         self._retry_func = retry_func
 
         # Store credential hashes for logging
-        self._token_hash = _hash_for_verification(self._api_token) if self._api_token else None
-        self._username_hash = _hash_for_verification(self._username) if self._username else None
-        self._password_hash = _hash_for_verification(self._password) if self._password else None
+        self._token_hash = (
+            _hash_for_verification(self._api_token) if self._api_token else None
+        )
+        self._username_hash = (
+            _hash_for_verification(self._username) if self._username else None
+        )
+        self._password_hash = (
+            _hash_for_verification(self._password) if self._password else None
+        )
 
         # Authentication state
         self.is_authenticated = False
@@ -95,9 +104,15 @@ class AuthManager:
 
         # Validate credentials
         if self.auth_method == "token" and not self._api_token:
-            raise UniFiValidationError("API token authentication selected but no token provided")
-        elif self.auth_method == "username_password" and (not self._username or not self._password):
-            raise UniFiValidationError("Username/password authentication selected but credentials missing")
+            raise UniFiValidationError(
+                "API token authentication selected but no token provided"
+            )
+        elif self.auth_method == "username_password" and (
+            not self._username or not self._password
+        ):
+            raise UniFiValidationError(
+                "Username/password authentication selected but credentials missing"
+            )
 
         log.info(f"Attempting authentication using {self.auth_method} method")
 
@@ -132,10 +147,12 @@ class AuthManager:
         """Detect if controller is UniFi OS device."""
         try:
             endpoint = self.endpoint_builder.system_check()
-            timeout = getattr(self.session, 'timeout', 10)
+            timeout = getattr(self.session, "timeout", 10)
 
             def _check():
-                return requests.get(endpoint, verify=self.session.verify, timeout=timeout)
+                return requests.get(
+                    endpoint, verify=self.session.verify, timeout=timeout
+                )
 
             if self._retry_func:
                 response = self._retry_func(_check)
@@ -161,14 +178,14 @@ class AuthManager:
         log.debug(f"Attempting token authentication - hash: {self._token_hash}")
 
         # Try X-API-KEY header first
-        self.session.headers.update({'X-API-KEY': self._api_token})
+        self.session.headers.update({"X-API-KEY": self._api_token})
 
         if self._try_token_auth(site_id, "X-API-KEY"):
             return True
 
         # Try Bearer token as fallback
-        self.session.headers.update({'Authorization': f"Bearer {self._api_token}"})
-        del self.session.headers['X-API-KEY']
+        self.session.headers.update({"Authorization": f"Bearer {self._api_token}"})
+        del self.session.headers["X-API-KEY"]
 
         if self._try_token_auth(site_id, "Bearer"):
             return True
@@ -182,7 +199,7 @@ class AuthManager:
             endpoint = self.endpoint_builder.self_check(site_id)
 
             def _check():
-                timeout = getattr(self.session, 'timeout', 10)
+                timeout = getattr(self.session, "timeout", 10)
                 return self.session.get(endpoint, timeout=timeout)
 
             if self._retry_func:
@@ -193,7 +210,9 @@ class AuthManager:
             if response.status_code == 200:
                 self.is_authenticated = True
                 self.successful_endpoint = f"token_{method.lower()}"
-                log.info(f"Successfully authenticated with {method} token - hash: {self._token_hash}")
+                log.info(
+                    f"Successfully authenticated with {method} token - hash: {self._token_hash}"
+                )
                 return True
         except requests.exceptions.SSLError as e:
             log.error(f"SSL error during token authentication: {e}")
@@ -213,17 +232,16 @@ class AuthManager:
         Returns:
             bool: True if successful
         """
-        log.debug(f"Attempting password authentication - username hash: {self._username_hash}")
+        log.debug(
+            f"Attempting password authentication - username hash: {self._username_hash}"
+        )
 
         try:
             endpoint = self.endpoint_builder.login()
-            login_data = {
-                "username": self._username,
-                "password": self._password
-            }
+            login_data = {"username": self._username, "password": self._password}
 
             def _login():
-                timeout = getattr(self.session, 'timeout', 10)
+                timeout = getattr(self.session, "timeout", 10)
                 return self.session.post(endpoint, json=login_data, timeout=timeout)
 
             if self._retry_func:
@@ -234,7 +252,9 @@ class AuthManager:
             if response.status_code == 200:
                 self.is_authenticated = True
                 self.successful_endpoint = "password_login"
-                log.info(f"Successfully authenticated with username/password - user hash: {self._username_hash}")
+                log.info(
+                    f"Successfully authenticated with username/password - user hash: {self._username_hash}"
+                )
                 return True
             else:
                 log.error(f"Password authentication failed: {response.status_code}")

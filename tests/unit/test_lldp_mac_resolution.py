@@ -25,7 +25,7 @@ def test_mac_resolution_to_device_names():
         "data": [
             {"_id": "dev1", "name": "Switch-Main", "mac": "aa:bb:cc:dd:ee:ff"},
             {"_id": "dev2", "name": "Router-Core", "mac": "11:22:33:44:55:66"},
-            {"_id": "dev3", "name": "AP-Office", "mac": "77:88:99:aa:bb:cc"}
+            {"_id": "dev3", "name": "AP-Office", "mac": "77:88:99:aa:bb:cc"},
         ]
     }
 
@@ -36,14 +36,14 @@ def test_mac_resolution_to_device_names():
             {
                 "local_port_idx": 1,
                 "chassis_id": "11:22:33:44:55:66",  # Router MAC
-                "port_id": "Port 5"
+                "port_id": "Port 5",
             },
             {
                 "local_port_idx": 2,
                 "chassis_id": "77:88:99:aa:bb:cc",  # AP MAC
-                "port_id": "Port 1"
-            }
-        ]
+                "port_id": "Port 1",
+            },
+        ],
     }
 
     client = LldpClient(mock_device_client)
@@ -65,19 +65,19 @@ def test_mac_resolution_case_insensitive():
     mock_device_client = Mock()
 
     mock_device_client.get_devices.return_value = {
-        "data": [
-            {"_id": "dev1", "name": "Switch-Test", "mac": "AA:BB:CC:DD:EE:FF"}
-        ]
+        "data": [{"_id": "dev1", "name": "Switch-Test", "mac": "AA:BB:CC:DD:EE:FF"}]
     }
 
     # LLDP has lowercase MAC
     mock_device_client.get_device_details.return_value = {
         "_id": "dev1",
-        "lldp_table": [{
-            "local_port_idx": 1,
-            "chassis_id": "aa:bb:cc:dd:ee:ff",  # Lowercase
-            "port_id": "Port 1"
-        }]
+        "lldp_table": [
+            {
+                "local_port_idx": 1,
+                "chassis_id": "aa:bb:cc:dd:ee:ff",  # Lowercase
+                "port_id": "Port 1",
+            }
+        ],
     }
 
     client = LldpClient(mock_device_client)
@@ -94,19 +94,19 @@ def test_mac_resolution_without_colons():
     mock_device_client = Mock()
 
     mock_device_client.get_devices.return_value = {
-        "data": [
-            {"_id": "dev1", "name": "Device-Test", "mac": "11:22:33:44:55:66"}
-        ]
+        "data": [{"_id": "dev1", "name": "Device-Test", "mac": "11:22:33:44:55:66"}]
     }
 
     # LLDP has MAC without colons
     mock_device_client.get_device_details.return_value = {
         "_id": "dev1",
-        "lldp_table": [{
-            "local_port_idx": 1,
-            "chassis_id": "112233445566",  # No colons
-            "port_id": "Port 1"
-        }]
+        "lldp_table": [
+            {
+                "local_port_idx": 1,
+                "chassis_id": "112233445566",  # No colons
+                "port_id": "Port 1",
+            }
+        ],
     }
 
     client = LldpClient(mock_device_client)
@@ -124,19 +124,19 @@ def test_unresolvable_mac_returns_mac():
 
     # Device list has different MACs
     mock_device_client.get_devices.return_value = {
-        "data": [
-            {"_id": "dev1", "name": "Known-Device", "mac": "aa:bb:cc:dd:ee:ff"}
-        ]
+        "data": [{"_id": "dev1", "name": "Known-Device", "mac": "aa:bb:cc:dd:ee:ff"}]
     }
 
     # LLDP has unknown MAC
     mock_device_client.get_device_details.return_value = {
         "_id": "dev1",
-        "lldp_table": [{
-            "local_port_idx": 1,
-            "chassis_id": "99:88:77:66:55:44",  # Unknown MAC
-            "port_id": "Port 1"
-        }]
+        "lldp_table": [
+            {
+                "local_port_idx": 1,
+                "chassis_id": "99:88:77:66:55:44",  # Unknown MAC
+                "port_id": "Port 1",
+            }
+        ],
     }
 
     client = LldpClient(mock_device_client)
@@ -154,7 +154,7 @@ if __name__ == "__main__":
         test_mac_resolution_to_device_names,
         test_mac_resolution_case_insensitive,
         test_mac_resolution_without_colons,
-        test_unresolvable_mac_returns_mac
+        test_unresolvable_mac_returns_mac,
     ]
 
     passed = 0
@@ -170,9 +170,10 @@ if __name__ == "__main__":
             failed += 1
             print(f"❌ ERROR: {test.__name__} - {e}")
             import traceback
+
             traceback.print_exc()
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed} passed, {failed} failed")
 
     if failed == 0:

@@ -16,25 +16,33 @@ from unifi_mapper.endpoint_builder import UnifiEndpointBuilder
 
 def test_unifi_os_endpoints():
     """Binary test: UniFi OS endpoints include /proxy/network prefix"""
-    builder = UnifiEndpointBuilder(
-        base_url="https://unifi.local:443",
-        is_unifi_os=True
-    )
+    builder = UnifiEndpointBuilder(base_url="https://unifi.local:443", is_unifi_os=True)
 
     # Test devices endpoint
     devices_endpoint = builder.devices("default")
-    assert "/proxy/network" in devices_endpoint, f"Missing proxy prefix in: {devices_endpoint}"
-    assert devices_endpoint == "https://unifi.local:443/proxy/network/api/s/default/stat/device"
+    assert "/proxy/network" in devices_endpoint, (
+        f"Missing proxy prefix in: {devices_endpoint}"
+    )
+    assert (
+        devices_endpoint
+        == "https://unifi.local:443/proxy/network/api/s/default/stat/device"
+    )
 
     # Test clients endpoint
     clients_endpoint = builder.clients("default")
     assert "/proxy/network" in clients_endpoint
-    assert clients_endpoint == "https://unifi.local:443/proxy/network/api/s/default/stat/sta"
+    assert (
+        clients_endpoint
+        == "https://unifi.local:443/proxy/network/api/s/default/stat/sta"
+    )
 
     # Test device details
     details_endpoint = builder.device_details("default", "abc123")
     assert "/proxy/network" in details_endpoint
-    assert details_endpoint == "https://unifi.local:443/proxy/network/api/s/default/stat/device/abc123"
+    assert (
+        details_endpoint
+        == "https://unifi.local:443/proxy/network/api/s/default/stat/device/abc123"
+    )
 
     # Test login (no proxy prefix)
     login_endpoint = builder.login()
@@ -48,8 +56,7 @@ def test_unifi_os_endpoints():
 def test_legacy_endpoints():
     """Binary test: Legacy controller endpoints omit /proxy/network prefix"""
     builder = UnifiEndpointBuilder(
-        base_url="https://unifi.local:8443",
-        is_unifi_os=False
+        base_url="https://unifi.local:8443", is_unifi_os=False
     )
 
     # Test devices endpoint
@@ -65,7 +72,9 @@ def test_legacy_endpoints():
     # Test device details
     details_endpoint = builder.device_details("default", "def456")
     assert "/proxy/network" not in details_endpoint
-    assert details_endpoint == "https://unifi.local:8443/api/s/default/stat/device/def456"
+    assert (
+        details_endpoint == "https://unifi.local:8443/api/s/default/stat/device/def456"
+    )
 
     # Test login
     login_endpoint = builder.login()
@@ -116,7 +125,7 @@ if __name__ == "__main__":
         test_unifi_os_endpoints,
         test_legacy_endpoints,
         test_url_normalization,
-        test_site_id_in_endpoints
+        test_site_id_in_endpoints,
     ]
 
     passed = 0
@@ -136,7 +145,7 @@ if __name__ == "__main__":
             failed += 1
             print(f"❌ ERROR: {test.__name__} - {e}")
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed} passed, {failed} failed")
 
     if failed == 0:

@@ -6,6 +6,7 @@ Binary pass/fail tests for DeviceClient.
 import sys
 from pathlib import Path
 from unittest.mock import Mock
+
 import requests
 
 # Add src to path
@@ -27,7 +28,7 @@ def test_get_devices_success():
     mock_response.json.return_value = {
         "data": [
             {"_id": "dev1", "name": "Switch1", "model": "USW-24"},
-            {"_id": "dev2", "name": "Router1", "model": "UDM-PRO"}
+            {"_id": "dev2", "name": "Router1", "model": "UDM-PRO"},
         ]
     }
     session.get = Mock(return_value=mock_response)
@@ -52,16 +53,18 @@ def test_get_device_details_success():
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
-        "data": [{
-            "_id": "device123",
-            "name": "Test Switch",
-            "model": "USW-24",
-            "port_table": [
-                {"port_idx": 1, "name": "Port 1"},
-                {"port_idx": 2, "name": "Port 2"}
-            ],
-            "lldp_table": []
-        }]
+        "data": [
+            {
+                "_id": "device123",
+                "name": "Test Switch",
+                "model": "USW-24",
+                "port_table": [
+                    {"port_idx": 1, "name": "Port 1"},
+                    {"port_idx": 2, "name": "Port 2"},
+                ],
+                "lldp_table": [],
+            }
+        ]
     }
     session.get = Mock(return_value=mock_response)
 
@@ -87,7 +90,7 @@ def test_get_clients_success():
     mock_response.json.return_value = {
         "data": [
             {"mac": "aa:bb:cc:dd:ee:ff", "name": "Laptop1", "is_wired": True},
-            {"mac": "11:22:33:44:55:66", "name": "Phone1", "is_wired": False}
+            {"mac": "11:22:33:44:55:66", "name": "Phone1", "is_wired": False},
         ]
     }
     session.get = Mock(return_value=mock_response)
@@ -112,13 +115,15 @@ def test_get_device_ports_from_device_details():
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
-        "data": [{
-            "_id": "device123",
-            "port_table": [
-                {"port_idx": 1, "name": "Port 1", "up": True},
-                {"port_idx": 2, "name": "Port 2", "up": False}
-            ]
-        }]
+        "data": [
+            {
+                "_id": "device123",
+                "port_table": [
+                    {"port_idx": 1, "name": "Port 1", "up": True},
+                    {"port_idx": 2, "name": "Port 2", "up": False},
+                ],
+            }
+        ]
     }
     session.get = Mock(return_value=mock_response)
 
@@ -169,7 +174,7 @@ if __name__ == "__main__":
         test_get_device_details_success,
         test_get_clients_success,
         test_get_device_ports_from_device_details,
-        test_error_handling_returns_empty
+        test_error_handling_returns_empty,
     ]
 
     passed = 0
@@ -185,9 +190,10 @@ if __name__ == "__main__":
             failed += 1
             print(f"❌ ERROR: {test.__name__} - {e}")
             import traceback
+
             traceback.print_exc()
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed} passed, {failed} failed")
 
     if failed == 0:

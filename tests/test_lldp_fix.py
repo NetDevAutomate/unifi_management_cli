@@ -3,8 +3,9 @@
 Test to verify LLDP/CDP data is correctly extracted from device details.
 This test has a binary pass/fail outcome.
 """
-import sys
+
 import os
+import sys
 from pathlib import Path
 
 # Add src to path
@@ -13,6 +14,7 @@ sys.path.insert(0, str(src_path))
 
 from unifi_mapper.api_client import UnifiApiClient
 
+
 def test_lldp_extraction():
     """Test that LLDP info is correctly extracted from device details."""
     # Load environment
@@ -20,16 +22,16 @@ def test_lldp_extraction():
     if env_path.exists():
         with open(env_path) as f:
             for line in f:
-                if '=' in line and not line.strip().startswith('#'):
-                    key, val = line.strip().split('=', 1)
+                if "=" in line and not line.strip().startswith("#"):
+                    key, val = line.strip().split("=", 1)
                     os.environ[key] = val.strip('"').strip("'")
 
     # Create client
     client = UnifiApiClient(
-        base_url=os.environ['UNIFI_URL'],
-        site='default',
-        api_token=os.environ['UNIFI_CONSOLE_API_TOKEN'],
-        verify_ssl=False
+        base_url=os.environ["UNIFI_URL"],
+        site="default",
+        api_token=os.environ["UNIFI_CONSOLE_API_TOKEN"],
+        verify_ssl=False,
     )
 
     # Login
@@ -37,28 +39,30 @@ def test_lldp_extraction():
     print("✅ Authentication successful")
 
     # Get devices
-    devices = client.get_devices('default')
-    assert devices and 'data' in devices, "Failed to get devices"
+    devices = client.get_devices("default")
+    assert devices and "data" in devices, "Failed to get devices"
     print(f"✅ Got {len(devices['data'])} devices")
 
     # Find a switch
     switch_device = None
-    for device in devices['data']:
-        if device.get('type') in ['usw', 'udm']:
+    for device in devices["data"]:
+        if device.get("type") in ["usw", "udm"]:
             switch_device = device
             break
 
     assert switch_device, "No switch found"
-    device_id = switch_device.get('_id')
-    print(f"✅ Found switch: {switch_device.get('name')} ({switch_device.get('model')})")
+    device_id = switch_device.get("_id")
+    print(
+        f"✅ Found switch: {switch_device.get('name')} ({switch_device.get('model')})"
+    )
 
     # Get LLDP info using current method
-    lldp_info = client.get_lldp_info('default', device_id)
+    lldp_info = client.get_lldp_info("default", device_id)
     print(f"📊 LLDP info from get_lldp_info(): {len(lldp_info)} ports")
 
     # Get device details directly
-    details = client.get_device_details('default', device_id)
-    lldp_table = details.get('lldp_table', [])
+    details = client.get_device_details("default", device_id)
+    lldp_table = details.get("lldp_table", [])
     print(f"📊 lldp_table in device details: {len(lldp_table)} entries")
 
     # BINARY PASS/FAIL TEST:
@@ -76,8 +80,11 @@ def test_lldp_extraction():
         print("❌ TEST FAIL: No LLDP data found in device (LLDP may be disabled)")
         return False
     else:
-        print(f"❌ TEST FAIL: Mismatch - get_lldp_info()={len(lldp_info)}, lldp_table={len(lldp_table)}")
+        print(
+            f"❌ TEST FAIL: Mismatch - get_lldp_info()={len(lldp_info)}, lldp_table={len(lldp_table)}"
+        )
         return False
+
 
 if __name__ == "__main__":
     try:
@@ -86,5 +93,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Test failed with exception: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

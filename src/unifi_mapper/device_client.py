@@ -5,12 +5,13 @@ Handles device-related operations (get devices, device details, clients).
 """
 
 import logging
-import requests
-from typing import Dict, List, Any, Optional, Callable
+from typing import Any, Callable, Dict, List, Optional
 
-from .exceptions import UniFiApiError, UniFiConnectionError
-from .endpoint_builder import UnifiEndpointBuilder
+import requests
+
 from .api_cache import TtlCache
+from .endpoint_builder import UnifiEndpointBuilder
+from .exceptions import UniFiConnectionError
 
 log = logging.getLogger(__name__)
 
@@ -20,11 +21,14 @@ class DeviceClient:
     Manages device-related operations for UniFi Controller API.
     """
 
-    def __init__(self, endpoint_builder: UnifiEndpointBuilder,
-                 session: requests.Session,
-                 retry_func: Optional[Callable] = None,
-                 enable_cache: bool = True,
-                 cache_ttl: int = 300):
+    def __init__(
+        self,
+        endpoint_builder: UnifiEndpointBuilder,
+        session: requests.Session,
+        retry_func: Optional[Callable] = None,
+        enable_cache: bool = True,
+        cache_ttl: int = 300,
+    ):
         """
         Initialize DeviceClient.
 
@@ -44,9 +48,9 @@ class DeviceClient:
 
         # Headers for legacy API
         self.legacy_headers = {
-            'User-Agent': 'UnifiPortMapper/1.0',
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            "User-Agent": "UnifiPortMapper/1.0",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
         }
 
     def get_devices(self, site_id: str) -> Dict[str, Any]:
@@ -106,7 +110,7 @@ class DeviceClient:
             # Try multiple endpoints
             endpoints = [
                 self.endpoint_builder.device_details(site_id, device_id),
-                self.endpoint_builder.device_rest(site_id, device_id)
+                self.endpoint_builder.device_rest(site_id, device_id),
             ]
 
             self.session.headers.update(self.legacy_headers)
@@ -127,7 +131,9 @@ class DeviceClient:
                         data = response.json()
                         if "data" in data and len(data["data"]) > 0:
                             result = data["data"][0]
-                            log.debug(f"Successfully got device details from {endpoint}")
+                            log.debug(
+                                f"Successfully got device details from {endpoint}"
+                            )
 
                             # Cache the result
                             if self._cache:

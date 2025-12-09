@@ -26,16 +26,16 @@ def test_extract_lldp_from_device_details():
                 "chassis_id": "aa:bb:cc:dd:ee:ff",
                 "port_id": "Port 5",
                 "system_name": "Router-Main",
-                "local_port_name": "eth0"
+                "local_port_name": "eth0",
             },
             {
                 "local_port_idx": 3,
                 "chassis_id": "11:22:33:44:55:66",
                 "port_id": "Port 1",
                 "chassis_name": "AP-Office",
-                "local_port_name": "eth2"
-            }
-        ]
+                "local_port_name": "eth2",
+            },
+        ],
     }
 
     client = LldpClient(mock_device_client)
@@ -65,7 +65,7 @@ def test_empty_lldp_table():
     mock_device_client = Mock()
     mock_device_client.get_device_details.return_value = {
         "_id": "device123",
-        "lldp_table": []
+        "lldp_table": [],
     }
 
     client = LldpClient(mock_device_client)
@@ -100,15 +100,17 @@ def test_lldp_field_mapping():
     mock_device_client = Mock()
     mock_device_client.get_device_details.return_value = {
         "_id": "device123",
-        "lldp_table": [{
-            "local_port_idx": 5,
-            "chassis_id": "test:mac:addr",
-            "port_id": "ge-0/0/5",
-            "system_name": "CoreSwitch",
-            "chassis_name": "backup-name",
-            "local_port_name": "eth4",
-            "is_wired": True
-        }]
+        "lldp_table": [
+            {
+                "local_port_idx": 5,
+                "chassis_id": "test:mac:addr",
+                "port_id": "ge-0/0/5",
+                "system_name": "CoreSwitch",
+                "chassis_name": "backup-name",
+                "local_port_name": "eth4",
+                "is_wired": True,
+            }
+        ],
     }
 
     client = LldpClient(mock_device_client)
@@ -119,9 +121,15 @@ def test_lldp_field_mapping():
 
     # Verify all expected fields present
     required_fields = [
-        "port_idx", "chassis_id", "port_id", "system_name",
-        "chassis_name", "remote_device_name", "remote_port_name",
-        "is_wired", "local_port_name"
+        "port_idx",
+        "chassis_id",
+        "port_id",
+        "system_name",
+        "chassis_name",
+        "remote_device_name",
+        "remote_port_name",
+        "is_wired",
+        "local_port_name",
     ]
 
     for field in required_fields:
@@ -129,7 +137,9 @@ def test_lldp_field_mapping():
 
     # Verify mapping logic
     assert lldp_info["port_idx"] == 5  # Int value
-    assert lldp_info["remote_device_name"] == "CoreSwitch"  # system_name takes precedence
+    assert (
+        lldp_info["remote_device_name"] == "CoreSwitch"
+    )  # system_name takes precedence
     assert lldp_info["remote_port_name"] == "ge-0/0/5"
 
     print("✅ PASS: LLDP field mapping correct")
@@ -141,13 +151,15 @@ def test_system_name_fallback():
     mock_device_client = Mock()
     mock_device_client.get_device_details.return_value = {
         "_id": "device123",
-        "lldp_table": [{
-            "local_port_idx": 1,
-            "chassis_id": "aa:bb:cc:dd:ee:ff",
-            "chassis_name": "FallbackName",
-            # No system_name
-            "port_id": "Port 1"
-        }]
+        "lldp_table": [
+            {
+                "local_port_idx": 1,
+                "chassis_id": "aa:bb:cc:dd:ee:ff",
+                "chassis_name": "FallbackName",
+                # No system_name
+                "port_id": "Port 1",
+            }
+        ],
     }
 
     client = LldpClient(mock_device_client)
@@ -165,7 +177,7 @@ if __name__ == "__main__":
         test_empty_lldp_table,
         test_missing_lldp_table,
         test_lldp_field_mapping,
-        test_system_name_fallback
+        test_system_name_fallback,
     ]
 
     passed = 0
@@ -181,9 +193,10 @@ if __name__ == "__main__":
             failed += 1
             print(f"❌ ERROR: {test.__name__} - {e}")
             import traceback
+
             traceback.print_exc()
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed} passed, {failed} failed")
 
     if failed == 0:

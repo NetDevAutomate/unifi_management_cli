@@ -10,10 +10,14 @@ __license__ = "MIT"
 
 # Import core classes for easier access
 try:
+    from .device_definitions import (
+        DEVICE_DEFINITIONS,
+        DeviceDefinition,
+        get_device_definition,
+    )
     from .models import DeviceInfo, PortInfo
     from .port_mapper import UnifiPortMapper
     from .topology import NetworkTopology
-    from .device_definitions import DeviceDefinition, DEVICE_DEFINITIONS, get_device_definition
 except ImportError:
     # Handle import errors gracefully
     pass

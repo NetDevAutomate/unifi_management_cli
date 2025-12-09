@@ -42,7 +42,7 @@ def _update_device_config_with_ports(self, device_id, device_details, port_table
     """Update with complete device configuration context."""
     update_data = device_details.copy()  # Start with current config
     update_data["port_table"] = port_table
-    
+
     # Include configuration revision fields (critical for persistence)
     if "config_version" in device_details:
         update_data["config_version"] = device_details["config_version"]
@@ -100,7 +100,7 @@ def batch_update_port_names(self, device_id, port_updates, verify_updates=True):
 
 Features:
 - Comprehensive device configuration analysis
-- API endpoint availability testing  
+- API endpoint availability testing
 - Port table inspection
 - Configuration field validation
 - Test port name updates with verification
@@ -184,7 +184,7 @@ The enhanced `update_device_port_table()` method tries three approaches:
    - Preserves all current device settings
    - Highest success rate for persistence
 
-2. **Port-Specific Endpoints** (Secondary) 
+2. **Port-Specific Endpoints** (Secondary)
    - Uses dedicated port configuration endpoints
    - Tries device manager commands
    - More targeted approach
@@ -272,7 +272,7 @@ To test the fixes:
 ### Configuration Revision Fields
 These fields are critical for persistence:
 - `config_version`: Main configuration version identifier
-- `cfgversion`: Legacy configuration version field  
+- `cfgversion`: Legacy configuration version field
 - `config_revision`: Alternative revision identifier
 
 ### API Endpoint Differences

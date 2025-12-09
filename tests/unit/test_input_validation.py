@@ -17,9 +17,7 @@ from unifi_mapper.api_client import UnifiApiClient
 def test_site_id_sql_injection_prevention():
     """Binary test: SQL injection patterns in site_id are sanitized"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        verify_ssl=False
+        base_url="https://test.local", api_token="test-token", verify_ssl=False
     )
 
     # Test various SQL injection patterns
@@ -45,9 +43,7 @@ def test_site_id_sql_injection_prevention():
 def test_site_id_xss_prevention():
     """Binary test: XSS patterns in site_id are sanitized"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        verify_ssl=False
+        base_url="https://test.local", api_token="test-token", verify_ssl=False
     )
 
     dangerous_inputs = [
@@ -71,9 +67,7 @@ def test_site_id_xss_prevention():
 def test_device_id_hex_validation():
     """Binary test: Device IDs sanitized to hexadecimal only"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        verify_ssl=False
+        base_url="https://test.local", api_token="test-token", verify_ssl=False
     )
 
     # Valid hex device IDs (should pass through unchanged, preserves case)
@@ -97,7 +91,9 @@ def test_device_id_hex_validation():
     for invalid_id, expected_result in invalid_test_cases:
         result = client._validate_device_id(invalid_id)
         # Should only contain hex characters (0-9, a-f)
-        assert all(c in '0123456789abcdef' for c in result), f"Non-hex in result: {result}"
+        assert all(c in "0123456789abcdef" for c in result), (
+            f"Non-hex in result: {result}"
+        )
 
     print("✅ PASS: Device ID hex sanitization works")
     return True
@@ -106,9 +102,7 @@ def test_device_id_hex_validation():
 def test_port_name_dangerous_char_removal():
     """Binary test: Dangerous characters removed from port names"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        verify_ssl=False
+        base_url="https://test.local", api_token="test-token", verify_ssl=False
     )
 
     dangerous_names = [
@@ -135,16 +129,16 @@ def test_port_name_dangerous_char_removal():
 def test_port_name_length_limit():
     """Binary test: Port names limited to 100 characters"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        verify_ssl=False
+        base_url="https://test.local", api_token="test-token", verify_ssl=False
     )
 
     long_name = "A" * 200  # 200 characters
 
     try:
         sanitized = client._validate_port_name(long_name)
-        print(f"❌ FAIL: Should reject name longer than 100 chars (got {len(sanitized)})")
+        print(
+            f"❌ FAIL: Should reject name longer than 100 chars (got {len(sanitized)})"
+        )
         return False
     except ValueError as e:
         assert "too long" in str(e).lower()
@@ -155,9 +149,7 @@ def test_port_name_length_limit():
 def test_empty_input_validation():
     """Binary test: Empty inputs raise ValueError"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        verify_ssl=False
+        base_url="https://test.local", api_token="test-token", verify_ssl=False
     )
 
     # Test empty site_id
@@ -191,9 +183,7 @@ def test_empty_input_validation():
 def test_path_traversal_prevention():
     """Binary test: Path traversal patterns in site_id removed"""
     client = UnifiApiClient(
-        base_url="https://test.local",
-        api_token="test-token",
-        verify_ssl=False
+        base_url="https://test.local", api_token="test-token", verify_ssl=False
     )
 
     dangerous_inputs = [
@@ -221,7 +211,7 @@ if __name__ == "__main__":
         test_port_name_dangerous_char_removal,
         test_port_name_length_limit,
         test_empty_input_validation,
-        test_path_traversal_prevention
+        test_path_traversal_prevention,
     ]
 
     passed = 0
@@ -237,9 +227,10 @@ if __name__ == "__main__":
             failed += 1
             print(f"❌ ERROR: {test.__name__} - {e}")
             import traceback
+
             traceback.print_exc()
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed} passed, {failed} failed")
 
     if failed == 0:

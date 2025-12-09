@@ -5,7 +5,8 @@ Binary pass/fail tests for AuthManager.
 
 import sys
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
+
 import requests
 
 # Add src to path
@@ -28,9 +29,7 @@ def test_token_authentication_success():
     session.get = Mock(return_value=mock_response)
 
     auth_mgr = AuthManager(
-        endpoint_builder=endpoint_builder,
-        session=session,
-        api_token="test-token-123"
+        endpoint_builder=endpoint_builder, session=session, api_token="test-token-123"
     )
 
     result = auth_mgr.login("default")
@@ -38,8 +37,8 @@ def test_token_authentication_success():
     assert result is True
     assert auth_mgr.is_authenticated is True
     assert "token" in auth_mgr.successful_endpoint
-    assert 'X-API-KEY' in session.headers
-    assert session.headers['X-API-KEY'] == "test-token-123"
+    assert "X-API-KEY" in session.headers
+    assert session.headers["X-API-KEY"] == "test-token-123"
 
     print("✅ PASS: Token authentication succeeds")
     return True
@@ -60,7 +59,7 @@ def test_password_authentication_success():
         endpoint_builder=endpoint_builder,
         session=session,
         username="admin",
-        password="password123"
+        password="password123",
     )
 
     result = auth_mgr.login("default")
@@ -71,8 +70,8 @@ def test_password_authentication_success():
 
     # Verify login was called with correct data
     call_args = session.post.call_args
-    assert call_args[1]['json']['username'] == "admin"
-    assert call_args[1]['json']['password'] == "password123"
+    assert call_args[1]["json"]["username"] == "admin"
+    assert call_args[1]["json"]["password"] == "password123"
 
     print("✅ PASS: Password authentication succeeds")
     return True
@@ -89,7 +88,7 @@ def test_missing_credentials_validation():
         session=session,
         api_token=None,
         username=None,
-        password=None
+        password=None,
     )
 
     try:
@@ -109,9 +108,7 @@ def test_already_authenticated_skip():
     session.get = Mock()
 
     auth_mgr = AuthManager(
-        endpoint_builder=endpoint_builder,
-        session=session,
-        api_token="test-token"
+        endpoint_builder=endpoint_builder, session=session, api_token="test-token"
     )
 
     # Manually mark as authenticated
@@ -132,13 +129,11 @@ def test_unifi_os_detection():
     session = requests.Session()
 
     # Mock UniFi OS system check success
-    with patch('requests.get') as mock_get:
+    with patch("requests.get") as mock_get:
         mock_get.return_value = Mock(status_code=200)
 
         auth_mgr = AuthManager(
-            endpoint_builder=endpoint_builder,
-            session=session,
-            api_token="test-token"
+            endpoint_builder=endpoint_builder, session=session, api_token="test-token"
         )
 
         # Trigger detection
@@ -159,9 +154,7 @@ def test_logout_clears_state():
     session.post = Mock(return_value=Mock(status_code=200))
 
     auth_mgr = AuthManager(
-        endpoint_builder=endpoint_builder,
-        session=session,
-        api_token="test-token"
+        endpoint_builder=endpoint_builder, session=session, api_token="test-token"
     )
 
     # Set authenticated state
@@ -189,7 +182,7 @@ def test_credential_clearing():
         session=session,
         api_token="sensitive-token",
         username="admin",
-        password="password123"
+        password="password123",
     )
 
     # Verify credentials are set
@@ -220,7 +213,7 @@ if __name__ == "__main__":
         test_already_authenticated_skip,
         test_unifi_os_detection,
         test_logout_clears_state,
-        test_credential_clearing
+        test_credential_clearing,
     ]
 
     passed = 0
@@ -236,9 +229,10 @@ if __name__ == "__main__":
             failed += 1
             print(f"❌ ERROR: {test.__name__} - {e}")
             import traceback
+
             traceback.print_exc()
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Results: {passed} passed, {failed} failed")
 
     if failed == 0:
