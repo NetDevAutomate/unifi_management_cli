@@ -1,25 +1,3 @@
-# UniFi Network Topology Visualization Toolkit - .gitignore
-
-# AI Agent files
-.kiro/
-.claude/
-CLAUDE.md
-.cursorrules
-.cursor/
-.aider*
-.continue/
-copilot-instructions.md
-
-# Project-specific output directories
-/diagrams/
-/reports/
-/tmp/
-
-# Environment and configuration files
-.env
-*.env
-!.env.example
-
 # Python
 __pycache__/
 *.py[cod]
@@ -41,129 +19,55 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Tool caches
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
 htmlcov/
 .tox/
 .nox/
-.hypothesis/
-.venv/
-venv/
-ENV/
-env/
 
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-*.code-workspace
-
-# IDE - PyCharm
+# IDE
 .idea/
-*.iml
-*.iws
-*.ipr
-*.iws
-.idea_modules/
-out/
-
-# IDE - Sublime Text
-*.sublime-workspace
-*.sublime-project
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-Icon
-._*
-.DocumentRevisions-V100
-.fseventsd
-.Spotlight-V100
-.TemporaryItems
-.Trashes
-.VolumeIcon.icns
-.com.apple.timemachine.donotpresent
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-*.cab
-*.msi
-*.msm
-*.msp
-*.lnk
-
-# Linux
+.vscode/
+*.swp
+*.swo
 *~
-.fuse_hidden*
-.directory
-.Trash-*
-.nfs*
 
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-AmazonQ
-.vscode
-
-
-
-
-
-# Claude Flow generated files
-.claude/settings.local.json
-.mcp.json
-claude-flow.config.json
-.swarm/
-.hive-mind/
-memory/claude-flow-data.json
-memory/sessions/*
-!memory/sessions/README.md
-memory/agents/*
-!memory/agents/README.md
-coordination/memory_bank/*
-coordination/subtasks/*
-coordination/orchestration/*
-*.db
-*.db-journal
-*.db-wal
-*.sqlite
-*.sqlite-journal
-*.sqlite-wal
-claude-flow
-claude-flow.bat
-claude-flow.ps1
-hive-mind-prompt-*.txt
-
-# Agentic Agent Files
+# AI assistants
 .claude/
 CLAUDE.md
 .kiro/
-.crush/
-.opencode/
 .cursor/
-.windsurf/
+.aider*
 .continue/
-.aider/
 .copilot/
-.speckit/
-.openspec/
 
-# IDE Files
-.vscode/
-.idea/
-*.code-workspace
-.zed/
+# macOS
+.DS_Store
+
+# Secrets
+.secrets.baseline
+
+# Generated outputs (keep .gitkeep files)
+reports/*.md
+reports/*.html
+reports/*.json
+!reports/.gitkeep
+diagrams/*.png
+diagrams/*.svg
+diagrams/*.html
+diagrams/*.dot
+!diagrams/.gitkeep
