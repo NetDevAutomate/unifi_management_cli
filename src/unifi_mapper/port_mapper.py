@@ -12,7 +12,7 @@ import datetime
 from typing import Dict, List, Any, Optional, Tuple
 
 from .models import DeviceInfo, PortInfo
-from .topology import NetworkTopology
+from .network_topology import NetworkTopology
 from .device_definitions import DeviceDefinition, DEVICE_DEFINITIONS, get_device_definition
 from .api_client import UnifiApiClient
 
