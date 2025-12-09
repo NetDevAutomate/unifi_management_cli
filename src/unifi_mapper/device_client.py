@@ -10,6 +10,7 @@ from typing import Dict, List, Any, Optional, Callable
 
 from .exceptions import UniFiApiError, UniFiConnectionError
 from .endpoint_builder import UnifiEndpointBuilder
+from .api_cache import TtlCache
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +22,9 @@ class DeviceClient:
 
     def __init__(self, endpoint_builder: UnifiEndpointBuilder,
                  session: requests.Session,
-                 retry_func: Optional[Callable] = None):
+                 retry_func: Optional[Callable] = None,
+                 enable_cache: bool = True,
+                 cache_ttl: int = 300):
         """
         Initialize DeviceClient.
 
@@ -29,10 +32,15 @@ class DeviceClient:
             endpoint_builder: UnifiEndpointBuilder instance
             session: Authenticated requests.Session instance
             retry_func: Optional function to retry requests with backoff
+            enable_cache: Enable response caching (default: True)
+            cache_ttl: Cache TTL in seconds (default: 300 = 5 minutes)
         """
         self.endpoint_builder = endpoint_builder
         self.session = session
         self._retry_func = retry_func
+
+        # Initialize cache
+        self._cache = TtlCache(ttl_seconds=cache_ttl) if enable_cache else None
 
         # Headers for legacy API
         self.legacy_headers = {
@@ -78,7 +86,7 @@ class DeviceClient:
 
     def get_device_details(self, site_id: str, device_id: str) -> Dict[str, Any]:
         """
-        Get detailed information about a device.
+        Get detailed information about a device (with caching).
 
         Args:
             site_id: Site ID
@@ -87,6 +95,13 @@ class DeviceClient:
         Returns:
             Dict with device details including port_table and lldp_table
         """
+        # Check cache first
+        if self._cache:
+            cache_key = f"device_details:{site_id}:{device_id}"
+            cached = self._cache.get(cache_key)
+            if cached:
+                return cached
+
         try:
             # Try multiple endpoints
             endpoints = [
@@ -111,8 +126,15 @@ class DeviceClient:
                     if response.status_code == 200:
                         data = response.json()
                         if "data" in data and len(data["data"]) > 0:
+                            result = data["data"][0]
                             log.debug(f"Successfully got device details from {endpoint}")
-                            return data["data"][0]
+
+                            # Cache the result
+                            if self._cache:
+                                cache_key = f"device_details:{site_id}:{device_id}"
+                                self._cache.set(cache_key, result)
+
+                            return result
                     elif response.status_code == 400:
                         log.debug(f"Endpoint not supported: {endpoint}")
                         continue
