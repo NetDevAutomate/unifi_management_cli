@@ -54,20 +54,43 @@ def load_env_from_config(config_path: str) -> None:
         sys.exit(1)
 
 
+def get_default_config_path() -> str:
+    """
+    Get default config path following XDG Base Directory specification.
+
+    Returns:
+        Path to default config file
+    """
+    # Use XDG_CONFIG_HOME if set, otherwise ~/.config
+    xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
+    if xdg_config_home:
+        config_dir = Path(xdg_config_home) / "unifi_network_mapper"
+    else:
+        config_dir = Path.home() / ".config" / "unifi_network_mapper"
+
+    default_config = config_dir / "default.env"
+
+    # Fallback to .env in current directory if XDG config doesn't exist
+    if not default_config.exists():
+        return ".env"
+
+    return str(default_config)
+
+
 def main():
     """
-    Main CLI entry point with config file support.
+    Main CLI entry point with XDG Base Directory support.
     """
     parser = argparse.ArgumentParser(
         description="UniFi Network Mapper - Run from anywhere with config file",
-        epilog="Example: unifi-mapper --config ~/.unifi/prod.env --format png"
+        epilog="Example: unifi-mapper --config ~/.config/unifi_network_mapper/prod.env --format png"
     )
 
     parser.add_argument(
         "--config",
         "-c",
-        help="Path to .env configuration file (default: .env in current directory)",
-        default=".env"
+        help="Path to .env configuration file (default: XDG_CONFIG_HOME or .env)",
+        default=get_default_config_path()
     )
 
     parser.add_argument(
