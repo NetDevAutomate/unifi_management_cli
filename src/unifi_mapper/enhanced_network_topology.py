@@ -350,26 +350,148 @@ class NetworkTopology:
     
     def generate_png_diagram(self, output_path: str) -> None:
         """
-        Generate a PNG diagram of the network topology.
-        
+        Generate a PNG diagram using Graphviz.
+
         Args:
             output_path: Path to save the PNG file
         """
-        # Create a simple text file as a placeholder
-        with open(output_path, 'w') as f:
-            f.write("PNG diagram would be generated here")
-    
+        try:
+            import graphviz
+
+            # Generate DOT source
+            dot_source = self._generate_dot_source()
+
+            # Render to PNG
+            graph = graphviz.Source(dot_source)
+            output_base = str(output_path).replace('.png', '')
+            graph.render(output_base, format='png', cleanup=True, view=False)
+
+            log.info(f"Generated PNG diagram: {output_path}")
+
+        except ImportError:
+            log.error("graphviz package not installed. Install with: uv pip install graphviz")
+            # Create placeholder
+            with open(output_path, 'w') as f:
+                f.write("PNG generation requires 'graphviz' package. Install with: uv pip install graphviz")
+        except Exception as e:
+            log.error(f"Error generating PNG diagram: {e}")
+            raise
+
     def generate_svg_diagram(self, output_path: str) -> None:
         """
-        Generate an SVG diagram of the network topology.
-        
+        Generate an SVG diagram using Graphviz.
+
         Args:
             output_path: Path to save the SVG file
         """
-        # Create a simple text file as a placeholder
-        with open(output_path, 'w') as f:
-            f.write("SVG diagram would be generated here")
-    
+        try:
+            import graphviz
+
+            # Generate DOT source
+            dot_source = self._generate_dot_source()
+
+            # Render to SVG
+            graph = graphviz.Source(dot_source)
+            output_base = str(output_path).replace('.svg', '')
+            graph.render(output_base, format='svg', cleanup=True, view=False)
+
+            log.info(f"Generated SVG diagram: {output_path}")
+
+        except ImportError:
+            log.error("graphviz package not installed. Install with: uv pip install graphviz")
+            with open(output_path, 'w') as f:
+                f.write("SVG generation requires 'graphviz' package. Install with: uv pip install graphviz")
+        except Exception as e:
+            log.error(f"Error generating SVG diagram: {e}")
+            raise
+
+    def _generate_dot_source(self) -> str:
+        """
+        Generate Graphviz DOT source code for the network topology.
+
+        Returns:
+            DOT format source code as string
+        """
+        lines = ['digraph NetworkTopology {']
+        lines.append('  graph [overlap=false, splines=ortho, rankdir=TB, pad=0.5, nodesep=0.8];')
+        lines.append('  node [shape=box, style="filled,rounded", fontname="Arial", fontsize=10];')
+        lines.append('  edge [fontname="Arial", fontsize=9, color="#666666"];')
+
+        # Add devices with styling
+        for device_id, device in self.devices.items():
+            device_type = self._determine_device_type(device)
+            color = self._get_device_color(device_type)
+            icon = self._get_device_icon(device_type)
+
+            label = f"{icon} {device.name}\\n{device.model}\\n{device.ip}"
+            lines.append(f'  "{device_id}" [label="{label}", fillcolor="{color}"];')
+
+        # Add connections
+        for conn in self.connections:
+            src = conn.get('source_device_id', '')
+            tgt = conn.get('target_device_id', '')
+
+            if src and tgt:
+                src_port = conn.get('source_port_name', '')
+                tgt_port = conn.get('target_port_name', '')
+                label = f"{src_port} → {tgt_port}" if (src_port or tgt_port) else ""
+
+                lines.append(f'  "{src}" -> "{tgt}" [label="{label}"];')
+
+        lines.append('}')
+        return '\n'.join(lines)
+
+    def _get_device_color(self, device_type: str) -> str:
+        """Get fill color based on device type."""
+        colors = {
+            'router': '#3498db',
+            'switch': '#2ecc71',
+            'ap': '#e74c3c',
+            'unknown': '#95a5a6'
+        }
+        return colors.get(device_type, colors['unknown'])
+
+    def _get_device_icon(self, device_type: str) -> str:
+        """Get emoji icon based on device type."""
+        icons = {
+            'router': '🌐',
+            'switch': '🔄',
+            'ap': '📶',
+            'unknown': '💻'
+        }
+        return icons.get(device_type, icons['unknown'])
+
+    def _determine_device_type(self, device: DeviceInfo) -> str:
+        """
+        Determine device type from model name.
+
+        Args:
+            device: DeviceInfo object
+
+        Returns:
+            Device type: 'router', 'switch', 'ap', or 'unknown'
+        """
+        model_lower = device.model.lower()
+        name_lower = device.name.lower()
+
+        # Check model patterns
+        if any(x in model_lower for x in ['udm', 'usg', 'ugw', 'gateway', 'dream machine']):
+            return 'router'
+        elif any(x in model_lower for x in ['usw', 'switch', 'flex', 'us-', 'usl']):
+            return 'switch'
+        elif any(x in model_lower for x in ['uap', 'u6', 'u7', 'ac', 'ap', 'iw']):
+            return 'ap'
+
+        # Check name patterns as fallback
+        if any(x in name_lower for x in ['router', 'gateway', 'udm', 'dream']):
+            return 'router'
+        elif any(x in name_lower for x in ['switch', 'sw']):
+            return 'switch'
+        elif any(x in name_lower for x in ['ap', 'wifi', 'access']):
+            return 'ap'
+
+        return 'unknown'
+
     def generate_dot_diagram(self, output_path: str) -> None:
         """
         Generate a DOT diagram of the network topology.
