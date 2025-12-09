@@ -348,25 +348,26 @@ class NetworkTopology:
                         log.info(f"Inferred connection from switch {self.devices[switch_id].name} to switch {self.devices[other_switch].name}")
                         break
     
-    def generate_png_diagram(self, output_path: str) -> None:
+    def generate_png_diagram(self, output_path: str, layout_style: str = "hierarchical") -> None:
         """
-        Generate a PNG diagram using Graphviz.
+        Generate a PNG diagram using Graphviz with hierarchical layout.
 
         Args:
             output_path: Path to save the PNG file
+            layout_style: 'hierarchical' (default, top-down) or 'wide' (left-right)
         """
         try:
             import graphviz
 
-            # Generate DOT source
-            dot_source = self._generate_dot_source()
+            # Generate DOT source with hierarchical layout for readability
+            dot_source = self._generate_dot_source(layout_style=layout_style)
 
             # Render to PNG
             graph = graphviz.Source(dot_source)
             output_base = str(output_path).replace('.png', '')
             graph.render(output_base, format='png', cleanup=True, view=False)
 
-            log.info(f"Generated PNG diagram: {output_path}")
+            log.info(f"Generated PNG diagram ({layout_style} layout): {output_path}")
 
         except ImportError:
             log.error("graphviz package not installed. Install with: uv pip install graphviz")
@@ -377,25 +378,26 @@ class NetworkTopology:
             log.error(f"Error generating PNG diagram: {e}")
             raise
 
-    def generate_svg_diagram(self, output_path: str) -> None:
+    def generate_svg_diagram(self, output_path: str, layout_style: str = "hierarchical") -> None:
         """
-        Generate an SVG diagram using Graphviz.
+        Generate an SVG diagram using Graphviz with hierarchical layout.
 
         Args:
             output_path: Path to save the SVG file
+            layout_style: 'hierarchical' (default, top-down) or 'wide' (left-right)
         """
         try:
             import graphviz
 
-            # Generate DOT source
-            dot_source = self._generate_dot_source()
+            # Generate DOT source with hierarchical layout
+            dot_source = self._generate_dot_source(layout_style=layout_style)
 
             # Render to SVG
             graph = graphviz.Source(dot_source)
             output_base = str(output_path).replace('.svg', '')
             graph.render(output_base, format='svg', cleanup=True, view=False)
 
-            log.info(f"Generated SVG diagram: {output_path}")
+            log.info(f"Generated SVG diagram ({layout_style} layout): {output_path}")
 
         except ImportError:
             log.error("graphviz package not installed. Install with: uv pip install graphviz")
@@ -405,41 +407,115 @@ class NetworkTopology:
             log.error(f"Error generating SVG diagram: {e}")
             raise
 
-    def _generate_dot_source(self) -> str:
+    def _generate_dot_source(self, layout_style: str = "hierarchical") -> str:
         """
-        Generate Graphviz DOT source code for the network topology.
+        Generate Graphviz DOT source code with device grouping for better hierarchy.
+
+        Args:
+            layout_style: 'hierarchical' (top-down with grouping) or 'wide' (left-right)
 
         Returns:
             DOT format source code as string
         """
+        # Hierarchical layout is more readable
+        rankdir = 'TB' if layout_style == 'hierarchical' else 'LR'
+
         lines = ['digraph NetworkTopology {']
-        lines.append('  graph [overlap=false, splines=ortho, rankdir=TB, pad=0.5, nodesep=0.8];')
-        lines.append('  node [shape=box, style="filled,rounded", fontname="Arial", fontsize=10];')
-        lines.append('  edge [fontname="Arial", fontsize=9, color="#666666"];')
+        lines.append(f'  graph [overlap=false, splines=polyline, rankdir={rankdir}, pad=0.5, nodesep=1.2, ranksep=2.0];')
+        lines.append('  node [shape=box, style="filled,rounded", fontname="Arial", fontsize=10, margin="0.3,0.2"];')
+        lines.append('  edge [fontname="Arial", fontsize=8, color="#666666", arrowsize=0.7];')
 
-        # Add devices with styling
-        for device_id, device in self.devices.items():
-            device_type = self._determine_device_type(device)
-            color = self._get_device_color(device_type)
-            icon = self._get_device_icon(device_type)
+        # Group devices by type and location for better layout
+        device_groups = self._group_devices_by_location_and_type()
 
-            label = f"{icon} {device.name}\\n{device.model}\\n{device.ip}"
-            lines.append(f'  "{device_id}" [label="{label}", fillcolor="{color}"];')
+        # Create subgraphs for each location
+        for location, types in device_groups.items():
+            if not types:
+                continue
+
+            lines.append(f'  subgraph cluster_{location.replace(" ", "_")} {{')
+            lines.append(f'    label="{location}";')
+            lines.append('    style=filled;')
+            lines.append('    fillcolor="#f0f0f0";')
+            lines.append('    color="#cccccc";')
+
+            # Add devices within this location
+            for device_type, device_list in types.items():
+                for device in device_list:
+                    device_id = device.id
+                    color = self._get_device_color(device_type)
+                    icon = self._get_device_icon(device_type)
+
+                    # Shorter labels for better readability
+                    label = f"{icon} {device.name}\\n{device.model}"
+                    lines.append(f'    "{device_id}" [label="{label}", fillcolor="{color}"];')
+
+            lines.append('  }')
 
         # Add connections
         for conn in self.connections:
             src = conn.get('source_device_id', '')
             tgt = conn.get('target_device_id', '')
 
-            if src and tgt:
+            if src and tgt and src in self.devices and tgt in self.devices:
+                # Shorter edge labels
                 src_port = conn.get('source_port_name', '')
-                tgt_port = conn.get('target_port_name', '')
-                label = f"{src_port} → {tgt_port}" if (src_port or tgt_port) else ""
+                label = f"{src_port}" if src_port and len(src_port) < 20 else ""
 
                 lines.append(f'  "{src}" -> "{tgt}" [label="{label}"];')
 
         lines.append('}')
         return '\n'.join(lines)
+
+    def _group_devices_by_location_and_type(self) -> dict:
+        """
+        Group devices by location and type for hierarchical layout.
+
+        Returns:
+            Dict[location, Dict[type, List[device]]]
+        """
+        groups = {}
+
+        for device_id, device in self.devices.items():
+            # Extract location from device name
+            location = self._extract_location(device.name)
+            device_type = self._determine_device_type(device)
+
+            if location not in groups:
+                groups[location] = {}
+
+            if device_type not in groups[location]:
+                groups[location][device_type] = []
+
+            groups[location][device_type].append(device)
+
+        return groups
+
+    def _extract_location(self, name: str) -> str:
+        """
+        Extract location from device name.
+
+        Args:
+            name: Device name (e.g., "Office Switch" or "Lounge US 8")
+
+        Returns:
+            Location name or "Core" if not found
+        """
+        name_lower = name.lower()
+
+        # Common location keywords
+        locations = ['office', 'lounge', 'bedroom', 'kitchen', 'shed', 'hallway',
+                    'dining', 'garage', 'basement', 'attic', 'bob', 'sian', 'reece']
+
+        for loc in locations:
+            if loc in name_lower:
+                return loc.title()
+
+        # Check for "Tower", "Desk", "Hub", "Core" identifiers
+        if any(x in name_lower for x in ['tower', 'core', 'main', 'hub']):
+            return "Core"
+
+        return "Network"
 
     def _get_device_color(self, device_type: str) -> str:
         """Get fill color based on device type."""
