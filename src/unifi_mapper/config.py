@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class UnifiConfig:
     """
-    Centralized configuration with validation.
+    Centralized configuration with validation and output preferences.
     """
     base_url: str
     site: str = "default"
@@ -27,6 +27,11 @@ class UnifiConfig:
     timeout: int = 10
     max_retries: int = 3
     retry_delay: float = 1.0
+
+    # Output preferences (configurable defaults)
+    default_format: str = "png"
+    default_output_dir: Optional[str] = None
+    default_diagram_dir: Optional[str] = None
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -101,7 +106,12 @@ class UnifiConfig:
             verify_ssl=os.environ.get('UNIFI_VERIFY_SSL', 'false').lower() == 'true',
             timeout=int(os.environ.get('UNIFI_TIMEOUT', '10')),
             max_retries=int(os.environ.get('UNIFI_MAX_RETRIES', '3')),
-            retry_delay=float(os.environ.get('UNIFI_RETRY_DELAY', '1.0'))
+            retry_delay=float(os.environ.get('UNIFI_RETRY_DELAY', '1.0')),
+
+            # Output preferences
+            default_format=os.environ.get('UNIFI_DEFAULT_FORMAT', 'png'),
+            default_output_dir=os.environ.get('UNIFI_OUTPUT_DIR'),
+            default_diagram_dir=os.environ.get('UNIFI_DIAGRAM_DIR')
         )
 
     def to_dict(self) -> dict:
@@ -120,5 +130,8 @@ class UnifiConfig:
             'verify_ssl': self.verify_ssl,
             'timeout': self.timeout,
             'max_retries': self.max_retries,
-            'retry_delay': self.retry_delay
+            'retry_delay': self.retry_delay,
+            'default_format': self.default_format,
+            'default_output_dir': self.default_output_dir,
+            'default_diagram_dir': self.default_diagram_dir
         }
