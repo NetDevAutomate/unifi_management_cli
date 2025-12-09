@@ -16,6 +16,14 @@ from typing import Dict, List, Any, Optional, Tuple
 from requests.exceptions import RequestException, ConnectionError, Timeout, HTTPError
 
 from .models import DeviceInfo, PortInfo
+from .exceptions import (
+    UniFiApiError,
+    UniFiAuthenticationError,
+    UniFiConnectionError,
+    UniFiTimeoutError,
+    UniFiPermissionError,
+    UniFiValidationError
+)
 
 log = logging.getLogger(__name__)
 
@@ -85,30 +93,6 @@ def _sanitize_response_for_logging(response_text: str, max_length: int = 200) ->
     
     return sanitized
 
-
-class UniFiApiError(Exception):
-    """Base exception for UniFi API errors."""
-    pass
-
-class UniFiAuthenticationError(UniFiApiError):
-    """Exception raised when authentication fails."""
-    pass
-
-class UniFiConnectionError(UniFiApiError):
-    """Exception raised when connection to controller fails."""
-    pass
-
-class UniFiTimeoutError(UniFiApiError):
-    """Exception raised when requests timeout."""
-    pass
-
-class UniFiPermissionError(UniFiApiError):
-    """Exception raised when access is denied."""
-    pass
-
-class UniFiValidationError(UniFiApiError):
-    """Exception raised when input validation fails."""
-    pass
 
 class UnifiApiClient:
     """Class to interact with the UniFi Controller API."""
@@ -206,25 +190,42 @@ class UnifiApiClient:
         for attempt in range(self.max_retries):
             try:
                 return func(*args, **kwargs)
-            except (ConnectionError, Timeout, HTTPError) as e:
+            except Timeout as e:
+                # Handle timeout separately before ConnectionError
                 last_exception = e
-                
-                # Don't retry on authentication errors
-                if isinstance(e, HTTPError) and e.response.status_code in [401, 403]:
-                    raise UniFiAuthenticationError(f"Authentication failed: {e}")
-                
-                # Don't retry on client errors (4xx except auth)
-                if isinstance(e, HTTPError) and 400 <= e.response.status_code < 500 and e.response.status_code not in [401, 403, 408, 429]:
-                    raise UniFiPermissionError(f"Client error: {e}")
-                
-                # Calculate exponential backoff delay
-                delay = self.retry_delay * (2 ** attempt)
-                
                 if attempt < self.max_retries - 1:
+                    delay = self.retry_delay * (2 ** attempt)
+                    log.warning(f"Request timed out (attempt {attempt + 1}/{self.max_retries}). Retrying in {delay:.1f}s...")
+                    time.sleep(delay)
+                else:
+                    raise UniFiTimeoutError(f"Request timed out after {self.max_retries} attempts: {e}")
+            except HTTPError as e:
+                last_exception = e
+
+                # Don't retry on authentication errors
+                if e.response.status_code in [401, 403]:
+                    raise UniFiAuthenticationError(f"Authentication failed: {e}", status_code=e.response.status_code)
+
+                # Don't retry on client errors (4xx except auth/timeout/rate-limit)
+                if 400 <= e.response.status_code < 500 and e.response.status_code not in [401, 403, 408, 429]:
+                    raise UniFiPermissionError(f"Client error: {e}")
+
+                # Retry on server errors and retryable client errors
+                if attempt < self.max_retries - 1:
+                    delay = self.retry_delay * (2 ** attempt)
                     log.warning(f"Request failed (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {delay:.1f}s...")
                     time.sleep(delay)
                 else:
                     log.error(f"Request failed after {self.max_retries} attempts: {e}")
+            except ConnectionError as e:
+                last_exception = e
+                delay = self.retry_delay * (2 ** attempt)
+
+                if attempt < self.max_retries - 1:
+                    log.warning(f"Request failed (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {delay:.1f}s...")
+                    time.sleep(delay)
+                else:
+                    raise UniFiConnectionError(f"Connection failed after {self.max_retries} attempts: {e}")
             except RequestException as e:
                 # Handle other request exceptions
                 last_exception = e
@@ -239,10 +240,12 @@ class UnifiApiClient:
                 last_exception = e
                 log.error(f"Unexpected error during request: {e}")
                 raise UniFiApiError(f"Unexpected error: {e}")
-        
+
         # If we get here, all retries failed
         if last_exception:
-            if isinstance(last_exception, (ConnectionError, Timeout)):
+            if isinstance(last_exception, Timeout):
+                raise UniFiTimeoutError(f"Request timed out after {self.max_retries} attempts: {last_exception}")
+            elif isinstance(last_exception, ConnectionError):
                 raise UniFiConnectionError(f"Connection failed after {self.max_retries} attempts: {last_exception}")
             else:
                 raise UniFiApiError(f"Request failed after {self.max_retries} attempts: {last_exception}")
