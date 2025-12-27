@@ -646,6 +646,52 @@ The tool provides three different views:
 2. A summary table with IP addresses, device counts, MAC addresses, and names
 3. A detailed table with connection information for easy troubleshooting
 
+### Configuration Validator & Auto-Fix
+
+The toolkit includes powerful configuration validation and auto-fix capabilities that detect and remediate common UniFi misconfigurations:
+
+```bash
+# Validate configuration against best practices
+uv run unifi-config-validator -c ~/.config/unifi/prod.env
+
+# Check only trunk/VLAN routing issues
+uv run unifi-config-validator -c ~/.config/unifi/prod.env --check trunk
+
+# Show only critical and high severity issues
+uv run unifi-config-validator -c ~/.config/unifi/prod.env -s critical,high
+
+# Generate markdown report
+uv run unifi-config-validator -c ~/.config/unifi/prod.env -o report.md
+```
+
+**Auto-Fix VLAN Blocking Issues:**
+
+```bash
+# ALWAYS dry-run first to preview changes
+uv run unifi-config-autofix -c ~/.config/unifi/prod.env --dry-run
+
+# Fix all VLAN blocking issues
+uv run unifi-config-autofix -c ~/.config/unifi/prod.env --fix-all
+
+# Fix specific device only
+uv run unifi-config-autofix -c ~/.config/unifi/prod.env --fix-all -d "Dream Machine Pro"
+
+# Generate rollback script for safety
+uv run unifi-config-autofix -c ~/.config/unifi/prod.env --fix-all --rollback-script rollback.sh
+```
+
+**Validators Included:**
+
+| Validator | Description |
+|-----------|-------------|
+| **TrunkPortValidator** | Detects `forward: native` and `tagged_vlan_mgmt: block_all` that silently drop VLAN traffic |
+| **STPValidator** | Checks for non-deterministic STP root bridge selection |
+| **SecurityValidator** | Guest isolation, DHCP guard, IoT segregation |
+| **OperationalValidator** | Device naming, firmware consistency, PoE budget |
+| **DHCPValidator** | Gateway enabled, DNS settings, lease times |
+
+See [Configuration Validation Documentation](docs/config-validation.md) for detailed usage.
+
 ## Configuration
 
 Create a `.env` file with your UniFi Controller credentials:

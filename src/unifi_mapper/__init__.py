@@ -21,3 +21,22 @@ try:
 except ImportError:
     # Handle import errors gracefully
     pass
+
+# Import validation and auto-fix modules
+try:
+    from .config_validation import (
+        Category,
+        ConfigValidator,
+        Severity,
+        ValidationFinding,
+        ValidationResult,
+    )
+    from .config_autofix import (
+        AutoFixResult,
+        ConfigAutoFix,
+        FixResult,
+        FixStatus,
+    )
+except ImportError:
+    # Handle import errors gracefully
+    pass
