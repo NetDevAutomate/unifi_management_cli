@@ -68,13 +68,31 @@ test = [
 "Documentation" = "https://github.com/your-org/unifi-network-mapper/blob/main/README.md"
 
 [project.scripts]
+# Core tools
 unifi-mapper = "unifi_mapper.cli:main"
 unifi-network-mapper = "unifi_mapper.cli:main"
+
+# Diagnostics and lookup
 unifi-lookup = "scripts.unifi_lookup:main"
 unifi-ip-conflict = "scripts.unifi_ip_conflict_detector:main"
+unifi-vlan-diagnostics = "scripts.unifi_vlan_diagnostics:main"
+
+# Configuration validation and auto-fix
+unifi-config-validator = "scripts.unifi_config_validator:main"
+unifi-config-autofix = "scripts.unifi_config_autofix:main"
+
+# VLAN management
+unifi-vlan-autofix = "scripts.unifi_vlan_autofix:main"
+
+# Automation pipeline
+unifi-network-automation = "scripts.unifi_network_automation:main"
+unifi-automation-pipeline = "scripts.complete_automation_pipeline:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/unifi_mapper"]
+packages = ["src/unifi_mapper", "src/scripts"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -214,3 +232,18 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
 ]
+
+# UV tool configuration for global installation
+# Install globally with: uv tool install unifi-network-mapper
+# Or from local: uv tool install --editable .
+[tool.uv]
+# Default extras to install
+default-groups = ["dev"]
+
+# Entry points exposed as UV tools when installed globally
+# After `uv tool install unifi-network-mapper`, these commands are available system-wide:
+#   - unifi-config-validator
+#   - unifi-config-autofix
+#   - unifi-mapper
+#   - unifi-vlan-diagnostics
+#   etc.
