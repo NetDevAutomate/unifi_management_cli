@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# UniFi Configuration Auto-Fix CLI wrapper
+# Automatically fixes configuration issues detected by the validator
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+cd "$PROJECT_ROOT"
+
+# Check for virtual environment
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
+fi
+
+# Run the auto-fix tool
+python -m src.scripts.unifi_config_autofix "$@"
