@@ -88,6 +88,21 @@ unifi-vlan-autofix = "scripts.unifi_vlan_autofix:main"
 unifi-network-automation = "scripts.unifi_network_automation:main"
 unifi-automation-pipeline = "scripts.complete_automation_pipeline:main"
 
+# Advanced diagnostics and analysis
+unifi-mac-analyzer = "scripts.unifi_mac_analyzer:main"
+unifi-link-quality = "scripts.unifi_link_quality:main"
+unifi-storm-detector = "scripts.unifi_storm_detector:main"
+unifi-client-trace = "scripts.unifi_client_trace:main"
+unifi-capacity-planner = "scripts.unifi_capacity_planner:main"
+
+# Validators and monitors
+unifi-qos-validator = "scripts.unifi_qos_validator:main"
+unifi-lag-monitor = "scripts.unifi_lag_monitor:main"
+
+# Backup and security
+unifi-config-backup = "scripts.unifi_config_backup:main"
+unifi-firmware-advisor = "scripts.unifi_firmware_advisor:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/unifi_mapper", "src/scripts"]
 
