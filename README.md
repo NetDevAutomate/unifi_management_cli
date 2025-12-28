@@ -791,7 +791,106 @@ These are included as commented options in requirements.txt since they're not ac
 
 - **rich**: For enhanced console output formatting
 
-## Advanced Tools
+## Advanced Diagnostics & Analysis Tools
+
+The toolkit includes a comprehensive suite of advanced network diagnostics, validation, and analysis tools. See [Advanced Diagnostics Documentation](docs/ADVANCED_DIAGNOSTICS.md) for full details.
+
+### Quick Reference
+
+| Tool | CLI Command | Purpose |
+|------|-------------|---------|
+| MAC Table Analyzer | `unifi-mac-analyzer` | Detect MAC flapping, loops, unauthorized devices |
+| Link Quality Monitor | `unifi-link-quality` | Physical layer health, CRC errors, SFP diagnostics |
+| Storm Detector | `unifi-storm-detector` | Broadcast/multicast storm detection |
+| Client Path Tracer | `unifi-client-trace` | Trace client connectivity through switch fabric |
+| Capacity Planner | `unifi-capacity-planner` | Port utilization, PoE budget, growth forecasting |
+| QoS Validator | `unifi-qos-validator` | DSCP trust, voice VLAN, queue configuration audit |
+| LAG Monitor | `unifi-lag-monitor` | Link aggregation health and load balance |
+| Config Backup | `unifi-config-backup` | Configuration snapshots and change tracking |
+| Firmware Advisor | `unifi-firmware-advisor` | Firmware security assessment and CVE checking |
+
+### Diagnostics Architecture
+
+```mermaid
+flowchart TB
+    subgraph "CLI Layer"
+        MAC[unifi-mac-analyzer]
+        LQ[unifi-link-quality]
+        SD[unifi-storm-detector]
+        CT[unifi-client-trace]
+        CP[unifi-capacity-planner]
+        QOS[unifi-qos-validator]
+        LAG[unifi-lag-monitor]
+        BK[unifi-config-backup]
+        FW[unifi-firmware-advisor]
+    end
+
+    subgraph "Analysis Modules"
+        direction TB
+        A1[analyzers/]
+        A2[validators/]
+        A3[tracers/]
+        A4[backup/]
+        A5[advisors/]
+    end
+
+    subgraph "Core"
+        API[UniFi API Client]
+        Controller[UniFi Controller]
+    end
+
+    MAC --> A1
+    LQ --> A1
+    SD --> A1
+    CP --> A1
+    CT --> A3
+    QOS --> A2
+    LAG --> A2
+    BK --> A4
+    FW --> A5
+
+    A1 --> API
+    A2 --> API
+    A3 --> API
+    A4 --> API
+    A5 --> API
+    API --> Controller
+```
+
+### Example Usage
+
+```bash
+# Detect MAC flapping and unauthorized devices
+unifi-mac-analyzer --env --allowed-macs /path/to/allowed.txt
+
+# Check physical layer health
+unifi-link-quality --env --output link_report.md
+
+# Detect broadcast storms
+unifi-storm-detector --env --broadcast-threshold 500
+
+# Trace client path through network
+unifi-client-trace --env --mac aa:bb:cc:dd:ee:ff
+
+# Validate QoS configuration
+unifi-qos-validator --env --strict
+
+# Monitor LAG health
+unifi-lag-monitor --env
+
+# Backup and compare configurations
+unifi-config-backup --env backup -d "Before maintenance"
+unifi-config-backup --env diff backup_20241228_120000
+
+# Firmware security assessment
+unifi-firmware-advisor --env --min-score 70
+```
+
+All tools support common options: `--env`, `--config <file>`, `--json`, `--output <file>`, `--debug`
+
+---
+
+## Port Update Debugging Tools
 
 ### Port Update Debugging
 
