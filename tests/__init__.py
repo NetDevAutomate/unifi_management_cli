@@ -1,1 +1,1 @@
-# Test configuration for pytest
+"""Tests for UniFi MCP server."""

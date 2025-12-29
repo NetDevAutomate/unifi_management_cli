@@ -42,15 +42,16 @@ repos:
     hooks:
       - id: pyright
         name: pyright
-        pass_filenames: true
+        entry: uv run pyright src/
         language: system
-        entry: bash -c 'for x in "$@"; do (cd `dirname $x`; pwd; uv run --frozen --all-extras --dev pyright --stats;); done;' --
+        types: [python]
+        pass_filenames: false
         stages: [pre-push]
-        files: (src|samples)\/.*\/pyproject.toml
+
       - id: pytest
         name: pytest
-        pass_filenames: true
+        entry: uv run pytest -m "not live" --cov --cov-branch --cov-report=term-missing
         language: system
-        entry: bash -c 'for x in "$@"; do (cd `dirname $x`; pwd; uv run --frozen pytest --cov --cov-branch --cov-report=term-missing;); done;' --
+        types: [python]
+        pass_filenames: false
         stages: [pre-push]
-        files: src\/.*\/pyproject.toml

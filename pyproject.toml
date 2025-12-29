@@ -1,264 +1,113 @@
+[project]
+name = "unifi-network-mcp-server"
+version = "0.1.0"
+description = "MCP server for UniFi network troubleshooting"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=2.3.2",
+    "pydantic>=2.10.0",
+    "httpx>=0.28.0",
+    "loguru>=0.7.0",
+    "rich>=13.9.0",
+    "keyring>=25.5.0",
+]
+license = { text = "MIT" }
+authors = [{ name = "ataylor" }]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.scripts]
+"unifi-mcp-server" = "unifi_mcp.server:main"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.0.0",
+    "ruff>=0.8.0",
+    "pyright>=1.1.390",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[project]
-name = "unifi-network-mapper"
-version = "1.0.0"
-description = "A comprehensive toolkit for visualizing and managing UniFi network topologies"
-authors = [
-    {name = "UniFi Network Mapper Team"}
-]
-readme = "README.md"
-license = {text = "MIT"}
-requires-python = ">=3.8"
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: System :: Networking",
-    "Topic :: System :: Systems Administration",
-]
-keywords = ["unifi", "network", "topology", "visualization", "port-mapping"]
-
-dependencies = [
-    "requests>=2.28.2",
-    "python-dotenv>=1.0.0",
-    "pyunifi>=2.21.0",
-    "beautifulsoup4>=4.12.2",
-    "lxml>=4.9.3",
-    "rich>=13.4.2",
-    "graphviz>=0.20.0",
-]
-
-[project.optional-dependencies]
-visualization = [
-    "networkx>=3.1",
-    "matplotlib>=3.7.2",
-    "pydot>=1.4.2",
-    "pygraphviz>=1.11",
-]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0.0",
-    "pre-commit>=3.0.0",
-    "bandit>=1.7.0",
-    "safety>=2.0.0",
-]
-test = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "pytest-mock>=3.10.0",
-    "responses>=0.23.0",
-]
-
-[project.urls]
-"Homepage" = "https://github.com/your-org/unifi-network-mapper"
-"Bug Reports" = "https://github.com/your-org/unifi-network-mapper/issues"
-"Source" = "https://github.com/your-org/unifi-network-mapper"
-"Documentation" = "https://github.com/your-org/unifi-network-mapper/blob/main/README.md"
-
-[project.scripts]
-# Core tools
-unifi-mapper = "unifi_mapper.cli:main"
-unifi-network-mapper = "unifi_mapper.cli:main"
-
-# Diagnostics and lookup
-unifi-lookup = "scripts.unifi_lookup:main"
-unifi-ip-conflict = "scripts.unifi_ip_conflict_detector:main"
-unifi-vlan-diagnostics = "scripts.unifi_vlan_diagnostics:main"
-
-# Configuration validation and auto-fix
-unifi-config-validator = "scripts.unifi_config_validator:main"
-unifi-config-autofix = "scripts.unifi_config_autofix:main"
-
-# VLAN management
-unifi-vlan-autofix = "scripts.unifi_vlan_autofix:main"
-
-# Automation pipeline
-unifi-network-automation = "scripts.unifi_network_automation:main"
-unifi-automation-pipeline = "scripts.complete_automation_pipeline:main"
-
-# Advanced diagnostics and analysis
-unifi-mac-analyzer = "scripts.unifi_mac_analyzer:main"
-unifi-link-quality = "scripts.unifi_link_quality:main"
-unifi-storm-detector = "scripts.unifi_storm_detector:main"
-unifi-client-trace = "scripts.unifi_client_trace:main"
-unifi-capacity-planner = "scripts.unifi_capacity_planner:main"
-
-# Validators and monitors
-unifi-qos-validator = "scripts.unifi_qos_validator:main"
-unifi-lag-monitor = "scripts.unifi_lag_monitor:main"
-
-# Backup and security
-unifi-config-backup = "scripts.unifi_config_backup:main"
-unifi-firmware-advisor = "scripts.unifi_firmware_advisor:main"
-
 [tool.hatch.build.targets.wheel]
-packages = ["src/unifi_mapper", "src/scripts"]
-
-[tool.hatch.build.targets.wheel.sources]
-"src" = ""
+packages = ["src"]
 
 [tool.hatch.build.targets.sdist]
-include = [
-    "/src",
-    "/requirements.txt",
-    "/README.md",
-    "/LICENSE",
-]
+include = ["src"]
 
-# Black configuration
-[tool.black]
-line-length = 88
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
-
-# Ruff configuration
 [tool.ruff]
-target-version = "py38"
-line-length = 88
-select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "UP", # pyupgrade
-    "RUF100", # Remove unused noqa
+line-length = 99
+extend-include = ["*.ipynb"]
+exclude = [
+    ".venv",
+    "**/__pycache__",
+    "**/node_modules",
+    "**/dist",
+    "**/build",
+    "**/env",
+    "**/.ruff_cache",
+    "**/.venv",
 ]
-ignore = [
-    "E501",  # line too long, handled by black
-    "B008",  # do not perform function calls in argument defaults
-    "C901",  # too complex
-]
+force-exclude = true
 
-[tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]
-"tests/**/*" = ["F401", "F811"]
+[tool.ruff.lint]
+exclude = ["__init__.py"]
+select = ["C", "D", "E", "F", "I", "W"]
+ignore = ["C901", "E501", "E741", "F402", "F823", "D100", "D104", "D106"]
 
-[tool.ruff.isort]
-known-first-party = ["unifi_mapper"]
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+no-sections = true
 
-# MyPy configuration
-[tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-strict_equality = true
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
-[[tool.mypy.overrides]]
-module = [
-    "pyunifi.*",
-    "requests.*",
-    "beautifulsoup4.*",
-    "lxml.*",
-    "rich.*",
-]
-ignore_missing_imports = true
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
 
-# Pytest configuration
+[tool.pyright]
+include = ["src", "tests"]
+exclude = ["**/__pycache__", "**/.venv", "**/node_modules", "**/dist", "**/build"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+
 [tool.pytest.ini_options]
-minversion = "7.0"
-addopts = "-ra -q --strict-markers --strict-config"
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
 testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
+    "live: marks tests that make live API calls (deselect with '-m \"not live\"')",
+    "asyncio: marks tests that use asyncio",
 ]
 
-# Coverage configuration
 [tool.coverage.run]
-source = ["src/unifi_mapper"]
+source = ["src/unifi_mcp"]
 branch = true
-omit = [
-    "*/tests/*",
-    "*/test_*",
-    "*/__init__.py",
-]
 
 [tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "if self.debug:",
-    "if settings.DEBUG",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if 0:",
-    "if __name__ == .__main__.:",
-    "class .*\\bProtocol\\):",
-    "@(abc\\.)?abstractmethod",
+exclude_also = [
+    'pragma: no cover',
+    'if __name__ == .__main__.:',
+    'if TYPE_CHECKING:',
 ]
-show_missing = true
-precision = 2
-
-[tool.coverage.html]
-directory = "htmlcov"
-
-# Bandit security configuration
-[tool.bandit]
-exclude_dirs = ["tests"]
-skips = ["B101", "B601"]  # Skip assert_used and shell_injection_possible
-
-# UV configuration (modern format)
-[dependency-groups]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "pytest-mock>=3.10.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0.0",
-]
-
-# UV tool configuration for global installation
-# Install globally with: uv tool install unifi-network-mapper
-# Or from local: uv tool install --editable .
-[tool.uv]
-# Default extras to install
-default-groups = ["dev"]
-
-# Entry points exposed as UV tools when installed globally
-# After `uv tool install unifi-network-mapper`, these commands are available system-wide:
-#   - unifi-config-validator
-#   - unifi-config-autofix
-#   - unifi-mapper
-#   - unifi-vlan-diagnostics
-#   etc.
+fail_under = 90
