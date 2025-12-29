@@ -54,12 +54,21 @@ CLAUDE.md
 .aider*
 .continue/
 .copilot/
+.specify/
 
 # macOS
 .DS_Store
 
 # Secrets
 .secrets.baseline
+
+# UV lock file
+uv.lock
+
+# Logs
+*.log
+logs/
+.unifi-mcp/
 
 # Generated outputs (keep .gitkeep files)
 reports/*.md

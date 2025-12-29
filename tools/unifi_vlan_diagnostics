@@ -1,8 +1,0 @@
-#!/bin/bash
-# Wrapper script for UniFi VLAN diagnostics
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-
-cd "$PROJECT_ROOT"
-python src/scripts/unifi_vlan_diagnostics.py "$@"
