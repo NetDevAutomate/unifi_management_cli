@@ -36,9 +36,6 @@ Examples:
   unifi-mapper analyze link-quality --device USW-Pro-24
   unifi-mapper analyze capacity-planning
 
-  # Port mirroring for packet capture
-  unifi-mapper mirror create --device USW-Pro-24 --source 8 --destination 12
-  unifi-mapper mirror list
 
   # Device discovery and troubleshooting
   unifi-mapper find device "Office Switch"
@@ -77,13 +74,6 @@ Examples:
     )
     add_analysis_args(analyze_parser)
 
-    # Mirroring subcommand
-    mirror_parser = subparsers.add_parser(
-        "mirror",
-        help="Port mirroring (SPAN) session management",
-        description="Create/manage packet capture sessions"
-    )
-    add_mirroring_args(mirror_parser)
 
     # Find subcommand
     find_parser = subparsers.add_parser(
@@ -176,29 +166,6 @@ def add_analysis_args(parser):
     mac_parser.add_argument("--device", help="Device to analyze MAC table")
 
 
-def add_mirroring_args(parser):
-    """Add arguments for mirroring command."""
-    mirror_subparsers = parser.add_subparsers(dest="mirror_action", help="Mirror session actions")
-
-    # List mirror sessions
-    list_parser = mirror_subparsers.add_parser("list", help="List active mirror sessions")
-    list_parser.add_argument("--device", help="Filter by device")
-
-    # Create mirror session
-    create_parser = mirror_subparsers.add_parser("create", help="Create new mirror session")
-    create_parser.add_argument("--device", required=True, help="Device ID or name")
-    create_parser.add_argument("--source", type=int, required=True, help="Source port to monitor")
-    create_parser.add_argument("--destination", type=int, required=True, help="Destination port for analyzer")
-    create_parser.add_argument("--description", help="Session description")
-
-    # Delete mirror session
-    delete_parser = mirror_subparsers.add_parser("delete", help="Delete mirror session")
-    delete_parser.add_argument("--device", required=True, help="Device ID or name")
-    delete_parser.add_argument("--source", type=int, required=True, help="Source port of session to delete")
-
-    # Capabilities check
-    caps_parser = mirror_subparsers.add_parser("capabilities", help="Check device mirroring capabilities")
-    caps_parser.add_argument("--device", help="Device to check (all if not specified)")
 
 
 def add_find_args(parser):
@@ -270,8 +237,6 @@ def main():
             handle_discover_command(args, config)
         elif args.command == "analyze":
             handle_analyze_command(args, config)
-        elif args.command == "mirror":
-            handle_mirror_command(args, config)
         elif args.command == "find":
             handle_find_command(args, config)
         elif args.command == "diagnose":
@@ -375,49 +340,6 @@ def handle_analyze_command(args, config):
         sys.exit(1)
 
 
-def handle_mirror_command(args, config):
-    """Handle port mirroring commands."""
-    from .enhanced_api_client import EnhancedUnifiApiClient
-    from .toolkit_adapters import ToolkitAdapter
-
-    # Create API client and adapter
-    api_client = EnhancedUnifiApiClient(
-        base_url=config.base_url,
-        site=config.site,
-        api_token=config.api_token,
-        username=config.username,
-        password=config.password,
-        verify_ssl=config.verify_ssl,
-    )
-
-    if not api_client.login():
-        log.error("Failed to authenticate with UniFi Controller")
-        sys.exit(1)
-
-    adapter = ToolkitAdapter(api_client)
-
-    log.info(f"Executing mirror {args.mirror_action}...")
-
-    if args.mirror_action == "list":
-        sessions = adapter.list_mirror_sessions_sync(getattr(args, 'device', None))
-        print_mirror_sessions(sessions)
-
-    elif args.mirror_action == "create":
-        result = adapter.create_mirror_session_sync(
-            args.device, args.source, args.destination,
-            getattr(args, 'description', None)
-        )
-        print_mirror_result(result)
-
-    elif args.mirror_action == "delete":
-        log.info("Delete mirror session - implementation pending")
-
-    elif args.mirror_action == "capabilities":
-        log.info("Mirror capabilities check - implementation pending")
-
-    else:
-        log.error(f"Unknown mirror action: {args.mirror_action}")
-        sys.exit(1)
 
 
 def handle_find_command(args, config):
@@ -519,40 +441,6 @@ def print_network_health_results(results: Dict[str, Any]):
         print(f"\n✅ All devices healthy")
 
 
-def print_mirror_sessions(sessions: List[Dict[str, Any]]):
-    """Print mirror sessions in formatted output."""
-    if not sessions:
-        print("\n📡 No mirror sessions found")
-        return
-
-    print(f"\n📡 Active Mirror Sessions")
-    print(f"═══════════════════════")
-
-    for device_report in sessions:
-        device_name = device_report["device_name"]
-        active_sessions = device_report["active_sessions"]
-        available_slots = device_report["available_slots"]
-
-        print(f"\n📍 {device_name}:")
-        print(f"  Available slots: {available_slots}")
-
-        if active_sessions:
-            for session in active_sessions:
-                print(f"  🔄 Port {session['source_port']} → Port {session['destination_port']}")
-                if session.get("description"):
-                    print(f"     Description: {session['description']}")
-        else:
-            print(f"  ✅ No active sessions")
-
-
-def print_mirror_result(result: Dict[str, Any]):
-    """Print mirror operation result."""
-    if result["success"]:
-        print(f"✅ {result.get('message', 'Mirror session operation completed')}")
-        if "session_id" in result:
-            print(f"   Session ID: {result['session_id']}")
-    else:
-        print(f"❌ Mirror session operation failed: {result.get('error', 'Unknown error')}")
 
 
 if __name__ == "__main__":

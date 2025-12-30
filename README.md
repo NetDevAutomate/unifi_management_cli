@@ -9,7 +9,7 @@
 - 🔍 **LLDP/CDP-Based Discovery**: Automatic network topology mapping
 - 🧠 **Device Intelligence**: Model-specific capability detection and strategies
 - ✅ **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- 📡 **Port Mirroring (SPAN)**: Packet capture session management for troubleshooting
+- 📦 **Device Inventory**: Firmware management and device cataloging
 - 📊 **25+ Analysis Tools**: Network health, performance, security diagnostics
 - 🔧 **Smart Configuration**: Device-aware updates respect firmware limitations
 - 💻 **Professional CLI**: Comprehensive subcommand interface with shell completions
@@ -93,9 +93,9 @@ unifi-network-toolkit diagnose network-health
 # Link quality analysis
 unifi-network-toolkit analyze link-quality
 
-# Port mirroring for packet capture
-unifi-network-toolkit mirror list
-unifi-network-toolkit mirror create --device "Office Switch" --source 8 --destination 12
+# Device inventory and firmware management
+unifi-mapper inventory list --filter switch --show-upgrade
+unifi-mapper inventory check-updates
 
 # Device discovery
 unifi-network-toolkit find device "Office"
@@ -251,9 +251,10 @@ if lldp_device_name and lldp_name_is_valid and not is_uplink:
 - **Find MAC**: MAC address location tracking
 - **Client Trace**: End-to-end client path analysis
 
-### Port Mirroring Tools (2 tools)
-- **Mirror Session Management**: Create/delete SPAN sessions
-- **Mirror Capabilities**: Device mirroring support detection
+### Inventory & Management Tools
+- **Device Inventory**: Comprehensive device cataloging with firmware tracking
+- **Firmware Management**: Update checking and automated firmware deployment
+- **Device Filtering**: Filter by type (switch, ap, firewall, other)
 
 ## Verification System
 
@@ -347,9 +348,13 @@ unifi-network-toolkit diagnose network-health
 unifi-network-toolkit analyze link-quality
 # Output: Identifies ports with significant error rates needing attention
 
-# Port mirroring for packet capture
-unifi-network-toolkit mirror create --device "Core Switch" --source 8 --destination 24
-# Sets up SPAN session for Wireshark analysis
+# Device inventory and firmware management
+unifi-mapper inventory list --filter switch --show-upgrade
+# Shows: All switches with upgrade information and current firmware status
+
+# Firmware update management
+unifi-mapper inventory update-firmware --filter ap --dry-run
+# Preview firmware updates for access points before applying
 ```
 
 ## Troubleshooting

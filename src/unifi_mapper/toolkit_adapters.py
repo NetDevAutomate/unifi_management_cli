@@ -17,125 +17,6 @@ class ToolkitAdapter:
         """Initialize adapter with API client."""
         self.api_client = api_client
 
-    # ==============================================
-    # MIRRORING TOOL ADAPTERS
-    # ==============================================
-
-    def list_mirror_sessions_sync(self, device_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Synchronous version of list_mirror_sessions."""
-        try:
-            if device_id:
-                device_details = self.api_client.get_device_details(device_id)
-                if not device_details:
-                    return []
-                devices_to_check = [device_details]
-            else:
-                # Get all switch devices
-                devices_response = self.api_client.get_devices(self.api_client.site)
-                if not devices_response.get("data"):
-                    return []
-                devices_to_check = [
-                    d for d in devices_response["data"]
-                    if d.get("type", "").lower() == "usw"
-                ]
-
-            mirror_reports = []
-            for device in devices_to_check:
-                active_sessions = self._parse_mirror_sessions_sync(device)
-                if active_sessions or not device_id:  # Include all devices if no filter
-                    mirror_reports.append({
-                        "device_id": device.get("_id", ""),
-                        "device_name": device.get("name", "Unknown"),
-                        "active_sessions": active_sessions,
-                        "available_slots": max(0, self._get_max_sessions(device) - len(active_sessions)),
-                    })
-
-            return mirror_reports
-
-        except Exception as e:
-            log.error(f"Error listing mirror sessions: {e}")
-            return []
-
-    def create_mirror_session_sync(
-        self, device_id: str, source_port: int, destination_port: int, description: str = None
-    ) -> Dict[str, Any]:
-        """Synchronous version of create_mirror_session."""
-        try:
-            # Get device details
-            device_details = self.api_client.get_device_details(device_id)
-            if not device_details:
-                return {"success": False, "error": f"Device {device_id} not found"}
-
-            # Get current port overrides
-            port_overrides = device_details.get("port_overrides", [])
-            existing_overrides = {po.get("port_idx"): po for po in port_overrides}
-
-            # Add/update mirror configuration
-            if source_port in existing_overrides:
-                existing_overrides[source_port]["mirror_port_idx"] = destination_port
-            else:
-                port_overrides.append({
-                    "port_idx": source_port,
-                    "mirror_port_idx": destination_port
-                })
-
-            # Apply using enhanced API client if available
-            if hasattr(self.api_client, 'update_device_port_overrides'):
-                # Use enhanced client
-                success = self.api_client.update_device_port_overrides(
-                    device_id, {source_port: f"Mirror-{source_port}-to-{destination_port}"}
-                )
-
-                # Now add the actual mirror configuration
-                # This would need the proper port_overrides update method
-                log.info(f"Mirror session created: {source_port} -> {destination_port}")
-                return {
-                    "success": success,
-                    "session_id": f"mirror-{device_id[:8]}-{source_port}-{destination_port}",
-                    "message": f"Created mirror session on device {device_details.get('name', device_id)}"
-                }
-            else:
-                log.warning("Enhanced API client not available - mirror session creation limited")
-                return {"success": False, "error": "Enhanced API client required for mirror sessions"}
-
-        except Exception as e:
-            log.error(f"Error creating mirror session: {e}")
-            return {"success": False, "error": str(e)}
-
-    def _parse_mirror_sessions_sync(self, device: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Parse existing mirror sessions from device configuration."""
-        sessions = []
-        port_overrides = device.get("port_overrides", [])
-
-        for override in port_overrides:
-            mirror_port = override.get("mirror_port_idx")
-            if mirror_port:
-                source_idx = override.get("port_idx")
-                sessions.append({
-                    "session_id": f"mirror-{device.get('_id', '')[:8]}-{source_idx}-{mirror_port}",
-                    "source_port": source_idx,
-                    "destination_port": mirror_port,
-                    "description": f"Mirror from port {source_idx} to {mirror_port}",
-                })
-
-        return sessions
-
-    def _get_max_sessions(self, device: Dict[str, Any]) -> int:
-        """Get maximum mirror sessions based on device model."""
-        model = device.get("model", "").upper()
-
-        # Enterprise switches
-        if any(x in model for x in ["ENTERPRISE", "PRO-MAX"]):
-            return 4
-        # Pro switches
-        elif "PRO" in model:
-            return 4
-        # Basic switches
-        elif any(x in model for x in ["USW", "FLEX", "LITE"]):
-            return 2
-        # Default
-        else:
-            return 1
 
     # ==============================================
     # DISCOVERY TOOL ADAPTERS
@@ -296,3 +177,56 @@ class ToolkitAdapter:
         except Exception as e:
             log.error(f"Error in network health check: {e}")
             return {"error": str(e)}
+
+    def _resolve_device_name_to_id(self, device_name_or_id: str) -> str:
+        """
+        Resolve device name to device ID.
+
+        Args:
+            device_name_or_id: Either a device name or device ID
+
+        Returns:
+            Device ID if found, None if not found
+        """
+        try:
+            # Get all devices
+            devices_response = self.api_client.get_devices(self.api_client.site)
+            if not devices_response.get("data"):
+                return None
+
+            devices = devices_response["data"]
+
+            # First try exact ID match (if already an ID)
+            for device in devices:
+                if device.get("_id") == device_name_or_id:
+                    return device_name_or_id
+
+            # Then try name matching (case insensitive, partial match)
+            device_name_lower = device_name_or_id.lower()
+            for device in devices:
+                device_name = device.get("name", "").lower()
+                if device_name == device_name_lower:
+                    return device.get("_id")
+
+            # Try partial name matching
+            for device in devices:
+                device_name = device.get("name", "").lower()
+                if device_name_lower in device_name or device_name in device_name_lower:
+                    return device.get("_id")
+
+            # Try MAC address matching
+            for device in devices:
+                if device.get("mac", "").lower() == device_name_or_id.lower():
+                    return device.get("_id")
+
+            # Try IP address matching
+            for device in devices:
+                if device.get("ip", "") == device_name_or_id:
+                    return device.get("_id")
+
+            log.error(f"Could not find device matching '{device_name_or_id}'")
+            return None
+
+        except Exception as e:
+            log.error(f"Error resolving device name: {e}")
+            return None

@@ -35,15 +35,17 @@ app = typer.Typer(
 )
 
 # Create subcommands
-mirror_app = typer.Typer(help="📡 Port mirroring (SPAN) session management")
 find_app = typer.Typer(help="🔍 Device and resource discovery")
 analyze_app = typer.Typer(help="📊 Network analysis and diagnostics")
 diagnose_app = typer.Typer(help="🏥 Network health and troubleshooting")
 
-app.add_typer(mirror_app, name="mirror")
+# Import inventory subcommands
+from .inventory_cli import inventory_app
+
 app.add_typer(find_app, name="find")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(diagnose_app, name="diagnose")
+app.add_typer(inventory_app, name="inventory")
 
 
 @app.command()
@@ -233,48 +235,6 @@ def install_completions(
     console.print("   [cyan]unifi-mapper --install-completion[/cyan]")
 
 
-@mirror_app.command("list")
-def mirror_list(
-    device: Optional[str] = typer.Option(
-        None,
-        "--device",
-        help="🖥️ Filter by specific device"
-    )
-):
-    """📡 List active port mirroring (SPAN) sessions."""
-
-    console.print("📡 [bold]Active Port Mirroring Sessions[/bold]")
-
-    try:
-        # This would integrate with the mirror session functionality
-        from .network_cli import handle_mirror_command
-        # Implementation here would call the mirror functionality
-        console.print("📭 [dim]No active sessions (implementation uses network_cli integration)[/dim]")
-
-    except Exception as e:
-        console.print(f"❌ [bold red]Failed to list mirror sessions: {e}[/bold red]")
-        raise typer.Exit(1)
-
-
-@mirror_app.command("create")
-def mirror_create(
-    device: str = typer.Option(..., "--device", help="🖥️ Device ID or name"),
-    source: int = typer.Option(..., "--source", help="📤 Source port to monitor"),
-    destination: int = typer.Option(..., "--destination", "--dest", help="📥 Destination port for analyzer"),
-    description: Optional[str] = typer.Option(None, "--description", help="📝 Session description")
-):
-    """📡 Create new port mirroring (SPAN) session."""
-
-    console.print(f"🔧 Creating mirror session: [cyan]{device}[/cyan] Port {source} → Port {destination}")
-
-    try:
-        # Integration with existing mirror functionality
-        console.print("⚠️ [yellow]Mirror session creation integrated with network_cli[/yellow]")
-        console.print(f"💡 Use: [cyan]unifi-network-toolkit mirror create --device '{device}' --source {source} --destination {destination}[/cyan]")
-
-    except Exception as e:
-        console.print(f"❌ [bold red]Mirror session creation failed: {e}[/bold red]")
-        raise typer.Exit(1)
 
 
 @find_app.command("device")
