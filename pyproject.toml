@@ -13,6 +13,7 @@ dependencies = [
     "keyring>=25.5.0",
     "requests>=2.31.0",
     "graphviz>=0.20.0",
+    "typer>=0.9.0",
 ]
 license = { text = "MIT" }
 authors = [{ name = "ataylor" }]
@@ -27,7 +28,8 @@ classifiers = [
 
 [project.scripts]
 "unifi-mcp-server" = "unifi_mcp.server:main"
-"unifi-mapper" = "unifi_mapper.cli:main"
+"unifi-mapper" = "unifi_mapper.typer_cli:app"
+"unifi-mapper-legacy" = "unifi_mapper.cli:main"
 "unifi-network-toolkit" = "unifi_mapper.network_cli:main"
 
 [dependency-groups]
