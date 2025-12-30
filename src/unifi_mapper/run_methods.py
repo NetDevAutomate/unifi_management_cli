@@ -475,47 +475,50 @@ def run_port_mapper(
                     f"chassis_id='{port_lldp.get('chassis_id', '')}'"
                 )
 
-            # Only attempt rename if port has default name and is not an uplink
-            if is_default_name and not is_uplink:
-                # Check if LLDP name is a useful name (not just a MAC address)
-                lldp_name_is_valid = (
-                    lldp_device_name
-                    and not lldp_device_name.replace(":", "").replace("-", "").isalnum()  # Not a pure MAC
-                    or (lldp_device_name and len(lldp_device_name) > 17)  # Longer than MAC format
-                    or (lldp_device_name and not all(c in "0123456789abcdefABCDEF:-" for c in lldp_device_name))  # Contains non-MAC chars
-                )
+            # CRITICAL FIX: Don't trust API port names - they can be stale/cached
+            # Always attempt LLDP-based updates when LLDP data is available
+            # The API verification will determine if update is actually needed
 
-                if lldp_device_name and lldp_name_is_valid:
-                    # Use LLDP/CDP device name (highest priority)
-                    enhanced_port_name = lldp_device_name
-                    port_updates[port_idx] = {"name": enhanced_port_name, "source": "lldp"}
-                    if not dry_run:
-                        log.info(
-                            f"Will update port {port_idx} name to '{enhanced_port_name}' (from LLDP) on device {device_name}"
-                        )
-                    else:
-                        log.info(
-                            f"[DRY RUN] Would update port {port_idx} name to '{enhanced_port_name}' (from LLDP) on device {device_name}"
-                        )
-                elif lldp_device_name and not lldp_name_is_valid:
-                    log.debug(
-                        f"Port {port_idx}: LLDP name '{lldp_device_name}' appears to be a MAC address, skipping"
+            # Check if LLDP name is a useful name (not just a MAC address)
+            lldp_name_is_valid = (
+                lldp_device_name
+                and not lldp_device_name.replace(":", "").replace("-", "").isalnum()  # Not a pure MAC
+                or (lldp_device_name and len(lldp_device_name) > 17)  # Longer than MAC format
+                or (lldp_device_name and not all(c in "0123456789abcdefABCDEF:-" for c in lldp_device_name))  # Contains non-MAC chars
+            )
+
+            # Process LLDP-based updates (don't check is_default_name - API can lie)
+            if lldp_device_name and lldp_name_is_valid and not is_uplink:
+                # Use LLDP/CDP device name (highest priority)
+                enhanced_port_name = lldp_device_name
+                port_updates[port_idx] = {"name": enhanced_port_name, "source": "lldp"}
+                if not dry_run:
+                    log.info(
+                        f"Will update port {port_idx} name to '{enhanced_port_name}' (from LLDP) on device {device_name}"
                     )
-                    # Still try client names as fallback
-                    if show_connected_devices and port_idx in client_port_mapping:
-                        clients = client_port_mapping[port_idx]
-                        client_names = port_mapper.format_client_names(clients)
-                        if client_names:
-                            enhanced_port_name = client_names
-                            port_updates[port_idx] = {"name": enhanced_port_name, "source": "client"}
-                            if not dry_run:
-                                log.info(
-                                    f"Will update port {port_idx} name to '{enhanced_port_name}' (from clients, LLDP was MAC) on device {device_name}"
-                                )
-                            else:
-                                log.info(
-                                    f"[DRY RUN] Would update port {port_idx} name to '{enhanced_port_name}' (from clients, LLDP was MAC) on device {device_name}"
-                                )
+                else:
+                    log.info(
+                        f"[DRY RUN] Would update port {port_idx} name to '{enhanced_port_name}' (from LLDP) on device {device_name}"
+                    )
+            elif lldp_device_name and not lldp_name_is_valid:
+                log.debug(
+                    f"Port {port_idx}: LLDP name '{lldp_device_name}' appears to be a MAC address, skipping"
+                )
+                # Still try client names as fallback
+                if show_connected_devices and port_idx in client_port_mapping:
+                    clients = client_port_mapping[port_idx]
+                    client_names = port_mapper.format_client_names(clients)
+                    if client_names:
+                        enhanced_port_name = client_names
+                        port_updates[port_idx] = {"name": enhanced_port_name, "source": "client"}
+                        if not dry_run:
+                            log.info(
+                                f"Will update port {port_idx} name to '{enhanced_port_name}' (from clients, LLDP was MAC) on device {device_name}"
+                            )
+                        else:
+                            log.info(
+                                f"[DRY RUN] Would update port {port_idx} name to '{enhanced_port_name}' (from clients, LLDP was MAC) on device {device_name}"
+                            )
                 elif show_connected_devices and port_idx in client_port_mapping:
                     # Fall back to client names if no LLDP info
                     clients = client_port_mapping[port_idx]
@@ -535,13 +538,17 @@ def run_port_mapper(
                     log.debug(
                         f"Port {port_idx}: No LLDP name and no client mapping available"
                     )
-            elif not is_default_name:
-                log.debug(
-                    f"Skipping port {port_idx} - already has custom name: {port_name}"
-                )
             elif is_uplink:
                 log.debug(
                     f"Skipping port {port_idx} - appears to be uplink/trunk port: {port_name}"
+                )
+            elif not lldp_device_name:
+                log.debug(
+                    f"Skipping port {port_idx} - no LLDP device detected"
+                )
+            else:
+                log.debug(
+                    f"Port {port_idx}: LLDP device '{lldp_device_name}' not considered valid name (appears to be MAC or too short)"
                 )
 
             # Create a PortInfo object
