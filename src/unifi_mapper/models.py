@@ -625,8 +625,10 @@ class NetworkAnalysisResult:
 # PORT MIRRORING MODELS (Added in Phase 2)
 # ==============================================
 
+import datetime
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
 
 class MirrorCapability(str, Enum):
