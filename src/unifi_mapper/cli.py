@@ -54,9 +54,8 @@ def load_env_from_config(config_path: str) -> None:
         sys.exit(1)
 
 
-def get_default_config_path() -> str:
-    """
-    Get default config path following XDG Base Directory specification.
+def get_default_config_path() -> Path:
+    """Get default config path following XDG Base Directory specification.
 
     Priority:
     1. XDG_CONFIG_HOME/unifi_network_mapper/prod.env
@@ -66,27 +65,26 @@ def get_default_config_path() -> str:
     5. .env (current directory - legacy fallback)
 
     Returns:
-        Path to default config file
+        Path to default config file.
     """
-    # Use XDG_CONFIG_HOME if set, otherwise ~/.config
-    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+    xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
     if xdg_config_home:
-        config_dir = Path(xdg_config_home) / "unifi_network_mapper"
+        config_dir = Path(xdg_config_home) / 'unifi_network_mapper'
     else:
-        config_dir = Path.home() / ".config" / "unifi_network_mapper"
+        config_dir = Path.home() / '.config' / 'unifi_network_mapper'
 
     # Try prod.env first (most common production use case)
-    prod_config = config_dir / "prod.env"
+    prod_config = config_dir / 'prod.env'
     if prod_config.exists():
-        return str(prod_config)
+        return prod_config
 
     # Try default.env
-    default_config = config_dir / "default.env"
+    default_config = config_dir / 'default.env'
     if default_config.exists():
-        return str(default_config)
+        return default_config
 
     # Fallback to .env in current directory (legacy)
-    return ".env"
+    return Path('.env')
 
 
 def main():
