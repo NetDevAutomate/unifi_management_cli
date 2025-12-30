@@ -28,6 +28,7 @@ classifiers = [
 [project.scripts]
 "unifi-mcp-server" = "unifi_mcp.server:main"
 "unifi-mapper" = "unifi_mapper.cli:main"
+"unifi-network-toolkit" = "unifi_mapper.network_cli:main"
 
 [dependency-groups]
 dev = [
