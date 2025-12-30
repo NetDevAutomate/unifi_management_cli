@@ -25,7 +25,7 @@ graph TB
     D --> E[Network Documentation]
 
     F[Analysis Tools] --> G[Diagnostics]
-    G --> H[Mirror Sessions]
+    G --> H[Inventory Management]
     H --> I[Performance Monitoring]
 
     J[CLI Interface] --> A
@@ -44,7 +44,7 @@ graph TB
 - **Intelligent Port Naming**: Device-aware configuration with compatibility detection
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
 - **Network Analysis Suite**: 25+ specialized analysis and diagnostic tools
-- **Port Mirroring (SPAN)**: Packet capture session management
+- **Device Inventory**: Firmware management and device cataloging
 - **Device Intelligence**: Model-specific capability detection and workarounds
 
 ## Core Architecture
@@ -79,7 +79,7 @@ graph LR
         K[analysis/]
         L[diagnostics/]
         M[discovery/]
-        N[mirroring/]
+        N[inventory/]
     end
 
     A --> I
@@ -659,9 +659,9 @@ graph TB
         C4[client_trace.py]
     end
 
-    subgraph "Mirroring Tools"
-        M1[sessions.py]
-        M2[capabilities.py]
+    subgraph "Inventory Tools"
+        M1[inventory_cli.py]
+        M2[device_cataloging.py]
     end
 
     style A1 fill:#e8f5e8
@@ -670,44 +670,44 @@ graph TB
     style M1 fill:#f3e5f5
 ```
 
-### Port Mirroring (SPAN) Architecture
+### Device Inventory Management Architecture
 
 ```mermaid
 graph TB
-    subgraph "Mirror Capabilities"
-        A[Device Model Detection]
-        A --> B{Mirroring Support?}
-        B -->|Enterprise| C[4 Sessions<br/>VLAN Mirroring]
-        B -->|Advanced| D[4 Sessions<br/>Basic Mirroring]
-        B -->|Basic| E[2 Sessions<br/>Port-to-Port Only]
-        B -->|None| F[No Mirroring Support]
+    subgraph "Inventory Collection"
+        A[Device Discovery]
+        A --> B[Model Detection]
+        B --> C[Firmware Version]
+        C --> D[Capability Analysis]
     end
 
-    subgraph "Session Management"
-        G[Create Session]
-        H[List Active Sessions]
-        I[Delete Session]
+    subgraph "Firmware Management"
+        E[Check Available Updates]
+        F[Preview Updates]
+        G[Apply Updates with Delays]
+        H[Track Update Status]
     end
 
-    subgraph "Configuration"
-        J[Source Port Selection]
-        K[Destination Port Selection]
-        L[port_overrides Update]
-        L --> M[mirror_port_idx Field]
+    subgraph "Device Categorization"
+        I[Switch Inventory]
+        J[Access Point Inventory]
+        K[Gateway/Firewall Inventory]
+        L[Other Device Types]
     end
 
-    C --> G
-    D --> G
-    E --> G
+    D --> E
+    E --> F
+    F --> G
+    G --> H
 
-    G --> J
-    J --> K
-    K --> L
+    D --> I
+    D --> J
+    D --> K
+    D --> L
 
-    style C fill:#e8f5e8
-    style D fill:#fff8e1
+    style A fill:#e8f5e8
     style E fill:#fff3e0
-    style F fill:#ffcdd2
+    style I fill:#f3e5f5
 ```
 
 ## Workflows & Dependencies
@@ -1001,7 +1001,7 @@ graph TB
         R[analysis/] --> K
         S[diagnostics/] --> K
         T[discovery/] --> K
-        U[mirroring/] --> K
+        U[inventory/] --> K
     end
 
     style H fill:#e3f2fd
@@ -1081,17 +1081,17 @@ erDiagram
         List-string workarounds
     }
 
-    MirrorSession {
-        string session_id
+    InventoryRecord {
         string device_id
-        int source_port_idx
-        int destination_port_idx
-        bool enabled
+        string model
+        string firmware_version
+        string upgrade_available
+        bool needs_update
     }
 
     DeviceInfo ||--o{ PortInfo : contains
     DeviceInfo ||--o{ DeviceCapability : has
-    DeviceInfo ||--o{ MirrorSession : supports
+    DeviceInfo ||--o{ InventoryRecord : tracked_by
 ```
 
 ## Performance Considerations
