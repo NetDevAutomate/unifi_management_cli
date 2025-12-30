@@ -6,15 +6,28 @@ Typer-based CLI for UniFi Network Mapper with automatic completions.
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
 
+from .cli import get_default_config_path, load_env_from_config
+
 # Setup rich console
 console = Console()
+
+
+# Global state for config path
+class State:
+    """Global CLI state."""
+    config_path: Optional[Path] = None
+    debug: bool = False
+
+
+state = State()
+
 
 def setup_logging(debug: bool = False):
     """Configure rich logging."""
@@ -26,13 +39,85 @@ def setup_logging(debug: bool = False):
         handlers=[RichHandler(console=console, rich_tracebacks=True)]
     )
 
+
 # Create main Typer app
 app = typer.Typer(
     name="unifi-mapper",
     help="🚀 Enterprise UniFi Network Automation Platform",
     epilog="Built with systematic debugging and AI-assisted development 🤖",
-    rich_markup_mode="rich"
+    rich_markup_mode="rich",
+    invoke_without_command=True,
 )
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    config: Annotated[
+        Optional[Path],
+        typer.Option(
+            '--config', '-c',
+            help='📁 Path to .env configuration file',
+            envvar='UNIFI_CONFIG',
+        )
+    ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option(
+            '--debug',
+            help='🐛 Enable debug logging',
+        )
+    ] = False,
+    # Top-level shortcuts for discover command
+    connected_devices: Annotated[
+        bool,
+        typer.Option(
+            '--connected-devices',
+            help='📱 Include non-UniFi connected devices (runs discover)',
+        )
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            '--dry-run',
+            help='🔍 Dry run mode (runs discover)',
+        )
+    ] = False,
+    verify_updates: Annotated[
+        bool,
+        typer.Option(
+            '--verify-updates',
+            help='✅ Verify port name updates (runs discover)',
+        )
+    ] = False,
+):
+    """🚀 Enterprise UniFi Network Automation Platform.
+
+    Global options apply to all commands. Use --connected-devices, --dry-run,
+    or --verify-updates as shortcuts to run the discover command.
+    """
+    # Set global state
+    state.config_path = config if config else get_default_config_path()
+    state.debug = debug
+
+    if debug:
+        setup_logging(debug=True)
+
+    # If no subcommand but discover-related flags provided, run discover
+    if ctx.invoked_subcommand is None:
+        if connected_devices or dry_run or verify_updates:
+            # Run discover with the provided flags
+            discover(
+                output=None,
+                diagram=None,
+                format='png',
+                dry_run=dry_run,
+                verify_updates=verify_updates,
+                connected_devices=connected_devices,
+            )
+        else:
+            # Show help if no command and no flags
+            console.print(ctx.get_help())
 
 # Create subcommands
 find_app = typer.Typer(help="🔍 Device and resource discovery")
@@ -50,51 +135,39 @@ app.add_typer(inventory_app, name="inventory")
 
 @app.command()
 def discover(
-    config: Path = typer.Option(
-        Path("~/.config/unifi_network_mapper/prod.env").expanduser(),
-        "--config", "-c",
-        help="📁 Path to .env configuration file"
-    ),
-    output: Optional[Path] = typer.Option(
-        None,
-        "--output", "-o",
-        help="📄 Output path for report"
-    ),
-    diagram: Optional[Path] = typer.Option(
-        None,
-        "--diagram", "-d",
-        help="🖼️ Output path for diagram"
-    ),
-    format: str = typer.Option(
-        "png",
-        "--format",
-        help="🎨 Diagram format (png, svg, html, mermaid, dot)",
-        case_sensitive=False
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="🔍 Show what would be changed without applying"
-    ),
-    verify_updates: bool = typer.Option(
-        False,
-        "--verify-updates",
-        help="✅ Verify that port name updates persist (recommended)"
-    ),
-    connected_devices: bool = typer.Option(
-        False,
-        "--connected-devices",
-        help="📱 Include non-UniFi connected devices"
-    ),
-    debug: bool = typer.Option(
-        False,
-        "--debug",
-        help="🐛 Enable debug logging"
-    )
+    output: Annotated[
+        Optional[Path],
+        typer.Option('--output', '-o', help='📄 Output path for report')
+    ] = None,
+    diagram: Annotated[
+        Optional[Path],
+        typer.Option('--diagram', '-d', help='🖼️ Output path for diagram')
+    ] = None,
+    format: Annotated[
+        str,
+        typer.Option('--format', help='🎨 Diagram format (png, svg, html, mermaid, dot)')
+    ] = 'png',
+    dry_run: Annotated[
+        bool,
+        typer.Option('--dry-run', help='🔍 Show what would be changed without applying')
+    ] = False,
+    verify_updates: Annotated[
+        bool,
+        typer.Option('--verify-updates', help='✅ Verify that port name updates persist')
+    ] = False,
+    connected_devices: Annotated[
+        bool,
+        typer.Option('--connected-devices', help='📱 Include non-UniFi connected devices')
+    ] = False,
 ):
     """🔍 Discover network topology and update port names with LLDP intelligence."""
 
-    setup_logging(debug)
+    # Use global state
+    config = state.config_path
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
 
     if debug:
         console.print("🐛 [bold yellow]Debug logging enabled[/bold yellow]")
@@ -107,9 +180,9 @@ def discover(
 
     try:
         # Load configuration
-        from .cli import load_env_from_config
         from .config import UnifiConfig
 
+        console.print(f"📁 Config: [cyan]{config}[/cyan]")
         load_env_from_config(str(config))
         unifi_config = UnifiConfig.from_env()
 
@@ -265,6 +338,191 @@ def diagnose_health(
 
     console.print("🏥 [bold]Network Health Check[/bold]")
     console.print("💡 Full implementation available via: [cyan]unifi-network-toolkit diagnose network-health[/cyan]")
+
+
+@app.command()
+def diagram(
+    output: Annotated[
+        Optional[Path],
+        typer.Option('--output', '-o', help='🖼️ Output path for diagram')
+    ] = None,
+    format: Annotated[
+        str,
+        typer.Option('--format', '-f', help='🎨 Diagram format (png, svg, html)')
+    ] = 'png',
+    all_devices: Annotated[
+        bool,
+        typer.Option('--all-devices', '-a', help='📱 Include all devices (not just infrastructure)')
+    ] = False,
+):
+    """🖼️ Generate network topology diagram only (no port renaming).
+
+    Generates a visual diagram of your UniFi infrastructure without
+    performing any LLDP analysis or port name updates.
+    """
+    config = state.config_path
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    try:
+        from .config import UnifiConfig
+
+        console.print(f"📁 Config: [cyan]{config}[/cyan]")
+        load_env_from_config(str(config))
+        unifi_config = UnifiConfig.from_env()
+
+        # Set output path
+        diagram_path = output or Path.cwd() / "diagrams" / f"network_diagram.{format}"
+        diagram_path.parent.mkdir(parents=True, exist_ok=True)
+
+        console.print(f"🖼️ Diagram: [cyan]{diagram_path}[/cyan]")
+        console.print(f"📊 Mode: [cyan]{'All devices' if all_devices else 'Infrastructure only'}[/cyan]")
+
+        # Create port mapper just to get device data
+        from .port_mapper import UnifiPortMapper
+        from .enhanced_network_topology import NetworkTopology
+        from .models import DeviceInfo, PortInfo
+
+        port_mapper = UnifiPortMapper(
+            base_url=unifi_config.base_url,
+            site=unifi_config.site,
+            api_token=unifi_config.api_token,
+            username=unifi_config.username,
+            password=unifi_config.password,
+            verify_ssl=unifi_config.verify_ssl,
+            timeout=unifi_config.timeout,
+        )
+
+        # Get ALL UniFi devices for the diagram
+        console.print("🔍 [dim]Fetching devices...[/dim]")
+        all_devices_response = port_mapper.api_client.get_devices(unifi_config.site)
+        all_devices_list = all_devices_response.get("data", []) if isinstance(all_devices_response, dict) else all_devices_response
+
+        # Filter to UniFi infrastructure devices (gateway, switches, APs)
+        unifi_types = ["ugw", "usg", "udm", "usw", "uap"]
+        infrastructure_devices = [
+            d for d in all_devices_list
+            if d.get("type") in unifi_types
+        ]
+
+        # Get LLDP data for devices that support it
+        console.print("🔍 [dim]Fetching LLDP data...[/dim]")
+        lldp_data = {}
+        for device in infrastructure_devices:
+            device_id = device.get("_id")
+            device_type = device.get("type", "")
+            # Only switches and gateways have LLDP data
+            if device_type in ["ugw", "usg", "udm", "usw"] and device_id:
+                device_lldp = port_mapper.api_client.get_lldp_info(unifi_config.site, device_id)
+                if device_lldp:
+                    lldp_data[device_id] = device_lldp
+
+        # Build device dict and MAC lookup for ALL infrastructure devices
+        devices = {}
+        mac_to_id = {}
+        routers_found = 0
+        switches_found = 0
+        aps_found = 0
+
+        for device_data in infrastructure_devices:
+            device_id = device_data.get("_id", "")
+            device_mac = device_data.get("mac", "")
+            device_model = device_data.get("model", "")
+            device_type = device_data.get("type", "")
+
+            # Count device types for debug
+            if device_type in ["ugw", "usg", "udm"]:
+                routers_found += 1
+            elif device_type == "usw":
+                switches_found += 1
+            elif device_type == "uap":
+                aps_found += 1
+
+            # Extract port information from device data
+            ports = []
+            port_table = device_data.get("port_table", [])
+            port_overrides = {p.get("port_idx"): p for p in device_data.get("port_overrides", [])}
+
+            for port_data in port_table:
+                port_idx = port_data.get("port_idx", 0)
+                # Check for custom name in overrides first
+                override = port_overrides.get(port_idx, {})
+                port_name = override.get("name") or port_data.get("name", f"Port {port_idx}")
+
+                port_info = PortInfo(
+                    idx=port_idx,
+                    name=port_name,
+                    up=port_data.get("up", False),
+                    enabled=port_data.get("enabled", True),
+                    poe=port_data.get("poe_enable", False),
+                    media=port_data.get("media", "RJ45"),
+                    speed=port_data.get("speed", 0),
+                    lldp_info={},
+                )
+                ports.append(port_info)
+
+            device = DeviceInfo(
+                id=device_id,
+                name=device_data.get("name", "Unknown"),
+                model=device_model,
+                mac=device_mac,
+                ip=device_data.get("ip", ""),
+                ports=ports,
+                lldp_info=lldp_data.get(device_id, {}),
+            )
+            devices[device_id] = device
+            if device_mac:
+                normalized_mac = device_mac.lower().replace(":", "").replace("-", "")
+                mac_to_id[normalized_mac] = device_id
+
+        console.print(f"📊 [dim]Device types: {routers_found} routers, {switches_found} switches, {aps_found} APs[/dim]")
+
+        # Create topology and generate diagram
+        topology = NetworkTopology(devices)
+
+        # Add connections from LLDP data
+        connection_count = 0
+        for device_id, device_lldp in lldp_data.items():
+            for port_idx_str, port_lldp in device_lldp.items():
+                chassis_id = port_lldp.get("chassis_id", "")
+                if not chassis_id:
+                    continue
+                # Normalize chassis_id MAC format
+                normalized_chassis = chassis_id.lower().replace(":", "").replace("-", "")
+                # Find connected device by normalized MAC
+                if normalized_chassis in mac_to_id:
+                    other_id = mac_to_id[normalized_chassis]
+                    if other_id != device_id:  # Avoid self-connections
+                        try:
+                            port_idx = int(port_idx_str)
+                        except ValueError:
+                            port_idx = 0
+                        topology.add_connection(device_id, other_id, port_idx, 0)
+                        connection_count += 1
+
+        console.print(f"🔗 [dim]Found {connection_count} LLDP connections (topology has {len(topology.connections)})[/dim]")
+
+        # Generate diagram
+        if format.lower() == "png":
+            topology.generate_png_diagram(str(diagram_path))
+        elif format.lower() == "svg":
+            topology.generate_svg_diagram(str(diagram_path))
+        elif format.lower() == "html":
+            topology.generate_html_diagram(str(diagram_path), all_devices)
+        else:
+            console.print(f"❌ [bold red]Unsupported format: {format}[/bold red]")
+            raise typer.Exit(1)
+
+        console.print(f"✅ [bold green]Diagram generated: {diagram_path}[/bold green]")
+        console.print(f"📊 Devices: [cyan]{len(devices)}[/cyan], Connections: [cyan]{len(topology.connections)}[/cyan]")
+
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
 
 
 @app.command()

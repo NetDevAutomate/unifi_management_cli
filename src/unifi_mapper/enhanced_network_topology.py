@@ -484,73 +484,279 @@ class NetworkTopology:
             log.error(f"Error generating SVG diagram: {e}")
             raise
 
-    def _generate_dot_source(self, layout_style: str = "hierarchical") -> str:
-        """
-        Generate Graphviz DOT source code with device grouping for better hierarchy.
+    def _generate_dot_source(
+        self, layout_style: str = "hierarchical", infrastructure_only: bool = True
+    ) -> str:
+        """Generate Graphviz DOT source code with device type hierarchy.
+
+        Creates a compact, readable diagram with devices grouped by type.
+        By default, only shows UniFi infrastructure (gateway, switches, APs).
 
         Args:
-            layout_style: 'hierarchical' (top-down with grouping) or 'wide' (left-right)
+            layout_style: 'hierarchical' (top-down) or 'wide' (left-right)
+            infrastructure_only: If True, exclude wired endpoints (default: True)
 
         Returns:
             DOT format source code as string
         """
-        # Hierarchical layout is more readable
-        rankdir = "TB" if layout_style == "hierarchical" else "LR"
-
         lines = ["digraph NetworkTopology {"]
+        # Use dot layout with vertical hierarchy - centered layout
         lines.append(
-            f"  graph [overlap=false, splines=polyline, rankdir={rankdir}, pad=0.5, nodesep=1.2, ranksep=2.0];"
+            "  graph [rankdir=TB, splines=spline, nodesep=0.8, ranksep=1.2, "
+            "compound=true, concentrate=true, center=true];"
         )
+        # Fixed size nodes for visual consistency - all devices same size
         lines.append(
-            '  node [shape=box, style="filled,rounded", fontname="Arial", fontsize=10, margin="0.3,0.2"];'
+            '  node [shape=box, style="filled,rounded", fontname="Arial", '
+            'fontsize=9, fixedsize=true, width=1.4, height=0.5];'
         )
+        lines.append('  edge [color="#666666", arrowsize=0.5, penwidth=1.5, fontsize=9];')
+
+        # Group devices by type
+        routers = []
+        switches = []
+        aps = []
+        others = []
+
+        for device_id, device in self.devices.items():
+            device_type = self._determine_device_type(device)
+            if device_type == "router":
+                routers.append((device_id, device))
+            elif device_type == "switch":
+                switches.append((device_id, device))
+            elif device_type == "ap":
+                aps.append((device_id, device))
+            else:
+                others.append((device_id, device))
+
+        # Build set of infrastructure device IDs for filtering connections
+        infra_ids = {d[0] for d in routers + switches + aps}
+
+        # Extract WAN/ISP information from ALL device port names
+        # ISP info is often stored in switch port names like "Virgin Media to UDM Pro Port 11"
+        isp_connections = []
+        for device_id, device in routers + switches:
+            for port in device.ports:
+                port_name = port.name if port.name else ""
+                port_name_lower = port_name.lower()
+                # Look for ISP provider names in port descriptions
+                if "virgin" in port_name_lower:
+                    isp_connections.append(("Virgin Media", port_name))
+                elif "bt " in port_name_lower or "bt isp" in port_name_lower:
+                    isp_connections.append(("BT", port_name))
+                elif "sky" in port_name_lower:
+                    isp_connections.append(("Sky", port_name))
+                elif "talktalk" in port_name_lower:
+                    isp_connections.append(("TalkTalk", port_name))
+                elif "isp" in port_name_lower and "virgin" not in port_name_lower and "bt" not in port_name_lower:
+                    isp_connections.append(("ISP", port_name))
+
+        # Deduplicate ISP names
+        unique_isps = list(set(isp[0] for isp in isp_connections))
+        if unique_isps:
+            log.info(f"Detected ISP connections: {unique_isps}")
+        if isp_connections:
+            for isp_name, port_name in isp_connections:
+                log.debug(f"  ISP '{isp_name}' from port: {port_name}")
+
+        # Use subgraph clusters to enforce vertical hierarchy
+        lines.append("")
+        lines.append("  // Layer 0: Internet/ISP connections")
+        lines.append('  subgraph cluster_internet {')
+        lines.append('    style=invis;')
+        lines.append('    rank=source;')
         lines.append(
-            '  edge [fontname="Arial", fontsize=8, color="#666666", arrowsize=0.7];'
+            '    "Internet" [label="🌐 Internet", '
+            'fillcolor="#607D8B", fontcolor="white"];'
         )
+        # Add ISP nodes if detected
+        for isp_name in unique_isps:
+            safe_id = isp_name.replace(" ", "_")
+            lines.append(
+                f'    "ISP_{safe_id}" [label="{isp_name}", '
+                f'fillcolor="#FF5722", fontcolor="white"];'
+            )
+        lines.append('  }')
 
-        # Group devices by type and location for better layout
-        device_groups = self._group_devices_by_location_and_type()
+        # Layer 1: Gateway/Router
+        if routers:
+            lines.append("")
+            lines.append("  // Layer 1: Gateway")
+            lines.append('  subgraph cluster_gateway {')
+            lines.append('    style=invis;')
+            for device_id, device in routers:
+                wrapped_name = self._wrap_name(device.name)
+                lines.append(
+                    f'    "{device_id}" [label="{wrapped_name}", fillcolor="#4CAF50", '
+                    f'fontcolor="white"];'
+                )
+            lines.append('  }')
 
-        # Create subgraphs for each location
-        for location, types in device_groups.items():
-            if not types:
-                continue
+        # Layer 2: Core Switches (all switches for simplicity)
+        if switches:
+            lines.append("")
+            lines.append("  // Layer 2: Switches")
+            lines.append('  subgraph cluster_switches {')
+            lines.append('    style=invis;')
+            for device_id, device in switches:
+                wrapped_name = self._wrap_name(device.name)
+                lines.append(
+                    f'    "{device_id}" [label="{wrapped_name}", fillcolor="#2196F3", '
+                    f'fontcolor="white"];'
+                )
+            lines.append('  }')
 
-            lines.append(f"  subgraph cluster_{location.replace(' ', '_')} {{")
-            lines.append(f'    label="{location}";')
-            lines.append("    style=filled;")
-            lines.append('    fillcolor="#f0f0f0";')
-            lines.append('    color="#cccccc";')
+        # Layer 3: Access Points
+        if aps:
+            lines.append("")
+            lines.append("  // Layer 3: Access Points")
+            lines.append('  subgraph cluster_aps {')
+            lines.append('    style=invis;')
+            for device_id, device in aps:
+                wrapped_name = self._wrap_name(device.name)
+                lines.append(
+                    f'    "{device_id}" [label="{wrapped_name}", fillcolor="#9C27B0", '
+                    f'fontcolor="white"];'
+                )
+            lines.append('  }')
 
-            # Add devices within this location
-            for device_type, device_list in types.items():
-                for device in device_list:
-                    device_id = device.id
-                    color = self._get_device_color(device_type)
-                    icon = self._get_device_icon(device_type)
+        # Only include other devices if not infrastructure_only
+        if not infrastructure_only and others:
+            lines.append("")
+            lines.append("  // Layer 4: Other devices")
+            lines.append('  subgraph cluster_others {')
+            lines.append('    style=invis;')
+            for device_id, device in others:
+                wrapped_name = self._wrap_name(device.name)
+                lines.append(
+                    f'    "{device_id}" [label="{wrapped_name}", fillcolor="#FF9800"];'
+                )
+            lines.append('  }')
 
-                    # Shorter labels for better readability
-                    label = f"{icon} {device.name}\\n{device.model}"
-                    lines.append(
-                        f'    "{device_id}" [label="{label}", fillcolor="{color}"];'
-                    )
+        # Add invisible edges to enforce layer ordering (only where visible edges don't exist)
+        lines.append("")
+        lines.append("  // Invisible edges to enforce vertical hierarchy")
 
-            lines.append("  }")
+        # Internet -> router hierarchy is handled by visible edges below
+        # Only add invisible edges between layers that don't have visible connections
 
-        # Add connections
+        # First router -> first switch (if exists and no direct LLDP connection)
+        if routers and switches:
+            lines.append(f'  "{routers[0][0]}" -> "{switches[0][0]}" [style=invis, weight=100];')
+
+        # First switch -> first AP (if exists)
+        if switches and aps:
+            lines.append(f'  "{switches[0][0]}" -> "{aps[0][0]}" [style=invis, weight=100];')
+
+        # Connections (visible edges)
+        lines.append("")
+        lines.append("  // Actual connections")
+
+        # Internet to routers - through ISP nodes if available
+        if unique_isps:
+            # Connect Internet to each ISP
+            for isp_name in unique_isps:
+                safe_id = isp_name.replace(" ", "_")
+                lines.append(f'  "Internet" -> "ISP_{safe_id}" [color="#FF5722", penwidth=2.5];')
+            # Connect ISPs to routers
+            for device_id, _ in routers:
+                for isp_name in unique_isps:
+                    safe_id = isp_name.replace(" ", "_")
+                    lines.append(f'  "ISP_{safe_id}" -> "{device_id}" [color="#4CAF50", penwidth=2.0];')
+        else:
+            # Direct Internet to routers if no ISP info found
+            for device_id, _ in routers:
+                lines.append(f'  "Internet" -> "{device_id}" [color="#4CAF50", penwidth=2.5, label="WAN"];')
+
+        # Device connections from LLDP data
+        added_edges = set()
         for conn in self.connections:
             src = conn.get("source_device_id", "")
             tgt = conn.get("target_device_id", "")
 
-            if src and tgt and src in self.devices and tgt in self.devices:
-                # Shorter edge labels
-                src_port = conn.get("source_port_name", "")
-                label = f"{src_port}" if src_port and len(src_port) < 20 else ""
+            if not src or not tgt:
+                continue
+            if src not in self.devices or tgt not in self.devices:
+                continue
 
-                lines.append(f'  "{src}" -> "{tgt}" [label="{label}"];')
+            # Skip connections involving non-infrastructure devices
+            if infrastructure_only:
+                if src not in infra_ids or tgt not in infra_ids:
+                    continue
+
+            # Avoid duplicate edges
+            edge_key = tuple(sorted([src, tgt]))
+            if edge_key in added_edges:
+                continue
+            added_edges.add(edge_key)
+
+            lines.append(f'  "{src}" -> "{tgt}" [dir=none];')
+
+        # Compact title with legend info as a note
+        lines.append("")
+        lines.append("  // Title node with legend")
+        lines.append('  labelloc="t";')
+        lines.append('  label="UniFi Network Topology\\n🟢 Gateway  🔵 Switch  🟣 AP  🟠 ISP";')
+        lines.append('  fontsize=14;')
 
         lines.append("}")
         return "\n".join(lines)
+
+    def _shorten_name(self, name: str) -> str:
+        """Shorten device name for cleaner diagram display."""
+        if not name:
+            return "Unknown"
+        # Remove common prefixes/suffixes
+        name = name.replace("USW ", "").replace("U6-", "U6 ")
+        # Truncate long names
+        if len(name) > 18:
+            return name[:16] + "..."
+        return name
+
+    def _wrap_name(self, name: str, max_chars: int = 14) -> str:
+        """Wrap device name to fit in fixed-size nodes.
+
+        Args:
+            name: Device name to wrap
+            max_chars: Maximum characters per line
+
+        Returns:
+            Name with newlines for wrapping
+        """
+        if not name:
+            return "Unknown"
+
+        # Clean up common prefixes for shorter labels
+        name = name.replace("USW ", "").replace("U6-", "U6 ").replace("USW-", "")
+
+        # If short enough, return as-is
+        if len(name) <= max_chars:
+            return name
+
+        # Split into words and wrap
+        words = name.split()
+        lines = []
+        current_line = ""
+
+        for word in words:
+            if not current_line:
+                current_line = word
+            elif len(current_line) + 1 + len(word) <= max_chars:
+                current_line += " " + word
+            else:
+                lines.append(current_line)
+                current_line = word
+
+        if current_line:
+            lines.append(current_line)
+
+        # Limit to 2 lines max, truncate if needed
+        if len(lines) > 2:
+            lines = lines[:2]
+            if len(lines[1]) > max_chars - 2:
+                lines[1] = lines[1][:max_chars - 3] + "..."
+
+        return "\\n".join(lines)
 
     def _group_devices_by_location_and_type(self) -> dict:
         """
@@ -631,8 +837,7 @@ class NetworkTopology:
         return icons.get(device_type, icons["unknown"])
 
     def _determine_device_type(self, device: DeviceInfo) -> str:
-        """
-        Determine device type from model name.
+        """Determine device type from model name.
 
         Args:
             device: DeviceInfo object
@@ -640,25 +845,37 @@ class NetworkTopology:
         Returns:
             Device type: 'router', 'switch', 'ap', or 'unknown'
         """
-        model_lower = device.model.lower()
-        name_lower = device.name.lower()
+        model_lower = device.model.lower() if device.model else ""
+        name_lower = device.name.lower() if device.name else ""
 
-        # Check model patterns
-        if any(
-            x in model_lower for x in ["udm", "usg", "ugw", "gateway", "dream machine"]
-        ):
+        # Check model patterns - order matters (most specific first)
+        # Routers/Gateways
+        if any(x in model_lower for x in ["udm", "usg", "ugw", "gateway", "dream"]):
             return "router"
-        elif any(x in model_lower for x in ["usw", "switch", "flex", "us-", "usl"]):
+
+        # Switches - includes US-8, US-16, US-24, US-48 series
+        if any(x in model_lower for x in [
+            "usw", "usl", "usm", "switch", "flex",
+            "us8", "us16", "us24", "us48",  # US series without hyphen
+            "us-8", "us-16", "us-24", "us-48",  # US series with hyphen
+        ]):
             return "switch"
-        elif any(x in model_lower for x in ["uap", "u6", "u7", "ac", "ap", "iw"]):
+
+        # Access Points - includes all UAP and U6/U7 variants
+        if any(x in model_lower for x in [
+            "uap", "u6", "u7", "ualr",  # U6 LR is UALR6v2
+            "ac", "iw", "nanohd", "hd", "shd", "xg",
+        ]):
             return "ap"
 
         # Check name patterns as fallback
         if any(x in name_lower for x in ["router", "gateway", "udm", "dream"]):
             return "router"
-        elif any(x in name_lower for x in ["switch", "sw"]):
+        if any(x in name_lower for x in ["switch", "sw", "us-8", "us 8", "us8"]):
             return "switch"
-        elif any(x in name_lower for x in ["ap", "wifi", "access"]):
+        if any(x in name_lower for x in [
+            "ap", "wifi", "access", "u6", "u7", "lr", "pro", "iw"
+        ]):
             return "ap"
 
         return "unknown"

@@ -54,9 +54,15 @@ graph TB
 ```mermaid
 graph LR
     subgraph "CLI Layer"
-        A[cli.py]
+        A[typer_cli.py]
         B[network_cli.py]
         C[verify_cli.py]
+        D2[inventory_cli.py]
+    end
+
+    subgraph "Visualization Layer"
+        V1[enhanced_network_topology.py]
+        V2[render_mermaid.py]
     end
 
     subgraph "Intelligence Layer"
@@ -83,15 +89,18 @@ graph LR
     end
 
     A --> I
+    A --> V1
     B --> D
     D --> E
     D --> F
     I --> G
     J --> H
+    V1 --> V2
 
     style D fill:#fff3e0
     style F fill:#fff3e0
     style K fill:#e8f5e8
+    style V1 fill:#e3f2fd
 ```
 
 ### Design Principles
@@ -579,36 +588,55 @@ sequenceDiagram
 
 ### Command Structure
 
+The CLI uses **Typer** framework with Rich integration for a modern, user-friendly experience with automatic shell completions.
+
 ```mermaid
 graph TB
-    subgraph "Legacy CLI (cli.py)"
+    subgraph "Primary CLI - Typer (typer_cli.py)"
         A[unifi-mapper]
-        A --> A1[--verify-updates]
-        A --> A2[--dry-run]
-        A --> A3[--connected-devices]
-        A --> A4[install-completions]
+        A --> A1[discover]
+        A --> A2[diagram]
+        A --> A3[verify]
+        A --> A4[capabilities]
+        A --> A5[inventory]
+        A --> A6[install-completions]
+        A --> A7[version]
     end
 
     subgraph "Enhanced CLI (network_cli.py)"
         B[unifi-network-toolkit]
         B --> B1[discover]
         B --> B2[analyze]
-        B --> B3[mirror]
-        B --> B4[find]
-        B --> B5[diagnose]
+        B --> B3[find]
+        B --> B4[diagnose]
+    end
+
+    subgraph "Inventory CLI (inventory_cli.py)"
+        C[unifi-inventory]
+        C --> C1[list]
+        C --> C2[firmware]
+        C --> C3[export]
     end
 
     subgraph "Verification CLI (verify_cli.py)"
-        C[verify-cli]
-        C --> C1[--verify-all]
-        C --> C2[--consistency-check]
-        C --> C3[--browser]
+        D[verify-cli]
+        D --> D1[--verify-all]
+        D --> D2[--consistency-check]
     end
 
     style A fill:#e3f2fd
     style B fill:#fff3e0
-    style C fill:#ffebee
+    style C fill:#f3e5f5
+    style D fill:#ffebee
 ```
+
+### Typer CLI Features
+
+- **Rich Integration**: Beautiful console output with colors, tables, and progress indicators
+- **Automatic Completions**: Shell completions for bash, zsh, and fish
+- **Subcommands**: Organized command hierarchy with `find`, `analyze`, `diagnose`, `inventory`
+- **Global Options**: `--config` and `--debug` available across all commands
+- **Type Annotations**: Full typing support with `Annotated` parameters
 
 ### Smart Mapping Integration
 
@@ -623,6 +651,130 @@ if args.verify_updates:
         verify_updates=True,
         dry_run=args.dry_run
     )
+```
+
+## Network Topology Diagram Generation
+
+### Enhanced Network Topology (`enhanced_network_topology.py`)
+
+The topology diagram generation system creates visual network maps with hierarchical layouts using Graphviz.
+
+```mermaid
+graph TB
+    subgraph "Diagram Generation Pipeline"
+        A[Device Discovery] --> B[Device Classification]
+        B --> C[ISP Detection]
+        C --> D[LLDP Connection Mapping]
+        D --> E[DOT Source Generation]
+        E --> F[Graphviz Rendering]
+    end
+
+    subgraph "Output Formats"
+        F --> G[PNG Diagram]
+        F --> H[SVG Diagram]
+        F --> I[HTML Interactive]
+        F --> J[Mermaid Markdown]
+    end
+
+    style C fill:#fff3e0
+    style E fill:#e3f2fd
+```
+
+### ISP Detection from Port Names
+
+The system automatically detects ISP/WAN connections by analyzing port names on switches and routers:
+
+```python
+# ISP keywords detected from port names
+isp_keywords = {
+    "virgin": "Virgin Media",
+    "bt ": "BT",
+    "bt isp": "BT",
+    "sky": "Sky",
+    "talktalk": "TalkTalk",
+    "isp": "ISP"
+}
+
+# Example port names that trigger ISP detection:
+# "Virgin Media to UDM Pro Port 11" → Virgin Media
+# "BT ISP Link to UDP Pro Port 9" → BT
+```
+
+### Hierarchical Layout Structure
+
+Diagrams use a top-down hierarchical layout with device layers:
+
+```mermaid
+graph TB
+    subgraph "Layer 0: Internet"
+        Internet((🌐 Internet))
+    end
+
+    subgraph "ISP Layer"
+        ISP1[🟠 Virgin Media]
+        ISP2[🟠 BT]
+    end
+
+    subgraph "Layer 1: Gateway"
+        GW[🟢 Dream Machine Pro Max]
+    end
+
+    subgraph "Layer 2: Switches"
+        SW1[🔵 Core Switch]
+        SW2[🔵 Access Switch]
+    end
+
+    subgraph "Layer 3: Access Points"
+        AP1[🟣 U6-Pro]
+        AP2[🟣 U6-LR]
+    end
+
+    Internet --> ISP1
+    Internet --> ISP2
+    ISP1 --> GW
+    ISP2 --> GW
+    GW --> SW1
+    SW1 --> SW2
+    SW2 --> AP1
+    SW2 --> AP2
+```
+
+### Uniform Node Sizing
+
+All nodes use fixed dimensions with text wrapping for visual consistency:
+
+```python
+# Fixed node configuration
+node_config = {
+    "shape": "box",
+    "style": "filled,rounded",
+    "fixedsize": True,
+    "width": 1.4,
+    "height": 0.5,
+    "fontsize": 9
+}
+
+# Text wrapping for long device names (max 14 chars per line)
+def _wrap_name(name: str, max_chars: int = 14) -> str:
+    # "Lounge USW Flex 2.5G 8 PoE" → "Lounge\nFlex 2.5G 8 PoE"
+```
+
+### Device Type Classification
+
+```python
+DEVICE_TYPE_DETECTION = {
+    "router": ["udm", "usg", "ugw", "gateway", "dream"],
+    "switch": ["usw", "usl", "usm", "us8", "us16", "us24", "us48", "flex"],
+    "ap": ["uap", "u6", "u7", "ualr", "iw", "nanohd"]
+}
+
+DEVICE_COLORS = {
+    "router": "#4CAF50",    # Green
+    "switch": "#2196F3",    # Blue
+    "ap": "#9C27B0",        # Purple
+    "isp": "#FF5722",       # Orange
+    "internet": "#607D8B"   # Gray-blue
+}
 ```
 
 ## Analysis & Diagnostics Toolkit

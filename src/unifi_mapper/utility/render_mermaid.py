@@ -149,63 +149,142 @@ def _render_path_diagram(path_data: Any) -> str:
 
 
 def _render_topology_diagram(topology_data: dict[str, Any]) -> str:
-    """Render network topology as Mermaid diagram."""
-    lines = ['```mermaid', 'graph TD']
+    """Render network topology as Mermaid diagram with hierarchical layout.
 
+    Uses subgraphs organized by device type for better readability:
+    - Gateways at top (Internet edge)
+    - Core switches in middle
+    - Access layer (APs) below switches
+    - Clients at bottom (if included)
+
+    Layout is vertical (TB) with horizontal device groupings to prevent
+    the extremely wide diagrams that occur with flat layouts.
+    """
     devices = topology_data.get('devices', [])
     if not devices:
-        return '```mermaid\ngraph TD\n    A[No devices found]\n```'
+        return '```mermaid\ngraph TB\n    A[No devices found]\n```'
 
-    # Add title
-    total_devices = len(devices)
-    lines.append(f'    subgraph "Network Topology ({total_devices} devices)"')
-
-    # Group devices by type (used for Internet connection logic and future subgraph grouping)
+    # Group devices by type
     gateways = [d for d in devices if d.get('type') == 'gateway']
-    _switches = [d for d in devices if d.get('type') == 'switch']  # noqa: F841
-    _aps = [d for d in devices if d.get('type') == 'ap']  # noqa: F841
-    _clients = [d for d in devices if d.get('type') == 'client']  # noqa: F841
+    switches = [d for d in devices if d.get('type') == 'switch']
+    aps = [d for d in devices if d.get('type') == 'ap']
+    clients = [d for d in devices if d.get('type') == 'client']
 
-    # Add Internet connection
+    lines = ['```mermaid', 'graph TB']
+
+    # Internet node at top
     if gateways:
-        lines.append('        Internet[Internet]')
+        lines.append('    Internet((🌐 Internet))')
+        lines.append('')
 
-    # Add devices as nodes
-    for device in devices:
-        node_id = device['mac'].replace(':', '')
-        device_name = device.get('name', 'Unnamed')
-        device_model = device.get('model', '')
-        device_label = f'"{device_name}\\n({device_model})"'
+    # Gateway layer subgraph
+    if gateways:
+        lines.append('    subgraph GW[" 🔒 Gateways "]')
+        lines.append('    direction LR')
+        for device in gateways:
+            node_id = device['mac'].replace(':', '')
+            device_name = device.get('name', 'Unnamed')
+            device_model = device.get('model', '')
+            lines.append(f'        {node_id}["{device_name}<br/><small>{device_model}</small>"]')
+        lines.append('    end')
+        lines.append('')
+        # Connect Internet to gateways
+        for device in gateways:
+            node_id = device['mac'].replace(':', '')
+            lines.append(f'    Internet --> {node_id}')
+        lines.append('')
 
-        if device['type'] == 'gateway':
-            lines.append(f'        {node_id}[{device_label}]')
-            lines.append(f'        Internet --> {node_id}')
-        elif device['type'] == 'switch':
-            lines.append(f'        {node_id}[{device_label}]')
-        elif device['type'] == 'ap':
-            lines.append(f'        {node_id}(({device_label}))')
-        else:  # client
-            lines.append(f'        {node_id}{{{device_label}}}')
+    # Switch layer - separate core from access switches
+    if switches:
+        gateway_macs = [g['mac'] for g in gateways]
+        core_switches = [s for s in switches if s.get('connected_to') in gateway_macs]
+        access_switches = [s for s in switches if s not in core_switches]
 
-    # Add connections
+        if core_switches:
+            lines.append('    subgraph CORE[" 🔀 Core Switches "]')
+            lines.append('    direction LR')
+            for device in core_switches:
+                node_id = device['mac'].replace(':', '')
+                device_name = device.get('name', 'Unnamed')
+                device_model = device.get('model', '')
+                lines.append(f'        {node_id}["{device_name}<br/><small>{device_model}</small>"]')
+            lines.append('    end')
+            lines.append('')
+
+        if access_switches:
+            lines.append('    subgraph ACCESS[" 🔌 Access Switches "]')
+            lines.append('    direction LR')
+            for device in access_switches:
+                node_id = device['mac'].replace(':', '')
+                device_name = device.get('name', 'Unnamed')
+                device_model = device.get('model', '')
+                lines.append(f'        {node_id}["{device_name}<br/><small>{device_model}</small>"]')
+            lines.append('    end')
+            lines.append('')
+
+    # Access Point layer
+    if aps:
+        lines.append('    subgraph APS[" 📡 Access Points "]')
+        lines.append('    direction LR')
+        for device in aps:
+            node_id = device['mac'].replace(':', '')
+            device_name = device.get('name', 'Unnamed')
+            device_model = device.get('model', '')
+            lines.append(f'        {node_id}(("{device_name}<br/><small>{device_model}</small>"))')
+        lines.append('    end')
+        lines.append('')
+
+    # Client layer (if present)
+    if clients:
+        lines.append('    subgraph CLIENTS[" 💻 Clients "]')
+        lines.append('    direction LR')
+        for device in clients:
+            node_id = device['mac'].replace(':', '')
+            device_name = device.get('name', 'Unnamed')
+            device_model = device.get('model', '')
+            lines.append(f'        {node_id}{{"{device_name}<br/><small>{device_model}</small>"}}')
+        lines.append('    end')
+        lines.append('')
+
+    # Add all connections between devices
+    lines.append('    %% Connections')
     for device in devices:
         if device.get('connected_to'):
             device_id = device['mac'].replace(':', '')
             parent_id = device['connected_to'].replace(':', '')
-            port_info = f'Port {device.get("port_idx", "?")}' if device.get('port_idx') else ''
-            lines.append(f'        {parent_id} -->|{port_info}| {device_id}')
+            port_info = device.get('port_idx')
+            if port_info:
+                lines.append(f'    {parent_id} -->|P{port_info}| {device_id}')
+            else:
+                lines.append(f'    {parent_id} --> {device_id}')
 
-    lines.append('    end')
+    lines.append('')
 
-    # Add styling
-    lines.extend(
-        [
-            '    classDef gateway fill:#e1f5fe',
-            '    classDef switch fill:#f3e5f5',
-            '    classDef ap fill:#e8f5e8',
-            '    classDef client fill:#fff3e0',
-        ]
-    )
+    # Styling with distinct colors per device type
+    lines.extend([
+        '    %% Styling',
+        '    classDef gateway fill:#4CAF50,stroke:#2E7D32,color:#fff',
+        '    classDef switch fill:#2196F3,stroke:#1565C0,color:#fff',
+        '    classDef ap fill:#9C27B0,stroke:#6A1B9A,color:#fff',
+        '    classDef client fill:#FF9800,stroke:#E65100,color:#fff',
+        '    classDef internet fill:#607D8B,stroke:#37474F,color:#fff',
+        '',
+        '    class Internet internet',
+    ])
+
+    # Apply class to each device
+    for device in gateways:
+        node_id = device['mac'].replace(':', '')
+        lines.append(f'    class {node_id} gateway')
+    for device in switches:
+        node_id = device['mac'].replace(':', '')
+        lines.append(f'    class {node_id} switch')
+    for device in aps:
+        node_id = device['mac'].replace(':', '')
+        lines.append(f'    class {node_id} ap')
+    for device in clients:
+        node_id = device['mac'].replace(':', '')
+        lines.append(f'    class {node_id} client')
 
     lines.append('```')
     return '\n'.join(lines)
