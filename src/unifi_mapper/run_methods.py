@@ -327,6 +327,46 @@ def infer_connections_from_device_types(devices):
     return inferred_connections
 
 
+def get_devices_and_lldp_data(port_mapper, site_id):
+    """
+    Helper function to extract devices and LLDP data for smart port mapping.
+
+    Args:
+        port_mapper: UnifiPortMapper instance
+        site_id: Site ID
+
+    Returns:
+        Tuple of (devices_data, lldp_data)
+    """
+    api_client = port_mapper.api_client
+
+    # Get all devices
+    devices_response = api_client.get_devices(site_id)
+    if not devices_response or "data" not in devices_response:
+        log.error("Failed to get devices from the UniFi Controller")
+        return [], {}
+
+    all_devices = devices_response["data"]
+
+    # Filter for network devices
+    network_devices = [
+        d for d in all_devices if d.get("type") in ["ugw", "usg", "udm", "usw"]
+    ]
+
+    log.info(f"Found {len(network_devices)} network devices for smart analysis")
+
+    # Get LLDP data for all devices
+    lldp_data = {}
+    for device in network_devices:
+        device_id = device.get("_id")
+        if device_id:
+            device_lldp = api_client.get_lldp_info(site_id, device_id)
+            if device_lldp:
+                lldp_data[device_id] = device_lldp
+
+    return network_devices, lldp_data
+
+
 def run_port_mapper(
     port_mapper,
     site_id,

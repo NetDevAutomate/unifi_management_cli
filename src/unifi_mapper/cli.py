@@ -226,18 +226,52 @@ def main():
             timeout=config.timeout,
         )
 
-        # Run port mapper
-        devices, connections = run_port_mapper(
-            port_mapper=port_mapper,
-            site_id=config.site,
-            dry_run=args.dry_run,
-            output_path=output_path,
-            diagram_path=diagram_path,
-            diagram_format=diagram_format,
-            debug=args.debug,
-            show_connected_devices=args.connected_devices,
-            verify_updates=args.verify_updates,
-        )
+        # Check if smart mapping is needed (when verification is enabled)
+        if args.verify_updates:
+            log.info("🧠 Using Smart Port Mapping with device-aware capabilities...")
+            from .smart_port_mapper import SmartPortMapper
+            from .run_methods import get_devices_and_lldp_data
+
+            # Get devices and LLDP data
+            devices_data, lldp_data = get_devices_and_lldp_data(port_mapper, config.site)
+
+            # Use smart mapper
+            smart_mapper = SmartPortMapper(port_mapper.api_client)
+            smart_results = smart_mapper.smart_update_ports(
+                devices_data, lldp_data,
+                verify_updates=args.verify_updates,
+                dry_run=args.dry_run
+            )
+
+            # Generate and display smart mapping report
+            smart_report = smart_mapper.generate_smart_mapping_report(smart_results)
+            print("\n" + smart_report)
+
+            # Still generate traditional report for compatibility
+            devices, connections = run_port_mapper(
+                port_mapper=port_mapper,
+                site_id=config.site,
+                dry_run=True,  # Force dry run to avoid duplicate updates
+                output_path=output_path,
+                diagram_path=diagram_path,
+                diagram_format=diagram_format,
+                debug=args.debug,
+                show_connected_devices=args.connected_devices,
+                verify_updates=False,  # Verification already done by smart mapper
+            )
+        else:
+            # Use traditional approach when verification disabled
+            devices, connections = run_port_mapper(
+                port_mapper=port_mapper,
+                site_id=config.site,
+                dry_run=args.dry_run,
+                output_path=output_path,
+                diagram_path=diagram_path,
+                diagram_format=diagram_format,
+                debug=args.debug,
+                show_connected_devices=args.connected_devices,
+                verify_updates=args.verify_updates,
+            )
 
         log.info("✅ Completed successfully!")
         log.info(f"Report: {output_path}")
