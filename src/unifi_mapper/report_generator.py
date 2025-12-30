@@ -120,8 +120,14 @@ def generate_port_mapping_report(
             # Get PoE status
             poe_status = "Enabled" if port.poe else "Disabled"
 
-            # Check if the port should be renamed
-            modified = "✓" if current_name != proposed_name else ""
+            # Check if port was actually updated (requires tracking from update logic)
+            # For now, show "⚠" for ports that need updating but haven't been verified
+            # This prevents false positives where ✓ appears but update didn't persist
+            if current_name != proposed_name:
+                # Port needs updating but we don't know if it was actually applied/verified
+                modified = "⚠"  # Warning: needs verification
+            else:
+                modified = ""  # No change needed
 
             # Add the port row
             report.append(
