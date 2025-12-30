@@ -270,13 +270,18 @@ class ToolkitAdapter:
 
                 # Check for high CPU/memory if available
                 system_stats = device.get("system-stats", {})
-                if system_stats.get("cpu", 0) > 80:
-                    health_report["devices_with_issues"] += 1
-                    health_report["issues"].append({
-                        "device": device.get("name", "Unknown"),
-                        "issue": f"High CPU usage: {system_stats.get('cpu')}%",
-                        "severity": "medium"
-                    })
+                cpu_usage = system_stats.get("cpu", 0)
+                try:
+                    if isinstance(cpu_usage, (int, float)) and float(cpu_usage) > 80:
+                        health_report["devices_with_issues"] += 1
+                        health_report["issues"].append({
+                            "device": device.get("name", "Unknown"),
+                            "issue": f"High CPU usage: {cpu_usage}%",
+                            "severity": "medium"
+                        })
+                except (ValueError, TypeError):
+                    # Skip if CPU data is not numeric
+                    pass
 
             # Determine overall health
             if health_report["offline_devices"] > 0:

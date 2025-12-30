@@ -8,6 +8,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+from typing import Any, Dict, List
 
 from .completions import install_completions
 
@@ -251,11 +252,16 @@ def main():
 
     # Load configuration (only for commands that need UniFi access)
     try:
+        # Load environment variables from config file
+        from .cli import load_env_from_config
+        load_env_from_config(args.config)
+
+        # Now create config from environment
         from .config import UnifiConfig
         config = UnifiConfig.from_env()
     except Exception as e:
         log.error(f"Configuration error: {e}")
-        log.error("Ensure your config file exists and has valid UniFi controller settings")
+        log.error(f"Check your config file: {args.config}")
         sys.exit(1)
 
     # Route to appropriate handler
@@ -298,44 +304,16 @@ def handle_discover_command(args, config):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     diagram_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Create port mapper with enhanced client
-    try:
-        from .enhanced_api_client import EnhancedUnifiApiClient
-
-        api_client = EnhancedUnifiApiClient(
-            base_url=config.base_url,
-            site=config.site,
-            api_token=config.api_token,
-            username=config.username,
-            password=config.password,
-            verify_ssl=config.verify_ssl,
-            timeout=config.timeout,
-        )
-
-        port_mapper = UnifiPortMapper(
-            base_url=config.base_url,
-            site=config.site,
-            api_token=config.api_token,
-            username=config.username,
-            password=config.password,
-            verify_ssl=config.verify_ssl,
-            timeout=config.timeout,
-        )
-
-        # Override with enhanced client
-        port_mapper.api_client = api_client
-
-    except ImportError:
-        # Fallback to standard client
-        port_mapper = UnifiPortMapper(
-            base_url=config.base_url,
-            site=config.site,
-            api_token=config.api_token,
-            username=config.username,
-            password=config.password,
-            verify_ssl=config.verify_ssl,
-            timeout=config.timeout,
-        )
+    # Create port mapper (use standard client for now - enhanced client needs more methods)
+    port_mapper = UnifiPortMapper(
+        base_url=config.base_url,
+        site=config.site,
+        api_token=config.api_token,
+        username=config.username,
+        password=config.password,
+        verify_ssl=config.verify_ssl,
+        timeout=config.timeout,
+    )
 
     # Run discovery with verification
     devices, connections = run_port_mapper(
