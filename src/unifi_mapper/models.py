@@ -619,3 +619,70 @@ class NetworkAnalysisResult:
                 issues.append(issue)
 
         return issues
+
+
+# ==============================================
+# PORT MIRRORING MODELS (Added in Phase 2)
+# ==============================================
+
+import datetime
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import List, Optional
+
+
+class MirrorCapability(str, Enum):
+    """Port mirroring capability levels based on device hardware."""
+    NONE = 'none'
+    BASIC = 'basic'  # Single source to destination
+    ADVANCED = 'advanced'  # Multiple sources, VLAN mirroring
+    ENTERPRISE = 'enterprise'  # All features
+
+
+@dataclass
+class MirrorSession:
+    """Represents an active port mirroring (SPAN) session."""
+    session_id: str
+    device_id: str
+    device_name: str
+    source_port_idx: int
+    destination_port_idx: int
+    source_port_name: str = ""
+    destination_port_name: str = ""
+    enabled: bool = True
+    description: Optional[str] = None
+
+
+@dataclass
+class DeviceMirrorCapabilities:
+    """Hardware capabilities for port mirroring on a device."""
+    device_id: str
+    device_name: str
+    model: str
+    capability_level: MirrorCapability
+    max_sessions: int
+    supports_bidirectional: bool = True
+    supports_vlan_mirror: bool = False
+    available_ports: List[int] = field(default_factory=list)
+    restrictions: List[str] = field(default_factory=list)
+
+
+@dataclass
+class MirrorSessionResult:
+    """Result of mirror session operations."""
+    success: bool
+    message: str
+    session: Optional[MirrorSession] = None
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+
+
+@dataclass
+class MirrorReport:
+    """Report on device mirroring status."""
+    device_id: str
+    device_name: str
+    capabilities: DeviceMirrorCapabilities
+    active_sessions: List[MirrorSession] = field(default_factory=list)
+    available_session_slots: int = 0
+    report_time: datetime.datetime = field(default_factory=datetime.datetime.now)
