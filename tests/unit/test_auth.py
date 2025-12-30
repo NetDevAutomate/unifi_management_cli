@@ -131,8 +131,11 @@ class TestCredentialChain:
             }
         )
 
+        # Create a mock keyring module
+        mock_keyring = type('MockKeyring', (), {'get_password': lambda *args: keychain_data})()
+
         with patch.dict(os.environ, {}, clear=True):
-            with patch('keyring.get_password', return_value=keychain_data):
+            with patch.dict('sys.modules', {'keyring': mock_keyring}):
                 creds = await get_credentials()
                 assert creds.host == '192.168.1.2'
                 assert creds.username == 'keychain_user'
@@ -154,8 +157,11 @@ class TestCredentialChain:
         mock_process.returncode = 0
         mock_process.communicate.return_value = (op_output.encode(), b'')
 
+        # Create a mock keyring module that returns None
+        mock_keyring = type('MockKeyring', (), {'get_password': lambda *args: None})()
+
         with patch.dict(os.environ, {}, clear=True):
-            with patch('keyring.get_password', return_value=None):
+            with patch.dict('sys.modules', {'keyring': mock_keyring}):
                 with patch('asyncio.create_subprocess_exec', return_value=mock_process):
                     creds = await get_credentials()
                     assert creds.host == '192.168.1.3'
@@ -168,8 +174,11 @@ class TestCredentialChain:
         mock_process.returncode = 1
         mock_process.communicate.return_value = (b'', b'error')
 
+        # Create a mock keyring module that returns None
+        mock_keyring = type('MockKeyring', (), {'get_password': lambda *args: None})()
+
         with patch.dict(os.environ, {}, clear=True):
-            with patch('keyring.get_password', return_value=None):
+            with patch.dict('sys.modules', {'keyring': mock_keyring}):
                 with patch('asyncio.create_subprocess_exec', return_value=mock_process):
                     with pytest.raises(ToolError) as exc_info:
                         await get_credentials()

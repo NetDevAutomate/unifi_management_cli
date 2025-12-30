@@ -601,17 +601,29 @@ class UniFiClient:
                 lldp_table = device.get('lldp_table', [])
                 for neighbor in lldp_table:
                     chassis_id = neighbor.get('chassis_id', '').lower()
-                    remote_device = mac_to_device.get(chassis_id)
+                    # Also try without colons for matching
+                    chassis_id_clean = chassis_id.replace(':', '')
+                    remote_device = mac_to_device.get(chassis_id) or mac_to_device.get(
+                        chassis_id_clean
+                    )
+
+                    # Try multiple field names for port index (UniFi versions may differ)
+                    local_port = (
+                        neighbor.get('local_port_idx')
+                        or neighbor.get('port_idx')
+                        or neighbor.get('lldp_local_port_idx')
+                    )
 
                     if remote_device:
                         connection = {
                             'local_device_id': device.get('_id'),
                             'local_device_name': device.get('name'),
-                            'local_port': neighbor.get('local_port_idx'),
+                            'local_port': local_port,
                             'local_port_name': neighbor.get('local_port_name', ''),
                             'remote_device_id': remote_device.get('_id'),
                             'remote_device_name': remote_device.get('name'),
                             'remote_port_name': neighbor.get('port_id', ''),
+                            'chassis_id': chassis_id,
                             'is_unifi_device': True,
                         }
                         topology['connections'].append(connection)

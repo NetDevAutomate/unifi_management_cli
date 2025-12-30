@@ -7,6 +7,26 @@ from unifi_mcp.utils.client import UniFiClient
 from unifi_mcp.utils.errors import ErrorCodes, ToolError
 
 
+def _is_mac_address(value: str) -> bool:
+    """Check if a string looks like a MAC address rather than a device name.
+
+    Returns True if the value appears to be a MAC address format.
+    """
+    if not value:
+        return False
+    # Remove common MAC separators and check if result is hex-only
+    cleaned = value.replace(':', '').replace('-', '').replace('.', '').lower()
+    # MAC addresses are 12 hex chars
+    if len(cleaned) == 12 and all(c in '0123456789abcdef' for c in cleaned):
+        return True
+    # Also catch partial MACs or MAC-like strings
+    if len(value) <= 17 and all(c in '0123456789abcdefABCDEF:-.' for c in value):
+        hex_chars = sum(1 for c in value if c in '0123456789abcdefABCDEF')
+        if hex_chars >= 6:
+            return True
+    return False
+
+
 async def get_port_map(
     device: Annotated[
         str | None,
@@ -56,9 +76,17 @@ async def get_port_map(
         ToolError: CONTROLLER_UNREACHABLE if cannot connect to controller
     """
     async with UniFiClient() as client:
-        # Get all devices to find switches
+        # Get all devices to find switches and for MAC-to-name resolution
         devices_data = await client.get(client.build_path('stat/device'))
         clients_data = await client.get(client.build_path('stat/sta'))
+
+        # Build MAC to device name mapping for LLDP resolution
+        mac_to_device_name: dict[str, str] = {}
+        for dev in devices_data:
+            dev_mac = dev.get('mac', '').lower().replace(':', '')
+            dev_name = dev.get('name', '') or dev.get('hostname', '')
+            if dev_mac and dev_name:
+                mac_to_device_name[dev_mac] = dev_name
 
         # Filter to switches only
         if device:
@@ -87,7 +115,9 @@ async def get_port_map(
         # Get port information for each switch
         all_ports = []
         for switch_data in switches_data:
-            ports = await _get_switch_ports(client, switch_data, clients_data, include_empty)
+            ports = await _get_switch_ports(
+                client, switch_data, clients_data, mac_to_device_name, include_empty
+            )
             all_ports.extend(ports)
 
         return all_ports
@@ -127,9 +157,10 @@ async def _get_switch_ports(
     client: UniFiClient,
     switch_data: dict[str, Any],
     clients_data: list[dict[str, Any]],
+    mac_to_device_name: dict[str, str],
     include_empty: bool,
 ) -> list[Port]:
-    """Get ports for a specific switch."""
+    """Get ports for a specific switch with LLDP-based device name resolution."""
     switch_mac = switch_data.get('mac', '')
     switch_name = switch_data.get('name', '') or switch_data.get('hostname', '')
 
@@ -140,6 +171,38 @@ async def _get_switch_ports(
         )
     except Exception:
         port_overrides_data = {}
+
+    # Build LLDP port-to-device mapping for this switch
+    # LLDP shows infrastructure devices (switches, APs) connected to ports
+    lldp_table = switch_data.get('lldp_table', [])
+    lldp_port_to_device: dict[int, str] = {}
+    for entry in lldp_table:
+        # Try multiple field names for port index (UniFi versions may differ)
+        local_port_idx = (
+            entry.get('local_port_idx')
+            or entry.get('port_idx')
+            or entry.get('lldp_local_port_idx')
+        )
+        if local_port_idx is None:
+            continue
+
+        # Get system name from LLDP - try multiple field variations
+        system_name = (
+            entry.get('system_name', '')
+            or entry.get('lldp_system_name', '')
+            or entry.get('remote_system_name', '')
+        )
+
+        # If system_name is empty or looks like a MAC, try to resolve via chassis_id
+        if not system_name or _is_mac_address(system_name):
+            chassis_id = entry.get('chassis_id', '').lower().replace(':', '')
+            resolved_name = mac_to_device_name.get(chassis_id, '')
+            if resolved_name and not _is_mac_address(resolved_name):
+                system_name = resolved_name
+
+        # Only use if it's a real device name (not a MAC address)
+        if system_name and not _is_mac_address(system_name):
+            lldp_port_to_device[local_port_idx] = system_name
 
     # Get port statistics
     port_stats = switch_data.get('port_table', [])
@@ -153,8 +216,19 @@ async def _get_switch_ports(
         # Find any port override config
         port_override = _find_port_override(port_idx, port_overrides_data)
 
-        # Find connected client
+        # Find connected client (end-user devices)
         connected_client = _find_client_on_port(switch_mac, port_idx, clients_data)
+
+        # Determine connected device name - prefer client data, fall back to LLDP
+        # This ensures infrastructure devices (switches, APs) are also identified
+        connected_device_name = None
+        if connected_client:
+            connected_device_name = connected_client.get('display_name') or connected_client.get(
+                'hostname'
+            )
+        elif port_idx in lldp_port_to_device:
+            # Use LLDP-discovered device name for infrastructure devices
+            connected_device_name = lldp_port_to_device[port_idx]
 
         # Create Port model
         port = Port(
@@ -170,9 +244,7 @@ async def _get_switch_ports(
             tagged_vlans=port_override.get('networkconf_ids', []) if port_override else [],
             is_trunk=len(port_override.get('networkconf_ids', [])) > 1 if port_override else False,
             connected_mac=connected_client.get('mac') if connected_client else None,
-            connected_device_name=connected_client.get('display_name')
-            if connected_client
-            else None,
+            connected_device_name=connected_device_name,
             device_mac=switch_mac,
             device_name=switch_name,
             rx_bytes=port_stat.get('rx_bytes', 0),

@@ -3,7 +3,18 @@
 import os
 import sys
 
+import pytest
 
+
+# Check if fastmcp is available
+try:
+    import fastmcp  # noqa: F401
+    HAS_FASTMCP = True
+except ImportError:
+    HAS_FASTMCP = False
+
+
+@pytest.mark.skipif(not HAS_FASTMCP, reason='fastmcp not installed')
 def test_server_module_exists():
     """Test that server module can be found."""
     # Add src to path
@@ -21,6 +32,7 @@ def test_server_module_exists():
         assert False, f'Cannot import server module: {e}'
 
 
+@pytest.mark.skipif(not HAS_FASTMCP, reason='fastmcp not installed')
 def test_resources_exist():
     """Test that resources are available."""
     src_path = os.path.join(os.getcwd(), 'src')

@@ -15,7 +15,13 @@ def test_topology_tools_import():
     try:
         from unifi_mcp.tools.topology import __all__
 
-        expected_tools = ['get_device_tree', 'get_network_topology', 'get_port_map']
+        expected_tools = [
+            'discover_lldp_topology',
+            'get_device_tree',
+            'get_network_topology',
+            'get_port_map',
+            'trace_network_path',
+        ]
         assert set(__all__) == set(expected_tools)
     except ImportError as e:
         assert False, f'Cannot import topology module: {e}'
