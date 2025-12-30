@@ -244,7 +244,12 @@ def main():
         parser.print_help()
         return
 
-    # Load configuration
+    # Handle install-completions first (doesn't need UniFi config)
+    if args.command == "install-completions":
+        success = install_completions(args.shell, args.force)
+        sys.exit(0 if success else 1)
+
+    # Load configuration (only for commands that need UniFi access)
     try:
         from .config import UnifiConfig
         config = UnifiConfig.from_env()
@@ -265,9 +270,6 @@ def main():
             handle_find_command(args, config)
         elif args.command == "diagnose":
             handle_diagnose_command(args, config)
-        elif args.command == "install-completions":
-            success = install_completions(args.shell, args.force)
-            sys.exit(0 if success else 1)
         else:
             parser.print_help()
             sys.exit(1)
@@ -356,24 +358,39 @@ def handle_discover_command(args, config):
 
 def handle_analyze_command(args, config):
     """Handle network analysis commands."""
+    from .enhanced_api_client import EnhancedUnifiApiClient
+    from .toolkit_adapters import ToolkitAdapter
+
+    # Create API client and adapter
+    api_client = EnhancedUnifiApiClient(
+        base_url=config.base_url,
+        site=config.site,
+        api_token=config.api_token,
+        username=config.username,
+        password=config.password,
+        verify_ssl=config.verify_ssl,
+    )
+
+    if not api_client.login():
+        log.error("Failed to authenticate with UniFi Controller")
+        sys.exit(1)
+
+    adapter = ToolkitAdapter(api_client)
+
     log.info(f"Running {args.analysis_type} analysis...")
 
     if args.analysis_type == "link-quality":
-        from .analysis.link_quality import analyze_link_quality
-        # Implementation would go here
-        log.info("Link quality analysis completed")
+        results = adapter.analyze_link_quality_sync(getattr(args, 'device', None))
+        print_link_quality_results(results)
 
     elif args.analysis_type == "capacity-planning":
-        from .analysis.capacity_planning import analyze_capacity
-        log.info("Capacity planning analysis completed")
+        log.info("Capacity planning analysis - implementation pending")
 
     elif args.analysis_type == "vlan":
-        from .analysis.vlan_diagnostics import analyze_vlans
-        log.info("VLAN diagnostics completed")
+        log.info("VLAN diagnostics - implementation pending")
 
     elif args.analysis_type == "mac":
-        from .analysis.mac_analyzer import analyze_mac_tables
-        log.info("MAC address analysis completed")
+        log.info("MAC address analysis - implementation pending")
 
     else:
         log.error(f"Unknown analysis type: {args.analysis_type}")
@@ -382,24 +399,43 @@ def handle_analyze_command(args, config):
 
 def handle_mirror_command(args, config):
     """Handle port mirroring commands."""
+    from .enhanced_api_client import EnhancedUnifiApiClient
+    from .toolkit_adapters import ToolkitAdapter
+
+    # Create API client and adapter
+    api_client = EnhancedUnifiApiClient(
+        base_url=config.base_url,
+        site=config.site,
+        api_token=config.api_token,
+        username=config.username,
+        password=config.password,
+        verify_ssl=config.verify_ssl,
+    )
+
+    if not api_client.login():
+        log.error("Failed to authenticate with UniFi Controller")
+        sys.exit(1)
+
+    adapter = ToolkitAdapter(api_client)
+
     log.info(f"Executing mirror {args.mirror_action}...")
 
     if args.mirror_action == "list":
-        from .mirroring.sessions import list_mirror_sessions_sync
-        # Synchronous version would be implemented
-        log.info("Listed mirror sessions")
+        sessions = adapter.list_mirror_sessions_sync(getattr(args, 'device', None))
+        print_mirror_sessions(sessions)
 
     elif args.mirror_action == "create":
-        from .mirroring.sessions import create_mirror_session_sync
-        log.info(f"Creating mirror session: {args.device} port {args.source} -> {args.destination}")
+        result = adapter.create_mirror_session_sync(
+            args.device, args.source, args.destination,
+            getattr(args, 'description', None)
+        )
+        print_mirror_result(result)
 
     elif args.mirror_action == "delete":
-        from .mirroring.sessions import delete_mirror_session_sync
-        log.info(f"Deleting mirror session on {args.device} port {args.source}")
+        log.info("Delete mirror session - implementation pending")
 
     elif args.mirror_action == "capabilities":
-        from .mirroring.capabilities import get_mirror_capabilities_sync
-        log.info("Checking mirroring capabilities")
+        log.info("Mirror capabilities check - implementation pending")
 
     else:
         log.error(f"Unknown mirror action: {args.mirror_action}")
@@ -429,19 +465,116 @@ def handle_find_command(args, config):
 
 def handle_diagnose_command(args, config):
     """Handle network diagnostics commands."""
+    from .enhanced_api_client import EnhancedUnifiApiClient
+    from .toolkit_adapters import ToolkitAdapter
+
+    # Create API client and adapter
+    api_client = EnhancedUnifiApiClient(
+        base_url=config.base_url,
+        site=config.site,
+        api_token=config.api_token,
+        username=config.username,
+        password=config.password,
+        verify_ssl=config.verify_ssl,
+    )
+
+    if not api_client.login():
+        log.error("Failed to authenticate with UniFi Controller")
+        sys.exit(1)
+
+    adapter = ToolkitAdapter(api_client)
+
     log.info(f"Running {args.diagnose_type} diagnostics...")
 
     if args.diagnose_type == "network-health":
-        from .diagnostics.network_health import check_network_health_sync
-        log.info("Network health check completed")
+        results = adapter.network_health_check_sync()
+        print_network_health_results(results)
 
     elif args.diagnose_type == "performance":
-        from .diagnostics.performance_analysis import analyze_performance_sync
-        log.info("Performance analysis completed")
+        log.info("Performance analysis - implementation pending")
 
     else:
         log.error(f"Unknown diagnose type: {args.diagnose_type}")
         sys.exit(1)
+
+
+def print_link_quality_results(results: Dict[str, Any]):
+    """Print link quality analysis results in formatted output."""
+    if "error" in results:
+        log.error(f"Analysis failed: {results['error']}")
+        return
+
+    print(f"\n🔍 Link Quality Analysis")
+    print(f"═════════════════════════")
+    print(f"Devices analyzed: {results['devices_analyzed']}")
+    print(f"Ports with errors: {results['ports_with_errors']}")
+
+    if results["details"]:
+        print("\n⚠️  Devices with port issues:")
+        for device_detail in results["details"]:
+            print(f"\n📍 {device_detail['device_name']}:")
+            for port_issue in device_detail["port_issues"]:
+                print(f"  Port {port_issue['port']} ({port_issue['name']}): {port_issue['total_issues']} errors/drops")
+    else:
+        print("\n✅ No significant port issues detected")
+
+
+def print_network_health_results(results: Dict[str, Any]):
+    """Print network health results in formatted output."""
+    if "error" in results:
+        log.error(f"Health check failed: {results['error']}")
+        return
+
+    print(f"\n🏥 Network Health Report")
+    print(f"═══════════════════════")
+    print(f"Overall Status: {results['overall_health']}")
+    print(f"Total devices: {results['total_devices']}")
+    print(f"Adopted devices: {results['adopted_devices']}")
+    print(f"Offline devices: {results['offline_devices']}")
+
+    if results["issues"]:
+        print(f"\n⚠️  Issues found:")
+        for issue in results["issues"]:
+            severity_icon = "🚨" if issue["severity"] == "high" else "⚠️"
+            print(f"  {severity_icon} {issue['device']}: {issue['issue']}")
+    else:
+        print(f"\n✅ All devices healthy")
+
+
+def print_mirror_sessions(sessions: List[Dict[str, Any]]):
+    """Print mirror sessions in formatted output."""
+    if not sessions:
+        print("\n📡 No mirror sessions found")
+        return
+
+    print(f"\n📡 Active Mirror Sessions")
+    print(f"═══════════════════════")
+
+    for device_report in sessions:
+        device_name = device_report["device_name"]
+        active_sessions = device_report["active_sessions"]
+        available_slots = device_report["available_slots"]
+
+        print(f"\n📍 {device_name}:")
+        print(f"  Available slots: {available_slots}")
+
+        if active_sessions:
+            for session in active_sessions:
+                print(f"  🔄 Port {session['source_port']} → Port {session['destination_port']}")
+                if session.get("description"):
+                    print(f"     Description: {session['description']}")
+        else:
+            print(f"  ✅ No active sessions")
+
+
+def print_mirror_result(result: Dict[str, Any]):
+    """Print mirror operation result."""
+    if result["success"]:
+        print(f"✅ {result.get('message', 'Mirror session operation completed')}")
+        if "session_id" in result:
+            print(f"   Session ID: {result['session_id']}")
+    else:
+        print(f"❌ Mirror session operation failed: {result.get('error', 'Unknown error')}")
 
 
 if __name__ == "__main__":
