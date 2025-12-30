@@ -91,11 +91,25 @@ def get_default_config_path() -> str:
 
 def main():
     """
-    Main CLI entry point with XDG Base Directory support.
+    Main CLI entry point with subcommand support and XDG Base Directory support.
     """
+    # Check for install-completions subcommand first
+    if len(sys.argv) > 1 and sys.argv[1] == "install-completions":
+        from .completions import main as completions_main
+        # Remove the 'install-completions' argument and let completions handle the rest
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        completions_main()
+        return
+
     parser = argparse.ArgumentParser(
         description="UniFi Network Mapper - Run from anywhere with config file",
-        epilog="Example: unifi-mapper --config ~/.config/unifi_network_mapper/prod.env --format png",
+        epilog=(
+            "Examples:\n"
+            "  unifi-mapper --config ~/.config/unifi_network_mapper/prod.env --format png\n"
+            "  unifi-mapper install-completions bash\n"
+            "  unifi-mapper --verify-updates --debug"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parser.add_argument(
