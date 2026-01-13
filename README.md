@@ -398,7 +398,223 @@ This project welcomes contributions! Areas of interest:
 
 ## UniFi Protect Integration
 
-This project integrates with UniFi Protect for AI-powered camera monitoring and smart detection analytics.
+This project includes a comprehensive async Python library for UniFi Protect, providing real-time event processing, AI-powered analytics, and Home Assistant integration.
+
+### ✨ Protect Features
+
+| Feature | Description |
+|---------|-------------|
+| 🎯 **Event Analytics** | Real-time event correlation, smart detection tracking, and aggregation with configurable time windows |
+| 🤖 **AI Port Management** | Smart detection subscriptions with paired camera tracking and capability monitoring |
+| 💊 **Health Monitoring** | Proactive device health tracking with configurable thresholds and fleet-wide summaries |
+| 🏠 **MQTT Bridge** | Home Assistant integration with MQTT Discovery for automatic device/entity registration |
+
+### Quick Start
+
+```python
+from unifi_mapper.protect import ProtectConfig, UniFiProtectClient
+
+# Configure and connect
+config = ProtectConfig(
+    host="192.168.1.1",
+    username="admin",
+    password="your_password",
+    verify_ssl=False,
+)
+
+async with UniFiProtectClient(config) as client:
+    # List cameras
+    for camera in client.cameras.values():
+        print(f"{camera.name}: {camera.state}")
+```
+
+### Event Analytics & Smart Detection
+
+```python
+from unifi_mapper.protect import EventAnalytics, EventHandler, TimeWindow
+
+# Create analytics engine
+analytics = EventAnalytics()
+
+# Subscribe to smart detections
+def on_smart_detect(event):
+    print(f"Detected {event.changed_data.get('smart_detect_types')} on {event.device_id}")
+
+handler = EventHandler(client)
+handler.subscribe(on_smart_detect, event_filter=EventFilter(
+    categories=[ProtectEventCategory.SMART_DETECT]
+))
+
+# Get detection statistics
+stats = analytics.get_smart_detect_stats("camera-123", TimeWindow.HOUR_1)
+print(f"Person detections: {stats.person_count}")
+```
+
+### AI Port Capabilities
+
+```python
+from unifi_mapper.protect import AIPortManager
+
+# Monitor AI Port smart detections
+manager = AIPortManager(client)
+
+def on_ai_detection(event):
+    print(f"AI detected: {event.detection_types} from {event.camera_name}")
+
+manager.subscribe_detections(on_ai_detection)
+
+# Get AI Port status
+for port_id, info in manager.get_all_ai_ports().items():
+    print(f"{info.name}: {info.status.value}, {len(info.paired_cameras)} cameras")
+```
+
+### Device Health Monitoring
+
+```python
+from unifi_mapper.protect import DeviceHealthMonitor, HealthThresholds
+from datetime import timedelta
+
+# Configure health thresholds
+thresholds = HealthThresholds(
+    offline_timeout=timedelta(minutes=10),
+    low_battery_warning=25,
+    low_battery_critical=10,
+)
+
+# Monitor device health
+monitor = DeviceHealthMonitor(client, thresholds)
+
+def on_health_change(change):
+    print(f"{change.device_id}: {change.old_status} → {change.new_status}")
+
+monitor.subscribe(on_health_change)
+monitor.start()
+
+# Get fleet health summary
+summary = monitor.get_fleet_summary()
+print(f"Healthy: {summary.healthy_count}, Warning: {summary.warning_count}")
+```
+
+### 🏠 MQTT Bridge for Home Assistant
+
+The MQTT Bridge publishes UniFi Protect events to an MQTT broker with **Home Assistant MQTT Discovery** support, automatically creating entities for all your cameras, sensors, and smart detections.
+
+#### Installation
+
+```bash
+# MQTT support requires aiomqtt (optional dependency)
+uv add aiomqtt
+# or
+pip install aiomqtt
+```
+
+#### Basic Usage
+
+```python
+from unifi_mapper.protect import MQTTBridge, MQTTConfig, ProtectConfig, UniFiProtectClient
+
+# Configure MQTT
+mqtt_config = MQTTConfig(
+    host="192.168.1.100",  # Your MQTT broker (e.g., Mosquitto)
+    port=1883,
+    username="mqtt_user",      # Optional
+    password="mqtt_password",  # Optional
+    topic_prefix="unifi/protect",
+    discovery_prefix="homeassistant",  # HA discovery prefix
+)
+
+# Start the bridge
+async with UniFiProtectClient(protect_config) as client:
+    bridge = MQTTBridge(client, mqtt_config)
+    await bridge.start()
+
+    # Bridge automatically:
+    # - Publishes HA Discovery configs for all devices
+    # - Converts Protect events to MQTT messages
+    # - Updates device states in real-time
+
+    # Keep running...
+    await asyncio.sleep(3600)
+    await bridge.stop()
+```
+
+#### Home Assistant Auto-Discovery
+
+The bridge automatically creates these entities in Home Assistant:
+
+| Device Type | Entities Created |
+|-------------|-----------------|
+| **Cameras** | Motion sensor, Connectivity, Person/Vehicle/Package/Animal detection |
+| **Doorbells** | Ring event, Motion sensor, Connectivity, Smart detections |
+| **Sensors** | Door/Window state, Motion, Battery level |
+| **Lights** | Motion sensor, Connectivity |
+
+#### MQTT Topics
+
+```
+# Events (real-time)
+unifi/protect/event/{device_id}/{event_type}
+
+# State (retained)
+unifi/protect/state/{device_id}/motion          # ON/OFF
+unifi/protect/state/{device_id}/connectivity    # ON/OFF
+unifi/protect/state/{device_id}/sensor          # ON/OFF
+unifi/protect/state/{device_id}/smart_detect/person   # ON
+unifi/protect/state/{device_id}/smart_detect/vehicle  # ON
+
+# Bridge status
+unifi/protect/status  # online/offline
+```
+
+#### Configuration Options
+
+```python
+MQTTConfig(
+    host="localhost",           # MQTT broker hostname
+    port=1883,                  # Broker port (8883 for SSL)
+    username=None,              # Optional auth
+    password=None,              # Optional auth (SecretStr)
+    client_id="unifi-protect-bridge",
+    topic_prefix="unifi/protect",
+    discovery_prefix="homeassistant",
+    retain_state=True,          # Retain state messages
+    qos=1,                      # QoS level (0, 1, or 2)
+    keepalive=60,               # Keepalive in seconds
+    reconnect_interval=5.0,     # Reconnect delay
+    ssl=False,                  # Enable SSL/TLS
+)
+```
+
+#### Example: Home Assistant Automation
+
+Once the bridge is running, you can create automations like:
+
+```yaml
+# configuration.yaml or automations.yaml
+automation:
+  - alias: "Front Door Person Alert"
+    trigger:
+      - platform: mqtt
+        topic: "unifi/protect/state/CAMERA_ID/smart_detect/person"
+        payload: "ON"
+    action:
+      - service: notify.mobile_app
+        data:
+          message: "Person detected at front door!"
+
+  - alias: "Doorbell Ring Notification"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.front_doorbell_ring
+        to: "on"
+    action:
+      - service: media_player.play_media
+        target:
+          entity_id: media_player.living_room
+        data:
+          media_content_id: "doorbell_chime.mp3"
+          media_content_type: "music"
+```
 
 ### Attribution & Acknowledgments
 
