@@ -11,6 +11,7 @@ using the official Network API (10.1.68). It includes:
 - Client fingerprinting and management
 - ACL rule automation
 - Network/VLAN management
+- Site management and multi-site operations
 
 Example:
     >>> from unifi_mapper.network import NetworkConfig, UniFiNetworkClient
@@ -57,7 +58,11 @@ from unifi_mapper.network.models import (
     UplinkInfo,
     # Network
     NetworkInfo,
+    NetworkPurpose,
+    DHCPMode,
+    DHCPConfig,
     DHCPGuarding,
+    SiteInfo,
     # ACL Rules
     ACLActionType,
     ACLProtocol,
@@ -110,6 +115,16 @@ from unifi_mapper.network.traffic_matching import (
     PortListInfo,
     IPAddressListInfo,
 )
+from unifi_mapper.network.networks import (
+    NetworkManager,
+    NetworkStats,
+    NetworkSummary,
+)
+from unifi_mapper.network.sites import (
+    SiteManager,
+    SiteStats,
+    SiteSummary,
+)
 
 
 __all__ = [
@@ -148,7 +163,11 @@ __all__ = [
     'UplinkInfo',
     # Network Models
     'NetworkInfo',
+    'NetworkPurpose',
+    'DHCPMode',
+    'DHCPConfig',
     'DHCPGuarding',
+    'SiteInfo',
     # Statistics Collector
     'DeviceMetricsCollector',
     'MetricsSnapshot',
@@ -193,4 +212,12 @@ __all__ = [
     'TrafficListSummary',
     'PortListInfo',
     'IPAddressListInfo',
+    # Network Manager
+    'NetworkManager',
+    'NetworkStats',
+    'NetworkSummary',
+    # Site Manager
+    'SiteManager',
+    'SiteStats',
+    'SiteSummary',
 ]
