@@ -76,6 +76,15 @@ from unifi_mapper.protect.aiport import (
     AIPortStatus,
     PairedCamera,
 )
+from unifi_mapper.protect.health import (
+    DeviceHealthMonitor,
+    HealthChange,
+    HealthChangeCallback,
+    HealthHistoryEntry,
+    HealthThresholds,
+    HealthTransition,
+    DeviceHealthSummary,
+)
 
 
 __all__ = [
@@ -133,4 +142,12 @@ __all__ = [
     'AIPortManager',
     'AIPortStatus',
     'PairedCamera',
+    # Health Monitor
+    'DeviceHealthMonitor',
+    'DeviceHealthSummary',
+    'HealthChange',
+    'HealthChangeCallback',
+    'HealthHistoryEntry',
+    'HealthThresholds',
+    'HealthTransition',
 ]
