@@ -13,14 +13,17 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, TypeVar
 from unifi_mapper.network.config import NetworkConfig
 from unifi_mapper.network.models import (
+    ACLRule,
     ClientInfo,
     DeviceInfo,
     DeviceStatistics,
+    DNSPolicy,
     DPIApplication,
     DPICategory,
     FirewallPolicy,
     FirewallZone,
     NetworkInfo,
+    TrafficMatchingList,
 )
 
 
@@ -617,6 +620,327 @@ class UniFiNetworkClient:
         ):
             applications.append(DPIApplication.model_validate(item))
         return applications
+
+    # =========================================================================
+    # ACL Rule Endpoints
+    # =========================================================================
+
+    async def list_acl_rules(
+        self,
+        filter_expr: str | None = None,
+        limit: int = 200,
+    ) -> list[ACLRule]:
+        """List all ACL rules on a site.
+
+        Args:
+            filter_expr: Optional filter expression.
+            limit: Maximum items to return.
+
+        Returns:
+            List of ACL rules.
+        """
+        rules = []
+        async for item in self._paginate(
+            '/sites/{siteId}/acls', limit=limit, filter_expr=filter_expr
+        ):
+            rules.append(ACLRule.model_validate(item))
+        return rules
+
+    async def get_acl_rule(self, acl_rule_id: str) -> ACLRule:
+        """Get a specific ACL rule.
+
+        Args:
+            acl_rule_id: ACL rule UUID.
+
+        Returns:
+            ACL rule.
+        """
+        response = await self._get(f'/sites/{{siteId}}/acls/{acl_rule_id}')
+        return ACLRule.model_validate(response.get('data', response))
+
+    async def create_acl_rule(
+        self,
+        name: str,
+        rule_type: str,
+        action: str = 'BLOCK',
+        enabled: bool = True,
+        description: str | None = None,
+        source_filter: dict[str, Any] | None = None,
+        destination_filter: dict[str, Any] | None = None,
+        protocol_filter: list[str] | None = None,
+        enforcing_device_ids: list[str] | None = None,
+    ) -> ACLRule:
+        """Create a new ACL rule.
+
+        Args:
+            name: Rule name.
+            rule_type: Rule type.
+            action: 'ALLOW' or 'BLOCK'.
+            enabled: Whether rule is enabled.
+            description: Optional description.
+            source_filter: Source traffic filter.
+            destination_filter: Destination traffic filter.
+            protocol_filter: Protocol filter ('TCP', 'UDP').
+            enforcing_device_ids: Switch device IDs to enforce rule.
+
+        Returns:
+            Created ACL rule.
+        """
+        payload: dict[str, Any] = {
+            'type': rule_type,
+            'name': name,
+            'action': action,
+            'enabled': enabled,
+        }
+
+        if description:
+            payload['description'] = description
+        if source_filter:
+            payload['sourceFilter'] = source_filter
+        if destination_filter:
+            payload['destinationFilter'] = destination_filter
+        if protocol_filter:
+            payload['protocolFilter'] = protocol_filter
+        if enforcing_device_ids:
+            payload['enforcingDeviceFilter'] = {'deviceIds': enforcing_device_ids}
+
+        response = await self._post('/sites/{siteId}/acls', json=payload)
+        return ACLRule.model_validate(response.get('data', response))
+
+    async def update_acl_rule(
+        self,
+        acl_rule_id: str,
+        **updates: Any,
+    ) -> ACLRule:
+        """Update an existing ACL rule.
+
+        Args:
+            acl_rule_id: ACL rule UUID.
+            **updates: Fields to update.
+
+        Returns:
+            Updated ACL rule.
+        """
+        response = await self._put(
+            f'/sites/{{siteId}}/acls/{acl_rule_id}',
+            json=updates,
+        )
+        return ACLRule.model_validate(response.get('data', response))
+
+    async def delete_acl_rule(self, acl_rule_id: str) -> dict[str, Any]:
+        """Delete an ACL rule.
+
+        Args:
+            acl_rule_id: ACL rule UUID.
+
+        Returns:
+            Deletion response.
+        """
+        return await self._delete(f'/sites/{{siteId}}/acls/{acl_rule_id}')
+
+    # =========================================================================
+    # DNS Policy Endpoints
+    # =========================================================================
+
+    async def list_dns_policies(
+        self,
+        filter_expr: str | None = None,
+        limit: int = 200,
+    ) -> list[DNSPolicy]:
+        """List all DNS policies on a site.
+
+        Args:
+            filter_expr: Optional filter expression.
+            limit: Maximum items to return.
+
+        Returns:
+            List of DNS policies.
+        """
+        policies = []
+        async for item in self._paginate(
+            '/sites/{siteId}/dns-policies', limit=limit, filter_expr=filter_expr
+        ):
+            policies.append(DNSPolicy.model_validate(item))
+        return policies
+
+    async def get_dns_policy(self, dns_policy_id: str) -> DNSPolicy:
+        """Get a specific DNS policy.
+
+        Args:
+            dns_policy_id: DNS policy UUID.
+
+        Returns:
+            DNS policy.
+        """
+        response = await self._get(f'/sites/{{siteId}}/dns-policies/{dns_policy_id}')
+        return DNSPolicy.model_validate(response.get('data', response))
+
+    async def create_dns_policy(
+        self,
+        domain: str,
+        policy_type: str,
+        ipv4_address: str | None = None,
+        ipv6_address: str | None = None,
+        ttl_seconds: int = 3600,
+        enabled: bool = True,
+    ) -> DNSPolicy:
+        """Create a new DNS policy.
+
+        Args:
+            domain: Domain name (1-127 characters).
+            policy_type: DNS record type.
+            ipv4_address: IPv4 address for A record.
+            ipv6_address: IPv6 address for AAAA record.
+            ttl_seconds: Time to live in seconds (0-604800).
+            enabled: Whether policy is enabled.
+
+        Returns:
+            Created DNS policy.
+        """
+        payload: dict[str, Any] = {
+            'type': policy_type,
+            'domain': domain,
+            'enabled': enabled,
+            'ttlSeconds': ttl_seconds,
+        }
+
+        if ipv4_address:
+            payload['ipv4Address'] = ipv4_address
+        if ipv6_address:
+            payload['ipv6Address'] = ipv6_address
+
+        response = await self._post('/sites/{siteId}/dns-policies', json=payload)
+        return DNSPolicy.model_validate(response.get('data', response))
+
+    async def update_dns_policy(
+        self,
+        dns_policy_id: str,
+        **updates: Any,
+    ) -> DNSPolicy:
+        """Update an existing DNS policy.
+
+        Args:
+            dns_policy_id: DNS policy UUID.
+            **updates: Fields to update.
+
+        Returns:
+            Updated DNS policy.
+        """
+        response = await self._put(
+            f'/sites/{{siteId}}/dns-policies/{dns_policy_id}',
+            json=updates,
+        )
+        return DNSPolicy.model_validate(response.get('data', response))
+
+    async def delete_dns_policy(self, dns_policy_id: str) -> dict[str, Any]:
+        """Delete a DNS policy.
+
+        Args:
+            dns_policy_id: DNS policy UUID.
+
+        Returns:
+            Deletion response.
+        """
+        return await self._delete(f'/sites/{{siteId}}/dns-policies/{dns_policy_id}')
+
+    # =========================================================================
+    # Traffic Matching List Endpoints
+    # =========================================================================
+
+    async def list_traffic_matching_lists(
+        self,
+        filter_expr: str | None = None,
+        limit: int = 200,
+    ) -> list[TrafficMatchingList]:
+        """List all traffic matching lists on a site.
+
+        Args:
+            filter_expr: Optional filter expression.
+            limit: Maximum items to return.
+
+        Returns:
+            List of traffic matching lists.
+        """
+        lists = []
+        async for item in self._paginate(
+            '/sites/{siteId}/traffic-matching-lists', limit=limit, filter_expr=filter_expr
+        ):
+            lists.append(TrafficMatchingList.model_validate(item))
+        return lists
+
+    async def get_traffic_matching_list(self, list_id: str) -> TrafficMatchingList:
+        """Get a specific traffic matching list.
+
+        Args:
+            list_id: Traffic matching list UUID.
+
+        Returns:
+            Traffic matching list.
+        """
+        response = await self._get(f'/sites/{{siteId}}/traffic-matching-lists/{list_id}')
+        return TrafficMatchingList.model_validate(response.get('data', response))
+
+    async def create_traffic_matching_list(
+        self,
+        name: str,
+        list_type: str,
+        ports: list[dict[str, Any]] | None = None,
+        ip_addresses: list[dict[str, Any]] | None = None,
+    ) -> TrafficMatchingList:
+        """Create a new traffic matching list.
+
+        Args:
+            name: List name.
+            list_type: 'PORT_LIST' or 'IP_ADDRESS_LIST'.
+            ports: List of port matching configurations.
+            ip_addresses: List of IP address matching configurations.
+
+        Returns:
+            Created traffic matching list.
+        """
+        payload: dict[str, Any] = {
+            'type': list_type,
+            'name': name,
+        }
+
+        if ports:
+            payload['ports'] = ports
+        if ip_addresses:
+            payload['ipAddresses'] = ip_addresses
+
+        response = await self._post('/sites/{siteId}/traffic-matching-lists', json=payload)
+        return TrafficMatchingList.model_validate(response.get('data', response))
+
+    async def update_traffic_matching_list(
+        self,
+        list_id: str,
+        **updates: Any,
+    ) -> TrafficMatchingList:
+        """Update an existing traffic matching list.
+
+        Args:
+            list_id: Traffic matching list UUID.
+            **updates: Fields to update.
+
+        Returns:
+            Updated traffic matching list.
+        """
+        response = await self._put(
+            f'/sites/{{siteId}}/traffic-matching-lists/{list_id}',
+            json=updates,
+        )
+        return TrafficMatchingList.model_validate(response.get('data', response))
+
+    async def delete_traffic_matching_list(self, list_id: str) -> dict[str, Any]:
+        """Delete a traffic matching list.
+
+        Args:
+            list_id: Traffic matching list UUID.
+
+        Returns:
+            Deletion response.
+        """
+        return await self._delete(f'/sites/{{siteId}}/traffic-matching-lists/{list_id}')
 
 
 @asynccontextmanager

@@ -494,6 +494,168 @@ class FirewallPolicy(BaseModel):
 
 
 # =============================================================================
+# ACL Rule Models
+# =============================================================================
+
+
+class ACLActionType(str, Enum):
+    """ACL rule action type."""
+
+    ALLOW = 'ALLOW'
+    BLOCK = 'BLOCK'
+
+
+class ACLProtocol(str, Enum):
+    """ACL protocol filter."""
+
+    TCP = 'TCP'
+    UDP = 'UDP'
+
+
+class ACLDeviceFilter(BaseModel):
+    """ACL rule device filter for switch enforcement."""
+
+    device_ids: Annotated[
+        list[str] | None, Field(alias='deviceIds', default=None)
+    ]
+
+    model_config = {'populate_by_name': True}
+
+
+class ACLTrafficFilter(BaseModel):
+    """ACL traffic source or destination filter."""
+
+    type: str | None = None
+    ip_addresses_or_subnets: Annotated[
+        list[str], Field(alias='ipAddressesOrSubnets', default_factory=list)
+    ]
+    ports_filter: Annotated[
+        list[int], Field(alias='portsFilter', default_factory=list)
+    ]
+    network_ids: Annotated[
+        list[str], Field(alias='networkIds', default_factory=list)
+    ]
+    mac_addresses: Annotated[
+        list[str], Field(alias='macAddresses', default_factory=list)
+    ]
+    prefix_length: Annotated[int | None, Field(alias='prefixLength')] = None
+
+    model_config = {'populate_by_name': True}
+
+
+class ACLRule(BaseModel):
+    """Access Control List rule for traffic filtering."""
+
+    id: str = ''
+    type: str = ''
+    enabled: bool = True
+    name: str = ''
+    description: str | None = None
+    action: ACLActionType = ACLActionType.BLOCK
+    enforcing_device_filter: Annotated[
+        ACLDeviceFilter | None, Field(alias='enforcingDeviceFilter')
+    ] = None
+    index: int = 0
+    source_filter: Annotated[
+        ACLTrafficFilter | None, Field(alias='sourceFilter')
+    ] = None
+    destination_filter: Annotated[
+        ACLTrafficFilter | None, Field(alias='destinationFilter')
+    ] = None
+    protocol_filter: Annotated[
+        list[ACLProtocol] | None, Field(alias='protocolFilter')
+    ] = None
+    network_id: Annotated[str | None, Field(alias='networkId')] = None
+    origin: str = ''  # 'SYSTEM', 'USER'
+
+    model_config = {'populate_by_name': True}
+
+
+# =============================================================================
+# DNS Policy Models
+# =============================================================================
+
+
+class DNSRecordType(str, Enum):
+    """DNS record type."""
+
+    A = 'A'
+    AAAA = 'AAAA'
+    CNAME = 'CNAME'
+    MX = 'MX'
+    TXT = 'TXT'
+    SRV = 'SRV'
+
+
+class DNSPolicy(BaseModel):
+    """DNS policy for domain resolution."""
+
+    id: str = ''
+    type: str = ''
+    enabled: bool = True
+    domain: Annotated[str, Field(min_length=1, max_length=127)] = ''
+    ipv4_address: Annotated[str | None, Field(alias='ipv4Address')] = None
+    ipv6_address: Annotated[str | None, Field(alias='ipv6Address')] = None
+    target_domain: Annotated[str | None, Field(alias='targetDomain')] = None
+    mail_server_domain: Annotated[str | None, Field(alias='mailServerDomain')] = None
+    text: str | None = None
+    server_domain: Annotated[str | None, Field(alias='serverDomain')] = None
+    ip_address: Annotated[str | None, Field(alias='ipAddress')] = None
+    ttl_seconds: Annotated[int, Field(ge=0, le=604800, alias='ttlSeconds')] = 3600
+    priority: int | None = None
+    service: str | None = None
+    protocol: str | None = None
+    port: int | None = None
+    weight: int | None = None
+
+    model_config = {'populate_by_name': True}
+
+
+# =============================================================================
+# Traffic Matching List Models
+# =============================================================================
+
+
+class PortMatching(BaseModel):
+    """Port matching configuration for traffic lists."""
+
+    port: int = Field(ge=1, le=65535)
+    protocol: ACLProtocol = ACLProtocol.TCP
+
+    model_config = {'populate_by_name': True}
+
+
+class IPAddressMatching(BaseModel):
+    """IP address matching configuration for traffic lists."""
+
+    ip_address: Annotated[str, Field(alias='ipAddress')] = ''
+    description: str | None = None
+
+    model_config = {'populate_by_name': True}
+
+
+class TrafficMatchingListType(str, Enum):
+    """Traffic matching list type."""
+
+    PORT_LIST = 'PORT_LIST'
+    IP_ADDRESS_LIST = 'IP_ADDRESS_LIST'
+
+
+class TrafficMatchingList(BaseModel):
+    """Traffic matching list for firewall configurations."""
+
+    id: str = ''
+    type: TrafficMatchingListType = TrafficMatchingListType.PORT_LIST
+    name: str = ''
+    ports: list[PortMatching] = Field(default_factory=list)
+    ip_addresses: Annotated[
+        list[IPAddressMatching], Field(alias='ipAddresses', default_factory=list)
+    ]
+
+    model_config = {'populate_by_name': True}
+
+
+# =============================================================================
 # Utility Functions
 # =============================================================================
 

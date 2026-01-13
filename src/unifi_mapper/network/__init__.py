@@ -58,6 +58,19 @@ from unifi_mapper.network.models import (
     # Network
     NetworkInfo,
     DHCPGuarding,
+    # ACL Rules
+    ACLActionType,
+    ACLProtocol,
+    ACLDeviceFilter,
+    ACLTrafficFilter,
+    ACLRule,
+    # DNS Policies
+    DNSPolicy,
+    # Traffic Matching Lists
+    PortMatching,
+    IPAddressMatching,
+    TrafficMatchingListType,
+    TrafficMatchingList,
 )
 from unifi_mapper.network.statistics import (
     DeviceMetricsCollector,
@@ -80,6 +93,22 @@ from unifi_mapper.network.clients import (
     ClientStats,
     FingerprintResult,
     DeviceCategory,
+)
+from unifi_mapper.network.acl import (
+    ACLManager,
+    ACLRuleStats,
+    ACLSummary,
+)
+from unifi_mapper.network.dns import (
+    DNSPolicyManager,
+    DNSPolicySummary,
+    DNSRecordInfo,
+)
+from unifi_mapper.network.traffic_matching import (
+    TrafficMatchingListManager,
+    TrafficListSummary,
+    PortListInfo,
+    IPAddressListInfo,
 )
 
 
@@ -138,4 +167,30 @@ __all__ = [
     'ClientStats',
     'FingerprintResult',
     'DeviceCategory',
+    # ACL Models
+    'ACLActionType',
+    'ACLProtocol',
+    'ACLDeviceFilter',
+    'ACLTrafficFilter',
+    'ACLRule',
+    # DNS Models
+    'DNSPolicy',
+    # Traffic Matching Models
+    'PortMatching',
+    'IPAddressMatching',
+    'TrafficMatchingListType',
+    'TrafficMatchingList',
+    # ACL Manager
+    'ACLManager',
+    'ACLRuleStats',
+    'ACLSummary',
+    # DNS Manager
+    'DNSPolicyManager',
+    'DNSPolicySummary',
+    'DNSRecordInfo',
+    # Traffic Matching Manager
+    'TrafficMatchingListManager',
+    'TrafficListSummary',
+    'PortListInfo',
+    'IPAddressListInfo',
 ]
