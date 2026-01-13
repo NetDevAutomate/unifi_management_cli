@@ -80,3 +80,6 @@ diagrams/*.svg
 diagrams/*.html
 diagrams/*.dot
 !diagrams/.gitkeep
+
+# Personal/environment-specific scripts (not for distribution)
+personal_scripts/

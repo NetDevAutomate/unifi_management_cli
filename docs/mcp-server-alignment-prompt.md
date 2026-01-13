@@ -2,7 +2,7 @@
 
 ## Objective
 
-The main UniFi Port Mapper repository at `/Users/ataylor/code/personal/unifi_port_mapper` has undergone comprehensive debugging and enhancement. The MCP server repository at `/Users/ataylor/code/personal/unifi_port_mapper_mcp_server` needs to be aligned with these critical fixes and improvements.
+The main UniFi Port Mapper repository at `/Users/ataylor/code/personal/network/unifi_port_mapper` has undergone comprehensive debugging and enhancement. The MCP server repository at `/Users/ataylor/code/personal/network/unifi_port_mapper_mcp_server` needs to be aligned with these critical fixes and improvements.
 
 ## Critical Issues Resolved in Main Repository
 
