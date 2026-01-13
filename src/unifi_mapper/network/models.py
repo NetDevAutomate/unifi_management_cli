@@ -281,6 +281,38 @@ class DHCPGuarding(BaseModel):
     model_config = {'populate_by_name': True}
 
 
+class NetworkPurpose(str, Enum):
+    """Network purpose type."""
+
+    CORPORATE = 'CORPORATE'
+    GUEST = 'GUEST'
+    REMOTE_ACCESS = 'REMOTE_ACCESS'
+    WAN = 'WAN'
+    VLAN_ONLY = 'VLAN_ONLY'
+    HOTSPOT = 'HOTSPOT'
+    VPN_CLIENT = 'VPN_CLIENT'
+
+
+class DHCPMode(str, Enum):
+    """DHCP server mode."""
+
+    DHCP_SERVER = 'DHCP_SERVER'
+    DHCP_RELAY = 'DHCP_RELAY'
+    NONE = 'NONE'
+
+
+class DHCPConfig(BaseModel):
+    """DHCP configuration for a network."""
+
+    mode: DHCPMode = DHCPMode.DHCP_SERVER
+    start: str | None = None
+    stop: str | None = None
+    lease_time: Annotated[int | None, Field(alias='leaseTime')] = None
+    dns_enabled: Annotated[bool, Field(alias='dnsEnabled')] = True
+
+    model_config = {'populate_by_name': True}
+
+
 class NetworkInfo(BaseModel):
     """Information about a network/VLAN."""
 
@@ -289,9 +321,63 @@ class NetworkInfo(BaseModel):
     enabled: bool = True
     vlan_id: Annotated[int | None, Field(alias='vlanId')] = None
     management: str = ''  # 'INTERNAL', 'EXTERNAL'
+    purpose: NetworkPurpose | None = None
+    subnet: str | None = None
+    gateway_ip: Annotated[str | None, Field(alias='gatewayIp')] = None
+    gateway_ip6: Annotated[str | None, Field(alias='gatewayIp6')] = None
+    domain_name: Annotated[str | None, Field(alias='domainName')] = None
+    ipv6_enabled: Annotated[bool, Field(alias='ipv6Enabled')] = False
+    nat_mode: Annotated[str | None, Field(alias='natMode')] = None
+    internet_access_enabled: Annotated[bool, Field(alias='internetAccessEnabled')] = True
+    dhcp_config: Annotated[DHCPConfig | None, Field(alias='dhcpConfig')] = None
     dhcp_guarding: Annotated[DHCPGuarding | None, Field(alias='dhcpGuarding')] = None
+    igmp_snooping_enabled: Annotated[bool, Field(alias='igmpSnoopingEnabled')] = False
+    multicast_dns_enabled: Annotated[bool, Field(alias='multicastDnsEnabled')] = False
+    auto_scale_enabled: Annotated[bool, Field(alias='autoScaleEnabled')] = False
+    configurable: bool = True
+    origin: str = 'USER'  # 'USER' or 'SYSTEM'
 
     model_config = {'populate_by_name': True}
+
+    @property
+    def is_vlan(self) -> bool:
+        """Check if network has a VLAN ID configured."""
+        return self.vlan_id is not None
+
+    @property
+    def is_guest_network(self) -> bool:
+        """Check if this is a guest network."""
+        return self.purpose == NetworkPurpose.GUEST
+
+    @property
+    def has_dhcp(self) -> bool:
+        """Check if DHCP is enabled on this network."""
+        if self.dhcp_config is None:
+            return False
+        return self.dhcp_config.mode == DHCPMode.DHCP_SERVER
+
+
+class SiteInfo(BaseModel):
+    """Information about a UniFi site."""
+
+    id: str = ''
+    name: str = ''
+    description: str = ''
+    time_zone: Annotated[str | None, Field(alias='timeZone')] = None
+    locale: str | None = None
+    country_code: Annotated[str | None, Field(alias='countryCode')] = None
+    device_count: Annotated[int, Field(alias='deviceCount')] = 0
+    client_count: Annotated[int, Field(alias='clientCount')] = 0
+    gateway_mac: Annotated[str | None, Field(alias='gatewayMac')] = None
+    led_enabled: Annotated[bool, Field(alias='ledEnabled')] = True
+    uplink_enabled: Annotated[bool, Field(alias='uplinkEnabled')] = True
+
+    model_config = {'populate_by_name': True}
+
+    @property
+    def total_devices_and_clients(self) -> int:
+        """Total count of devices and clients."""
+        return self.device_count + self.client_count
 
 
 # =============================================================================

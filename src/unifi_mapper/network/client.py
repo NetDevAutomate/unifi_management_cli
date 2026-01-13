@@ -23,6 +23,7 @@ from unifi_mapper.network.models import (
     FirewallPolicy,
     FirewallZone,
     NetworkInfo,
+    SiteInfo,
     TrafficMatchingList,
 )
 
@@ -452,6 +453,173 @@ class UniFiNetworkClient:
         ):
             networks.append(NetworkInfo.model_validate(item))
         return networks
+
+    async def get_network(self, network_id: str) -> NetworkInfo:
+        """Get a specific network by ID.
+
+        Args:
+            network_id: Network UUID.
+
+        Returns:
+            Network information.
+        """
+        response = await self._get(f'/sites/{{siteId}}/networks/{network_id}')
+        return NetworkInfo.model_validate(response.get('data', response))
+
+    async def create_network(
+        self,
+        name: str,
+        purpose: str = 'CORPORATE',
+        vlan_id: int | None = None,
+        subnet: str | None = None,
+        gateway_ip: str | None = None,
+        dhcp_enabled: bool = True,
+        dhcp_start: str | None = None,
+        dhcp_stop: str | None = None,
+        internet_access_enabled: bool = True,
+        ipv6_enabled: bool = False,
+        domain_name: str | None = None,
+    ) -> NetworkInfo:
+        """Create a new network.
+
+        Args:
+            name: Network name.
+            purpose: Network purpose (CORPORATE, GUEST, etc.).
+            vlan_id: Optional VLAN ID.
+            subnet: Network subnet (e.g., '192.168.10.0/24').
+            gateway_ip: Gateway IP address.
+            dhcp_enabled: Enable DHCP server.
+            dhcp_start: DHCP range start IP.
+            dhcp_stop: DHCP range end IP.
+            internet_access_enabled: Allow internet access.
+            ipv6_enabled: Enable IPv6.
+            domain_name: Domain name for the network.
+
+        Returns:
+            Created network.
+        """
+        payload: dict[str, Any] = {
+            'name': name,
+            'purpose': purpose,
+            'internetAccessEnabled': internet_access_enabled,
+            'ipv6Enabled': ipv6_enabled,
+        }
+
+        if vlan_id is not None:
+            payload['vlanId'] = vlan_id
+        if subnet:
+            payload['subnet'] = subnet
+        if gateway_ip:
+            payload['gatewayIp'] = gateway_ip
+        if domain_name:
+            payload['domainName'] = domain_name
+
+        # DHCP configuration
+        if dhcp_enabled:
+            dhcp_config: dict[str, Any] = {'mode': 'DHCP_SERVER'}
+            if dhcp_start:
+                dhcp_config['start'] = dhcp_start
+            if dhcp_stop:
+                dhcp_config['stop'] = dhcp_stop
+            payload['dhcpConfig'] = dhcp_config
+        else:
+            payload['dhcpConfig'] = {'mode': 'NONE'}
+
+        response = await self._post('/sites/{siteId}/networks', json=payload)
+        return NetworkInfo.model_validate(response.get('data', response))
+
+    async def update_network(
+        self,
+        network_id: str,
+        **updates: Any,
+    ) -> NetworkInfo:
+        """Update an existing network.
+
+        Args:
+            network_id: Network UUID.
+            **updates: Fields to update.
+
+        Returns:
+            Updated network.
+        """
+        response = await self._put(
+            f'/sites/{{siteId}}/networks/{network_id}',
+            json=updates,
+        )
+        return NetworkInfo.model_validate(response.get('data', response))
+
+    async def delete_network(self, network_id: str) -> dict[str, Any]:
+        """Delete a network.
+
+        Args:
+            network_id: Network UUID.
+
+        Returns:
+            Deletion response.
+        """
+        return await self._delete(f'/sites/{{siteId}}/networks/{network_id}')
+
+    # =========================================================================
+    # Site Endpoints
+    # =========================================================================
+
+    async def list_sites(
+        self,
+        filter_expr: str | None = None,
+        limit: int = 200,
+    ) -> list[SiteInfo]:
+        """List all sites.
+
+        Args:
+            filter_expr: Optional filter expression.
+            limit: Maximum items to return.
+
+        Returns:
+            List of site information.
+        """
+        sites = []
+        async for item in self._paginate(
+            '/sites', limit=limit, filter_expr=filter_expr
+        ):
+            sites.append(SiteInfo.model_validate(item))
+        return sites
+
+    async def get_site(self, site_id: str) -> SiteInfo:
+        """Get a specific site by ID.
+
+        Args:
+            site_id: Site UUID.
+
+        Returns:
+            Site information.
+        """
+        response = await self._get(f'/sites/{site_id}')
+        return SiteInfo.model_validate(response.get('data', response))
+
+    async def get_current_site(self) -> SiteInfo:
+        """Get information about the current site.
+
+        Returns:
+            Current site information.
+        """
+        return await self.get_site(self.config.site_id)
+
+    async def update_site(
+        self,
+        site_id: str,
+        **updates: Any,
+    ) -> SiteInfo:
+        """Update a site's configuration.
+
+        Args:
+            site_id: Site UUID.
+            **updates: Fields to update (name, description, timeZone, etc.).
+
+        Returns:
+            Updated site information.
+        """
+        response = await self._put(f'/sites/{site_id}', json=updates)
+        return SiteInfo.model_validate(response.get('data', response))
 
     # =========================================================================
     # Firewall Endpoints
