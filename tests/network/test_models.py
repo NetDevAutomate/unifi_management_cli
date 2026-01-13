@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from unifi_mapper.network.models import (
+    ACLActionType,
+    ACLDeviceFilter,
+    ACLProtocol,
+    ACLRule,
+    ACLTrafficFilter,
     ClientFingerprint,
     ClientInfo,
     ClientType,
     DeviceInfo,
     DeviceState,
     DeviceStatistics,
+    DNSPolicy,
     DPIApplication,
     DPICategory,
     DPIStats,
@@ -16,9 +22,13 @@ from unifi_mapper.network.models import (
     FirewallActionType,
     FirewallPolicy,
     FirewallZone,
+    IPAddressMatching,
     IPSecFilter,
     NetworkInfo,
+    PortMatching,
     PortStatistics,
+    TrafficMatchingList,
+    TrafficMatchingListType,
 )
 
 
@@ -351,3 +361,224 @@ class TestEnums:
         """Test IPSecFilter enum."""
         assert IPSecFilter.MATCH_ENCRYPTED.value == 'MATCH_ENCRYPTED'
         assert IPSecFilter.MATCH_NOT_ENCRYPTED.value == 'MATCH_NOT_ENCRYPTED'
+
+    def test_acl_action_type(self) -> None:
+        """Test ACLActionType enum."""
+        assert ACLActionType.ALLOW.value == 'ALLOW'
+        assert ACLActionType.BLOCK.value == 'BLOCK'
+
+    def test_acl_protocol(self) -> None:
+        """Test ACLProtocol enum."""
+        assert ACLProtocol.TCP.value == 'TCP'
+        assert ACLProtocol.UDP.value == 'UDP'
+
+    def test_traffic_matching_list_type(self) -> None:
+        """Test TrafficMatchingListType enum."""
+        assert TrafficMatchingListType.PORT_LIST.value == 'PORT_LIST'
+        assert TrafficMatchingListType.IP_ADDRESS_LIST.value == 'IP_ADDRESS_LIST'
+
+
+class TestACLModels:
+    """Tests for ACL-related models."""
+
+    def test_acl_traffic_filter(self) -> None:
+        """Test ACLTrafficFilter model."""
+        filter_ = ACLTrafficFilter(
+            type='SOURCE',
+            ipAddressesOrSubnets=['192.168.1.0/24', '10.0.0.0/8'],
+            portsFilter=[22, 80, 443],
+            macAddresses=['AA:BB:CC:DD:EE:FF'],
+            networkIds=['net-1', 'net-2'],
+        )
+        assert len(filter_.ip_addresses_or_subnets) == 2
+        assert 22 in filter_.ports_filter
+        assert len(filter_.mac_addresses) == 1
+        assert len(filter_.network_ids) == 2
+
+    def test_acl_device_filter(self) -> None:
+        """Test ACLDeviceFilter model."""
+        filter_ = ACLDeviceFilter(
+            deviceIds=['device-1', 'device-2'],
+        )
+        assert len(filter_.device_ids) == 2
+
+    def test_acl_rule_basic(self) -> None:
+        """Test ACLRule model basic creation."""
+        rule = ACLRule(
+            id='rule-123',
+            type='INTER_NETWORK',
+            enabled=True,
+            name='Block SSH',
+            action=ACLActionType.BLOCK,
+            origin='USER',
+        )
+        assert rule.id == 'rule-123'
+        assert rule.name == 'Block SSH'
+        assert rule.action == ACLActionType.BLOCK
+        assert rule.enabled is True
+        assert rule.origin == 'USER'
+
+    def test_acl_rule_with_filters(self) -> None:
+        """Test ACLRule model with source/destination filters."""
+        rule = ACLRule(
+            id='rule-123',
+            type='INTER_NETWORK',
+            name='Complex Rule',
+            enabled=True,
+            action=ACLActionType.BLOCK,
+            sourceFilter=ACLTrafficFilter(
+                ipAddressesOrSubnets=['192.168.1.0/24'],
+                portsFilter=[22],
+            ),
+            destinationFilter=ACLTrafficFilter(
+                ipAddressesOrSubnets=['10.0.0.0/8'],
+            ),
+            protocolFilter=[ACLProtocol.TCP],
+            enforcingDeviceFilter=ACLDeviceFilter(
+                deviceIds=['switch-1'],
+            ),
+        )
+        assert rule.source_filter is not None
+        assert rule.destination_filter is not None
+        assert len(rule.protocol_filter) == 1
+        assert rule.enforcing_device_filter is not None
+
+    def test_acl_rule_defaults(self) -> None:
+        """Test ACLRule model default values."""
+        rule = ACLRule()
+        assert rule.id == ''
+        assert rule.enabled is True
+        assert rule.action == ACLActionType.BLOCK
+        assert rule.source_filter is None
+        assert rule.destination_filter is None
+        assert rule.protocol_filter is None
+
+
+class TestDNSPolicyModel:
+    """Tests for DNSPolicy model."""
+
+    def test_basic_a_record(self) -> None:
+        """Test basic A record DNS policy."""
+        policy = DNSPolicy(
+            id='policy-123',
+            type='A',
+            enabled=True,
+            domain='server.local',
+            ipv4Address='192.168.1.100',
+            ttlSeconds=3600,
+        )
+        assert policy.id == 'policy-123'
+        assert policy.type == 'A'
+        assert policy.domain == 'server.local'
+        assert policy.ipv4_address == '192.168.1.100'
+        assert policy.ttl_seconds == 3600
+
+    def test_aaaa_record(self) -> None:
+        """Test AAAA record DNS policy."""
+        policy = DNSPolicy(
+            id='policy-123',
+            type='AAAA',
+            enabled=True,
+            domain='server.local',
+            ipv6Address='fd00::100',
+            ttlSeconds=3600,
+        )
+        assert policy.ipv6_address == 'fd00::100'
+
+    def test_cname_record(self) -> None:
+        """Test CNAME record DNS policy."""
+        policy = DNSPolicy(
+            id='policy-123',
+            type='CNAME',
+            enabled=True,
+            domain='www.local',
+            targetDomain='server.local',
+            ttlSeconds=3600,
+        )
+        assert policy.target_domain == 'server.local'
+
+    def test_txt_record(self) -> None:
+        """Test TXT record DNS policy."""
+        policy = DNSPolicy(
+            id='policy-123',
+            type='TXT',
+            enabled=True,
+            domain='_dmarc.local',
+            text='v=DMARC1; p=none',
+            ttlSeconds=86400,
+        )
+        assert policy.text == 'v=DMARC1; p=none'
+
+    def test_defaults(self) -> None:
+        """Test DNSPolicy defaults."""
+        policy = DNSPolicy()
+        assert policy.enabled is True
+        assert policy.ttl_seconds == 3600
+
+
+class TestTrafficMatchingModels:
+    """Tests for Traffic Matching List models."""
+
+    def test_port_matching(self) -> None:
+        """Test PortMatching model."""
+        port = PortMatching(
+            port=443,
+            protocol=ACLProtocol.TCP,
+        )
+        assert port.port == 443
+        assert port.protocol == ACLProtocol.TCP
+
+    def test_ip_address_matching(self) -> None:
+        """Test IPAddressMatching model."""
+        addr = IPAddressMatching(
+            ipAddress='192.168.1.100',
+            description='Main server',
+        )
+        assert addr.ip_address == '192.168.1.100'
+        assert addr.description == 'Main server'
+
+    def test_ip_address_matching_no_description(self) -> None:
+        """Test IPAddressMatching without description."""
+        addr = IPAddressMatching(ipAddress='10.0.0.1')
+        assert addr.ip_address == '10.0.0.1'
+        assert addr.description is None
+
+    def test_traffic_matching_list_port_list(self) -> None:
+        """Test TrafficMatchingList as port list."""
+        lst = TrafficMatchingList(
+            id='list-123',
+            type=TrafficMatchingListType.PORT_LIST,
+            name='Web Services',
+            ports=[
+                PortMatching(port=80, protocol=ACLProtocol.TCP),
+                PortMatching(port=443, protocol=ACLProtocol.TCP),
+            ],
+        )
+        assert lst.id == 'list-123'
+        assert lst.type == TrafficMatchingListType.PORT_LIST
+        assert lst.name == 'Web Services'
+        assert len(lst.ports) == 2
+        assert lst.ip_addresses == []
+
+    def test_traffic_matching_list_ip_list(self) -> None:
+        """Test TrafficMatchingList as IP address list."""
+        lst = TrafficMatchingList(
+            id='list-123',
+            type=TrafficMatchingListType.IP_ADDRESS_LIST,
+            name='Blocked IPs',
+            ipAddresses=[
+                IPAddressMatching(ipAddress='10.0.0.100', description='Bad host'),
+                IPAddressMatching(ipAddress='10.0.0.101'),
+            ],
+        )
+        assert lst.type == TrafficMatchingListType.IP_ADDRESS_LIST
+        assert len(lst.ip_addresses) == 2
+        assert lst.ports == []
+
+    def test_traffic_matching_list_defaults(self) -> None:
+        """Test TrafficMatchingList default values."""
+        lst = TrafficMatchingList()
+        assert lst.id == ''
+        assert lst.type == TrafficMatchingListType.PORT_LIST
+        assert lst.ports == []
+        assert lst.ip_addresses == []
