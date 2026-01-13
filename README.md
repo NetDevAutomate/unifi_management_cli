@@ -396,6 +396,31 @@ This project welcomes contributions! Areas of interest:
 - Performance optimizations
 - Documentation improvements
 
+## UniFi Protect Integration
+
+This project integrates with UniFi Protect for AI-powered camera monitoring and smart detection analytics.
+
+### Attribution & Acknowledgments
+
+The Protect integration is built upon the excellent work of the following projects:
+
+- **[uiprotect](https://github.com/uilibs/uiprotect)** - Python API for UniFi Protect (Unofficial)
+  - Original creator: [Bjarne Riis](https://github.com/briis/)
+  - Previous maintainer: [Christopher Bailey](https://github.com/AngellusMortis/)
+  - License: MIT
+
+- **[unifi-protect](https://github.com/hjdhjd/unifi-protect)** - TypeScript UniFi Protect API implementation
+  - Author: [HJD](https://github.com/hjdhjd)
+  - License: ISC
+  - Used as protocol reference for understanding the UniFi Protect API
+
+These projects provide the foundational understanding of the UniFi Protect API, including:
+- Authentication and session management
+- Bootstrap data structures
+- WebSocket real-time event protocol
+- Smart detection event formats
+- Camera and AI Port device models
+
 ## License
 
 MIT License - See LICENSE file for details.
