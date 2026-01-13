@@ -14,6 +14,9 @@ dependencies = [
     "requests>=2.31.0",
     "graphviz>=0.20.0",
     "typer>=0.9.0",
+    "pycryptodome>=3.20.0", # AES decryption for UniFi backups
+    "pymongo>=4.8.0", # BSON parsing for backup database
+    "onvif-zeep-async>=4.0.4",
 ]
 license = { text = "MIT" }
 authors = [{ name = "ataylor" }]
