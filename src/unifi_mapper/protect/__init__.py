@@ -85,6 +85,17 @@ from unifi_mapper.protect.health import (
     HealthTransition,
     DeviceHealthSummary,
 )
+from unifi_mapper.protect.mqtt import (
+    DeviceDiscoveryInfo,
+    EntityDiscoveryConfig,
+    HADeviceClass,
+    HAEntityCategory,
+    MQTTBridge,
+    MQTTConfig,
+    MQTTConnectionCallback,
+    MQTTConnectionState,
+    MQTTMessage,
+)
 
 
 __all__ = [
@@ -150,4 +161,14 @@ __all__ = [
     'HealthHistoryEntry',
     'HealthThresholds',
     'HealthTransition',
+    # MQTT Bridge
+    'DeviceDiscoveryInfo',
+    'EntityDiscoveryConfig',
+    'HADeviceClass',
+    'HAEntityCategory',
+    'MQTTBridge',
+    'MQTTConfig',
+    'MQTTConnectionCallback',
+    'MQTTConnectionState',
+    'MQTTMessage',
 ]
