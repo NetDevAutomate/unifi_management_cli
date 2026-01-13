@@ -66,6 +66,16 @@ from unifi_mapper.protect.analytics import (
     SmartDetectType,
     TimeWindow,
 )
+from unifi_mapper.protect.aiport import (
+    AICapability,
+    AICapabilityType,
+    AIDetectionCallback,
+    AIDetectionEvent,
+    AIPortInfo,
+    AIPortManager,
+    AIPortStatus,
+    PairedCamera,
+)
 
 
 __all__ = [
@@ -114,4 +124,13 @@ __all__ = [
     'SmartDetectStats',
     'SmartDetectType',
     'TimeWindow',
+    # AI Port
+    'AICapability',
+    'AICapabilityType',
+    'AIDetectionCallback',
+    'AIDetectionEvent',
+    'AIPortInfo',
+    'AIPortManager',
+    'AIPortStatus',
+    'PairedCamera',
 ]
