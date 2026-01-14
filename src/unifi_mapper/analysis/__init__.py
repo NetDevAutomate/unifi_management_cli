@@ -16,15 +16,15 @@ P3 Priority Tools (Lower):
 - get_firmware_report: Firmware security assessment and update recommendations
 """
 
-from unifi_mcp.tools.analysis.capacity_planning import get_capacity_report
-from unifi_mcp.tools.analysis.firmware_advisor import get_firmware_report
-from unifi_mcp.tools.analysis.ip_conflicts import detect_ip_conflicts
-from unifi_mcp.tools.analysis.lag_monitoring import monitor_lags
-from unifi_mcp.tools.analysis.link_quality import analyze_link_quality
-from unifi_mcp.tools.analysis.mac_analyzer import analyze_mac_table
-from unifi_mcp.tools.analysis.qos_validation import validate_qos
-from unifi_mcp.tools.analysis.storm_detection import detect_storms
-from unifi_mcp.tools.analysis.vlan_diagnostics import diagnose_vlans
+from unifi_mapper.analysis.capacity_planning import get_capacity_report
+from unifi_mapper.analysis.firmware_advisor import get_firmware_report
+from unifi_mapper.analysis.ip_conflicts import detect_ip_conflicts
+from unifi_mapper.analysis.lag_monitoring import monitor_lags
+from unifi_mapper.analysis.link_quality import analyze_link_quality
+from unifi_mapper.analysis.mac_analyzer import analyze_mac_table
+from unifi_mapper.analysis.qos_validation import validate_qos
+from unifi_mapper.analysis.storm_detection import detect_storms
+from unifi_mapper.analysis.vlan_diagnostics import diagnose_vlans
 
 
 __all__ = [

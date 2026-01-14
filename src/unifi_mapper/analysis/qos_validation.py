@@ -2,14 +2,14 @@
 
 from datetime import datetime
 from typing import Any
-from unifi_mcp.models import (
+from unifi_mapper.core.models import (
     PortQoSConfig,
     QoSFinding,
     QoSSeverity,
     QoSValidationReport,
 )
-from unifi_mcp.utils.client import UniFiClient
-from unifi_mcp.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 async def validate_qos(

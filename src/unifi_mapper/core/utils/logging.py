@@ -15,7 +15,7 @@ def configure_logging(
     """Configure structured JSON logging.
 
     Args:
-        log_file: Path to log file (defaults to ~/.unifi-mcp/logs/unifi_mcp.log)
+        log_file: Path to log file (defaults to ~/.unifi-mapper/logs/unifi_mapper.log)
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
         include_console: Whether to also log to console
     """
@@ -24,9 +24,9 @@ def configure_logging(
 
     # Create log directory
     if not log_file:
-        log_dir = Path.home() / '.unifi-mcp' / 'logs'
+        log_dir = Path.home() / '.unifi-mapper' / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = str(log_dir / 'unifi_mcp.log')
+        log_file = str(log_dir / 'unifi_mapper.log')
 
     # JSON file logging with rotation
     logger.add(
@@ -42,7 +42,7 @@ def configure_logging(
     )
 
     # Optional console logging for development
-    if include_console or os.getenv('UNIFI_MCP_DEBUG'):
+    if include_console or os.getenv('UNIFI_MAPPER_DEBUG'):
         logger.add(
             sys.stderr,
             format='<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>',

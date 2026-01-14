@@ -4,7 +4,7 @@ import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
-from unifi_mcp.models import (
+from unifi_mapper.core.models import (
     DeviceFirmwareInfo,
     FirmwareRecommendation,
     FirmwareSecurityReport,
@@ -12,8 +12,8 @@ from unifi_mcp.models import (
     KnownVulnerability,
     UpdatePriority,
 )
-from unifi_mcp.utils.client import UniFiClient
-from unifi_mcp.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 # Known latest firmware versions by device model

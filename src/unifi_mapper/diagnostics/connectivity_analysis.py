@@ -4,8 +4,8 @@ from collections import defaultdict
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional, Tuple
-from unifi_mcp.utils.client import UniFiClient
-from unifi_mcp.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 class ConnectivityPath(BaseModel):

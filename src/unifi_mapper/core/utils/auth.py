@@ -5,7 +5,7 @@ import json
 import os
 from pydantic import BaseModel, Field
 from typing import Any
-from unifi_mcp.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from urllib.parse import urlparse
 
 

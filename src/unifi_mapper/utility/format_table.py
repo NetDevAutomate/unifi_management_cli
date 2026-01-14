@@ -4,7 +4,7 @@ from pydantic import Field
 from rich.console import Console
 from rich.table import Table
 from typing import Annotated
-from unifi_mcp.utils.errors import ToolError
+from unifi_mapper.core.utils.errors import ToolError
 
 
 async def format_table(

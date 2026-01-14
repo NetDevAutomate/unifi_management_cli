@@ -3,7 +3,7 @@
 import datetime
 from pydantic import Field
 from typing import Annotated, Any
-from unifi_mcp.utils.errors import ToolError
+from unifi_mapper.core.utils.errors import ToolError
 
 
 async def export_markdown(
