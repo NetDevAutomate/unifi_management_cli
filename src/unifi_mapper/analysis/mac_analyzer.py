@@ -3,7 +3,7 @@
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
-from unifi_mcp.models import (
+from unifi_mapper.core.models import (
     MACAlert,
     MACAlertSeverity,
     MACAlertType,
@@ -12,8 +12,8 @@ from unifi_mcp.models import (
     MACTableEntry,
     PortMACCount,
 )
-from unifi_mcp.utils.client import UniFiClient
-from unifi_mcp.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 # Thresholds for MAC analysis

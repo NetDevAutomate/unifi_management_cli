@@ -1,6 +1,6 @@
 """Pydantic models for UniFi MCP server."""
 
-from unifi_mcp.models.analysis import (
+from unifi_mapper.core.models.analysis import (
     CapacityReport,
     ConflictingClient,
     DeviceCapacity,
@@ -40,18 +40,18 @@ from unifi_mcp.models.analysis import (
     VLANDiagnosticReport,
     VLANInfo,
 )
-from unifi_mcp.models.device import Device
-from unifi_mcp.models.firewall import FirewallRule
-from unifi_mcp.models.mirror import (
+from unifi_mapper.core.models.device import Device
+from unifi_mapper.core.models.firewall import FirewallRule
+from unifi_mapper.core.models.mirror import (
     DeviceMirrorCapabilities,
     MirrorCapability,
     MirrorReport,
     MirrorSession,
     MirrorSessionResult,
 )
-from unifi_mcp.models.network_path import NetworkPath, PathHop
-from unifi_mcp.models.port import Port
-from unifi_mcp.models.vlan import VLAN
+from unifi_mapper.core.models.network_path import NetworkPath, PathHop
+from unifi_mapper.core.models.port import Port
+from unifi_mapper.core.models.vlan import VLAN
 
 
 __all__ = [

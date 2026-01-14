@@ -2,9 +2,9 @@
 
 from pydantic import Field
 from typing import Annotated, Any, Literal
-from unifi_mcp.models import NetworkPath, PathHop
-from unifi_mcp.utils.client import UniFiClient
-from unifi_mcp.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.models import NetworkPath, PathHop
+from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 async def traceroute(

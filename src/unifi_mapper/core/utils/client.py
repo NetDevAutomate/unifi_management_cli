@@ -14,8 +14,8 @@ Supports both UniFi OS (UDM/UDR) and legacy controllers with:
 import httpx
 from loguru import logger
 from typing import Any
-from unifi_mcp.utils.auth import Credentials, get_credentials
-from unifi_mcp.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.auth import Credentials, get_credentials
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 class UniFiClient:

@@ -58,10 +58,10 @@ def get_default_config_path() -> Path:
     """Get default config path following XDG Base Directory specification.
 
     Priority:
-    1. XDG_CONFIG_HOME/unifi_network_mapper/prod.env
-    2. ~/.config/unifi_network_mapper/prod.env
-    3. XDG_CONFIG_HOME/unifi_network_mapper/default.env
-    4. ~/.config/unifi_network_mapper/default.env
+    1. XDG_CONFIG_HOME/unifi_management_cli/prod.env
+    2. ~/.config/unifi_management_cli/prod.env
+    3. XDG_CONFIG_HOME/unifi_management_cli/default.env
+    4. ~/.config/unifi_management_cli/default.env
     5. .env (current directory - legacy fallback)
 
     Returns:
@@ -69,9 +69,9 @@ def get_default_config_path() -> Path:
     """
     xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
     if xdg_config_home:
-        config_dir = Path(xdg_config_home) / 'unifi_network_mapper'
+        config_dir = Path(xdg_config_home) / 'unifi_management_cli'
     else:
-        config_dir = Path.home() / '.config' / 'unifi_network_mapper'
+        config_dir = Path.home() / '.config' / 'unifi_management_cli'
 
     # Try prod.env first (most common production use case)
     prod_config = config_dir / 'prod.env'
@@ -103,7 +103,7 @@ def main():
         description="UniFi Network Mapper - Run from anywhere with config file",
         epilog=(
             "Examples:\n"
-            "  unifi-mapper --config ~/.config/unifi_network_mapper/prod.env --format png\n"
+            "  unifi-mapper --config ~/.config/unifi_management_cli/prod.env --format png\n"
             "  unifi-mapper install-completions bash\n"
             "  unifi-mapper --verify-updates --debug"
         ),

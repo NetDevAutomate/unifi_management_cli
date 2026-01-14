@@ -40,7 +40,7 @@ Examples:
     parser.add_argument(
         "--config", "-c",
         help="Path to .env configuration file",
-        default="~/.dotfiles/.config/unifi_network_mapper/prod.env"
+        default="~/.dotfiles/.config/unifi_management_cli/prod.env"
     )
 
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")

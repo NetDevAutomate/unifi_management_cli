@@ -3,8 +3,8 @@
 import time
 from pydantic import Field
 from typing import Annotated, Any
-from unifi_mcp.utils.client import UniFiClient
-from unifi_mcp.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 async def find_mac(

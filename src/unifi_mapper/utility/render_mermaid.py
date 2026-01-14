@@ -2,8 +2,8 @@
 
 from pydantic import Field
 from typing import Annotated, Any, Literal
-from unifi_mcp.models import NetworkPath
-from unifi_mcp.utils.errors import ToolError
+from unifi_mapper.core.models import NetworkPath
+from unifi_mapper.core.utils.errors import ToolError
 
 
 async def render_mermaid(

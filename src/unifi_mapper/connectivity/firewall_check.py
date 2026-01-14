@@ -2,8 +2,8 @@
 
 from pydantic import Field
 from typing import Annotated, Any, Literal
-from unifi_mcp.models import FirewallRule
-from unifi_mcp.utils.client import UniFiClient
+from unifi_mapper.core.models import FirewallRule
+from unifi_mapper.core.utils.client import UniFiClient
 
 
 async def firewall_check(

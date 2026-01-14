@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 def main():
     """Analyze all devices in network for port naming capabilities."""
     # Load config
-    config_path = "/Users/ataylor/.dotfiles/.config/unifi_network_mapper/prod.env"
+    config_path = "/Users/ataylor/.dotfiles/.config/unifi_management_cli/prod.env"
     load_env_from_config(config_path)
     config = UnifiConfig.from_env()
 

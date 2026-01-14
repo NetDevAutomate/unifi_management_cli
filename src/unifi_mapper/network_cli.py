@@ -52,7 +52,7 @@ Examples:
     parser.add_argument(
         "--config", "-c",
         help="Path to .env configuration file",
-        default="~/.config/unifi_network_mapper/prod.env"
+        default="~/.config/unifi_management_cli/prod.env"
     )
 
     # Add subcommands

@@ -1,12 +1,12 @@
 """Capacity planning tool for UniFi networks."""
 
 from datetime import datetime
-from unifi_mcp.models import (
+from unifi_mapper.core.models import (
     CapacityReport,
     DeviceCapacity,
 )
-from unifi_mcp.utils.client import UniFiClient
-from unifi_mcp.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 async def get_capacity_report() -> CapacityReport:

@@ -1,11 +1,10 @@
 [project]
-name = "unifi-network-mcp-server"
+name = "unifi-management-cli"
 version = "0.1.0"
-description = "MCP server for UniFi network troubleshooting"
+description = "Enterprise-grade UniFi network automation and management CLI"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastmcp>=2.3.2",
     "pydantic>=2.10.0",
     "httpx>=0.28.0",
     "loguru>=0.7.0",
@@ -17,6 +16,7 @@ dependencies = [
     "pycryptodome>=3.20.0", # AES decryption for UniFi backups
     "pymongo>=4.8.0", # BSON parsing for backup database
     "onvif-zeep-async>=4.0.4",
+    "uiprotect>=7.0.0",  # UniFi Protect async API client
 ]
 license = { text = "MIT" }
 authors = [{ name = "ataylor" }]
@@ -30,7 +30,6 @@ classifiers = [
 ]
 
 [project.scripts]
-"unifi-mcp-server" = "unifi_mcp.server:main"
 "unifi-mapper" = "unifi_mapper.typer_cli:app"
 "unifi-network-toolkit" = "unifi_mapper.network_cli:main"
 "unifi-inventory" = "unifi_mapper.inventory_cli:main"
@@ -51,10 +50,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/unifi_mapper", "src/unifi_mcp"]
+packages = ["src/unifi_mapper"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/unifi_mapper", "src/unifi_mcp"]
+include = ["src/unifi_mapper"]
 
 [tool.ruff]
 line-length = 99
@@ -110,7 +109,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/unifi_mcp"]
+source = ["src/unifi_mapper"]
 branch = true
 
 [tool.coverage.report]

@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 from typing import Literal
-from unifi_mcp.models.firewall import FirewallRule
+from unifi_mapper.core.models.firewall import FirewallRule
 
 
 class PathHop(BaseModel):
