@@ -1,0 +1,51 @@
+category: discovery
+description: Device and client discovery tools for network exploration
+
+tools:
+  find_device:
+    module: unifi_mapper.discovery.find_device
+    handler: find_device
+    description: Search for devices by name, IP address, or MAC address
+    priority: P1
+    tags: [device, search, find, inventory]
+    parameters:
+      query:
+        type: string
+        required: true
+        description: Device name, IP, or MAC to search for
+
+  find_ip:
+    module: unifi_mapper.discovery.find_ip
+    handler: find_ip
+    description: Locate device and port by IP address
+    priority: P1
+    tags: [ip, locate, port, layer3]
+    parameters:
+      ip_address:
+        type: string
+        required: true
+        description: IP address to locate
+
+  find_mac:
+    module: unifi_mapper.discovery.find_mac
+    handler: find_mac
+    description: MAC address location tracking across the network
+    priority: P1
+    tags: [mac, locate, tracking, layer2]
+    parameters:
+      mac_address:
+        type: string
+        required: true
+        description: MAC address to locate
+
+  client_trace:
+    module: unifi_mapper.discovery.client_trace
+    handler: client_trace
+    description: End-to-end client path analysis through the network
+    priority: P2
+    tags: [client, trace, path, troubleshooting]
+    parameters:
+      client_id:
+        type: string
+        required: true
+        description: Client MAC or IP to trace
