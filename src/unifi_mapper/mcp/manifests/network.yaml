@@ -1,0 +1,87 @@
+category: network
+description: Network control plane managers for UniFi infrastructure
+
+tools:
+  get_firewall_zones:
+    module: unifi_mapper.network.firewall
+    handler: FirewallManager.get_zones
+    description: List all firewall zones and their configurations
+    priority: P1
+    tags: [firewall, zones, security, configuration]
+
+  get_firewall_policies:
+    module: unifi_mapper.network.firewall
+    handler: FirewallManager.get_policies
+    description: List firewall policies between zones
+    priority: P1
+    tags: [firewall, policies, rules, security]
+
+  get_acl_rules:
+    module: unifi_mapper.network.acl
+    handler: ACLManager.get_rules
+    description: List ACL rules and their configurations
+    priority: P1
+    tags: [acl, rules, access-control, security]
+
+  get_dns_policies:
+    module: unifi_mapper.network.dns
+    handler: DNSPolicyManager.get_policies
+    description: List DNS policies and configurations
+    priority: P2
+    tags: [dns, policies, filtering, security]
+
+  get_dpi_stats:
+    module: unifi_mapper.network.dpi
+    handler: DPIAnalytics.get_stats
+    description: Get DPI (Deep Packet Inspection) analytics and statistics
+    priority: P2
+    tags: [dpi, analytics, traffic, inspection]
+
+  get_dpi_applications:
+    module: unifi_mapper.network.dpi
+    handler: DPIAnalytics.get_applications
+    description: Get top applications by traffic volume
+    priority: P2
+    tags: [dpi, applications, traffic, analytics]
+
+  get_clients:
+    module: unifi_mapper.network.clients
+    handler: ClientManager.get_clients
+    description: List connected clients with fingerprinting data
+    priority: P1
+    tags: [clients, devices, fingerprint, inventory]
+
+  get_client_stats:
+    module: unifi_mapper.network.clients
+    handler: ClientManager.get_stats
+    description: Get client connection statistics
+    priority: P2
+    tags: [clients, statistics, usage, analytics]
+
+  get_networks:
+    module: unifi_mapper.network.networks
+    handler: NetworkManager.get_networks
+    description: List networks/VLANs and their configurations
+    priority: P1
+    tags: [networks, vlans, configuration, layer2]
+
+  get_network_stats:
+    module: unifi_mapper.network.networks
+    handler: NetworkManager.get_stats
+    description: Get network utilization statistics
+    priority: P2
+    tags: [networks, statistics, utilization, performance]
+
+  get_sites:
+    module: unifi_mapper.network.sites
+    handler: SiteManager.get_sites
+    description: List sites in multi-site deployment
+    priority: P2
+    tags: [sites, multi-site, inventory, configuration]
+
+  get_traffic_matching_lists:
+    module: unifi_mapper.network.traffic_matching
+    handler: TrafficMatchingListManager.get_lists
+    description: List traffic matching rules and configurations
+    priority: P2
+    tags: [traffic, matching, rules, filtering]

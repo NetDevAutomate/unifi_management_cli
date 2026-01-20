@@ -1,0 +1,31 @@
+category: diagnostics
+description: Network health, performance, and security diagnostic tools
+
+tools:
+  network_health_check:
+    module: unifi_mapper.diagnostics.network_health
+    handler: network_health_check
+    description: Overall infrastructure health monitoring and assessment
+    priority: P1
+    tags: [health, infrastructure, monitoring, diagnostic]
+
+  performance_analysis:
+    module: unifi_mapper.diagnostics.performance_analysis
+    handler: performance_analysis
+    description: Network performance analysis and bottleneck identification
+    priority: P1
+    tags: [performance, bottleneck, analysis, throughput]
+
+  security_audit:
+    module: unifi_mapper.diagnostics.security_audit
+    handler: security_audit
+    description: Security configuration review and vulnerability assessment
+    priority: P1
+    tags: [security, audit, vulnerability, compliance]
+
+  connectivity_analysis:
+    module: unifi_mapper.diagnostics.connectivity_analysis
+    handler: connectivity_analysis
+    description: Connection troubleshooting and path analysis
+    priority: P2
+    tags: [connectivity, troubleshooting, path, diagnostic]

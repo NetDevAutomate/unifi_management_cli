@@ -1,0 +1,55 @@
+category: connectivity
+description: Network path tracing and connectivity analysis tools
+
+tools:
+  firewall_check:
+    module: unifi_mapper.connectivity.firewall_check
+    handler: firewall_check
+    description: Verify firewall rules and policies affecting traffic flow
+    priority: P1
+    tags: [firewall, rules, policy, security]
+    parameters:
+      source:
+        type: string
+        required: true
+        description: Source IP or network
+      destination:
+        type: string
+        required: true
+        description: Destination IP or network
+      port:
+        type: integer
+        required: false
+        description: Destination port to check
+
+  path_analysis:
+    module: unifi_mapper.connectivity.path_analysis
+    handler: path_analysis
+    description: Network path analysis between two endpoints
+    priority: P1
+    tags: [path, analysis, routing, layer3]
+    parameters:
+      source:
+        type: string
+        required: true
+        description: Source IP address
+      destination:
+        type: string
+        required: true
+        description: Destination IP address
+
+  traceroute:
+    module: unifi_mapper.connectivity.traceroute
+    handler: traceroute
+    description: Layer 3 path tracing to destination
+    priority: P2
+    tags: [traceroute, path, hops, layer3]
+    parameters:
+      destination:
+        type: string
+        required: true
+        description: Destination IP or hostname
+      max_hops:
+        type: integer
+        default: 30
+        description: Maximum number of hops to trace
