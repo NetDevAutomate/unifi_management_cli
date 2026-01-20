@@ -9,9 +9,9 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **26+ Analysis Tools**: Network health, performance, security diagnostics, STP optimization
+- **30+ Analysis Tools**: Network health, performance, security diagnostics, STP optimization
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
-- **MCP Server**: AI-assisted network troubleshooting via FastMCP
+- **MCP Server**: AI-assisted network troubleshooting (see [MCP Server Implementation](../unifi_management_mcp_server/))
 
 ## Installation
 
@@ -135,11 +135,12 @@ API Integration Layer
 └── MCP Server (FastMCP)
 
 Analysis Toolkit
-├── Network Analysis (10 tools)
+├── Network Analysis (14 tools)
 ├── Diagnostics (4 tools)
 ├── Discovery (4 tools)
-├── STP Optimization
-└── Port Mirroring
+├── Connectivity (3 tools)
+├── Network Control Plane (8 managers)
+└── Protect Integration (8 components)
 ```
 
 ## Key Technical Solutions
