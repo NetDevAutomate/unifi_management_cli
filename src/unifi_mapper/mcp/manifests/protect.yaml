@@ -3,85 +3,36 @@ description: UniFi Protect integration for camera and security management
 
 tools:
   get_cameras:
-    module: unifi_mapper.protect.client
-    handler: UniFiProtectClient.get_cameras
+    module: unifi_mapper.mcp.tools.protect
+    handler: get_cameras
     description: List all cameras and their status
     priority: P1
     tags: [cameras, devices, inventory, status]
 
   get_nvr_info:
-    module: unifi_mapper.protect.client
-    handler: UniFiProtectClient.get_nvr
+    module: unifi_mapper.mcp.tools.protect
+    handler: get_nvr_info
     description: Get NVR (Network Video Recorder) information and status
     priority: P1
     tags: [nvr, storage, status, health]
 
-  get_events:
-    module: unifi_mapper.protect.analytics
-    handler: EventAnalytics.get_events
-    description: Get recent motion and smart detection events
-    priority: P1
-    tags: [events, motion, detection, analytics]
-
-  get_smart_detect_stats:
-    module: unifi_mapper.protect.analytics
-    handler: EventAnalytics.get_smart_stats
-    description: Get smart detection statistics (person, vehicle, package, etc.)
-    priority: P2
-    tags: [smart-detection, analytics, ai, statistics]
-
-  get_ai_ports:
-    module: unifi_mapper.protect.aiport
-    handler: AIPortManager.get_ports
-    description: List AI Ports and their paired cameras
-    priority: P2
-    tags: [ai-port, detection, cameras, pairing]
-
-  get_ai_port_status:
-    module: unifi_mapper.protect.aiport
-    handler: AIPortManager.get_status
-    description: Get AI Port detection status and capabilities
-    priority: P2
-    tags: [ai-port, status, capabilities, detection]
-
-  get_device_health:
-    module: unifi_mapper.protect.health
-    handler: DeviceHealthMonitor.get_health
-    description: Get device health status for all Protect devices
-    priority: P1
-    tags: [health, monitoring, devices, status]
-
-  get_health_history:
-    module: unifi_mapper.protect.health
-    handler: DeviceHealthMonitor.get_history
-    description: Get device health history and trends
-    priority: P2
-    tags: [health, history, trends, monitoring]
-
-  get_mqtt_status:
-    module: unifi_mapper.protect.mqtt
-    handler: MQTTBridge.get_status
-    description: Get MQTT bridge status for Home Assistant integration
-    priority: P3
-    tags: [mqtt, home-assistant, integration, bridge]
-
   get_sensors:
-    module: unifi_mapper.protect.client
-    handler: UniFiProtectClient.get_sensors
+    module: unifi_mapper.mcp.tools.protect
+    handler: get_sensors
     description: List door/window sensors and their status
     priority: P2
     tags: [sensors, doors, windows, security]
 
   get_lights:
-    module: unifi_mapper.protect.client
-    handler: UniFiProtectClient.get_lights
+    module: unifi_mapper.mcp.tools.protect
+    handler: get_lights
     description: List smart lights and floodlights
     priority: P2
     tags: [lights, floodlight, smart-home, devices]
 
   get_doorbells:
-    module: unifi_mapper.protect.client
-    handler: UniFiProtectClient.get_doorbells
+    module: unifi_mapper.mcp.tools.protect
+    handler: get_doorbells
     description: List video doorbells and their status
     priority: P2
     tags: [doorbell, video, entrance, security]
