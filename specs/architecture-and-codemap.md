@@ -43,7 +43,7 @@ graph TB
 - **Automated Network Discovery**: LLDP/CDP-based topology mapping
 - **Intelligent Port Naming**: Device-aware configuration with compatibility detection
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **Network Analysis Suite**: 25+ specialized analysis and diagnostic tools
+- **Network Analysis Suite**: 26+ specialized analysis and diagnostic tools
 - **Device Inventory**: Firmware management and device cataloging
 - **Device Intelligence**: Model-specific capability detection and workarounds
 
@@ -601,6 +601,10 @@ graph TB
         A --> A5[inventory]
         A --> A6[install-completions]
         A --> A7[version]
+        A --> A8[stp]
+        A8 --> A8a[analyze]
+        A8 --> A8b[optimize]
+        A8 --> A8c[report]
     end
 
     subgraph "Enhanced CLI (network_cli.py)"
@@ -781,7 +785,7 @@ DEVICE_COLORS = {
 
 ### Network Analysis Suite
 
-The system includes 25+ specialized analysis tools organized by category:
+The system includes 26+ specialized analysis tools organized by category:
 
 ```mermaid
 graph TB
@@ -795,6 +799,7 @@ graph TB
         A7[ip_conflicts.py]
         A8[lag_monitoring.py]
         A9[qos_validation.py]
+        A10[stp_optimizer.py]
     end
 
     subgraph "Diagnostics Tools"

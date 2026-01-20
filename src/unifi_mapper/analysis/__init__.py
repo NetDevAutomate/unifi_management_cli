@@ -14,6 +14,13 @@ P2 Priority Tools (Medium):
 P3 Priority Tools (Lower):
 - analyze_mac_table: MAC address table analysis and flapping detection
 - get_firmware_report: Firmware security assessment and update recommendations
+
+STP Optimization Tools:
+- discover_stp_topology: Discover current STP topology from all switches
+- calculate_optimal_priorities: Calculate optimal bridge priorities based on hierarchy
+- generate_stp_report: Generate comprehensive STP optimization report
+- apply_stp_changes: Apply priority changes via API (supports dry-run mode)
+- format_stp_report_markdown: Format STP report as markdown with mermaid diagrams
 """
 
 from unifi_mapper.analysis.capacity_planning import get_capacity_report
@@ -24,6 +31,13 @@ from unifi_mapper.analysis.link_quality import analyze_link_quality
 from unifi_mapper.analysis.mac_analyzer import analyze_mac_table
 from unifi_mapper.analysis.qos_validation import validate_qos
 from unifi_mapper.analysis.storm_detection import detect_storms
+from unifi_mapper.analysis.stp_optimizer import (
+    apply_stp_changes,
+    calculate_optimal_priorities,
+    discover_stp_topology,
+    format_stp_report_markdown,
+    generate_stp_report,
+)
 from unifi_mapper.analysis.vlan_diagnostics import diagnose_vlans
 
 
@@ -40,4 +54,10 @@ __all__ = [
     # P3 tools
     'analyze_mac_table',
     'get_firmware_report',
+    # STP tools
+    'apply_stp_changes',
+    'calculate_optimal_priorities',
+    'discover_stp_topology',
+    'format_stp_report_markdown',
+    'generate_stp_report',
 ]

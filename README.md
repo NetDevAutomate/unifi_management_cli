@@ -9,7 +9,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **25+ Analysis Tools**: Network health, performance, security diagnostics
+- **26+ Analysis Tools**: Network health, performance, security diagnostics, STP optimization
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
 - **MCP Server**: AI-assisted network troubleshooting via FastMCP
 
@@ -78,6 +78,22 @@ unifi-network-toolkit find device "Office"
 unifi-network-toolkit find ip 192.168.1.100
 ```
 
+### STP Optimization
+
+```bash
+# Analyze current STP topology
+unifi-mapper stp analyze
+
+# Preview optimal priority changes (dry run)
+unifi-mapper stp optimize --dry-run
+
+# Apply changes with confirmation
+unifi-mapper stp optimize --apply
+
+# Generate markdown report
+unifi-mapper stp report -o stp-report.md
+```
+
 ### Device Inventory
 
 ```bash
@@ -119,9 +135,10 @@ API Integration Layer
 └── MCP Server (FastMCP)
 
 Analysis Toolkit
-├── Network Analysis (9 tools)
+├── Network Analysis (10 tools)
 ├── Diagnostics (4 tools)
 ├── Discovery (4 tools)
+├── STP Optimization
 └── Port Mirroring
 ```
 
@@ -165,6 +182,7 @@ UniFi Network Application 10.0.162+ resolves most device-level rejection issues.
 - IP Conflicts: IP address conflict detection
 - LAG Monitoring: Link Aggregation Group status
 - QoS Validation: Quality of Service rule verification
+- STP Optimization: Spanning Tree topology analysis and bridge priority optimization
 
 ### Diagnostics Tools
 - Network Health: Overall infrastructure health monitoring

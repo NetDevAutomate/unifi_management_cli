@@ -501,9 +501,10 @@ class NetworkTopology:
         """
         lines = ["digraph NetworkTopology {"]
         # Use dot layout with vertical hierarchy - centered layout
+        # Note: concentrate=true removed due to graphviz segfault bug with complex graphs
         lines.append(
             "  graph [rankdir=TB, splines=spline, nodesep=0.8, ranksep=1.2, "
-            "compound=true, concentrate=true, center=true];"
+            "compound=true, center=true];"
         )
         # Fixed size nodes for visual consistency - all devices same size
         lines.append(

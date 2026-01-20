@@ -8,7 +8,7 @@ from unifi_mapper.core.utils.errors import ToolError
 
 async def render_mermaid(
     diagram_type: Annotated[
-        Literal['path', 'topology', 'firewall_matrix'],
+        Literal['path', 'topology', 'firewall_matrix', 'stp'],
         Field(description='Type of diagram to render'),
     ],
     data: Annotated[Any, Field(description='Data to render as Mermaid diagram')],
@@ -27,6 +27,13 @@ async def render_mermaid(
     3. Include diagram in documentation or troubleshooting reports
     4. Use export_markdown() to save diagrams with analysis
 
+    STP diagram features:
+    - Hierarchical layout with Core/Distribution/Access subgraphs
+    - Root bridge highlighted with crown icon
+    - Bridge priorities displayed on each switch
+    - Blocked links shown as dashed red lines
+    - Forwarding links shown as solid green lines
+
     What to do next:
     - Include generated diagram in reports or documentation
     - Use format_table() for tabular data alongside diagrams
@@ -37,7 +44,8 @@ async def render_mermaid(
                      - 'path': Network path from traceroute
                      - 'topology': Network topology overview
                      - 'firewall_matrix': Firewall rules matrix
-        data: Data to render (NetworkPath, topology dict, or firewall data)
+                     - 'stp': STP topology with hierarchy tiers
+        data: Data to render (NetworkPath, topology dict, firewall data, or STPTopology)
 
     Returns:
         Mermaid diagram as markdown code block string
@@ -52,11 +60,13 @@ async def render_mermaid(
             return _render_topology_diagram(data)
         elif diagram_type == 'firewall_matrix':
             return _render_firewall_matrix(data)
+        elif diagram_type == 'stp':
+            return _render_stp_diagram(data)
         else:
             raise ToolError(
                 message=f'Unknown diagram type: {diagram_type}',
                 error_code='INVALID_DATA',
-                suggestion='Use: path, topology, or firewall_matrix',
+                suggestion='Use: path, topology, firewall_matrix, or stp',
             )
     except Exception as e:
         raise ToolError(
@@ -344,3 +354,145 @@ def _get_vlan_id_from_name(vlan_name: str, vlans: list[dict[str, str]]) -> int:
         if vlan.get('name') == vlan_name:
             return vlan.get('id', 1)
     return 1  # Default VLAN
+
+
+def _render_stp_diagram(stp_data: Any) -> str:
+    """Render STP topology as Mermaid diagram with hierarchy tiers.
+
+    Shows switches organized by hierarchy tier (Core, Distribution, Access)
+    with root bridge highlighted and blocked ports indicated.
+
+    Args:
+        stp_data: STPTopology object or dict with topology data
+
+    Returns:
+        Mermaid diagram string
+    """
+    # Handle both STPTopology objects and dictionaries
+    if hasattr(stp_data, 'switches'):
+        switches = stp_data.switches
+        connections = stp_data.connections
+        gateway_name = stp_data.gateway_name
+    else:
+        switches = stp_data.get('switches', [])
+        connections = stp_data.get('connections', [])
+        gateway_name = stp_data.get('gateway_name')
+
+    if not switches:
+        return '```mermaid\ngraph TB\n    A[No STP data available]\n```'
+
+    lines = ['```mermaid', 'graph TB']
+
+    # Group switches by tier
+    tier_switches: dict[int, list[Any]] = {}
+    for switch in switches:
+        tier = switch.hierarchy_tier if hasattr(switch, 'hierarchy_tier') else switch.get('hierarchy_tier', 2)
+        if tier not in tier_switches:
+            tier_switches[tier] = []
+        tier_switches[tier].append(switch)
+
+    # Render gateway at top if known
+    if gateway_name:
+        lines.append('    GW((🌐 Gateway))')
+        lines.append('')
+
+    # Tier names mapping
+    tier_names = {0: 'Core', 1: 'Distribution', 2: 'Access'}
+
+    # Render each tier as subgraph
+    for tier in sorted(tier_switches.keys()):
+        tier_name = tier_names.get(tier, f'Tier {tier}')
+        lines.append(f'    subgraph {tier_name.upper()}[" {tier_name} "]')
+        lines.append('    direction LR')
+
+        for switch in tier_switches[tier]:
+            # Get switch attributes
+            if hasattr(switch, 'device_id'):
+                device_id = switch.device_id
+                name = switch.name
+                priority = switch.current_priority
+                is_root = switch.is_root_bridge
+            else:
+                device_id = switch.get('device_id', '')
+                name = switch.get('name', 'Unknown')
+                priority = switch.get('current_priority', 32768)
+                is_root = switch.get('is_root_bridge', False)
+
+            node_id = device_id.replace('-', '_')
+
+            # Crown for root bridge
+            root_marker = ' 👑' if is_root else ''
+
+            label = f'"{name}<br/>Priority: {priority}{root_marker}"'
+            lines.append(f'        {node_id}[{label}]')
+
+        lines.append('    end')
+        lines.append('')
+
+    # Add gateway connections
+    if gateway_name:
+        for switch in tier_switches.get(0, []):
+            connected = switch.connected_to_gateway if hasattr(switch, 'connected_to_gateway') else switch.get('connected_to_gateway', False)
+            if connected:
+                device_id = switch.device_id if hasattr(switch, 'device_id') else switch.get('device_id', '')
+                node_id = device_id.replace('-', '_')
+                lines.append(f'    GW --> {node_id}')
+        lines.append('')
+
+    # Add inter-switch connections
+    rendered_connections: set[tuple[str, str]] = set()
+    for conn in connections:
+        if hasattr(conn, 'from_device_id'):
+            from_id = conn.from_device_id.replace('-', '_')
+            to_id = conn.to_device_id.replace('-', '_')
+            is_blocked = conn.is_blocked
+        else:
+            from_id = conn.get('from_device_id', '').replace('-', '_')
+            to_id = conn.get('to_device_id', '').replace('-', '_')
+            is_blocked = conn.get('is_blocked', False)
+
+        # Avoid duplicate connections
+        conn_pair = sorted([from_id, to_id])
+        conn_key: tuple[str, str] = (conn_pair[0], conn_pair[1])
+        if conn_key in rendered_connections:
+            continue
+        rendered_connections.add(conn_key)
+
+        if is_blocked:
+            lines.append(f'    {from_id} -.-x|blocked| {to_id}')
+        else:
+            lines.append(f'    {from_id} --> {to_id}')
+
+    lines.append('')
+
+    # Styling
+    lines.extend([
+        '    %% Styling',
+        '    classDef core fill:#4CAF50,stroke:#2E7D32,color:#fff',
+        '    classDef dist fill:#2196F3,stroke:#1565C0,color:#fff',
+        '    classDef access fill:#FF9800,stroke:#E65100,color:#fff',
+        '    classDef root fill:#9C27B0,stroke:#6A1B9A,color:#fff',
+        '    classDef gateway fill:#607D8B,stroke:#37474F,color:#fff',
+        '',
+        '    class GW gateway',
+    ])
+
+    # Apply classes based on tier and root status
+    for tier, switches_in_tier in tier_switches.items():
+        class_name = 'core' if tier == 0 else 'dist' if tier == 1 else 'access'
+        for switch in switches_in_tier:
+            if hasattr(switch, 'device_id'):
+                device_id = switch.device_id
+                is_root = switch.is_root_bridge
+            else:
+                device_id = switch.get('device_id', '')
+                is_root = switch.get('is_root_bridge', False)
+
+            node_id = device_id.replace('-', '_')
+            if is_root:
+                lines.append(f'    class {node_id} root')
+            else:
+                lines.append(f'    class {node_id} {class_name}')
+
+    lines.append('```')
+    return '\n'.join(lines)

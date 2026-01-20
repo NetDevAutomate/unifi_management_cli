@@ -123,6 +123,7 @@ def main(
 find_app = typer.Typer(help="🔍 Device and resource discovery")
 analyze_app = typer.Typer(help="📊 Network analysis and diagnostics")
 diagnose_app = typer.Typer(help="🏥 Network health and troubleshooting")
+stp_app = typer.Typer(help="🌳 STP topology analysis and optimization")
 
 # Import inventory subcommands
 from .inventory_cli import inventory_app
@@ -131,6 +132,7 @@ app.add_typer(find_app, name="find")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(diagnose_app, name="diagnose")
 app.add_typer(inventory_app, name="inventory")
+app.add_typer(stp_app, name="stp")
 
 
 @app.command()
@@ -627,6 +629,272 @@ def verify(
             raise typer.Exit(e.code)
     except Exception as e:
         console.print(f"❌ [bold red]Verification failed: {e}[/bold red]")
+        raise typer.Exit(1)
+
+
+# =============================================================================
+# STP Commands
+# =============================================================================
+
+@stp_app.command("analyze")
+def stp_analyze(
+    device: Annotated[
+        Optional[str],
+        typer.Option('--device', '-d', help='🖥️ Specific switch to analyze')
+    ] = None,
+):
+    """🌳 Analyze current STP topology and display hierarchy.
+
+    Shows all switches with their STP configuration, bridge priorities,
+    and hierarchy tiers (Core, Distribution, Access).
+    """
+    import asyncio
+
+    config = state.config_path
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🌳 [bold]STP Topology Analysis[/bold]")
+
+    try:
+        from .cli import load_env_from_config
+
+        load_env_from_config(str(config))
+
+        from .analysis.stp_optimizer import discover_stp_topology
+
+        topology = asyncio.run(discover_stp_topology(device_id=device))
+
+        # Display summary
+        console.print(f"\n📊 [bold]Summary[/bold]")
+        console.print(f"  Switches: [cyan]{len(topology.switches)}[/cyan]")
+        console.print(f"  Root Bridge: [green]{topology.root_bridge_name or 'Unknown'}[/green]")
+        console.print(f"  Root Priority: [yellow]{topology.root_bridge_priority}[/yellow]")
+        console.print(f"  Blocked Ports: [{'red' if topology.blocked_ports_count else 'green'}]{topology.blocked_ports_count}[/]")
+
+        # Display topology table
+        table = Table(title="STP Topology", show_header=True)
+        table.add_column("Switch", style="cyan")
+        table.add_column("Priority", style="yellow")
+        table.add_column("Tier", style="blue")
+        table.add_column("Root", style="green")
+        table.add_column("Gateway", style="magenta")
+
+        tier_names = {0: 'Core', 1: 'Distribution', 2: 'Access'}
+        for switch in topology.switches:
+            tier_name = tier_names.get(switch.hierarchy_tier, f'Tier {switch.hierarchy_tier}')
+            root_marker = '✅' if switch.is_root_bridge else ''
+            gw_marker = '✅' if switch.connected_to_gateway else ''
+            table.add_row(
+                switch.name,
+                str(switch.current_priority),
+                tier_name,
+                root_marker,
+                gw_marker
+            )
+
+        console.print(table)
+
+        if topology.blocked_ports_count > 0:
+            console.print(f"\n⚠️ [yellow]Found {topology.blocked_ports_count} blocked port(s) - indicates redundant paths[/yellow]")
+
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@stp_app.command("optimize")
+def stp_optimize(
+    dry_run: Annotated[
+        bool,
+        typer.Option('--dry-run', help='🔍 Preview changes without applying (default)')
+    ] = True,
+    apply: Annotated[
+        bool,
+        typer.Option('--apply', help='⚡ Apply the changes')
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option('--force', '-f', help='⚠️ Skip confirmation when applying')
+    ] = False,
+):
+    """🔧 Calculate and optionally apply optimal STP priorities.
+
+    Analyzes network topology and calculates optimal bridge priorities:
+    - Tier 0 (Core): Priority 4096 - Switches connected to gateway
+    - Tier 1 (Distribution): Priority 8192 - One hop from core
+    - Tier 2+ (Access): Priority 16384+ - Two+ hops from core
+
+    Default is --dry-run to preview changes. Use --apply to make changes.
+    """
+    import asyncio
+
+    config = state.config_path
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    # --apply overrides --dry-run
+    if apply:
+        dry_run = False
+
+    console.print("🔧 [bold]STP Optimization[/bold]")
+
+    if dry_run:
+        console.print("🔍 [cyan]Dry run mode - no changes will be applied[/cyan]")
+    else:
+        console.print("⚡ [yellow]Apply mode - changes will be made[/yellow]")
+
+    try:
+        from .cli import load_env_from_config
+
+        load_env_from_config(str(config))
+
+        from .analysis.stp_optimizer import (
+            discover_stp_topology,
+            calculate_optimal_priorities,
+            apply_stp_changes,
+        )
+
+        # Discover topology
+        console.print("📡 [dim]Discovering STP topology...[/dim]")
+        topology = asyncio.run(discover_stp_topology())
+
+        # Calculate optimal priorities
+        console.print("🧮 [dim]Calculating optimal priorities...[/dim]")
+        changes = asyncio.run(calculate_optimal_priorities(topology))
+
+        if not changes:
+            console.print("✅ [bold green]STP configuration is already optimal![/bold green]")
+            return
+
+        # Display changes table
+        table = Table(title="Recommended Changes", show_header=True)
+        table.add_column("Switch", style="cyan")
+        table.add_column("Current", style="red")
+        table.add_column("Optimal", style="green")
+        table.add_column("Tier", style="blue")
+        table.add_column("Reason", style="dim")
+
+        tier_names = {0: 'Core', 1: 'Distribution', 2: 'Access'}
+        for change in changes:
+            tier_name = tier_names.get(change.hierarchy_tier, f'Tier {change.hierarchy_tier}')
+            table.add_row(
+                change.device_name,
+                str(change.current_priority),
+                str(change.new_priority),
+                tier_name,
+                change.reason[:40] + '...' if len(change.reason) > 40 else change.reason
+            )
+
+        console.print(table)
+        console.print(f"\n📊 [bold]{len(changes)} change(s) recommended[/bold]")
+
+        if not dry_run:
+            if not force:
+                confirm = typer.confirm(
+                    f"\n⚠️ Apply {len(changes)} STP priority change(s)? This may cause brief network disruption.",
+                    default=False
+                )
+                if not confirm:
+                    console.print("❌ [yellow]Operation cancelled[/yellow]")
+                    raise typer.Exit(0)
+
+            console.print("🚀 [dim]Applying changes...[/dim]")
+            result = asyncio.run(apply_stp_changes(changes, dry_run=False))
+
+            applied_count = len(result.get('applied', []))
+            failed_count = len(result.get('failed', []))
+
+            if applied_count > 0:
+                console.print(f"✅ [bold green]Applied {applied_count} change(s)[/bold green]")
+
+            if failed_count > 0:
+                console.print(f"❌ [bold red]Failed {failed_count} change(s)[/bold red]")
+                for failure in result.get('failed', []):
+                    console.print(f"   • {failure['device_name']}: {failure['error']}")
+
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@stp_app.command("report")
+def stp_report(
+    output: Annotated[
+        Path,
+        typer.Option('--output', '-o', help='📄 Output file path (required)')
+    ],
+):
+    """📝 Generate comprehensive STP optimization report.
+
+    Creates a markdown report with:
+    - Current topology analysis
+    - Recommended changes
+    - Mermaid diagrams (current vs optimal)
+    - Configuration diff
+    """
+    import asyncio
+
+    config = state.config_path
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("📝 [bold]STP Report Generation[/bold]")
+    console.print(f"📄 Output: [cyan]{output}[/cyan]")
+
+    try:
+        from .cli import load_env_from_config
+
+        load_env_from_config(str(config))
+
+        from .analysis.stp_optimizer import (
+            discover_stp_topology,
+            calculate_optimal_priorities,
+            generate_stp_report,
+            format_stp_report_markdown,
+        )
+
+        # Discover topology
+        console.print("📡 [dim]Discovering STP topology...[/dim]")
+        topology = asyncio.run(discover_stp_topology())
+
+        # Calculate optimal priorities
+        console.print("🧮 [dim]Calculating optimal priorities...[/dim]")
+        changes = asyncio.run(calculate_optimal_priorities(topology))
+
+        # Generate report
+        console.print("📝 [dim]Generating report...[/dim]")
+        report = asyncio.run(generate_stp_report(topology, changes))
+
+        # Format and write markdown
+        markdown = format_stp_report_markdown(report)
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(markdown)
+
+        console.print(f"✅ [bold green]Report saved to {output}[/bold green]")
+        console.print(f"📊 Analyzed: [cyan]{report.switches_analyzed}[/cyan] switches")
+        console.print(f"🔄 Changes: [yellow]{report.changes_required}[/yellow] recommended")
+
+        if report.issues:
+            console.print("\n⚠️ [bold yellow]Issues Found:[/bold yellow]")
+            for issue in report.issues:
+                console.print(f"   • {issue}")
+
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
         raise typer.Exit(1)
 
 
