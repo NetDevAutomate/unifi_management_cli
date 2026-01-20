@@ -1,0 +1,106 @@
+category: analysis
+description: Network analysis tools for UniFi infrastructure
+
+tools:
+  detect_ip_conflicts:
+    module: unifi_mapper.analysis.ip_conflicts
+    handler: detect_ip_conflicts
+    description: Find IP address conflicts between devices on the network
+    priority: P1
+    tags: [ip, conflict, layer3, diagnostic]
+
+  detect_storms:
+    module: unifi_mapper.analysis.storm_detection
+    handler: detect_storms
+    description: Detect broadcast and multicast storms on network segments
+    priority: P1
+    tags: [broadcast, multicast, storm, layer2, diagnostic]
+
+  diagnose_vlans:
+    module: unifi_mapper.analysis.vlan_diagnostics
+    handler: diagnose_vlans
+    description: Comprehensive VLAN diagnostics and configuration validation
+    priority: P1
+    tags: [vlan, layer2, configuration, diagnostic]
+
+  analyze_link_quality:
+    module: unifi_mapper.analysis.link_quality
+    handler: analyze_link_quality
+    description: Port health and error analysis for link quality assessment
+    priority: P2
+    tags: [port, health, errors, performance]
+
+  get_capacity_report:
+    module: unifi_mapper.analysis.capacity_planning
+    handler: get_capacity_report
+    description: Network capacity planning and utilization report
+    priority: P2
+    tags: [capacity, planning, utilization, report]
+
+  monitor_lags:
+    module: unifi_mapper.analysis.lag_monitoring
+    handler: monitor_lags
+    description: LAG (Link Aggregation Group) health monitoring
+    priority: P2
+    tags: [lag, aggregation, redundancy, health]
+
+  validate_qos:
+    module: unifi_mapper.analysis.qos_validation
+    handler: validate_qos
+    description: QoS configuration validation and policy checking
+    priority: P2
+    tags: [qos, quality, policy, validation]
+
+  analyze_mac_table:
+    module: unifi_mapper.analysis.mac_analyzer
+    handler: analyze_mac_table
+    description: MAC address table analysis and flapping detection
+    priority: P3
+    tags: [mac, layer2, flapping, table]
+
+  get_firmware_report:
+    module: unifi_mapper.analysis.firmware_advisor
+    handler: get_firmware_report
+    description: Firmware security assessment and update recommendations
+    priority: P3
+    tags: [firmware, security, update, advisory]
+
+  discover_stp_topology:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: discover_stp_topology
+    description: Discover current STP topology from all switches
+    priority: P2
+    tags: [stp, spanning-tree, topology, discovery]
+
+  calculate_optimal_priorities:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: calculate_optimal_priorities
+    description: Calculate optimal bridge priorities based on network hierarchy
+    priority: P2
+    tags: [stp, spanning-tree, priority, optimization]
+
+  generate_stp_report:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: generate_stp_report
+    description: Generate comprehensive STP optimization report
+    priority: P2
+    tags: [stp, spanning-tree, report, analysis]
+
+  apply_stp_changes:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: apply_stp_changes
+    description: Apply STP priority changes via API (supports dry-run mode)
+    priority: P2
+    tags: [stp, spanning-tree, configuration, apply]
+    parameters:
+      dry_run:
+        type: boolean
+        default: true
+        description: Preview changes without applying
+
+  format_stp_report_markdown:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: format_stp_report_markdown
+    description: Format STP report as markdown with mermaid diagrams
+    priority: P3
+    tags: [stp, spanning-tree, report, markdown, mermaid]

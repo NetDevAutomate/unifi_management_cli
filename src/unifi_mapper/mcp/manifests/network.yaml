@@ -1,0 +1,45 @@
+category: network
+description: Network control plane managers for UniFi infrastructure
+
+tools:
+  get_firewall_zones:
+    module: unifi_mapper.mcp.tools.network
+    handler: get_firewall_zones
+    description: List all firewall zones and their configurations
+    priority: P1
+    tags: [firewall, zones, security, configuration]
+
+  get_firewall_policies:
+    module: unifi_mapper.mcp.tools.network
+    handler: get_firewall_policies
+    description: List firewall policies between zones
+    priority: P1
+    tags: [firewall, policies, rules, security]
+
+  get_acl_rules:
+    module: unifi_mapper.mcp.tools.network
+    handler: get_acl_rules
+    description: List ACL rules and their configurations
+    priority: P1
+    tags: [acl, rules, access-control, security]
+
+  get_dns_policies:
+    module: unifi_mapper.mcp.tools.network
+    handler: get_dns_policies
+    description: List DNS policies and configurations
+    priority: P2
+    tags: [dns, policies, filtering, security]
+
+  get_clients:
+    module: unifi_mapper.mcp.tools.network
+    handler: get_clients
+    description: List connected clients with fingerprinting data
+    priority: P1
+    tags: [clients, devices, fingerprint, inventory]
+
+  get_networks:
+    module: unifi_mapper.mcp.tools.network
+    handler: get_networks
+    description: List networks/VLANs and their configurations
+    priority: P1
+    tags: [networks, vlans, configuration, layer2]

@@ -17,6 +17,8 @@ dependencies = [
     "pymongo>=4.8.0", # BSON parsing for backup database
     "onvif-zeep-async>=4.0.4",
     "uiprotect>=7.0.0",  # UniFi Protect async API client
+    "mcp>=1.0.0",  # Model Context Protocol SDK (includes FastMCP)
+    "pyyaml>=6.0",  # YAML manifest parsing for MCP tools
 ]
 license = { text = "MIT" }
 authors = [{ name = "ataylor" }]
@@ -33,6 +35,7 @@ classifiers = [
 "unifi-mapper" = "unifi_mapper.typer_cli:app"
 "unifi-network-toolkit" = "unifi_mapper.network_cli:main"
 "unifi-inventory" = "unifi_mapper.inventory_cli:main"
+"unifi-mcp" = "unifi_mapper.mcp.server:main"
 
 [dependency-groups]
 dev = [

@@ -83,3 +83,6 @@ diagrams/*.dot
 
 # Personal/environment-specific scripts (not for distribution)
 personal_scripts/
+
+# bv (beads viewer) local config and caches
+.bv/

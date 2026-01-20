@@ -11,7 +11,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
 - **30+ Analysis Tools**: Network health, performance, security diagnostics, STP optimization
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
-- **MCP Server**: AI-assisted network troubleshooting (see [MCP Server Implementation](../unifi_management_mcp_server/))
+- **MCP Server**: AI-assisted network troubleshooting via Model Context Protocol
 
 ## Installation
 
@@ -104,6 +104,63 @@ unifi-mapper inventory list --filter switch --show-upgrade
 unifi-mapper inventory check-updates
 ```
 
+### MCP Server (AI-Assisted Troubleshooting)
+
+The MCP Server enables AI assistants like Claude to directly query and troubleshoot your UniFi network infrastructure using the Model Context Protocol.
+
+**Installation:**
+
+```bash
+# Run directly with uvx (recommended)
+uvx run unifi-mcp
+
+# Or install and run
+uv tool install .
+unifi-mcp
+```
+
+**Claude Desktop Configuration:**
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "unifi-management": {
+      "command": "uvx",
+      "args": ["--from", "unifi-management-cli", "unifi-mcp"],
+      "env": {
+        "UNIFI_URL": "https://192.168.1.1",
+        "UNIFI_SITE": "default",
+        "UNIFI_CONSOLE_API_TOKEN": "your_api_token",
+        "PROTECT_HOST": "192.168.1.1",
+        "PROTECT_USERNAME": "admin",
+        "PROTECT_PASSWORD": "your_password"
+      }
+    }
+  }
+}
+```
+
+**Available Tools (36 total):**
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| discovery | 4 | Device/IP/MAC location and client tracing |
+| diagnostics | 4 | Health checks, performance analysis, security audit |
+| connectivity | 3 | Firewall checks, path analysis, traceroute |
+| network | 6 | Firewall zones/policies, ACLs, DNS, clients, VLANs |
+| protect | 5 | Cameras, NVR, sensors, lights, doorbells |
+| analysis | 14 | Capacity planning, link quality, STP, VLAN diagnostics |
+
+**Usage Example:**
+
+Ask Claude: "Check the health of my UniFi network" → Claude uses `network_health_check` tool
+
+Ask Claude: "Find all cameras and their status" → Claude uses `get_cameras` tool
+
+Ask Claude: "What devices are connected to my network?" → Claude uses `get_clients` tool
+
 ### Advanced Verification
 
 ```bash
@@ -132,15 +189,15 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (FastMCP)
+└── MCP Server (36 tools via FastMCP)
 
 Analysis Toolkit
-├── Network Analysis (14 tools)
+├── Analysis Tools (14 tools)
 ├── Diagnostics (4 tools)
 ├── Discovery (4 tools)
 ├── Connectivity (3 tools)
-├── Network Control Plane (8 managers)
-└── Protect Integration (8 components)
+├── Network Control (6 wrappers)
+└── Protect Integration (5 wrappers)
 ```
 
 ## Key Technical Solutions
