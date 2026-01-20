@@ -51,6 +51,21 @@ from unifi_mapper.core.models.mirror import (
 )
 from unifi_mapper.core.models.network_path import NetworkPath, PathHop
 from unifi_mapper.core.models.port import Port
+from unifi_mapper.core.models.stp import (
+    STP_PRIORITY_ACCESS_BASE,
+    STP_PRIORITY_CORE,
+    STP_PRIORITY_DEFAULT,
+    STP_PRIORITY_DISTRIBUTION,
+    STP_PRIORITY_INCREMENT,
+    STPChange,
+    STPConnection,
+    STPOptimizationReport,
+    STPPortConfig,
+    STPPortState,
+    STPRole,
+    STPTopology,
+    SwitchSTPConfig,
+)
 from unifi_mapper.core.models.vlan import VLAN
 
 
@@ -106,4 +121,18 @@ __all__ = [
     'PathHop',
     'Port',
     'VLAN',
+    # STP models
+    'STP_PRIORITY_ACCESS_BASE',
+    'STP_PRIORITY_CORE',
+    'STP_PRIORITY_DEFAULT',
+    'STP_PRIORITY_DISTRIBUTION',
+    'STP_PRIORITY_INCREMENT',
+    'STPChange',
+    'STPConnection',
+    'STPOptimizationReport',
+    'STPPortConfig',
+    'STPPortState',
+    'STPRole',
+    'STPTopology',
+    'SwitchSTPConfig',
 ]
