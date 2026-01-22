@@ -86,3 +86,11 @@ personal_scripts/
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# Local SQLite databases (tool artifacts)
+8085
+8085-shm
+8085-wal
+
+# Perles config
+.perles/
