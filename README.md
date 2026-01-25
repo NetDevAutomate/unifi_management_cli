@@ -320,6 +320,37 @@ uv run ruff format src/
 uv run pyright src/
 ```
 
+## AXIS Device Provisioning
+
+The `scripts/axis_provision.py` script automates AXIS camera and device configuration:
+
+```bash
+# Provision all devices from config
+uv run python scripts/axis_provision.py
+
+# Preview changes without applying
+uv run python scripts/axis_provision.py --dry-run
+
+# Provision specific device
+uv run python scripts/axis_provision.py --device Front_Of_House
+
+# Enable debug logging
+uv run python scripts/axis_provision.py --debug
+```
+
+**Configuration:** `~/.config/axiscam/config.yaml`
+
+### Firmware Limitations
+
+Cameras with newer AXIS OS firmware (I8016-LVE, M3216-LVE, and similar models) have restricted the legacy VAPIX CGI APIs for user management. On these devices:
+
+- **ONVIF users** must be created manually via the web UI: **System → ONVIF → Add account**
+- **MQTT configuration** works via the modern JSON API and provisions correctly
+
+This is an AXIS firmware decision to deprecate legacy APIs in favour of the web interface. The script cannot work around this limitation without AXIS providing a supported API for ONVIF user management.
+
+Older devices (NVR S3008, speakers, legacy cameras) continue to work with full automated provisioning.
+
 ## Troubleshooting
 
 **Port names not persisting:**
