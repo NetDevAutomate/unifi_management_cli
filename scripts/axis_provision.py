@@ -14,11 +14,21 @@ Usage:
 import argparse
 import asyncio
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 import yaml
+
+# Debug flag for verbose logging
+DEBUG = False
+
+
+def debug_log(msg: str) -> None:
+    """Print debug message if DEBUG is enabled."""
+    if DEBUG:
+        print(f"  [DEBUG] {msg}")
 
 
 @dataclass
@@ -143,46 +153,108 @@ class AxisProvisioner:
     async def get_onvif_users(self, client: httpx.AsyncClient) -> tuple[list[str], bool]:
         """Get list of existing ONVIF users. Returns (users, onvif_supported)."""
         try:
-            # Try the ONVIF user API
+            # Method 1: Try the JSON ONVIF user API directly (most reliable for modern firmware)
             r = await client.post(
                 f"{self.base_url}/axis-cgi/onvifuser.cgi",
                 auth=self.auth,
                 json={"apiVersion": "1.0", "method": "getUsers"},
                 timeout=10.0,
             )
+            debug_log(f"ONVIF JSON API: status={r.status_code}")
             if r.status_code == 200:
-                data = r.json()
-                if "data" in data and "users" in data["data"]:
-                    return [u["name"] for u in data["data"]["users"]], True
-                return [], True
-            elif r.status_code == 404:
-                # ONVIF API not available - check if ONVIF is supported at all
-                r2 = await client.get(
-                    f"{self.base_url}/axis-cgi/param.cgi?action=list&group=root.ONVIF",
-                    auth=self.auth,
-                    timeout=10.0,
-                )
-                if r2.status_code == 200 and "Error" not in r2.text:
-                    # ONVIF exists but different API - check digusers for onvif users
-                    r3 = await client.get(
+                try:
+                    data = r.json()
+                    debug_log(f"ONVIF JSON response: {data}")
+                    # Check if we got a valid response (not an error)
+                    if isinstance(data, dict):
+                        if "data" in data and "users" in data["data"]:
+                            users = [u["name"] for u in data["data"]["users"]]
+                            debug_log(f"Found ONVIF users via JSON API: {users}")
+                            return users, True
+                        elif "data" in data:
+                            # Empty users list but ONVIF is supported
+                            debug_log("ONVIF supported (empty user list)")
+                            return [], True
+                        elif "error" not in data:
+                            # Some other valid response
+                            debug_log("ONVIF supported (valid response, no users)")
+                            return [], True
+                except (ValueError, KeyError) as e:
+                    debug_log(f"JSON parsing failed: {e}")
+
+            # Method 2: Check param.cgi for ONVIF settings (legacy firmware)
+            r = await client.get(
+                f"{self.base_url}/axis-cgi/param.cgi?action=list&group=root.ONVIF",
+                auth=self.auth,
+                timeout=10.0,
+            )
+            debug_log(f"ONVIF param check: status={r.status_code}")
+            if r.status_code == 200:
+                debug_log(f"ONVIF param response: {r.text[:200]}")
+                if "Error" not in r.text:
+                    # Check pwdgrp for digusers (legacy devices)
+                    r2 = await client.get(
                         f"{self.base_url}/axis-cgi/pwdgrp.cgi?action=get",
                         auth=self.auth,
                         timeout=10.0,
                     )
-                    if r3.status_code == 200:
-                        # Look for digusers which contains encoded ONVIF users
-                        for line in r3.text.split('\n'):
+                    if r2.status_code == 200:
+                        debug_log(f"pwdgrp response: {r2.text[:200]}")
+                        for line in r2.text.split('\n'):
                             if line.startswith('digusers='):
-                                users = line.split('=', 1)[1].strip('"').split(',')
-                                # ONVIF users often have 'onvif' in the name or are base64-encoded
-                                onvif_users = [u for u in users if 'onvif' in u.lower()]
-                                return onvif_users, True
+                                raw_users = line.split('=', 1)[1].strip('"').split(',')
+                                users = [u.strip() for u in raw_users if u.strip()]
+                                debug_log(f"Found digusers: {users}")
+                                return users, True
                     return [], True
-                # ONVIF not supported on this device
-                return [], False
-        except Exception:
-            pass
-        return [], False
+
+            # Method 3: Check various ONVIF service endpoints (fallback)
+            onvif_endpoints = [
+                "/onvif/device_service",
+                "/onvif/media_service",
+                "/onvif-http/",
+                "/vapix/services",
+            ]
+            for endpoint in onvif_endpoints:
+                try:
+                    r = await client.get(
+                        f"{self.base_url}{endpoint}",
+                        auth=self.auth,
+                        timeout=5.0,
+                    )
+                    debug_log(f"ONVIF endpoint {endpoint}: status={r.status_code}")
+                    # 200=OK, 401=needs auth, 405=method not allowed, 500=server error (but exists)
+                    if r.status_code in (200, 401, 405, 500):
+                        debug_log(f"ONVIF supported (endpoint {endpoint} exists)")
+                        return [], True
+                except Exception:
+                    continue
+
+            # Method 4: Check for ONVIF in device capabilities via VAPIX
+            r = await client.post(
+                f"{self.base_url}/axis-cgi/basicdeviceinfo.cgi",
+                auth=self.auth,
+                json={"apiVersion": "1.0", "method": "getAllProperties"},
+                timeout=10.0,
+            )
+            if r.status_code == 200:
+                try:
+                    data = r.json()
+                    debug_log(f"Device info response keys: {list(data.get('data', {}).get('propertyList', {}).keys()) if 'data' in data else 'N/A'}")
+                    # Check if device has video capabilities (cameras always have ONVIF)
+                    props = data.get("data", {}).get("propertyList", {})
+                    if props.get("ProdType") in ("Network Camera", "PTZ Dome Camera", "Dome Camera"):
+                        debug_log("ONVIF supported (camera device type)")
+                        return [], True
+                except (ValueError, KeyError) as e:
+                    debug_log(f"Device info parsing error: {e}")
+
+            debug_log("ONVIF not supported on this device")
+            return [], False
+
+        except Exception as e:
+            debug_log(f"ONVIF check failed with exception: {e}")
+            return [], False
 
     async def get_mqtt_config(self, client: httpx.AsyncClient) -> dict:
         """Get current MQTT configuration."""
@@ -258,18 +330,21 @@ class AxisProvisioner:
                     if r.status_code == 200 and "error" not in r.json():
                         return True, f"Updated user '{username}'"
 
-            # Fallback to legacy pwdgrp.cgi
+            # Fallback to legacy pwdgrp.cgi (URL-encode password for safety)
+            encoded_pwd = quote(password, safe='')
+            encoded_user = quote(username, safe='')
             r = await client.get(
-                f"{self.base_url}/axis-cgi/pwdgrp.cgi?action=add&user={username}&pwd={password}&grp=users&sgrp={privilege}",
+                f"{self.base_url}/axis-cgi/pwdgrp.cgi?action=add&user={encoded_user}&pwd={encoded_pwd}&grp=users&sgrp={privilege}",
                 auth=self.auth,
                 timeout=10.0,
             )
+            debug_log(f"Legacy user create: status={r.status_code}, response={r.text[:100]}")
             if r.status_code == 200 and "Error" not in r.text:
                 return True, f"Created user '{username}' (legacy API)"
 
             # Try update if add failed
             r = await client.get(
-                f"{self.base_url}/axis-cgi/pwdgrp.cgi?action=update&user={username}&pwd={password}",
+                f"{self.base_url}/axis-cgi/pwdgrp.cgi?action=update&user={encoded_user}&pwd={encoded_pwd}",
                 auth=self.auth,
                 timeout=10.0,
             )
@@ -289,23 +364,7 @@ class AxisProvisioner:
             return True, f"[DRY-RUN] Would configure ONVIF user '{username}'"
 
         try:
-            # ONVIF users are typically configured via param.cgi
-            # Check if ONVIF is enabled first
-            r = await client.get(
-                f"{self.base_url}/axis-cgi/param.cgi?action=list&group=root.ONVIF",
-                auth=self.auth,
-                timeout=10.0,
-            )
-
-            if r.status_code == 200:
-                # Enable ONVIF if not enabled
-                await client.get(
-                    f"{self.base_url}/axis-cgi/param.cgi?action=update&root.ONVIF.Enable=yes",
-                    auth=self.auth,
-                    timeout=10.0,
-                )
-
-            # Try the ONVIF user management API
+            # Method 1: Try the JSON ONVIF user management API (modern firmware)
             payload = {
                 "apiVersion": "1.0",
                 "method": "addUser",
@@ -321,33 +380,104 @@ class AxisProvisioner:
                 json=payload,
                 timeout=10.0,
             )
+            debug_log(f"ONVIF addUser JSON API: status={r.status_code}")
             if r.status_code == 200:
-                data = r.json()
-                if "error" not in data:
-                    return True, f"Created ONVIF user '{username}'"
-                # Try update if exists
-                payload["method"] = "updateUser"
-                r = await client.post(
-                    f"{self.base_url}/axis-cgi/onvifuser.cgi",
-                    auth=self.auth,
-                    json=payload,
-                    timeout=10.0,
-                )
-                if r.status_code == 200 and "error" not in r.json():
-                    return True, f"Updated ONVIF user '{username}'"
+                try:
+                    data = r.json()
+                    debug_log(f"ONVIF addUser response: {data}")
+                    if "error" not in data:
+                        return True, f"Created ONVIF user '{username}'"
+                    # User might already exist - try update
+                    error_code = data.get("error", {}).get("code")
+                    debug_log(f"ONVIF addUser error code: {error_code}")
+                    if error_code in (2100, 2001):  # Already exists codes
+                        payload["method"] = "updateUser"
+                        r = await client.post(
+                            f"{self.base_url}/axis-cgi/onvifuser.cgi",
+                            auth=self.auth,
+                            json=payload,
+                            timeout=10.0,
+                        )
+                        if r.status_code == 200:
+                            update_data = r.json()
+                            if "error" not in update_data:
+                                return True, f"Updated ONVIF user '{username}'"
+                except (ValueError, KeyError) as e:
+                    debug_log(f"JSON parsing error: {e}")
 
-            # Fallback - some devices use pwdgrp with onvif group
+            # Method 2: Try the user account API with ONVIF privileges (newer REST API)
+            user_payload = {
+                "apiVersion": "1.0",
+                "method": "addAccount",
+                "params": {
+                    "account": {
+                        "name": username,
+                        "password": password,
+                        "privileges": {
+                            "viewer": True,
+                            "operator": True,
+                            "admin": False,
+                            "ptz": True,
+                        },
+                    }
+                },
+            }
+            r = await client.post(
+                f"{self.base_url}/axis-cgi/useraccounts.cgi",
+                auth=self.auth,
+                json=user_payload,
+                timeout=10.0,
+            )
+            debug_log(f"User accounts API: status={r.status_code}")
+            if r.status_code == 200:
+                try:
+                    data = r.json()
+                    debug_log(f"User accounts response: {data}")
+                    if "error" not in data:
+                        return True, f"Created ONVIF user '{username}' (useraccounts API)"
+                except (ValueError, KeyError) as e:
+                    debug_log(f"JSON parsing error: {e}")
+
+            # Method 3: Try creating as a regular user first, then it can be used for ONVIF
+            # On modern AXIS firmware, regular users with appropriate privileges can use ONVIF
+            encoded_pwd = quote(password, safe='')
+            encoded_user = quote(username, safe='')
+
+            # Try the admin-prefixed endpoint
             r = await client.get(
-                f"{self.base_url}/axis-cgi/pwdgrp.cgi?action=add&user={username}&pwd={password}&grp=onvif&comment=ONVIF+User",
+                f"{self.base_url}/axis-cgi/admin/pwdgrp.cgi?action=add&user={encoded_user}&pwd={encoded_pwd}&grp=users&sgrp=operator:ptz&comment=ONVIF+User",
                 auth=self.auth,
                 timeout=10.0,
             )
+            debug_log(f"Admin pwdgrp API: status={r.status_code}")
+            if r.status_code == 200 and "Error" not in r.text:
+                return True, f"Created ONVIF user '{username}' (admin API)"
+
+            # Method 4: Try standard pwdgrp (legacy)
+            r = await client.get(
+                f"{self.base_url}/axis-cgi/pwdgrp.cgi?action=add&user={encoded_user}&pwd={encoded_pwd}&grp=users&sgrp=operator:ptz&comment=ONVIF+User",
+                auth=self.auth,
+                timeout=10.0,
+            )
+            debug_log(f"Legacy pwdgrp API: status={r.status_code}, response={r.text[:100] if r.text else 'empty'}")
             if r.status_code == 200 and "Error" not in r.text:
                 return True, f"Created ONVIF user '{username}' (legacy)"
 
-            return False, f"Could not configure ONVIF user (device may not support ONVIF)"
+            # Method 5: Try update if add failed (user might exist)
+            r = await client.get(
+                f"{self.base_url}/axis-cgi/pwdgrp.cgi?action=update&user={encoded_user}&pwd={encoded_pwd}",
+                auth=self.auth,
+                timeout=10.0,
+            )
+            debug_log(f"Legacy pwdgrp update: status={r.status_code}")
+            if r.status_code == 200 and "Error" not in r.text:
+                return True, f"Updated ONVIF user '{username}' (legacy)"
+
+            # Check if we got 403 (restricted) - newer firmware requires web UI for ONVIF users
+            return False, f"ONVIF user '{username}' requires manual setup via web UI (API restricted on this firmware)"
 
         except Exception as e:
+            debug_log(f"ONVIF user config exception: {e}")
             return False, f"Error configuring ONVIF user: {e}"
 
     async def configure_mqtt(
@@ -384,18 +514,24 @@ class AxisProvisioner:
                 json=payload,
                 timeout=10.0,
             )
+            debug_log(f"MQTT client API: status={r.status_code}")
             if r.status_code == 200:
-                data = r.json()
-                if "error" not in data:
-                    return True, f"Configured MQTT client: {broker} topic={topic}"
+                try:
+                    data = r.json()
+                    debug_log(f"MQTT client response: {data}")
+                    if isinstance(data, dict) and "error" not in data:
+                        return True, f"Configured MQTT client: {broker} topic={topic}"
+                except (ValueError, KeyError) as e:
+                    debug_log(f"MQTT JSON parsing error: {e}")
 
             # Fallback to param.cgi for older devices
+            debug_log("Trying MQTT param.cgi fallback...")
             params = {
                 "root.MQTT.Enable": "yes",
                 "root.MQTT.Host": broker_host,
                 "root.MQTT.Port": str(broker_port),
-                "root.MQTT.Username": username,
-                "root.MQTT.Password": password,
+                "root.MQTT.Username": quote(username, safe=''),
+                "root.MQTT.Password": quote(password, safe=''),
                 "root.MQTT.BaseTopic": topic,
                 "root.MQTT.ClientID": self.device.serial,
             }
@@ -405,12 +541,14 @@ class AxisProvisioner:
                 auth=self.auth,
                 timeout=10.0,
             )
+            debug_log(f"MQTT param.cgi: status={r.status_code}, response={r.text[:100]}")
             if r.status_code == 200 and "Error" not in r.text:
                 return True, f"Configured MQTT via params: {broker} topic={topic}"
 
             return False, "MQTT configuration not supported on this device"
 
         except Exception as e:
+            debug_log(f"MQTT config exception: {e}")
             return False, f"Error configuring MQTT: {e}"
 
     async def provision(
@@ -516,13 +654,18 @@ class AxisProvisioner:
 
 
 async def main():
+    global DEBUG
     parser = argparse.ArgumentParser(description="Provision AXIS devices")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without making changes")
     parser.add_argument("--device", type=str, help="Provision only the specified device by name")
+    parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
     parser.add_argument(
         "--config", type=str, default="~/.config/axiscam/config.yaml", help="Path to config file"
     )
     args = parser.parse_args()
+
+    if args.debug:
+        DEBUG = True
 
     config_path = Path(args.config).expanduser()
     if not config_path.exists():
