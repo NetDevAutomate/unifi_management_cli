@@ -1,4 +1,11 @@
-# UniFi Network Port Mapper - Architecture & Code Map
+> **SUPERSEDED**: This document has been replaced by the comprehensive documentation in `docs/architecture/`. See:
+> - [Architecture Overview](../architecture/architecture-overview.md)
+> - [C4 Architecture](../architecture/c4-architecture.md)
+> - [Codebase Map](../architecture/codemap.md)
+>
+> This file is retained as a historical artefact.
+
+# UniFi Network Port Mapper - Architecture & Code Map (Legacy)
 
 ## Table of Contents
 1. [System Overview](#system-overview)

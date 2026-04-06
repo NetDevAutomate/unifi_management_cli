@@ -200,6 +200,12 @@ Analysis Toolkit
 └── Protect Integration (5 wrappers)
 ```
 
+For detailed architecture documentation, see:
+
+- [C4 Architecture Diagrams](docs/architecture/c4-architecture.md) -- All four C4 levels with Mermaid and PlantUML
+- [Architecture Overview](docs/architecture/architecture-overview.md) -- Layer deep dives, design patterns, sequence diagrams
+- [Codebase Map](docs/architecture/codemap.md) -- Module-by-module reference with dependency graphs
+
 ## Key Technical Solutions
 
 ### Ground Truth Verification
@@ -322,6 +328,8 @@ uv run pyright src/
 
 ## AXIS Device Provisioning
 
+> For the full provisioning guide including workflow diagrams, configuration reference, and troubleshooting, see [AXIS Provisioning Guide](docs/guides/axis-provisioning.md).
+
 The `scripts/axis_provision.py` script automates AXIS camera and device configuration:
 
 ```bash
@@ -352,6 +360,9 @@ This is an AXIS firmware decision to deprecate legacy APIs in favour of the web 
 Older devices (NVR S3008, speakers, legacy cameras) continue to work with full automated provisioning.
 
 ## Troubleshooting
+
+> For the full troubleshooting guide with diagnostic flowcharts and operational runbook, see [Troubleshooting and Runbook](docs/operations/troubleshooting-and-runbook.md).
+> For step-by-step workflow guides, see [Use Cases and How-To](docs/guides/use-cases-and-howto.md).
 
 **Port names not persisting:**
 1. Check device compatibility with `python -m unifi_mapper.analyze_network_capabilities`

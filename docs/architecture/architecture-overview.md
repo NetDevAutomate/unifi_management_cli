@@ -4,6 +4,8 @@
 **Last updated**: 2026-04-06  
 **Codebase root**: `src/unifi_mapper/`
 
+> **See also**: [C4 Architecture](c4-architecture.md) | [Codebase Map](codemap.md) | [Use Cases](../guides/use-cases-and-howto.md) | [Troubleshooting](../operations/troubleshooting-and-runbook.md)
+
 ---
 
 ## Table of Contents
