@@ -94,3 +94,7 @@ personal_scripts/
 
 # Perles config
 .perles/
+
+# Working documents (brainstorms, plans - not for distribution)
+docs/brainstorms/
+docs/plans/
