@@ -522,6 +522,178 @@ def analyze_radio():
         raise typer.Exit(1)
 
 
+@analyze_app.command("sfp")
+def analyze_sfp():
+    """🔦 Audit SFP/SFP+ transceiver diagnostics."""
+    import asyncio
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🔦 [bold]SFP Diagnostics[/bold]")
+
+    try:
+        load_env_from_config(str(state.config_path))
+        from .analysis.sfp_diagnostics import audit_sfp_diagnostics
+
+        report = asyncio.run(audit_sfp_diagnostics())
+        console.print(f"SFP ports analyzed: [cyan]{report.ports_analyzed}[/cyan]")
+        console.print(f"Modules found: [cyan]{report.modules_found}[/cyan]")
+        console.print(f"Diagnostics available: [cyan]{report.diagnostics_available}[/cyan]")
+        console.print(f"Findings: [yellow]{report.findings_count}[/yellow]")
+
+        if report.modules:
+            table = Table(title="SFP Modules", show_header=True)
+            table.add_column("Device", style="cyan")
+            table.add_column("Port", style="yellow")
+            table.add_column("Vendor")
+            table.add_column("Part")
+            table.add_column("Temp C")
+            table.add_column("Tx dBm")
+            table.add_column("Rx dBm")
+            for module in report.modules:
+                table.add_row(
+                    module.device_name,
+                    str(module.port_idx),
+                    module.vendor,
+                    module.part,
+                    '' if module.temperature_c is None else f'{module.temperature_c:.1f}',
+                    '' if module.tx_power_dbm is None else f'{module.tx_power_dbm:.2f}',
+                    '' if module.rx_power_dbm is None else f'{module.rx_power_dbm:.2f}',
+                )
+            console.print(table)
+
+        if report.findings:
+            findings_table = Table(title="SFP Findings", show_header=True)
+            findings_table.add_column("Severity", style="bold")
+            findings_table.add_column("Category", style="cyan")
+            findings_table.add_column("Device", style="magenta")
+            findings_table.add_column("Port", style="yellow")
+            findings_table.add_column("Finding")
+            for finding in report.findings:
+                findings_table.add_row(
+                    finding.severity,
+                    finding.category,
+                    finding.device_name,
+                    str(finding.port_idx),
+                    finding.message,
+                )
+            console.print(findings_table)
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if state.debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@analyze_app.command("vlan-coverage")
+def analyze_vlan_coverage(
+    required_vlans: str = typer.Option(
+        ...,
+        "--required-vlans",
+        help="Comma-separated VLAN IDs required on trunk/planned uplink ports",
+    ),
+    planned_uplink: list[str] = typer.Option(
+        [],
+        "--planned-uplink",
+        help="Planned uplink target name/model to treat as critical",
+    ),
+):
+    """🔀 Audit VLAN coverage on trunk and planned uplink ports."""
+    import asyncio
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🔀 [bold]VLAN Coverage Audit[/bold]")
+
+    try:
+        load_env_from_config(str(state.config_path))
+        from .analysis.vlan_coverage import audit_vlan_coverage
+
+        vlans = _parse_csv_ints(required_vlans)
+        report = asyncio.run(audit_vlan_coverage(vlans, planned_uplinks=planned_uplink))
+        console.print(f"Devices analyzed: [cyan]{report.devices_analyzed}[/cyan]")
+        console.print(f"Ports analyzed: [cyan]{report.ports_analyzed}[/cyan]")
+        console.print(f"Required VLANs: [cyan]{', '.join(str(v) for v in report.required_vlans)}[/cyan]")
+        console.print(f"Findings: [yellow]{report.findings_count}[/yellow]")
+
+        if report.findings:
+            table = Table(title="VLAN Coverage Findings", show_header=True)
+            table.add_column("Severity", style="bold")
+            table.add_column("Device", style="cyan")
+            table.add_column("Port", style="yellow")
+            table.add_column("Missing VLANs")
+            table.add_column("Finding")
+            for finding in report.findings:
+                table.add_row(
+                    finding.severity,
+                    finding.device,
+                    str(finding.port),
+                    ', '.join(str(vlan) for vlan in finding.missing_vlans),
+                    finding.message,
+                )
+            console.print(table)
+        if not report.validation_passed:
+            raise typer.Exit(2)
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if state.debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@analyze_app.command("traffic-matrix")
+def analyze_traffic_matrix_cmd(
+    top: int = typer.Option(10, "--top", help="Number of flows/talkers to show", min=1),
+):
+    """📈 Analyze traffic matrix/top talkers from available UniFi statistics."""
+    import asyncio
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("📈 [bold]Traffic Matrix[/bold]")
+
+    try:
+        load_env_from_config(str(state.config_path))
+        from .analysis.traffic_matrix import analyze_traffic_matrix
+
+        report = asyncio.run(analyze_traffic_matrix(top_n=top))
+        console.print(f"Records analyzed: [cyan]{report.records_analyzed}[/cyan]")
+        console.print(f"Flows: [cyan]{report.flow_count}[/cyan]")
+        console.print(f"Total bytes: [cyan]{report.total_bytes}[/cyan]")
+
+        if report.top_flows:
+            table = Table(title="Top Flows", show_header=True)
+            table.add_column("Endpoint A", style="cyan")
+            table.add_column("Endpoint B", style="magenta")
+            table.add_column("Bytes", style="yellow")
+            table.add_column("Peak bps")
+            for flow in report.top_flows:
+                table.add_row(
+                    flow.endpoint_a.identifier,
+                    flow.endpoint_b.identifier,
+                    str(flow.total_bytes),
+                    '' if flow.max_bps is None else f'{flow.max_bps:.0f}',
+                )
+            console.print(table)
+        else:
+            console.print("No endpoint-pair flow records found in available UniFi statistics.")
+
+        if report.recommendations:
+            console.print("\nRecommendations:")
+            for recommendation in report.recommendations:
+                console.print(f"  • {recommendation.recommendation}")
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if state.debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
 @diagnose_app.command("health")
 def diagnose_health(
     detailed: bool = typer.Option(False, "--detailed", help="🔬 Include detailed device analysis")
@@ -1453,6 +1625,122 @@ def stp_preflight(
         raise typer.Exit(1)
 
 
+@stp_app.command("guard")
+def stp_guard(
+    tcn_threshold: int = typer.Option(
+        10,
+        "--tcn-threshold",
+        help="STP topology-change count threshold before warning",
+        min=1,
+    ),
+):
+    """🛡️ Audit Root Guard candidates and STP topology-change counters."""
+    import asyncio
+
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    try:
+        load_env_from_config(str(state.config_path))
+
+        from .analysis.stp_guard import audit_stp_guard_recommendations
+        from .analysis.stp_optimizer import discover_stp_topology
+
+        console.print("🛡️ [bold]STP Guard Audit[/bold]")
+        topology = asyncio.run(discover_stp_topology())
+        report = audit_stp_guard_recommendations(topology, tcn_threshold=tcn_threshold)
+
+        console.print(f"Ports analyzed: [cyan]{report.ports_analyzed}[/cyan]")
+        console.print(f"Findings: [yellow]{report.findings_count}[/yellow]")
+
+        if report.findings:
+            table = Table(title="STP Guard Findings", show_header=True)
+            table.add_column("Severity", style="bold")
+            table.add_column("Category", style="cyan")
+            table.add_column("Device", style="magenta")
+            table.add_column("Port", style="yellow")
+            table.add_column("Finding")
+            for finding in report.findings:
+                table.add_row(
+                    finding.severity,
+                    finding.category,
+                    finding.device_name,
+                    str(finding.port_idx),
+                    finding.message,
+                )
+            console.print(table)
+        else:
+            console.print("✅ [bold green]No STP guard findings detected[/bold green]")
+
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@stp_app.command("drift")
+def stp_drift(
+    intent: Path = typer.Option(
+        ...,
+        "--intent",
+        help="Path to stp_intent.yaml/json desired priority file",
+    ),
+):
+    """📋 Compare live STP state against an intent file."""
+    import asyncio
+
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    try:
+        load_env_from_config(str(state.config_path))
+
+        from .analysis.stp_drift import detect_stp_config_drift, load_stp_intent
+        from .analysis.stp_optimizer import discover_stp_topology
+
+        console.print("📋 [bold]STP Config Drift[/bold]")
+        topology = asyncio.run(discover_stp_topology())
+        desired = load_stp_intent(intent)
+        report = detect_stp_config_drift(topology, desired)
+
+        console.print(f"Devices checked: [cyan]{report.devices_checked}[/cyan]")
+        console.print(f"Findings: [yellow]{report.findings_count}[/yellow]")
+
+        if report.findings:
+            table = Table(title="STP Drift Findings", show_header=True)
+            table.add_column("Severity", style="bold")
+            table.add_column("Type", style="cyan")
+            table.add_column("Device", style="magenta")
+            table.add_column("Expected")
+            table.add_column("Actual")
+            table.add_column("Finding")
+            for finding in report.findings:
+                table.add_row(
+                    finding.severity,
+                    finding.finding_type,
+                    finding.device_name or finding.identifier,
+                    str(finding.expected),
+                    str(finding.actual),
+                    finding.message,
+                )
+            console.print(table)
+            raise typer.Exit(2)
+        console.print("✅ [bold green]No STP drift detected[/bold green]")
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
 @stp_app.command("validate-10g")
 def stp_validate_10g(
     planned_switches: Annotated[
@@ -1605,6 +1893,18 @@ def _parse_planned_switches(value: str) -> dict[str, int]:
     if not planned:
         raise typer.BadParameter('At least one planned switch model is required')
     return planned
+
+
+def _parse_csv_ints(value: str) -> list[int]:
+    values: list[int] = []
+    for item in value.split(','):
+        stripped = item.strip()
+        if not stripped:
+            continue
+        values.append(int(stripped))
+    if not values:
+        raise typer.BadParameter('At least one integer value is required')
+    return values
 
 
 if __name__ == "__main__":

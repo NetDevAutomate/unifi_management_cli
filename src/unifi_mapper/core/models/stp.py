@@ -64,6 +64,7 @@ class STPPortConfig(BaseModel):
     rx_dropped: int = Field(default=0, description='Receive dropped packet counter')
     tx_dropped: int = Field(default=0, description='Transmit dropped packet counter')
     crc_errors: int = Field(default=0, description='CRC error counter')
+    stp_tc_count: int = Field(default=0, description='STP topology-change counter')
 
 
 def _empty_port_configs() -> list[STPPortConfig]:

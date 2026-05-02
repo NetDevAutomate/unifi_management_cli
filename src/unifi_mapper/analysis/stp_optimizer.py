@@ -7,6 +7,7 @@ diagrams showing current vs optimal configuration.
 
 from datetime import datetime
 from typing import Any, cast
+from unifi_mapper.analysis.stp_guard import audit_stp_guard_recommendations
 from unifi_mapper.core.models.stp import (
     STP_PRIORITY_ACCESS_BASE,
     STP_PRIORITY_CORE,
@@ -299,6 +300,11 @@ def _extract_port_stp_states(
             rx_dropped=_as_int(port_data.get('rx_dropped')),
             tx_dropped=_as_int(port_data.get('tx_dropped')),
             crc_errors=_as_int(port_data.get('rx_crc_errors') or port_stats.get('rx_crc_errors')),
+            stp_tc_count=_as_int(
+                port_data.get('stp_tc_count')
+                or port_data.get('stp_state_change_count')
+                or port_data.get('stp_topology_change_count')
+            ),
         )
         port_states.append(port_config)
 
@@ -799,6 +805,20 @@ def build_10g_expansion_validation_report(
                 recommendation=cost_finding.recommendation,
                 device_name=cost_finding.device_name,
                 port_idx=cost_finding.port_idx,
+            )
+        )
+
+    for guard_finding in audit_stp_guard_recommendations(topology).findings:
+        if guard_finding.severity == 'INFO':
+            continue
+        findings.append(
+            STPValidationFinding(
+                severity=guard_finding.severity,
+                category=guard_finding.category,
+                message=guard_finding.message,
+                recommendation=guard_finding.recommendation,
+                device_name=guard_finding.device_name,
+                port_idx=guard_finding.port_idx,
             )
         )
 

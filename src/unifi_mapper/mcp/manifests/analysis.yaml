@@ -65,6 +65,27 @@ tools:
     priority: P2
     tags: [wifi, radio, channel, transmit-power, optimization]
 
+  audit_sfp_diagnostics:
+    module: unifi_mapper.analysis.sfp_diagnostics
+    handler: audit_sfp_diagnostics
+    description: Pull SFP/SFP+ module identity and DOM diagnostics from UniFi port tables
+    priority: P2
+    tags: [sfp, transceiver, optics, dom, diagnostics]
+
+  audit_vlan_coverage:
+    module: unifi_mapper.analysis.vlan_coverage
+    handler: audit_vlan_coverage
+    description: Check required VLAN coverage on trunk and planned uplink ports
+    priority: P2
+    tags: [vlan, trunk, uplink, flex-xg, validation]
+
+  analyze_traffic_matrix:
+    module: unifi_mapper.analysis.traffic_matrix
+    handler: analyze_traffic_matrix
+    description: Analyze available UniFi traffic statistics for top flows and 10G placement hints
+    priority: P2
+    tags: [traffic, matrix, top-talkers, capacity, 10g]
+
   validate_port_profiles:
     module: unifi_mapper.analysis.port_profile_validation
     handler: validate_port_profiles
@@ -190,3 +211,17 @@ tools:
     description: Simulate planned switch additions and STP root expectations
     priority: P2
     tags: [stp, preflight, simulate, flex-xg, planning]
+
+  audit_stp_guard_recommendations:
+    module: unifi_mapper.analysis.stp_guard
+    handler: audit_stp_guard_recommendations
+    description: Audit Root Guard candidates and STP topology-change counters
+    priority: P2
+    tags: [stp, root-guard, tcn, topology-change, validation]
+
+  detect_stp_config_drift:
+    module: unifi_mapper.analysis.stp_drift
+    handler: detect_stp_config_drift
+    description: Compare live STP topology against desired intent mapping
+    priority: P2
+    tags: [stp, drift, intent, gitops, validation]

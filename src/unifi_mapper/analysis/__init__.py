@@ -48,7 +48,10 @@ from unifi_mapper.analysis.port_profile_validation import (
 )
 from unifi_mapper.analysis.qos_validation import validate_qos
 from unifi_mapper.analysis.radio_optimization import analyze_radio_optimization
+from unifi_mapper.analysis.sfp_diagnostics import audit_sfp_diagnostics
 from unifi_mapper.analysis.storm_detection import detect_storms
+from unifi_mapper.analysis.stp_drift import detect_stp_config_drift, load_stp_intent
+from unifi_mapper.analysis.stp_guard import audit_stp_guard_recommendations
 from unifi_mapper.analysis.stp_optimizer import (
     apply_stp_changes,
     build_10g_expansion_validation_report,
@@ -64,7 +67,22 @@ from unifi_mapper.analysis.stp_optimizer import (
 from unifi_mapper.analysis.stp_change_plan import create_stp_change_plan
 from unifi_mapper.analysis.stp_preflight import stp_preflight_simulate_add
 from unifi_mapper.analysis.stp_snapshot import diff_stp_snapshots, snapshot_stp_topology
+from unifi_mapper.analysis.traffic_matrix import (
+    TrafficEndpoint,
+    TrafficFlow,
+    TrafficMatrixRecommendation,
+    TrafficMatrixReport,
+    TrafficTalker,
+    analyze_traffic_matrix,
+    analyze_traffic_matrix_from_payloads,
+)
 from unifi_mapper.analysis.vlan_diagnostics import diagnose_vlans
+from unifi_mapper.analysis.vlan_coverage import (
+    VLANCoverageFinding,
+    VLANCoverageReport,
+    audit_vlan_coverage,
+    audit_vlan_coverage_from_data,
+)
 
 
 __all__ = [
@@ -72,10 +90,15 @@ __all__ = [
     'detect_ip_conflicts',
     'detect_storms',
     'diagnose_vlans',
+    'VLANCoverageFinding',
+    'VLANCoverageReport',
+    'audit_vlan_coverage',
+    'audit_vlan_coverage_from_data',
     # P2 tools
     'analyze_link_quality',
     'analyze_radio_optimization',
     'audit_mtu_consistency',
+    'audit_sfp_diagnostics',
     'find_lag_candidates',
     'get_capacity_report',
     'monitor_lags',
@@ -106,7 +129,18 @@ __all__ = [
     'generate_stp_report',
     'validate_10g_expansion_readiness',
     'create_stp_change_plan',
+    'audit_stp_guard_recommendations',
+    'detect_stp_config_drift',
     'diff_stp_snapshots',
+    'load_stp_intent',
     'snapshot_stp_topology',
     'stp_preflight_simulate_add',
+    # Traffic matrix analysis
+    'TrafficEndpoint',
+    'TrafficFlow',
+    'TrafficMatrixRecommendation',
+    'TrafficMatrixReport',
+    'TrafficTalker',
+    'analyze_traffic_matrix',
+    'analyze_traffic_matrix_from_payloads',
 ]

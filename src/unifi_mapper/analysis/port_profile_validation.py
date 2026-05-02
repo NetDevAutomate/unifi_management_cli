@@ -67,6 +67,8 @@ def validate_port_profiles_from_data(
             port_idx = _as_int(port.get('port_idx'))
             port_name = str(port.get('name') or f'Port {port_idx}')
             profile_id = _profile_id_for_port(port, device)
+            if not profile_id:
+                continue
             profile = profiles_by_id.get(profile_id)
 
             if profile is None:
