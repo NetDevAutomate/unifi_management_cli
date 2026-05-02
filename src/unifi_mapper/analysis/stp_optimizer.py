@@ -7,6 +7,12 @@ diagrams showing current vs optimal configuration.
 
 from datetime import datetime
 from typing import Any, cast
+from unifi_mapper.analysis.model_capabilities import (
+    SwitchCapabilityClass,
+    classify_model,
+    is_access_class,
+    is_root_eligible,
+)
 from unifi_mapper.analysis.stp_guard import audit_stp_guard_recommendations
 from unifi_mapper.core.models.stp import (
     STP_PRIORITY_ACCESS_BASE,
@@ -28,6 +34,7 @@ from unifi_mapper.core.models.stp import (
 )
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.overrides import STPOverrides, load_stp_overrides
 
 
 def _as_int(value: Any, default: int = 0) -> int:
@@ -56,8 +63,17 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
 
 
+def _switch_capability(switch: SwitchSTPConfig) -> SwitchCapabilityClass:
+    """Classify a switch while preserving explicit non-unknown capability overrides."""
+    classified = classify_model(switch.model)
+    if classified.value == 'unknown' and switch.capability.value != 'unknown':
+        return switch.capability
+    return classified
+
+
 async def discover_stp_topology(
     device_id: str | None = None,
+    overrides: STPOverrides | None = None,
 ) -> STPTopology:
     """Discover current STP topology from all switches via LLDP and port_table.
 
@@ -77,6 +93,7 @@ async def discover_stp_topology(
     Args:
         device_id: Optional device ID to analyze specific switch.
                   If None, discovers entire network topology.
+        overrides: Optional STP overrides controlling root eligibility.
 
     Returns:
         STPTopology with complete spanning tree state
@@ -85,6 +102,8 @@ async def discover_stp_topology(
         ToolError: DEVICE_NOT_FOUND if device_id specified but not found
         ToolError: CONTROLLER_UNREACHABLE if cannot connect to UniFi controller
     """
+    resolved_overrides = overrides if overrides is not None else load_stp_overrides()
+
     async with UniFiClient() as client:
         try:
             devices = await client.get_devices()
@@ -160,6 +179,7 @@ async def discover_stp_topology(
 
                 # Determine if connected to gateway
                 connected_to_gateway = _is_connected_to_gateway(device, gateway_mac, mac_to_device)
+                capability = classify_model(dev_model)
 
                 switch_config = SwitchSTPConfig(
                     device_id=dev_id,
@@ -170,6 +190,7 @@ async def discover_stp_topology(
                     is_root_bridge=(dev_id == root_bridge_id),
                     port_states=port_states,
                     connected_to_gateway=connected_to_gateway,
+                    capability=capability,
                 )
 
                 switches.append(switch_config)
@@ -186,8 +207,8 @@ async def discover_stp_topology(
                 )
 
             # Calculate hierarchy tiers based on gateway connectivity
-            _calculate_hierarchy_tiers(switches)
-            _apply_root_eligibility(switches)
+            _calculate_hierarchy_tiers(switches, overrides=resolved_overrides)
+            _apply_root_eligibility(switches, overrides=resolved_overrides)
 
             # Update root bridge status
             for switch in switches:
@@ -374,6 +395,7 @@ def _is_connected_to_gateway(
 
 def _calculate_hierarchy_tiers(
     switches: list[SwitchSTPConfig],
+    overrides: STPOverrides | None = None,
 ) -> None:
     """Calculate network hierarchy tiers for each switch.
 
@@ -389,18 +411,36 @@ def _calculate_hierarchy_tiers(
             if port.connected_device_id:
                 adjacency[switch.device_id].add(port.connected_device_id)
 
-    # Find core switches (connected to gateway)
+    resolved_overrides = overrides if overrides is not None else STPOverrides()
+
+    # Find core switches (root-capable and connected to gateway).
+    # Gateway-adjacent access switches are still BFS roots, but they are not
+    # marked as Tier 0 because they should not become the STP root.
     core_switch_ids: set[str] = set()
+    bfs_roots: set[str] = set()
     for switch in switches:
         if switch.connected_to_gateway:
-            switch.hierarchy_tier = 0
-            core_switch_ids.add(switch.device_id)
+            switch.capability = _switch_capability(switch)
+
+            force_access = resolved_overrides.is_force_access(switch.mac)
+            root_capable = is_root_eligible(switch.capability) or (
+                switch.capability.value == 'unknown'
+            )
+            override_root = resolved_overrides.is_root_eligible_override(switch.mac)
+            if not force_access and (root_capable or (override_root and not is_access_class(switch.capability))):
+                switch.hierarchy_tier = 0
+                switch.tier_reason = 'Gateway-connected root-capable switch'
+                core_switch_ids.add(switch.device_id)
+            else:
+                switch.hierarchy_tier = 1
+                switch.tier_reason = 'Gateway-connected access-class switch'
+            bfs_roots.add(switch.device_id)
 
     # BFS to find distances from core
-    if core_switch_ids:
-        visited = set(core_switch_ids)
-        current_tier = core_switch_ids
-        tier_level = 1
+    if bfs_roots:
+        visited = set(bfs_roots)
+        current_tier = bfs_roots
+        tier_level = 1 if core_switch_ids else 2
 
         while current_tier:
             next_tier: set[str] = set()
@@ -413,30 +453,47 @@ def _calculate_hierarchy_tiers(
                         for s in switches:
                             if s.device_id == neighbor_id:
                                 s.hierarchy_tier = tier_level
+                                s.tier_reason = f'{tier_level} hop(s) from gateway-adjacent switch'
             current_tier = next_tier
             tier_level += 1
 
 
-def _apply_root_eligibility(switches: list[SwitchSTPConfig]) -> None:
-    """Mark preferred STP root candidates based on gateway connectivity and model."""
+def _apply_root_eligibility(
+    switches: list[SwitchSTPConfig],
+    overrides: STPOverrides | None = None,
+) -> None:
+    """Mark preferred STP root candidates based on topology and model capability."""
+    resolved_overrides = overrides if overrides is not None else STPOverrides()
+
     for switch in switches:
-        model_name = f'{switch.model} {switch.name}'.lower()
+        switch.capability = _switch_capability(switch)
+        force_access = resolved_overrides.is_force_access(switch.mac)
+        override_root = resolved_overrides.is_root_eligible_override(switch.mac)
+
         if not switch.connected_to_gateway:
             switch.root_eligible = False
             switch.root_preference = 900
             switch.root_eligibility_reason = 'Not directly connected to gateway'
-        elif 'flex xg' in model_name or 'usfxg' in model_name:
-            switch.root_eligible = True
-            switch.root_preference = 10
-            switch.root_eligibility_reason = 'Gateway-connected 10G switch'
-        elif 'lite' in model_name:
+        elif force_access or is_access_class(switch.capability):
             switch.root_eligible = False
             switch.root_preference = 500
-            switch.root_eligibility_reason = 'Gateway-connected but not preferred as STP root'
-        else:
+            switch.root_eligibility_reason = (
+                f'Gateway-connected {switch.capability.value} switch is access-class'
+            )
+        elif is_root_eligible(switch.capability):
             switch.root_eligible = True
-            switch.root_preference = 100
-            switch.root_eligibility_reason = 'Gateway-connected core candidate'
+            switch.root_preference = 10 if switch.capability.value == 'aggregation' else 100
+            switch.root_eligibility_reason = f'Gateway-connected {switch.capability.value} switch'
+        elif override_root:
+            switch.root_eligible = True
+            switch.root_preference = 50
+            switch.root_eligibility_reason = 'Gateway-connected root-eligible override'
+        else:
+            switch.root_eligible = False
+            switch.root_preference = 700
+            switch.root_eligibility_reason = (
+                f'Gateway-connected {switch.capability.value} switch is not root-capable'
+            )
 
 
 def expected_long_path_cost(speed_mbps: int) -> int:
@@ -556,6 +613,9 @@ async def calculate_optimal_priorities(
         preferred_root_id = preferred_root.device_id
         has_non_root_tier_zero = any(
             switch.device_id != preferred_root_id for switch in tier_zero_switches
+        ) or any(
+            switch.connected_to_gateway and switch.device_id != preferred_root_id
+            for switch in topology.switches
         )
 
     # Assign optimal priorities based on tier and root eligibility
@@ -582,6 +642,8 @@ async def calculate_optimal_priorities(
                     if switch.device_id == preferred_root_id
                     else STP_PRIORITY_DISTRIBUTION
                 )
+            elif tier == 1 and switch.connected_to_gateway and not switch.root_eligible:
+                optimal_priority = STP_PRIORITY_DISTRIBUTION
             else:
                 optimal_priority = base_priority
             switch.optimal_priority = optimal_priority
@@ -744,6 +806,7 @@ def build_10g_expansion_validation_report(
 ) -> STPNetworkValidationReport:
     """Build a validation report from already-discovered STP topology data."""
     findings: list[STPValidationFinding] = []
+    _apply_root_eligibility(topology.switches)
     switch_ids = {switch.device_id for switch in topology.switches}
     inter_switch_ports = [
         (switch, port)
@@ -784,6 +847,20 @@ def build_10g_expansion_validation_report(
                 category='STP',
                 message=f'Current root bridge "{root_switch.name}" is not directly connected to the gateway.',
                 recommendation='Make a gateway-connected core switch the STP root before adding the Flex XG switches.',
+                device_name=root_switch.name,
+            )
+        )
+
+    if root_switch and not root_switch.root_eligible and root_switch.capability.value != 'unknown':
+        findings.append(
+            STPValidationFinding(
+                severity='CRITICAL',
+                category='STP',
+                message=(
+                    f'Current root bridge "{root_switch.name}" is not an eligible STP root '
+                    f'for capability class {root_switch.capability.value}.'
+                ),
+                recommendation='Move the root bridge to an aggregation or core/distribution switch.',
                 device_name=root_switch.name,
             )
         )

@@ -405,6 +405,35 @@ class TestSTPOptimization:
         assert lite_change.new_priority != STP_PRIORITY_CORE
         assert lite_change.new_priority == STP_PRIORITY_DISTRIBUTION
 
+    async def test_gateway_connected_access_switch_is_not_assigned_root_priority(self) -> None:
+        """Access-class switches should not receive priority 4096 just because they touch gateway."""
+        flex_mini = SwitchSTPConfig(
+            device_id='mini1',
+            name='Desk Flex Mini',
+            mac='00:00:00:00:00:11',
+            model='USW-Flex-Mini',
+            current_priority=STP_PRIORITY_DEFAULT,
+            connected_to_gateway=True,
+        )
+        flex_xg = SwitchSTPConfig(
+            device_id='flex1',
+            name='Xray3 USW Flex XG 10G',
+            mac='00:00:00:00:00:20',
+            model='USW-Flex-XG',
+            current_priority=STP_PRIORITY_DEFAULT,
+            connected_to_gateway=True,
+        )
+        topology = STPTopology(switches=[flex_mini, flex_xg])
+        _calculate_hierarchy_tiers(topology.switches)
+
+        changes = await calculate_optimal_priorities(topology)
+
+        mini_change = next(change for change in changes if change.device_id == 'mini1')
+        flex_change = next(change for change in changes if change.device_id == 'flex1')
+        assert flex_mini.root_eligible is False
+        assert flex_change.new_priority == STP_PRIORITY_CORE
+        assert mini_change.new_priority == STP_PRIORITY_DISTRIBUTION
+
     async def test_distribution_priority_sits_below_non_root_gateway_core(self) -> None:
         """Tier 1 switches should not tie with a demoted gateway-connected core."""
         lite = SwitchSTPConfig(

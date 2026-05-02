@@ -3,6 +3,7 @@
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field
+from unifi_mapper.core.models.capability import SwitchCapabilityClass
 
 
 class STPPortState(str, Enum):
@@ -106,6 +107,11 @@ class SwitchSTPConfig(BaseModel):
     root_eligibility_reason: str = Field(
         default='', description='Why the switch is or is not root eligible'
     )
+    capability: SwitchCapabilityClass = Field(
+        default=SwitchCapabilityClass.UNKNOWN,
+        description='Hardware capability class derived from model',
+    )
+    tier_reason: str = Field(default='', description='Why the switch was assigned this tier')
     port_states: list[STPPortConfig] = Field(
         default_factory=_empty_port_configs, description='STP state for each port'
     )

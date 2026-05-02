@@ -30,6 +30,7 @@ from unifi_mapper.analysis.ip_conflicts import detect_ip_conflicts
 from unifi_mapper.analysis.lag_monitoring import find_lag_candidates, monitor_lags
 from unifi_mapper.analysis.link_quality import analyze_link_quality
 from unifi_mapper.analysis.mac_analyzer import analyze_mac_table
+from unifi_mapper.analysis.model_capabilities import classify_model
 from unifi_mapper.analysis.mtu_audit import audit_mtu_consistency
 from unifi_mapper.analysis.port_counter_baseline import (
     PortCounterBaselineStore,
@@ -105,6 +106,7 @@ __all__ = [
     'validate_qos',
     # P3 tools
     'analyze_mac_table',
+    'classify_model',
     'get_firmware_report',
     'PortCounterBaselineStore',
     'PortCounterSnapshot',
