@@ -9,7 +9,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **30+ Analysis Tools**: Network health, performance, security diagnostics, STP optimization
+- **50+ MCP Tools**: Network health, performance, security diagnostics, STP safety, VLAN checks, SFP/radio analysis, and Protect inventory
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
 - **MCP Server**: AI-assisted network troubleshooting via Model Context Protocol
 
@@ -84,11 +84,20 @@ unifi-network-toolkit find ip 192.0.2.100
 # Analyze current STP topology
 unifi-mapper stp analyze
 
-# Preview optimal priority changes (dry run)
+# Preview optimal priority changes and write a reversible plan
 unifi-mapper stp optimize --dry-run
+unifi-mapper stp optimize --plan reports/stp-plan.json
 
-# Apply changes with confirmation
-unifi-mapper stp optimize --apply
+# Apply or rollback an approved maintenance-window plan
+unifi-mapper stp apply --plan reports/stp-plan.json
+unifi-mapper stp rollback reports/stp-plan.json
+
+# Validate 10G readiness, guard placement, drift, and snapshots
+unifi-mapper stp validate-10g --planned-switches 2
+unifi-mapper stp guard
+unifi-mapper stp drift --intent stp_intent.yaml
+unifi-mapper stp snapshot --output reports/stp-baseline.json
+unifi-mapper stp diff reports/stp-baseline.json
 
 # Generate markdown report
 unifi-mapper stp report -o stp-report.md
@@ -142,16 +151,16 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-**Available Tools (36 total):**
+**Available Tools (50+ total):**
 
 | Category | Tools | Description |
 |----------|-------|-------------|
 | discovery | 4 | Device/IP/MAC location and client tracing |
 | diagnostics | 4 | Health checks, performance analysis, security audit |
-| connectivity | 3 | Firewall checks, path analysis, traceroute |
+| connectivity | 4 | Firewall checks, path analysis, traceroute, inter-VLAN endpoint validation |
 | network | 6 | Firewall zones/policies, ACLs, DNS, clients, VLANs |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells |
-| analysis | 14 | Capacity planning, link quality, STP, VLAN diagnostics |
+| analysis | 30 | Capacity, link quality, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, drift and change plans |
 
 **Usage Example:**
 
@@ -189,13 +198,13 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (36 tools via FastMCP)
+└── MCP Server (50+ tools via FastMCP)
 
 Analysis Toolkit
-├── Analysis Tools (14 tools)
+├── Analysis Tools (30 tools)
 ├── Diagnostics (4 tools)
 ├── Discovery (4 tools)
-├── Connectivity (3 tools)
+├── Connectivity (4 tools)
 ├── Network Control (6 wrappers)
 └── Protect Integration (5 wrappers)
 ```
@@ -205,6 +214,11 @@ For detailed architecture documentation, see:
 - [C4 Architecture Diagrams](docs/architecture/c4-architecture.md) -- All four C4 levels with Mermaid and PlantUML
 - [Architecture Overview](docs/architecture/architecture-overview.md) -- Layer deep dives, design patterns, sequence diagrams
 - [Codebase Map](docs/architecture/codemap.md) -- Module-by-module reference with dependency graphs
+- Provider/platform architecture:
+  [UniFi Network](docs/architecture/providers/unifi-network.md),
+  [UniFi Protect and MQTT](docs/architecture/providers/unifi-protect-mqtt.md),
+  [AXIS provisioning](docs/architecture/providers/axis-provisioning.md),
+  [MCP and automation](docs/architecture/providers/mcp-automation.md)
 
 ## Key Technical Solutions
 
@@ -246,7 +260,13 @@ UniFi Network Application 10.0.162+ resolves most device-level rejection issues.
 - IP Conflicts: IP address conflict detection
 - LAG Monitoring: Link Aggregation Group status
 - QoS Validation: Quality of Service rule verification
-- STP Optimization: Spanning Tree topology analysis and bridge priority optimization
+- Port Profile Validation: STP Edge and BPDU Guard safety checks
+- VLAN Coverage: trunk and planned-uplink VLAN validation
+- MTU Audit: MTU and jumbo-frame consistency on inter-switch paths
+- SFP Diagnostics: module identity, temperature, Tx/Rx power, and fault flags
+- Radio Optimization: AP channel reuse and transmit-power checks
+- Traffic Matrix: top-flow and top-talker placement evidence
+- STP Optimization: root eligibility, path costs, guard/TCN checks, drift, snapshots, preflight simulation, 10G validation, apply/rollback plans
 
 ### Diagnostics Tools
 - Network Health: Overall infrastructure health monitoring

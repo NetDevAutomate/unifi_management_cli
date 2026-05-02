@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
-"""
-Typer-based CLI for UniFi Network Mapper with automatic completions.
-"""
+"""Typer-based CLI for UniFi Network Mapper with automatic completions."""
 
 import logging
-import sys
-from pathlib import Path
-from typing import Annotated, Optional
-
 import typer
+from .cli import get_default_config_path, load_env_from_config
+from .inventory_cli import inventory_app
+from pathlib import Path
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
+from typing import Annotated, Any, Optional, cast
 
-from .cli import get_default_config_path, load_env_from_config
 
 # Setup rich console
 console = Console()
+JsonDict = dict[str, Any]
 
 
 # Global state for config path
@@ -125,9 +123,6 @@ analyze_app = typer.Typer(help="📊 Network analysis and diagnostics")
 diagnose_app = typer.Typer(help="🏥 Network health and troubleshooting")
 stp_app = typer.Typer(help="🌳 STP topology analysis and optimization")
 
-# Import inventory subcommands
-from .inventory_cli import inventory_app
-
 app.add_typer(find_app, name="find")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(diagnose_app, name="diagnose")
@@ -163,7 +158,6 @@ def discover(
     ] = False,
 ):
     """🔍 Discover network topology and update port names with LLDP intelligence."""
-
     # Use global state
     config = state.config_path
     debug = state.debug
@@ -205,25 +199,35 @@ def discover(
         port_mapper = UnifiPortMapper(
             base_url=unifi_config.base_url,
             site=unifi_config.site,
-            api_token=unifi_config.api_token,
-            username=unifi_config.username,
-            password=unifi_config.password,
+            api_token=unifi_config.api_token or '',
+            username=unifi_config.username or '',
+            password=unifi_config.password or '',
             verify_ssl=unifi_config.verify_ssl,
             timeout=unifi_config.timeout,
         )
 
         if verify_updates:
             # Use smart mapping system
+            from .run_methods import (
+                get_devices_and_lldp_data,  # pyright: ignore[reportUnknownVariableType]
+            )
             from .smart_port_mapper import SmartPortMapper
-            from .run_methods import get_devices_and_lldp_data
 
-            devices_data, lldp_data = get_devices_and_lldp_data(port_mapper, unifi_config.site)
-            smart_mapper = SmartPortMapper(port_mapper.api_client)
+            get_devices_and_lldp_data_func = cast(Any, get_devices_and_lldp_data)
+            devices_data, lldp_data = cast(
+                tuple[list[JsonDict], dict[str, JsonDict]],
+                get_devices_and_lldp_data_func(port_mapper, unifi_config.site),
+            )
+            smart_mapper = cast(Any, SmartPortMapper(port_mapper.api_client))
 
-            smart_results = smart_mapper.smart_update_ports(
-                devices_data, lldp_data,
-                verify_updates=verify_updates,
-                dry_run=dry_run
+            smart_results = cast(
+                JsonDict,
+                smart_mapper.smart_update_ports(
+                    devices_data,
+                    lldp_data,
+                    verify_updates=verify_updates,
+                    dry_run=dry_run,
+                ),
             )
 
             # Display smart mapping report
@@ -231,17 +235,22 @@ def discover(
             console.print("\n" + smart_report)
 
         # Generate traditional report
-        from .run_methods import run_port_mapper
-        devices, connections = run_port_mapper(
-            port_mapper=port_mapper,
-            site_id=unifi_config.site,
-            dry_run=dry_run if not verify_updates else True,  # Avoid duplicate updates
-            output_path=output_path,
-            diagram_path=diagram_path,
-            diagram_format=format,
-            debug=debug,
-            show_connected_devices=connected_devices,
-            verify_updates=False if verify_updates else verify_updates,
+        from .run_methods import run_port_mapper  # pyright: ignore[reportUnknownVariableType]
+
+        run_port_mapper_func = cast(Any, run_port_mapper)
+        devices, connections = cast(
+            tuple[list[object], list[object]],
+            run_port_mapper_func(
+                port_mapper=port_mapper,
+                site_id=unifi_config.site,
+                dry_run=dry_run if not verify_updates else True,  # Avoid duplicate updates
+                output_path=output_path,
+                diagram_path=diagram_path,
+                diagram_format=format,
+                debug=debug,
+                show_connected_devices=connected_devices,
+                verify_updates=False if verify_updates else verify_updates,
+            ),
         )
 
         console.print("✅ [bold green]Discovery completed successfully![/bold green]")
@@ -274,7 +283,6 @@ def install_completions(
     Note: You can also use the built-in Typer completion:
     unifi-mapper --install-completion
     """
-
     if shell.lower() not in ["bash", "zsh", "fish", "all"]:
         console.print(f"❌ [bold red]Unsupported shell: {shell}[/bold red]")
         console.print("Supported shells: [cyan]bash, zsh, fish, all[/cyan]")
@@ -317,7 +325,6 @@ def find_device(
     query: str = typer.Argument(..., help="🔍 Device name, IP, or MAC to search for")
 ):
     """🔍 Find device by name, IP, or MAC address."""
-
     console.print(f"🔍 Searching for device: [cyan]{query}[/cyan]")
     console.print("💡 Integration with enhanced device discovery in network_cli")
 
@@ -327,7 +334,6 @@ def analyze_link_quality(
     device: Optional[str] = typer.Option(None, "--device", help="🖥️ Specific device to analyze")
 ):
     """📊 Analyze port statistics and error rates."""
-
     console.print("📊 [bold]Link Quality Analysis[/bold]")
     console.print("💡 Full implementation available via: [cyan]unifi-network-toolkit analyze link-quality[/cyan]")
 
@@ -699,7 +705,6 @@ def diagnose_health(
     detailed: bool = typer.Option(False, "--detailed", help="🔬 Include detailed device analysis")
 ):
     """🏥 Overall network health check."""
-
     console.print("🏥 [bold]Network Health Check[/bold]")
     console.print("💡 Full implementation available via: [cyan]unifi-network-toolkit diagnose network-health[/cyan]")
 
@@ -811,24 +816,28 @@ def diagram(
         console.print(f"📊 Mode: [cyan]{'All devices' if all_devices else 'Infrastructure only'}[/cyan]")
 
         # Create port mapper just to get device data
-        from .port_mapper import UnifiPortMapper
         from .enhanced_network_topology import NetworkTopology
         from .models import DeviceInfo, PortInfo
+        from .port_mapper import UnifiPortMapper
 
         port_mapper = UnifiPortMapper(
             base_url=unifi_config.base_url,
             site=unifi_config.site,
-            api_token=unifi_config.api_token,
-            username=unifi_config.username,
-            password=unifi_config.password,
+            api_token=unifi_config.api_token or '',
+            username=unifi_config.username or '',
+            password=unifi_config.password or '',
             verify_ssl=unifi_config.verify_ssl,
             timeout=unifi_config.timeout,
         )
 
         # Get ALL UniFi devices for the diagram
         console.print("🔍 [dim]Fetching devices...[/dim]")
-        all_devices_response = port_mapper.api_client.get_devices(unifi_config.site)
-        all_devices_list = all_devices_response.get("data", []) if isinstance(all_devices_response, dict) else all_devices_response
+        all_devices_response = cast(Any, port_mapper.api_client.get_devices(unifi_config.site))
+        if isinstance(all_devices_response, dict):
+            raw_devices = cast(dict[str, Any], all_devices_response).get("data", [])
+            all_devices_list = cast(list[JsonDict], raw_devices if isinstance(raw_devices, list) else [])
+        else:
+            all_devices_list = cast(list[JsonDict], all_devices_response)
 
         # Filter to UniFi infrastructure devices (gateway, switches, APs)
         unifi_types = ["ugw", "usg", "udm", "usw", "uap"]
@@ -839,10 +848,10 @@ def diagram(
 
         # Get LLDP data for devices that support it
         console.print("🔍 [dim]Fetching LLDP data...[/dim]")
-        lldp_data = {}
+        lldp_data: dict[str, dict[str, JsonDict]] = {}
         for device in infrastructure_devices:
-            device_id = device.get("_id")
-            device_type = device.get("type", "")
+            device_id = str(device.get("_id") or "")
+            device_type = str(device.get("type") or "")
             # Only switches and gateways have LLDP data
             if device_type in ["ugw", "usg", "udm", "usw"] and device_id:
                 device_lldp = port_mapper.api_client.get_lldp_info(unifi_config.site, device_id)
@@ -850,17 +859,17 @@ def diagram(
                     lldp_data[device_id] = device_lldp
 
         # Build device dict and MAC lookup for ALL infrastructure devices
-        devices = {}
-        mac_to_id = {}
+        devices: dict[str, DeviceInfo] = {}
+        mac_to_id: dict[str, str] = {}
         routers_found = 0
         switches_found = 0
         aps_found = 0
 
         for device_data in infrastructure_devices:
-            device_id = device_data.get("_id", "")
-            device_mac = device_data.get("mac", "")
-            device_model = device_data.get("model", "")
-            device_type = device_data.get("type", "")
+            device_id = str(device_data.get("_id") or "")
+            device_mac = str(device_data.get("mac") or "")
+            device_model = str(device_data.get("model") or "")
+            device_type = str(device_data.get("type") or "")
 
             # Count device types for debug
             if device_type in ["ugw", "usg", "udm"]:
@@ -871,34 +880,37 @@ def diagram(
                 aps_found += 1
 
             # Extract port information from device data
-            ports = []
-            port_table = device_data.get("port_table", [])
-            port_overrides = {p.get("port_idx"): p for p in device_data.get("port_overrides", [])}
+            ports: list[PortInfo] = []
+            port_table = cast(list[JsonDict], device_data.get("port_table", []))
+            port_overrides = {
+                int(port.get("port_idx") or 0): port
+                for port in cast(list[JsonDict], device_data.get("port_overrides", []))
+            }
 
             for port_data in port_table:
-                port_idx = port_data.get("port_idx", 0)
+                port_idx = int(port_data.get("port_idx") or 0)
                 # Check for custom name in overrides first
                 override = port_overrides.get(port_idx, {})
-                port_name = override.get("name") or port_data.get("name", f"Port {port_idx}")
+                port_name = str(override.get("name") or port_data.get("name", f"Port {port_idx}"))
 
                 port_info = PortInfo(
                     idx=port_idx,
                     name=port_name,
-                    up=port_data.get("up", False),
-                    enabled=port_data.get("enabled", True),
-                    poe=port_data.get("poe_enable", False),
-                    media=port_data.get("media", "RJ45"),
-                    speed=port_data.get("speed", 0),
+                    up=bool(port_data.get("up", False)),
+                    enabled=bool(port_data.get("enabled", True)),
+                    poe=bool(port_data.get("poe_enable", False)),
+                    media=str(port_data.get("media", "RJ45")),
+                    speed=int(port_data.get("speed") or 0),
                     lldp_info={},
                 )
                 ports.append(port_info)
 
             device = DeviceInfo(
                 id=device_id,
-                name=device_data.get("name", "Unknown"),
+                name=str(device_data.get("name") or "Unknown"),
                 model=device_model,
                 mac=device_mac,
-                ip=device_data.get("ip", ""),
+                ip=str(device_data.get("ip") or ""),
                 ports=ports,
                 lldp_info=lldp_data.get(device_id, {}),
             )
@@ -916,7 +928,7 @@ def diagram(
         connection_count = 0
         for device_id, device_lldp in lldp_data.items():
             for port_idx_str, port_lldp in device_lldp.items():
-                chassis_id = port_lldp.get("chassis_id", "")
+                chassis_id = str(port_lldp.get("chassis_id") or "")
                 if not chassis_id:
                     continue
                 # Normalize chassis_id MAC format
@@ -932,7 +944,11 @@ def diagram(
                         topology.add_connection(device_id, other_id, port_idx, 0)
                         connection_count += 1
 
-        console.print(f"🔗 [dim]Found {connection_count} LLDP connections (topology has {len(topology.connections)})[/dim]")
+        topology_connections = cast(list[object], cast(Any, topology).connections)
+        console.print(
+            f"🔗 [dim]Found {connection_count} LLDP connections "
+            f"(topology has {len(topology_connections)})[/dim]"
+        )
 
         # Generate diagram
         if format.lower() == "png":
@@ -946,7 +962,10 @@ def diagram(
             raise typer.Exit(1)
 
         console.print(f"✅ [bold green]Diagram generated: {diagram_path}[/bold green]")
-        console.print(f"📊 Devices: [cyan]{len(devices)}[/cyan], Connections: [cyan]{len(topology.connections)}[/cyan]")
+        console.print(
+            f"📊 Devices: [cyan]{len(devices)}[/cyan], "
+            f"Connections: [cyan]{len(topology_connections)}[/cyan]"
+        )
 
     except Exception as e:
         console.print(f"❌ [bold red]Error: {e}[/bold red]")
@@ -967,7 +986,6 @@ def version():
 @app.command()
 def capabilities():
     """🧠 Analyze device capabilities for port naming support."""
-
     console.print("🧠 [bold]Device Capability Analysis[/bold]")
 
     try:
@@ -1015,7 +1033,6 @@ def verify(
     )
 ):
     """✅ Comprehensive port name verification with ground truth checking."""
-
     console.print("✅ [bold]Ground Truth Verification[/bold]")
 
     if device and port is not None and expected:
@@ -1027,10 +1044,9 @@ def verify(
 
     try:
         # Use the existing verify CLI functionality
-        from .verify_cli import main as verify_main
-
         # Build arguments for the existing CLI
         import sys
+        from .verify_cli import main as verify_main
         original_argv = sys.argv[:]
         sys.argv = ["verify"]
 
@@ -1054,7 +1070,8 @@ def verify(
     except SystemExit as e:
         # verify_main uses sys.exit, handle gracefully
         if e.code != 0:
-            raise typer.Exit(e.code)
+            exit_code = e.code if isinstance(e.code, int) else 1
+            raise typer.Exit(exit_code)
     except Exception as e:
         console.print(f"❌ [bold red]Verification failed: {e}[/bold red]")
         raise typer.Exit(1)
@@ -1096,7 +1113,7 @@ def stp_analyze(
         topology = asyncio.run(discover_stp_topology(device_id=device))
 
         # Display summary
-        console.print(f"\n📊 [bold]Summary[/bold]")
+        console.print("\n📊 [bold]Summary[/bold]")
         console.print(f"  Switches: [cyan]{len(topology.switches)}[/cyan]")
         console.print(f"  Root Bridge: [green]{topology.root_bridge_name or 'Unknown'}[/green]")
         console.print(f"  Root Priority: [yellow]{topology.root_bridge_priority}[/yellow]")
@@ -1188,9 +1205,9 @@ def stp_optimize(
         load_env_from_config(str(config))
 
         from .analysis.stp_optimizer import (
-            discover_stp_topology,
-            calculate_optimal_priorities,
             apply_stp_changes,
+            calculate_optimal_priorities,
+            discover_stp_topology,
         )
 
         # Discover topology
@@ -1414,10 +1431,10 @@ def stp_report(
         load_env_from_config(str(config))
 
         from .analysis.stp_optimizer import (
-            discover_stp_topology,
             calculate_optimal_priorities,
-            generate_stp_report,
+            discover_stp_topology,
             format_stp_report_markdown,
+            generate_stp_report,
         )
 
         # Discover topology
@@ -1700,12 +1717,16 @@ def stp_drift(
     try:
         load_env_from_config(str(state.config_path))
 
-        from .analysis.stp_drift import detect_stp_config_drift, load_stp_intent
+        from .analysis.stp_drift import (
+            STPIntentMapping,
+            detect_stp_config_drift,
+            load_stp_intent,
+        )
         from .analysis.stp_optimizer import discover_stp_topology
 
         console.print("📋 [bold]STP Config Drift[/bold]")
         topology = asyncio.run(discover_stp_topology())
-        desired = load_stp_intent(intent)
+        desired = cast(STPIntentMapping, load_stp_intent(intent))
         report = detect_stp_config_drift(topology, desired)
 
         console.print(f"Devices checked: [cyan]{report.devices_checked}[/cyan]")
@@ -1857,26 +1878,34 @@ def _print_stp_apply_result(result: dict[str, object]) -> None:
     failed = result.get('failed', [])
     console.print(str(result.get('message', '')))
     if isinstance(applied, list) and applied:
-        table = Table(title="Applied Changes" if not result.get('dry_run') else "Planned Changes", show_header=True)
+        table = Table(
+            title="Applied Changes" if not result.get('dry_run') else "Planned Changes",
+            show_header=True,
+        )
         table.add_column("Switch", style="cyan")
         table.add_column("Current", style="red")
         table.add_column("New", style="green")
         table.add_column("Status")
-        for item in applied:
+        for item in cast(list[object], applied):
             if not isinstance(item, dict):
                 continue
+            applied_item = cast(dict[str, object], item)
             table.add_row(
-                str(item.get('device_name', '')),
-                str(item.get('current_priority', '')),
-                str(item.get('new_priority', '')),
-                str(item.get('status', '')),
+                str(applied_item.get('device_name', '')),
+                str(applied_item.get('current_priority', '')),
+                str(applied_item.get('new_priority', '')),
+                str(applied_item.get('status', '')),
             )
         console.print(table)
     if isinstance(failed, list) and failed:
-        console.print(f"❌ [bold red]Failed {len(failed)} change(s)[/bold red]")
-        for item in failed:
+        failed_items = cast(list[object], failed)
+        console.print(f"❌ [bold red]Failed {len(failed_items)} change(s)[/bold red]")
+        for item in failed_items:
             if isinstance(item, dict):
-                console.print(f"   • {item.get('device_name', '')}: {item.get('error', '')}")
+                failed_item = cast(dict[str, object], item)
+                console.print(
+                    f"   • {failed_item.get('device_name', '')}: {failed_item.get('error', '')}"
+                )
 
 
 def _parse_planned_switches(value: str) -> dict[str, int]:

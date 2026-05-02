@@ -447,6 +447,10 @@ def expected_long_path_cost(speed_mbps: int) -> int:
         return 500
     if speed_mbps >= 10000:
         return 2000
+    if speed_mbps >= 5000:
+        return 4000
+    if speed_mbps >= 2500:
+        return 8000
     if speed_mbps >= 1000:
         return 20000
     if speed_mbps >= 100:
@@ -542,6 +546,7 @@ async def calculate_optimal_priorities(
     tier_zero_switches = switches_by_tier.get(0, [])
     eligible_root_candidates = [switch for switch in tier_zero_switches if switch.root_eligible]
     root_candidates = eligible_root_candidates or tier_zero_switches
+    has_non_root_tier_zero = False
     preferred_root_id = None
     if root_candidates:
         preferred_root = sorted(
@@ -549,6 +554,9 @@ async def calculate_optimal_priorities(
             key=lambda switch: (not switch.root_eligible, switch.root_preference, switch.name),
         )[0]
         preferred_root_id = preferred_root.device_id
+        has_non_root_tier_zero = any(
+            switch.device_id != preferred_root_id for switch in tier_zero_switches
+        )
 
     # Assign optimal priorities based on tier and root eligibility
     for tier, tier_switches in switches_by_tier.items():
@@ -556,7 +564,11 @@ async def calculate_optimal_priorities(
             base_priority = STP_PRIORITY_CORE
             tier_name = 'Core'
         elif tier == 1:
-            base_priority = STP_PRIORITY_DISTRIBUTION
+            base_priority = (
+                STP_PRIORITY_DISTRIBUTION + STP_PRIORITY_INCREMENT
+                if has_non_root_tier_zero
+                else STP_PRIORITY_DISTRIBUTION
+            )
             tier_name = 'Distribution'
         else:
             base_priority = STP_PRIORITY_ACCESS_BASE + ((tier - 2) * STP_PRIORITY_INCREMENT)

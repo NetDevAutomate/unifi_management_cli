@@ -1,7 +1,7 @@
 # UniFi Management CLI - Architecture Overview
 
 **Document version**: 1.0  
-**Last updated**: 2026-04-06  
+**Last updated**: 2026-05-02
 **Codebase root**: `src/unifi_mapper/`
 
 > **See also**: [C4 Architecture](c4-architecture.md) | [Codebase Map](codemap.md) | [Use Cases](../guides/use-cases-and-howto.md) | [Troubleshooting](../operations/troubleshooting-and-runbook.md)
@@ -76,10 +76,10 @@ graph TB
     end
 
     subgraph AT["Layer 4 - Analysis Toolkit"]
-        AN["analysis/ (10 tools)"]
+        AN["analysis/ (30 registered tools)"]
         DG["diagnostics/ (4 tools)"]
         DS["discovery/ (4 tools)"]
-        CN["connectivity/ (3 tools)"]
+        CN["connectivity/ (4 registered tools)"]
     end
 
     subgraph NCP["Layer 5 - Network Control Plane"]
@@ -150,7 +150,6 @@ graph LR
         MCP_SEARCH["search_tools()"]
         MCP_LIST["list_categories()"]
         MCP_INFO["get_tool_info()"]
-        MCP_EXEC["execute_tool()"]
         REGISTRY["ToolRegistry\nYAML manifests"]
     end
 
@@ -175,7 +174,6 @@ graph LR
     MCP_SEARCH --> REGISTRY
     MCP_LIST --> REGISTRY
     MCP_INFO --> REGISTRY
-    MCP_EXEC --> REGISTRY
 ```
 
 ### typer_cli.py
@@ -208,16 +206,15 @@ The root callback intercepts `--connected-devices`, `--dry-run`, and `--verify-u
 
 ### MCP Server (mcp/server.py)
 
-The `unifi-mcp` server is built on FastMCP. It exposes four meta-tools that implement the Code Mode pattern (see [Section 10](#10-design-patterns)):
+The `unifi-mcp` server is built on FastMCP. It exposes three public discovery meta-tools that implement the Code Mode pattern (see [Section 10](#10-design-patterns)):
 
 | Tool | Purpose |
 | --- | --- |
 | `search_tools` | Discover tools by query, category, or tag |
 | `list_categories` | Enumerate all category groups |
 | `get_tool_info` | Fetch full parameter schema for a named tool |
-| `execute_tool` | Invoke any registered tool by name |
 
-The MCP server does not hard-code any domain logic. It delegates entirely to the `ToolRegistry` and the underlying toolkit modules.
+The MCP server does not hard-code any domain logic. It delegates discovery to the `ToolRegistry` and underlying YAML manifests. Executable `ToolProxy` objects are available through the registry for host code and tests; they are not currently a public FastMCP `execute_tool` surface.
 
 ---
 
@@ -417,7 +414,7 @@ The toolkit is 21 individual async functions organised across four sub-packages.
 
 ```mermaid
 graph TD
-    subgraph analysis["analysis/ (10 tools)"]
+    subgraph analysis["analysis/ (30 registered tools)"]
         A1["detect_ip_conflicts"]
         A2["detect_storms"]
         A3["diagnose_vlans"]
@@ -444,7 +441,7 @@ graph TD
         DS4["trace_client"]
     end
 
-    subgraph connectivity["connectivity/ (3 tools)"]
+    subgraph connectivity["connectivity/ (4 registered tools)"]
         C1["check_firewall_path"]
         C2["analyze_path"]
         C3["traceroute"]
@@ -764,7 +761,7 @@ class DeviceRepository(Generic[T]):
 
 ### Lazy Loading / Proxy Pattern (mcp/registry.py)
 
-`ToolProxy` defers importing a tool's implementation module until the first `execute()` call. This keeps MCP server startup fast even though 36+ tools are registered — only the YAML manifests are parsed at startup:
+`ToolProxy` defers importing a tool's implementation module until the first `execute()` call. This keeps MCP server startup fast even though 53 tools are registered -- only the YAML manifests are parsed at startup:
 
 ```python
 class ToolProxy:
@@ -797,15 +794,15 @@ async with UniFiProtectClient(config) as client:
 
 ### Code Mode Pattern (mcp/server.py + mcp/registry.py)
 
-The MCP server implements a progressive-disclosure pattern designed for AI agents. Rather than exposing 36 individual tools to the AI's context window, it exposes four meta-tools. An AI agent follows the discover-then-execute workflow:
+The MCP server implements a progressive-disclosure pattern designed for AI agents. Rather than exposing 53 individual tool definitions to the AI's context window, it exposes three public discovery meta-tools. Host code can then execute selected tools through `ToolRegistry` / `ToolProxy`:
 
 ```text
 1. search_tools(category="analysis") -> list of matching tools
 2. get_tool_info("detect_ip_conflicts") -> parameters and description
-3. execute_tool("detect_ip_conflicts", {}) -> result
+3. ToolRegistry.get_tool("detect_ip_conflicts").execute() -> result
 ```
 
-This keeps the AI's tool list short and avoids overwhelming the model with schema for all 36 tools at once. The agent requests detail only for tools it intends to use.
+This keeps the AI's tool list short and avoids overwhelming the model with schema for all 53 tools at once. The agent requests detail only for tools it intends to use.
 
 ---
 
@@ -903,6 +900,7 @@ sequenceDiagram
     participant AGENT as AI Agent (Claude)
     participant MCP as MCP Server
     participant REG as ToolRegistry
+    participant HOST as Host code / test
     participant PROXY as ToolProxy
     participant TOOL as Tool Module
 
@@ -917,19 +915,17 @@ sequenceDiagram
     REG-->>MCP: ToolMetadata {parameters, tags, ...}
     MCP-->>AGENT: full schema with parameter definitions
 
-    AGENT->>MCP: execute_tool("detect_ip_conflicts", {})
-    MCP->>REG: get_tool("detect_ip_conflicts")
-    REG-->>MCP: ToolProxy
+    HOST->>REG: get_tool("detect_ip_conflicts")
+    REG-->>HOST: ToolProxy
 
-    MCP->>PROXY: execute()
+    HOST->>PROXY: execute()
     PROXY->>PROXY: _load_implementation() [lazy import on first call]
     PROXY->>TOOL: importlib.import_module("unifi_mapper.analysis.ip_conflicts")
     TOOL-->>PROXY: module loaded
 
     PROXY->>TOOL: detect_ip_conflicts()
     TOOL-->>PROXY: IPConflictReport
-    PROXY-->>MCP: result
-    MCP-->>AGENT: serialised result
+    PROXY-->>HOST: result
 ```
 
 ### 11.4 Protect Event Processing Flow
@@ -1138,8 +1134,8 @@ Used by `protect/aiport.py` to communicate with third-party cameras paired to Un
 
 The MCP server implements the Model Context Protocol (MCP) 1.0 specification using the FastMCP SDK. AI clients connect via stdio (for local use) or SSE (for remote deployment). The server exports:
 
-- 4 meta-tools (search, list, info, execute)
-- 36+ domain tools accessible via the execute meta-tool
+- 3 public discovery meta-tools (search, list, info)
+- 53 registered automation tools in YAML manifests, executable through `ToolRegistry` / `ToolProxy` in host code
 
 ---
 

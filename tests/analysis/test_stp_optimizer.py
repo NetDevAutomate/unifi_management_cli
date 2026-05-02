@@ -405,6 +405,40 @@ class TestSTPOptimization:
         assert lite_change.new_priority != STP_PRIORITY_CORE
         assert lite_change.new_priority == STP_PRIORITY_DISTRIBUTION
 
+    async def test_distribution_priority_sits_below_non_root_gateway_core(self) -> None:
+        """Tier 1 switches should not tie with a demoted gateway-connected core."""
+        lite = SwitchSTPConfig(
+            device_id='lite1',
+            name='Xray3 USW-Lite-16-PoE',
+            mac='00:00:00:00:00:10',
+            model='USW-Lite-16-PoE',
+            current_priority=STP_PRIORITY_DISTRIBUTION,
+            connected_to_gateway=True,
+            port_states=[STPPortConfig(port_idx=1, connected_device_id='dist1')],
+        )
+        flex_xg = SwitchSTPConfig(
+            device_id='flex1',
+            name='Xray3 USW Flex XG 10G',
+            mac='00:00:00:00:00:20',
+            model='USW-Flex-XG',
+            current_priority=STP_PRIORITY_CORE,
+            connected_to_gateway=True,
+        )
+        distribution = SwitchSTPConfig(
+            device_id='dist1',
+            name='Xray3 Yankee3 US 8 60W',
+            mac='00:00:00:00:00:30',
+            current_priority=STP_PRIORITY_DISTRIBUTION,
+            port_states=[STPPortConfig(port_idx=1, connected_device_id='lite1')],
+        )
+        topology = STPTopology(switches=[lite, flex_xg, distribution])
+        _calculate_hierarchy_tiers(topology.switches)
+
+        changes = await calculate_optimal_priorities(topology)
+
+        dist_change = next(change for change in changes if change.device_id == 'dist1')
+        assert dist_change.new_priority == 12288
+
 
 class TestSTPPathCostAudit:
     """Tests for STP path-cost sanity checks."""
@@ -414,6 +448,8 @@ class TestSTPPathCostAudit:
         assert expected_long_path_cost(100000) == 200
         assert expected_long_path_cost(40000) == 500
         assert expected_long_path_cost(10000) == 2000
+        assert expected_long_path_cost(5000) == 4000
+        assert expected_long_path_cost(2500) == 8000
         assert expected_long_path_cost(1000) == 20000
         assert expected_long_path_cost(100) == 200000
 

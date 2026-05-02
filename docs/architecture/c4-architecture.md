@@ -18,13 +18,22 @@
    - [Protect Client Class Structure](#42-protect-client-class-structure)
    - [Data Model Hierarchy](#43-data-model-hierarchy)
    - [Exception Hierarchy](#44-exception-hierarchy)
-6. [Key Design Decisions](#key-design-decisions)
+6. [Provider and Platform Architecture](#provider-and-platform-architecture)
+7. [Dynamic Runtime Flows](#dynamic-runtime-flows)
+8. [Key Design Decisions](#key-design-decisions)
 
 ---
 
 ## Overview
 
-The UniFi Management CLI is an enterprise-grade Python automation platform for Ubiquiti UniFi networks. It provides four distinct entry points—three CLI tools and one MCP server—all built on a shared library of API clients, domain models, and analysis engines. The platform spans two separate UniFi product lines (Network and Protect) and integrates with Home Assistant via MQTT and with AI assistants via the Model Context Protocol.
+The UniFi Management CLI is an enterprise-grade Python automation platform for Ubiquiti UniFi networks. It provides four distinct installed entry points--three CLI tools and one MCP server--all built on a shared library of API clients, domain models, and analysis engines. The platform spans two separate UniFi product lines (Network and Protect) and integrates with Home Assistant via MQTT and with AI assistants via the Model Context Protocol.
+
+Provider/platform-specific detail lives in:
+
+- [UniFi Network Provider Architecture](providers/unifi-network.md)
+- [UniFi Protect and MQTT Provider Architecture](providers/unifi-protect-mqtt.md)
+- [AXIS Provisioning Provider Architecture](providers/axis-provisioning.md)
+- [MCP and Automation Interface Architecture](providers/mcp-automation.md)
 
 This document follows the C4 model (Simon Brown) with all four levels of abstraction: System Context, Container, Component, and Code.
 
@@ -43,16 +52,16 @@ C4Context
     Person(admin, "Network Administrator", "Manages UniFi network infrastructure, cameras, and security devices")
     Person(ai_user, "AI-Assisted User", "Uses Claude or other MCP-compatible AI assistants for network troubleshooting")
 
-    System(unifi_mgmt, "UniFi Management CLI", "Enterprise UniFi automation platform. Provides CLI tools and an MCP server for network management, topology visualisation, diagnostics, and Protect integration.")
+    System(unifi_mgmt, "UniFi Management CLI", "Enterprise UniFi automation platform. Provides CLI tools and an MCP server for network management, topology visualisation, diagnostics, Protect integration, and automation.")
 
     System_Ext(unifi_network, "UniFi Network Controller", "Ubiquiti UniFi OS or legacy controller. Manages switches, access points, and gateways via REST API.")
     System_Ext(unifi_protect, "UniFi Protect Controller", "Ubiquiti video security platform. Manages cameras, sensors, doorbells, and AI Ports via REST and WebSocket.")
     System_Ext(home_assistant, "Home Assistant", "Home automation platform. Receives UniFi Protect events via MQTT for automation rules.")
-    System_Ext(ai_assistant, "AI Assistant (Claude / MCP Client)", "Large language model or MCP-compatible client. Uses the MCP server to discover and invoke network management tools.")
+    System_Ext(ai_assistant, "AI Assistant (Claude / MCP Client)", "Large language model or MCP-compatible client. Uses the MCP server to discover network management tools.")
 
     Rel(admin, unifi_mgmt, "Runs CLI commands", "terminal / shell")
     Rel(ai_user, ai_assistant, "Issues natural language requests", "chat")
-    Rel(ai_assistant, unifi_mgmt, "Invokes tools", "MCP / JSON-RPC over stdio")
+    Rel(ai_assistant, unifi_mgmt, "Discovers tool metadata", "MCP / JSON-RPC over stdio")
     Rel(unifi_mgmt, unifi_network, "Reads topology, stats, and config. Writes port names, STP priorities.", "HTTPS REST API")
     Rel(unifi_mgmt, unifi_protect, "Reads device inventory and events. Subscribes to real-time updates.", "HTTPS REST + WebSocket")
     Rel(unifi_mgmt, home_assistant, "Publishes camera events and device states with auto-discovery", "MQTT")
@@ -67,7 +76,7 @@ C4Context
 Person(admin, "Network Administrator", "Manages UniFi network infrastructure, cameras, and security devices")
 Person(ai_user, "AI-Assisted User", "Uses Claude or MCP-compatible AI assistants for network troubleshooting")
 
-System(unifi_mgmt, "UniFi Management CLI", "Enterprise UniFi automation platform providing CLI tools and MCP server for network management, topology visualisation, diagnostics, and Protect integration.")
+System(unifi_mgmt, "UniFi Management CLI", "Enterprise UniFi automation platform providing CLI tools and MCP server for network management, topology visualisation, diagnostics, Protect integration, and automation.")
 
 System_Ext(unifi_network, "UniFi Network Controller", "Ubiquiti UniFi OS or legacy controller. Manages switches, APs, and gateways via REST API.")
 System_Ext(unifi_protect, "UniFi Protect Controller", "Ubiquiti video security platform. Manages cameras, sensors, doorbells, and AI Ports.")
@@ -76,7 +85,7 @@ System_Ext(ai_assistant, "AI Assistant (Claude / MCP Client)", "LLM or MCP-compa
 
 Rel(admin, unifi_mgmt, "Runs CLI commands", "terminal / shell")
 Rel(ai_user, ai_assistant, "Issues natural language requests", "chat")
-Rel(ai_assistant, unifi_mgmt, "Invokes tools", "MCP / JSON-RPC over stdio")
+Rel(ai_assistant, unifi_mgmt, "Discovers tool metadata", "MCP / JSON-RPC over stdio")
 Rel(unifi_mgmt, unifi_network, "Reads and writes network configuration", "HTTPS REST")
 Rel(unifi_mgmt, unifi_protect, "Reads devices and events, subscribes to updates", "HTTPS REST + WebSocket")
 Rel(unifi_mgmt, home_assistant, "Publishes events with MQTT auto-discovery", "MQTT")
@@ -89,7 +98,7 @@ The platform serves two distinct user personas with different interaction models
 
 - The **Network Administrator** invokes CLI tools directly. They choose the appropriate tool (`unifi-mapper`, `unifi-network-toolkit`, or `unifi-inventory`) depending on whether they need interactive output, scripting compatibility, or inventory reports.
 
-- The **AI-Assisted User** interacts indirectly through an MCP-compatible client such as Claude Desktop. The AI assistant uses `unifi-mcp` as a tool provider, enabling natural-language network troubleshooting without the user needing to know specific command syntax.
+- The **AI-Assisted User** interacts indirectly through an MCP-compatible client such as Claude Desktop. The AI assistant uses `unifi-mcp` for progressive tool discovery. The current public FastMCP surface exposes discovery meta-tools; executable lazy tool proxies are available through the `ToolRegistry` for host code and tests.
 
 The dual-controller architecture (Network + Protect) reflects Ubiquiti's product split: network infrastructure and video security run on separate controllers with different APIs, authentication models, and communication protocols.
 
@@ -116,18 +125,18 @@ C4Container
         Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI. Subcommands: discover, find, analyze, diagnose, stp, inventory, verify. Rich terminal UI with tables and progress.")
         Container(network_toolkit_cli, "unifi-network-toolkit", "Python / argparse", "Script-friendly CLI. Subcommands: discover, analyze, find, diagnose. Designed for piping and automation.")
         Container(inventory_cli, "unifi-inventory", "Python / argparse", "Dedicated inventory report generator. Exports device and client inventory in structured formats.")
-        Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server exposing 36+ tools via Model Context Protocol. Runs over stdio. Supports tool discovery, lazy loading, and YAML-manifest-driven tool registration.")
+        Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP discovery server. Runs over stdio. Backed by YAML manifests for 53 registered automation tools and lazy-loading tool proxies.")
         Container(shared_lib, "unifi_mapper library", "Python 3.12 package", "Shared library providing API clients, domain models, analysis engines, diagnostic tools, discovery utilities, connectivity analysis, Protect integration, topology visualisation, and report generation.")
     }
 
     Rel(admin, unifi_mapper_cli, "Runs commands", "shell")
     Rel(admin, network_toolkit_cli, "Runs commands", "shell")
     Rel(admin, inventory_cli, "Runs commands", "shell")
-    Rel(ai_assistant, mcp_server, "Invokes tools", "MCP / JSON-RPC stdio")
+    Rel(ai_assistant, mcp_server, "Discovers tool metadata", "MCP / JSON-RPC stdio")
     Rel(unifi_mapper_cli, shared_lib, "Imports and calls")
     Rel(network_toolkit_cli, shared_lib, "Imports and calls")
     Rel(inventory_cli, shared_lib, "Imports and calls")
-    Rel(mcp_server, shared_lib, "Imports and calls")
+    Rel(mcp_server, shared_lib, "Imports registry and tool wrappers")
     Rel(shared_lib, unifi_network, "REST calls with session auth and retry", "HTTPS")
     Rel(shared_lib, unifi_protect, "Async REST + WebSocket subscription", "HTTPS / WSS")
     Rel(shared_lib, home_assistant, "MQTT publish with auto-discovery", "MQTT")
@@ -150,14 +159,14 @@ System_Boundary(platform, "UniFi Management CLI") {
     Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI with Rich terminal UI")
     Container(network_toolkit_cli, "unifi-network-toolkit", "Python / argparse", "Script-friendly CLI for automation")
     Container(inventory_cli, "unifi-inventory", "Python / argparse", "Inventory report generator")
-    Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server exposing 36+ tools over stdio")
+    Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP discovery server backed by 53 YAML-registered tools")
     Container(shared_lib, "unifi_mapper library", "Python 3.12 package", "Shared library: API clients, models, analysis, diagnostics, Protect, topology")
 }
 
 Rel(admin, unifi_mapper_cli, "Runs commands", "shell")
 Rel(admin, network_toolkit_cli, "Runs commands", "shell")
 Rel(admin, inventory_cli, "Runs commands", "shell")
-Rel(ai_assistant, mcp_server, "Invokes tools", "MCP / JSON-RPC stdio")
+Rel(ai_assistant, mcp_server, "Discovers tool metadata", "MCP / JSON-RPC stdio")
 Rel(unifi_mapper_cli, shared_lib, "Imports and calls")
 Rel(network_toolkit_cli, shared_lib, "Imports and calls")
 Rel(inventory_cli, shared_lib, "Imports and calls")
@@ -172,7 +181,7 @@ Rel(shared_lib, home_assistant, "MQTT publish with auto-discovery", "MQTT")
 
 The **four CLI entry points are thin shells** over the shared library. They handle argument parsing, output formatting, and process lifecycle. No business logic lives in the entry points — this is enforced by the `pyproject.toml` entry-point declarations, which map directly to CLI module `main` or `app` functions.
 
-The **shared library** is the architectural centre of gravity. All domain logic, API interactions, and integration code live here. This makes the platform easy to extend: a new CLI tool or a different front-end (e.g., a web API) can be added without touching existing containers.
+The **shared library** is the architectural centre of gravity. All domain logic, API interactions, and integration code live here. This makes the platform easy to extend: a new CLI tool, automation wrapper, or future web API can be added without touching existing containers.
 
 The `unifi-mapper` and `unifi-network-toolkit` CLIs offer overlapping functionality with different UX targets. `unifi-mapper` uses Typer + Rich for an interactive terminal experience; `unifi-network-toolkit` uses argparse for scripting compatibility. This is a deliberate duplication to serve both audiences without compromise.
 
@@ -303,7 +312,7 @@ Rel(toolkit_adapters_c, api_client_c, "Wraps")
 
 ### 3.3 Analysis and Diagnostic Components
 
-The intelligence layer contains the 36+ tools organised into four functional packages. All tools receive an API client instance and return structured results.
+The intelligence layer contains the toolkit functions exposed to CLI workflows and the 53 YAML-registered MCP automation tools. Tools receive a client/config object, query the UniFi controller surface they belong to, and return structured results.
 
 ```mermaid
 C4Component
@@ -316,11 +325,11 @@ C4Component
         Component(device_caps, "device_capabilities.py", "Python", "Model-specific capability detection. Determines port count, SFP slots, PoE capabilities, and uplink ports by hardware model.")
         Component(topology_c, "enhanced_network_topology.py / NetworkTopology", "Python / graphviz", "Topology graph generation. Outputs: PNG, SVG, HTML interactive, Mermaid. Wraps graphviz for static formats.")
 
-        Component(analysis_pkg, "analysis/ (10 modules)", "Python", "capacity_planning, firmware_advisor, ip_conflicts, lag_monitoring, link_quality, mac_analyzer, qos_validation, storm_detection, stp_optimizer, vlan_diagnostics")
+        Component(analysis_pkg, "analysis/ (30 registered MCP tools)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality, MAC table, MTU, QoS, radio, SFP, STP, traffic matrix, VLAN, and 10G readiness analysis.")
         Component(diagnostics_pkg, "diagnostics/ (4 modules)", "Python", "connectivity_analysis, network_health, performance_analysis, security_audit")
         Component(discovery_pkg, "discovery/ (4 modules)", "Python", "client_trace, find_device, find_ip, find_mac")
-        Component(connectivity_pkg, "connectivity/ (3 modules)", "Python", "firewall_check, path_analysis, traceroute")
-        Component(network_pkg, "network/ (10 modules)", "Python", "Control plane: acl, client, clients, config, dns, dpi, firewall, networks, sites, statistics, traffic_matching")
+        Component(connectivity_pkg, "connectivity/ (4 registered MCP tools)", "Python", "firewall_check, path_analysis, traceroute, inter_vlan")
+        Component(network_pkg, "network/ (6 registered MCP tools)", "Python", "Control plane: firewall zones/policies, ACL rules, DNS policies, clients, and networks")
     }
 
     Container_Boundary(api_int, "API Integration") {
@@ -349,11 +358,11 @@ Container_Boundary(intelligence, "Shared Library - Intelligence Layer") {
     Component(smart_port_mapper_c, "SmartPortMapper", "Python", "Device-aware port mapping")
     Component(device_caps, "DeviceCapabilities", "Python", "Model-specific capability profiles")
     Component(topology_c, "NetworkTopology", "Python / graphviz", "Topology graph: PNG, SVG, HTML, Mermaid")
-    Component(analysis_pkg, "analysis/ (10 modules)", "Python", "IP conflicts, STP, VLAN, QoS, capacity, firmware, LAG, link quality, MAC, storm detection")
+    Component(analysis_pkg, "analysis/ (30 registered MCP tools)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality, MAC, MTU, QoS, radio, SFP, STP, traffic, VLAN, 10G readiness")
     Component(diagnostics_pkg, "diagnostics/ (4 modules)", "Python", "Health, performance, security, connectivity")
     Component(discovery_pkg, "discovery/ (4 modules)", "Python", "Find device, find IP, find MAC, client trace")
-    Component(connectivity_pkg, "connectivity/ (3 modules)", "Python", "Firewall check, path analysis, traceroute")
-    Component(network_pkg, "network/ (10 modules)", "Python", "ACL, DNS, DPI, firewall, networks, sites, statistics")
+    Component(connectivity_pkg, "connectivity/ (4 registered MCP tools)", "Python", "Firewall check, path analysis, inter-VLAN routing, traceroute")
+    Component(network_pkg, "network/ (6 registered MCP tools)", "Python", "Firewall zones/policies, ACL rules, DNS policies, clients, networks")
 }
 
 Container_Boundary(api_int, "API Integration") {
@@ -440,19 +449,19 @@ Rel(mqtt_c, ha, "Publishes", "MQTT")
 
 ### 3.5 MCP Server Components
 
-The MCP server uses a Code Mode architecture pattern: tool discovery is separated from tool execution, enabling AI assistants to efficiently explore the tool catalogue before committing to specific calls.
+The MCP server uses a Code Mode architecture pattern: tool discovery is separated from tool implementation loading, enabling AI assistants to efficiently explore the tool catalogue before host code executes a specific registered tool.
 
 ```mermaid
 C4Component
     title Component Diagram - MCP Server
 
     Container_Boundary(mcp_sub, "MCP Server Container") {
-        Component(mcp_server_c, "server.py / FastMCP app", "FastMCP", "FastMCP server named 'unifi-management'. Exposes three meta-tools: search_tools, list_categories, get_tool_info. Acts as the coordination layer — AI assistants call these first to discover available tools, then invoke specific tools by name.")
+        Component(mcp_server_c, "server.py / FastMCP app", "FastMCP", "FastMCP server named 'unifi-management'. Exposes three public meta-tools: search_tools, list_categories, get_tool_info. Acts as the coordination layer for progressive tool discovery.")
         Component(registry_c, "registry.py / ToolRegistry", "Python", "Dynamic tool discovery from YAML manifests. Singleton with thread-safe lazy loading via ToolProxy. Supports search by query string, category, and tag list. Returns summary or full detail levels.")
         Component(tool_proxy_c, "registry.py / ToolProxy", "Python", "Lazy-loading proxy per tool. Defers importlib.import_module() until first execution. Thread-safe via Lock. Reduces startup time and memory when only a subset of tools is used.")
         Component(tool_metadata_c, "registry.py / ToolMetadata", "Python dataclass", "Per-tool metadata: name, module path, handler name, description, category, priority (P1/P2/P3), tags list, parameter schema.")
 
-        Component(manifests_c, "manifests/ (6 YAML files)", "YAML", "Tool manifests by category: analysis.yaml (13 tools), diagnostics.yaml (4 tools), discovery.yaml (4 tools), connectivity.yaml (3 tools), network.yaml, protect.yaml (5 tools). Each entry declares module, handler, description, priority, and tags.")
+        Component(manifests_c, "manifests/ (6 YAML files)", "YAML", "Tool manifests by category: analysis.yaml (30 tools), diagnostics.yaml (4 tools), discovery.yaml (4 tools), connectivity.yaml (4 tools), network.yaml (6 tools), protect.yaml (5 tools). Each entry declares module, handler, description, priority, tags, and optional parameter schema.")
 
         Component(network_tools_c, "tools/network.py", "Python", "Tool handler implementations for network category tools. Wraps shared library calls, serialises results to JSON-safe dicts.")
         Component(protect_tools_c, "tools/protect.py", "Python", "Tool handler implementations for Protect category tools. Initialises async Protect client, awaits results, returns structured data.")
@@ -463,7 +472,7 @@ C4Component
     }
 
     Rel(mcp_server_c, registry_c, "Queries for tool search and listing")
-    Rel(mcp_server_c, tool_proxy_c, "Executes tools via proxy")
+    Rel(mcp_server_c, tool_proxy_c, "Registry can resolve executable proxies")
     Rel(registry_c, manifests_c, "Loads YAML on first access")
     Rel(registry_c, tool_proxy_c, "Creates one proxy per tool")
     Rel(tool_proxy_c, tool_metadata_c, "Holds metadata")
@@ -484,7 +493,7 @@ Container_Boundary(mcp_sub, "MCP Server") {
     Component(registry_c, "ToolRegistry", "Python", "Singleton: YAML manifest loading, search by query/category/tag")
     Component(tool_proxy_c, "ToolProxy", "Python", "Lazy-loading proxy with thread-safe importlib deferred load")
     Component(tool_metadata_c, "ToolMetadata", "Python dataclass", "name, module, handler, description, category, priority, tags")
-    Component(manifests_c, "manifests/ (6 YAML files)", "YAML", "Tool definitions for analysis, diagnostics, discovery, connectivity, network, protect")
+    Component(manifests_c, "manifests/ (6 YAML files)", "YAML", "Tool definitions for 53 analysis, diagnostics, discovery, connectivity, network, and protect tools")
     Component(network_tools_c, "tools/network.py", "Python", "Network tool handler implementations")
     Component(protect_tools_c, "tools/protect.py", "Python", "Protect tool handler implementations")
 }
@@ -1101,6 +1110,126 @@ UniFiPermanentError <|-- UniFiValidationError
 
 ---
 
+## Provider and Platform Architecture
+
+The C4 diagrams above show the system as a whole. Provider-specific behavior is documented separately so the main C4 view stays readable while preserving the details that matter during implementation and operations.
+
+| Provider/interface | Architecture document | Implementation scope |
+| --- | --- | --- |
+| UniFi Network | [providers/unifi-network.md](providers/unifi-network.md) | Synchronous legacy REST client, async integrations API client, port mapping, analysis, discovery, connectivity, and network control wrappers. |
+| UniFi Protect + MQTT | [providers/unifi-protect-mqtt.md](providers/unifi-protect-mqtt.md) | Async Protect client, WebSocket events, device repository, health/analytics, AI Port support, and Home Assistant MQTT discovery/state publishing. |
+| AXIS provisioning | [providers/axis-provisioning.md](providers/axis-provisioning.md) | Scripted AXIS camera/device desired-state reconciliation through VAPIX, JSON API, ONVIF helpers, and MQTT target configuration. |
+| MCP and automation | [providers/mcp-automation.md](providers/mcp-automation.md) | FastMCP stdio server, discovery meta-tools, YAML manifests, registry/proxy lazy loading, and automation entry points. |
+
+```mermaid
+C4Container
+    title Provider and Automation Boundaries - UniFi Management CLI
+
+    Person(admin, "Network Administrator", "Runs CLI workflows")
+    Person_Ext(agent, "AI Assistant", "Discovers automation tools")
+
+    System_Ext(network_controller, "UniFi Network Controller", "Network REST APIs")
+    System_Ext(protect_controller, "UniFi Protect Controller", "Protect REST + WebSocket")
+    System_Ext(mqtt_broker, "MQTT Broker / Home Assistant", "MQTT discovery and state topics")
+
+    System_Boundary(package, "unifi_mapper package") {
+        Container(cli, "CLI entry points", "Typer / argparse", "Human-operated terminal workflows")
+        Container(network_provider, "Network provider modules", "requests + httpx", "Topology, port naming, diagnostics, discovery, and Network control plane")
+        Container(protect_provider, "Protect provider modules", "asyncio + uiprotect", "Protect inventory, events, AI Port, analytics, health, and MQTT bridge")
+        Container(mcp_provider, "MCP automation interface", "FastMCP + YAML manifests", "Progressive tool discovery and lazy-loading tool registry")
+    }
+
+    Rel(admin, cli, "Runs commands", "shell")
+    Rel(agent, mcp_provider, "Discovers tool metadata", "MCP stdio")
+    Rel(cli, network_provider, "Calls workflows")
+    Rel(cli, protect_provider, "Calls Protect workflows")
+    Rel(mcp_provider, network_provider, "References registered tool wrappers")
+    Rel(mcp_provider, protect_provider, "References Protect tool wrappers")
+    Rel(network_provider, network_controller, "Reads/writes", "HTTPS REST")
+    Rel(protect_provider, protect_controller, "Bootstraps and subscribes", "HTTPS / WSS")
+    Rel(protect_provider, mqtt_broker, "Publishes discovery and state", "MQTT")
+```
+
+## Dynamic Runtime Flows
+
+### Port discovery and verified port naming
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Network administrator
+    participant CLI as unifi-mapper
+    participant Config as UnifiConfig / env loader
+    participant Mapper as SmartPortMapper / PortMapper
+    participant API as UnifiApiClient
+    participant Verify as GroundTruthVerifier
+    participant Controller as UniFi Network Controller
+
+    Admin->>CLI: unifi-mapper --connected-devices --verify-updates
+    CLI->>Config: resolve config path and load credentials
+    CLI->>Mapper: run discovery workflow
+    Mapper->>API: get devices, clients, LLDP/CDP port data
+    API->>Controller: GET site devices and stats
+    Controller-->>API: device, port, and neighbor data
+    Mapper-->>CLI: proposed port names and topology
+    CLI->>API: apply selected port overrides
+    API->>Controller: PUT device port overrides
+    CLI->>Verify: verify applied names
+    Verify->>API: repeat cache-busted reads
+    API->>Controller: GET latest device config
+    Verify-->>CLI: consistent / stale / failed result
+```
+
+### Protect event to Home Assistant MQTT
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Protect as UniFi Protect Controller
+    participant Client as UniFiProtectClient
+    participant Events as EventHandler
+    participant Bridge as MQTTBridge
+    participant Broker as MQTT Broker
+    participant HA as Home Assistant
+
+    Client->>Protect: authenticate and load bootstrap
+    Client->>Protect: subscribe to WebSocket updates
+    Protect-->>Client: WSSubscriptionMessage
+    Client->>Events: normalise event/action/model
+    Events->>Bridge: dispatch matching ProtectEvent
+    Bridge->>Broker: publish state topic
+    Bridge->>Broker: publish discovery topic
+    Broker-->>HA: device/entity state and metadata
+```
+
+### MCP discovery and lazy tool resolution
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as AI-assisted user
+    participant Assistant as MCP client / assistant
+    participant Server as unifi-mcp FastMCP server
+    participant Registry as ToolRegistry
+    participant Manifest as YAML manifests
+    participant Proxy as ToolProxy
+    participant Tool as Tool implementation module
+
+    User->>Assistant: "Find the STP tools"
+    Assistant->>Server: search_tools(query="stp")
+    Server->>Registry: search(query, category, tags)
+    Registry->>Manifest: load manifests on first access
+    Manifest-->>Registry: 53 tool metadata records
+    Registry-->>Server: matching summaries
+    Server-->>Assistant: tool names and descriptions
+    Assistant->>Server: get_tool_info("discover_stp_topology")
+    Server->>Registry: get_metadata(tool_name)
+    Registry-->>Server: full metadata and parameter schema
+    Note over Registry,Tool: Host code can call get_tool(name).execute(...); ToolProxy imports the implementation only on first execution.
+    Registry->>Proxy: get_tool(name)
+    Proxy->>Tool: importlib.import_module(...)
+```
+
 ## Key Design Decisions
 
 ### Synchronous Network API, Asynchronous Protect API
@@ -1117,7 +1246,7 @@ The exception hierarchy divides all errors into `UniFiRetryableError` and `UniFi
 
 ### Code Mode Pattern in the MCP Server
 
-The MCP server exposes `search_tools`, `list_categories`, and `get_tool_info` as first-class tools rather than relying on the MCP tool listing protocol alone. This is the Code Mode pattern: AI assistants are expected to call `search_tools(query="stp")` to discover relevant tools before invoking `discover_stp_topology()`. This reduces hallucination of tool names and allows the assistant to select the most appropriate tool from the full catalogue of 36+ options without receiving all tool definitions upfront.
+The MCP server exposes `search_tools`, `list_categories`, and `get_tool_info` as first-class tools rather than relying on the MCP tool listing protocol alone. This is the Code Mode pattern: AI assistants are expected to call `search_tools(query="stp")` and `get_tool_info("discover_stp_topology")` before any host code resolves an executable tool proxy. This reduces hallucination of tool names and allows the assistant to inspect the full catalogue of 53 registered tools without receiving all tool definitions upfront.
 
 ### YAML Manifests as the Tool Contract
 

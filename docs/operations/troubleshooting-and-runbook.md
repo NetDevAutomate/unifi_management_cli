@@ -57,7 +57,7 @@ flowchart TD
     D -->|Yes| F{Does pyproject.toml list the entry point?}
     F -->|Entry point missing| G[Check pyproject.toml scripts section]
     F -->|Entry point present| H{Python version >= 3.11?}
-    H -->|No| I[Install Python 3.11+ via asdf]
+    H -->|No| I[Install Python 3.12+ via asdf]
     H -->|Yes| J[Run: uv pip install -e . to reinstall in dev mode]
     C --> E
 ```
@@ -675,7 +675,7 @@ uvx --from . unifi-mcp --help
 # or for local dev:
 uv run unifi-mcp --help
 
-# Verify all 36 tools are registered by checking startup logs
+# Verify all 53 registered automation tools are discoverable by checking startup logs
 UNIFI_URL=https://192.0.2.1 UNIFI_CONSOLE_API_TOKEN=token uv run unifi-mcp 2>&1 | head -20
 ```
 
@@ -856,14 +856,84 @@ uv run unifi-mapper inventory list --format json --output ~/backups/inventory-$(
 # Analyze current STP topology
 uv run unifi-mapper stp analyze
 
-# Preview optimal priority changes (always dry-run first)
+# Preview optimal priority changes and generate a reversible plan
 uv run unifi-mapper stp optimize --dry-run
+uv run unifi-mapper stp optimize --plan reports/stp-plan.json
 
-# Apply after review
-uv run unifi-mapper stp optimize --apply
+# Apply after review during a maintenance window
+uv run unifi-mapper stp apply --plan reports/stp-plan.json
+
+# Roll back the same bundle if post-checks fail
+uv run unifi-mapper stp rollback reports/stp-plan.json
+
+# Validate root, path costs, Root Guard recommendations, and 10G readiness
+uv run unifi-mapper stp validate-10g --planned-switches 2
+uv run unifi-mapper stp guard
 
 # Generate report for documentation
 uv run unifi-mapper stp report -o stp-report-$(date +%Y%m%d).md
+```
+
+**Maintenance-window checklist**:
+
+1. Capture baseline: `uv run unifi-mapper stp snapshot --output reports/stp-baseline.json`
+2. Run preflight: `uv run unifi-mapper stp preflight --simulate-add USW-Flex-XG:2 --uplink "Xray3 USW Flex XG 10G"`
+3. Generate plan: `uv run unifi-mapper stp optimize --plan reports/stp-plan.json`
+4. Confirm the expected root in the plan is the gateway-connected core switch.
+5. Apply plan: `uv run unifi-mapper stp apply --plan reports/stp-plan.json`
+6. Verify: `stp analyze`, `stp validate-10g`, `stp guard`, and `stp diff reports/stp-baseline.json`
+7. Roll back if the wrong root is elected, uplinks block unexpectedly, or critical path-cost/counter findings appear.
+
+```mermaid
+flowchart TD
+    A([Start maintenance window]) --> B[Capture STP snapshot]
+    B --> C[Generate/review STP plan]
+    C --> D{Expected root is correct?}
+    D -->|No| E[Stop; do not apply]
+    D -->|Yes| F[Apply new root priority first]
+    F --> G[Apply demotions and downstream priorities]
+    G --> H[Run stp analyze]
+    H --> I{Root and blocked ports correct?}
+    I -->|No| J[Rollback plan]
+    I -->|Yes| K[Run validate-10g and guard]
+    K --> L{Critical findings?}
+    L -->|Yes| J
+    L -->|No| M[Save post-change snapshot/report]
+```
+
+#### Port Naming Verification
+
+```bash
+uv run unifi-mapper discover \
+  --connected-devices \
+  --verify-updates \
+  --output reports/port-naming-verify-$(date +%Y%m%d).md \
+  --diagram reports/topology-port-naming-verify-$(date +%Y%m%d).mermaid \
+  --format mermaid
+```
+
+Success means all attempted updates verify cleanly after repeated reads. If a device repeatedly fails verification, treat it as a model/firmware behaviour problem rather than assuming the CLI payload is wrong.
+
+#### Read-Only Network Safety Audits
+
+```bash
+# Port profile safety: STP Edge and BPDU Guard
+uv run unifi-mapper analyze port-profiles
+
+# VLAN trunk coverage for planned uplinks
+uv run unifi-mapper analyze vlan-coverage --required-vlans 1,10,20,30
+
+# Inter-VLAN routing/firewall verdict between endpoints
+uv run unifi-mapper diagnose inter-vlan 203.0.113.10 198.51.100.11
+
+# SFP module diagnostics if exposed by UniFi
+uv run unifi-mapper analyze sfp
+
+# Wi-Fi radio channel/power review
+uv run unifi-mapper analyze radio
+
+# Traffic evidence for 10G placement
+uv run unifi-mapper analyze traffic-matrix --top 10
 ```
 
 #### Rotating API Credentials
@@ -926,6 +996,74 @@ curl -k -H "X-API-KEY: YOUR_TOKEN" https://YOUR_CONTROLLER/proxy/network/api/s/d
 # Test with CLI
 UNIFI_LOGLEVEL=DEBUG uv run unifi-mapper --dry-run 2>&1 | head -50
 ```
+
+#### Incident: Intermittent Ping After 10G or STP Change
+
+```mermaid
+flowchart TD
+    A[Intermittent ping or short outages] --> B[stp analyze]
+    B --> C{Root bridge expected?}
+    C -->|No| D[Generate/apply corrected STP plan or rollback recent plan]
+    C -->|Yes| E[stp validate-10g --planned-switches 2]
+    E --> F{Path-cost or blocked-port critical?}
+    F -->|Yes| G[Fix STP path/cabling before more changes]
+    F -->|No| H[stp guard --tcn-threshold 10]
+    H --> I{TCN spike?}
+    I -->|Yes| J[Find flapping downstream link or edge port]
+    I -->|No| K[analyze sfp and inspect CRC/error deltas]
+    K --> L{New physical errors?}
+    L -->|Yes| M[Replace cable/SFP or move port]
+    L -->|No| N[Run inter-VLAN endpoint check and traffic matrix]
+```
+
+Commands:
+
+```bash
+uv run unifi-mapper stp analyze
+uv run unifi-mapper stp validate-10g --planned-switches 2 --output reports/stp-10g-incident.md
+uv run unifi-mapper stp guard --tcn-threshold 10
+uv run unifi-mapper analyze sfp
+uv run unifi-mapper diagnose inter-vlan SOURCE_ENDPOINT DESTINATION_ENDPOINT
+```
+
+Decision points:
+
+- Wrong root bridge: fix STP priority before chasing packet loss elsewhere.
+- Blocked uplink or legacy 10G path cost: treat as a topology/control-plane issue.
+- TCN spike: look for a flapping access link, edge profile receiving BPDUs, or a downstream switch trying to influence root.
+- New CRC/error increments: treat as cable/SFP/PHY evidence. Drops-only counters are weaker evidence and should be compared against a baseline.
+
+#### Incident: STP Drift Against Intent
+
+Use this when firmware upgrades, manual UI edits, or emergency changes may have altered bridge priorities.
+
+```bash
+uv run unifi-mapper stp drift --intent stp_intent.yaml
+```
+
+If drift is detected:
+
+1. Confirm whether the drift was intentional.
+2. If intentional, update `stp_intent.yaml`.
+3. If unintentional, generate a fresh change plan and apply in a maintenance window.
+
+#### Incident: Failed Or Partial STP Apply
+
+The change-plan path stores both forward changes and rollback changes. If an apply fails midway, do not manually guess the missing state from memory.
+
+```bash
+# Check current live state
+uv run unifi-mapper stp analyze
+
+# Revert using the recorded rollback bundle
+uv run unifi-mapper stp rollback reports/stp-plan.json
+
+# Verify after rollback
+uv run unifi-mapper stp analyze
+uv run unifi-mapper stp diff reports/stp-baseline.json
+```
+
+If the rollback also fails, stop automated changes and use the UniFi UI/API to inspect the specific device named in the failed result. Keep the JSON plan and CLI output with the incident notes.
 
 #### Incident: Device Goes Offline or Stops Responding
 
