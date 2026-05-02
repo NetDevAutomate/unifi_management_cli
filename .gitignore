@@ -98,3 +98,17 @@ personal_scripts/
 # Working documents (brainstorms, plans - not for distribution)
 docs/brainstorms/
 docs/plans/
+
+# Generated artefacts (audio/video overviews, large PDFs, infographics)
+docs/artefacts/*.mp3
+docs/artefacts/*.mp4
+docs/artefacts/*.pdf
+docs/artefacts/*.png
+docs/artefacts/*.jpg
+docs/artefacts/*.jpeg
+docs/artefacts/*.webp
+docs/artefacts/.pipeline-state.json
+docs/artefacts/unifi_management_cli_content.md
+
+# Local CLI env symlink
+/.env

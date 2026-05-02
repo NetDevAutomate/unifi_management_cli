@@ -40,6 +40,11 @@ from unifi_mapper.core.models.analysis import (
     VLANDiagnosticReport,
     VLANInfo,
 )
+from unifi_mapper.core.models.capability import (
+    SwitchCapabilityClass,
+    is_access_class,
+    is_root_eligible,
+)
 from unifi_mapper.core.models.device import Device
 from unifi_mapper.core.models.firewall import FirewallRule
 from unifi_mapper.core.models.mirror import (

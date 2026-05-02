@@ -7,6 +7,11 @@ diagrams showing current vs optimal configuration.
 
 from datetime import datetime
 from typing import Any
+from unifi_mapper.analysis.model_capabilities import (
+    classify_model,
+    is_access_class,
+    is_root_eligible,
+)
 from unifi_mapper.core.models.stp import (
     STP_PRIORITY_ACCESS_BASE,
     STP_PRIORITY_CORE,
@@ -15,19 +20,23 @@ from unifi_mapper.core.models.stp import (
     STP_PRIORITY_INCREMENT,
     STPChange,
     STPConnection,
+    STPNetworkValidationReport,
     STPOptimizationReport,
     STPPortConfig,
     STPPortState,
     STPRole,
     STPTopology,
+    STPValidationFinding,
     SwitchSTPConfig,
 )
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.overrides import STPOverrides, load_stp_overrides
 
 
 async def discover_stp_topology(
     device_id: str | None = None,
+    overrides: STPOverrides | None = None,
 ) -> STPTopology:
     """Discover current STP topology from all switches via LLDP and port_table.
 
@@ -47,6 +56,8 @@ async def discover_stp_topology(
     Args:
         device_id: Optional device ID to analyze specific switch.
                   If None, discovers entire network topology.
+        overrides: Optional STP overrides controlling root eligibility.
+                  When None, load from the default config path.
 
     Returns:
         STPTopology with complete spanning tree state
@@ -55,6 +66,8 @@ async def discover_stp_topology(
         ToolError: DEVICE_NOT_FOUND if device_id specified but not found
         ToolError: CONTROLLER_UNREACHABLE if cannot connect to UniFi controller
     """
+    resolved_overrides = overrides if overrides is not None else load_stp_overrides()
+
     async with UniFiClient() as client:
         try:
             devices = await client.get_devices()
@@ -131,6 +144,17 @@ async def discover_stp_topology(
                 # Determine if connected to gateway
                 connected_to_gateway = _is_connected_to_gateway(device, gateway_mac, mac_to_device)
 
+                capability = classify_model(dev_model)
+                force_access = resolved_overrides.is_force_access(dev_mac)
+                override_root = resolved_overrides.is_root_eligible_override(dev_mac)
+
+                if force_access:
+                    eligible = False
+                elif override_root and is_root_eligible(capability):
+                    eligible = True
+                else:
+                    eligible = is_root_eligible(capability)
+
                 switch_config = SwitchSTPConfig(
                     device_id=dev_id,
                     name=dev_name,
@@ -140,6 +164,8 @@ async def discover_stp_topology(
                     is_root_bridge=(dev_id == root_bridge_id),
                     port_states=port_states,
                     connected_to_gateway=connected_to_gateway,
+                    capability=capability,
+                    root_eligible=eligible,
                 )
 
                 switches.append(switch_config)
@@ -155,8 +181,8 @@ async def discover_stp_topology(
                     related_tools=['find_device', 'get_network_topology'],
                 )
 
-            # Calculate hierarchy tiers based on gateway connectivity
-            _calculate_hierarchy_tiers(switches)
+            # Calculate hierarchy tiers using capability + gateway adjacency
+            _calculate_hierarchy_tiers(switches, overrides=resolved_overrides)
 
             # Update root bridge status
             for switch in switches:
@@ -259,6 +285,19 @@ def _extract_port_stp_states(
             connected_device=connected_device,
             connected_device_id=connected_device_id,
             is_uplink=is_uplink,
+            is_up=bool(port_data.get('up', False)),
+            enabled=bool(port_data.get('enabled', True)),
+            link_speed_mbps=int(port_data.get('speed', 0) or 0),
+            full_duplex=bool(port_data.get('full_duplex', True)),
+            rx_errors=int(port_data.get('rx_errors', 0) or 0),
+            tx_errors=int(port_data.get('tx_errors', 0) or 0),
+            rx_dropped=int(port_data.get('rx_dropped', 0) or 0),
+            tx_dropped=int(port_data.get('tx_dropped', 0) or 0),
+            crc_errors=int(
+                port_data.get('rx_crc_errors', 0)
+                or port_data.get('port_stats', {}).get('rx_crc_errors', 0)
+                or 0
+            ),
         )
         port_states.append(port_config)
 
@@ -328,47 +367,76 @@ def _is_connected_to_gateway(
 
 def _calculate_hierarchy_tiers(
     switches: list[SwitchSTPConfig],
+    overrides: STPOverrides | None = None,
 ) -> None:
-    """Calculate network hierarchy tiers for each switch.
+    """Calculate network hierarchy tiers using capability + topology.
 
-    Tier 0 (Core): Directly connected to gateway
-    Tier 1 (Distribution): One hop from core
-    Tier 2+ (Access): Two or more hops from core
+    Rules:
+    - Tier 0 (Core): gateway-connected AND root-eligible capability
+      (AGGREGATION or CORE_DISTRIBUTION) AND not force_access_macs.
+    - A gateway-connected access-class switch becomes Tier 1 so it is
+      below Tier 0 but still close to the gateway hierarchically.
+    - BFS from the resolved Tier 0 set populates remaining tiers. A
+      switch only reached via access-class neighbours still gets the
+      hop-count tier (BFS distance from Tier 0).
+
+    The old algorithm treated any gateway-connected switch as Tier 0,
+    which promoted small access switches (e.g. USW-Lite) to Core and
+    triggered incorrect priority 4096 recommendations.
     """
-    # Build adjacency from port connections
-    adjacency: dict[str, set[str]] = {s.device_id: set() for s in switches}
+    resolved = overrides or STPOverrides()
 
+    adjacency: dict[str, set[str]] = {s.device_id: set() for s in switches}
     for switch in switches:
         for port in switch.port_states:
             if port.connected_device_id:
                 adjacency[switch.device_id].add(port.connected_device_id)
 
-    # Find core switches (connected to gateway)
     core_switch_ids: set[str] = set()
+    gateway_adjacent_access: set[str] = set()
     for switch in switches:
-        if switch.connected_to_gateway:
+        if not switch.connected_to_gateway:
+            continue
+        if resolved.is_force_access(switch.mac):
+            gateway_adjacent_access.add(switch.device_id)
+            switch.hierarchy_tier = 1
+            switch.tier_reason = f'{switch.capability.value} (override: force_access) - demoted from gateway adjacency'
+            continue
+        if switch.root_eligible:
             switch.hierarchy_tier = 0
             core_switch_ids.add(switch.device_id)
+            switch.tier_reason = (
+                f'{switch.capability.value} gateway-connected - root-eligible Core'
+            )
+        else:
+            gateway_adjacent_access.add(switch.device_id)
+            switch.hierarchy_tier = 1
+            switch.tier_reason = (
+                f'{switch.capability.value} gateway-connected but not root-eligible - Distribution'
+            )
 
-    # BFS to find distances from core
-    if core_switch_ids:
-        visited = set(core_switch_ids)
-        current_tier = core_switch_ids
-        tier_level = 1
+    if not core_switch_ids:
+        return
 
-        while current_tier:
-            next_tier: set[str] = set()
-            for switch_id in current_tier:
-                for neighbor_id in adjacency.get(switch_id, set()):
-                    if neighbor_id not in visited:
-                        visited.add(neighbor_id)
-                        next_tier.add(neighbor_id)
-                        # Update tier for neighbor
-                        for s in switches:
-                            if s.device_id == neighbor_id:
-                                s.hierarchy_tier = tier_level
-            current_tier = next_tier
-            tier_level += 1
+    visited = set(core_switch_ids) | gateway_adjacent_access
+    current_tier = core_switch_ids
+    tier_level = 1
+
+    while current_tier:
+        next_tier: set[str] = set()
+        for switch_id in current_tier:
+            for neighbor_id in adjacency.get(switch_id, set()):
+                if neighbor_id in visited:
+                    continue
+                visited.add(neighbor_id)
+                next_tier.add(neighbor_id)
+                for s in switches:
+                    if s.device_id != neighbor_id:
+                        continue
+                    s.hierarchy_tier = tier_level
+                    s.tier_reason = f'{s.capability.value} - BFS tier {tier_level} from Core'
+        current_tier = next_tier
+        tier_level += 1
 
 
 async def calculate_optimal_priorities(
@@ -418,13 +486,23 @@ async def calculate_optimal_priorities(
             # STP uses MAC address as tiebreaker (lower MAC wins)
             # UniFi API only accepts multiples of 4096
             optimal_priority = base_priority
+            guard_reason = ''
+            if is_access_class(switch.capability) and optimal_priority < STP_PRIORITY_DISTRIBUTION:
+                optimal_priority = STP_PRIORITY_DISTRIBUTION
+                guard_reason = (
+                    f' (root-guard: {switch.capability.value} capped at '
+                    f'{STP_PRIORITY_DISTRIBUTION})'
+                )
             switch.optimal_priority = optimal_priority
 
             if switch.current_priority != optimal_priority:
-                reason = f'{tier_name} switch should have priority {optimal_priority}'
-                if switch.connected_to_gateway and tier == 0:
+                reason = (
+                    f'{tier_name} switch should have priority {optimal_priority}{guard_reason}'
+                )
+                if switch.connected_to_gateway and tier == 0 and not guard_reason:
                     reason = (
-                        f'Core switch (gateway-connected) should have priority {optimal_priority}'
+                        f'Core switch (gateway-connected, {switch.capability.value}) '
+                        f'should have priority {optimal_priority}'
                     )
 
                 change = STPChange(
@@ -522,6 +600,201 @@ async def generate_stp_report(
         recommendations=recommendations,
         current_diagram=current_diagram,
         optimal_diagram=optimal_diagram,
+    )
+
+
+async def validate_10g_expansion_readiness(
+    planned_flex_xg_switches: int = 2,
+    target_speed_mbps: int = 10000,
+) -> STPNetworkValidationReport:
+    """Validate local UniFi STP health before adding USW Flex XG switches.
+
+    The validation combines current STP topology, bridge priority optimization,
+    switch-to-switch link speed, duplex, and error counters. It is intentionally
+    read-only and suitable to run before installing additional 10G switches.
+    """
+    topology = await discover_stp_topology()
+    changes = await calculate_optimal_priorities(topology)
+    return build_10g_expansion_validation_report(
+        topology=topology,
+        stp_changes=changes,
+        planned_flex_xg_switches=planned_flex_xg_switches,
+        target_speed_mbps=target_speed_mbps,
+    )
+
+
+def build_10g_expansion_validation_report(
+    topology: STPTopology,
+    stp_changes: list[STPChange],
+    planned_flex_xg_switches: int = 2,
+    target_speed_mbps: int = 10000,
+) -> STPNetworkValidationReport:
+    """Build a validation report from already-discovered STP topology data."""
+    findings: list[STPValidationFinding] = []
+    inter_switch_ports = [
+        (switch, port)
+        for switch in topology.switches
+        for port in switch.port_states
+        if port.connected_device_id
+    ]
+    ten_gig_ports = [
+        (switch, port)
+        for switch, port in inter_switch_ports
+        if port.link_speed_mbps >= target_speed_mbps
+    ]
+
+    if planned_flex_xg_switches < 1:
+        findings.append(
+            STPValidationFinding(
+                severity='CRITICAL',
+                category='Plan',
+                message='No USW Flex XG switches are included in the expansion plan.',
+                recommendation='Set planned_flex_xg_switches to the number of switches being added.',
+            )
+        )
+
+    root_switch = next((switch for switch in topology.switches if switch.is_root_bridge), None)
+    if topology.root_bridge_priority == STP_PRIORITY_DEFAULT:
+        findings.append(
+            STPValidationFinding(
+                severity='WARNING',
+                category='STP',
+                message='Current root bridge is still using the default STP priority 32768.',
+                recommendation='Apply explicit bridge priorities before adding redundant 10G paths.',
+                device_name=topology.root_bridge_name,
+            )
+        )
+
+    if root_switch and not root_switch.root_eligible:
+        findings.append(
+            STPValidationFinding(
+                severity='CRITICAL',
+                category='STP',
+                message=(
+                    f'Current root bridge "{root_switch.name}" is '
+                    f'{root_switch.capability.value} class '
+                    f'and must never be the STP root '
+                    f'(root-eligibility requires AGGREGATION or CORE_DISTRIBUTION).'
+                ),
+                recommendation=(
+                    'Promote an AGGREGATION-class switch (e.g. USW Flex XG) '
+                    'to root by lowering its priority to 4096, then raise '
+                    'the current root to priority 8192 or higher.'
+                ),
+                device_name=root_switch.name,
+            )
+        )
+
+    if root_switch and not root_switch.connected_to_gateway:
+        findings.append(
+            STPValidationFinding(
+                severity='CRITICAL',
+                category='STP',
+                message=f'Current root bridge "{root_switch.name}" is not directly connected to the gateway.',
+                recommendation='Make a gateway-connected core switch the STP root before adding the Flex XG switches.',
+                device_name=root_switch.name,
+            )
+        )
+
+    if stp_changes:
+        findings.append(
+            STPValidationFinding(
+                severity='WARNING',
+                category='STP',
+                message=f'{len(stp_changes)} STP bridge priority change(s) are recommended.',
+                recommendation='Run stp optimize --dry-run, review the changes, then apply them in a maintenance window.',
+            )
+        )
+
+    if topology.blocked_ports_count > 0:
+        findings.append(
+            STPValidationFinding(
+                severity='WARNING',
+                category='STP',
+                message=f'{topology.blocked_ports_count} port(s) are currently blocking or discarding.',
+                recommendation='Confirm these are intentional redundant paths, not an accidental loop.',
+            )
+        )
+
+    if not inter_switch_ports:
+        findings.append(
+            STPValidationFinding(
+                severity='CRITICAL',
+                category='Topology',
+                message='No LLDP switch-to-switch links were discovered.',
+                recommendation='Enable LLDP on infrastructure switches and re-run validation.',
+            )
+        )
+
+    if planned_flex_xg_switches and len(ten_gig_ports) < planned_flex_xg_switches:
+        findings.append(
+            STPValidationFinding(
+                severity='WARNING',
+                category='10G',
+                message=(
+                    f'Only {len(ten_gig_ports)} discovered switch-to-switch port(s) are currently '
+                    f'negotiating at {target_speed_mbps // 1000}G or better.'
+                ),
+                recommendation=(
+                    f'After adding {planned_flex_xg_switches} USW Flex XG switch(es), verify each uplink '
+                    f'negotiates at {target_speed_mbps // 1000}G full-duplex.'
+                ),
+            )
+        )
+
+    for switch, port in inter_switch_ports:
+        port_errors = port.rx_errors + port.tx_errors + port.crc_errors
+        port_drops = port.rx_dropped + port.tx_dropped
+
+        if port.is_up and not port.full_duplex and port.link_speed_mbps >= 1000:
+            findings.append(
+                STPValidationFinding(
+                    severity='CRITICAL',
+                    category='Link',
+                    message=f'{switch.name} port {port.port_idx} is not full-duplex.',
+                    recommendation='Fix speed/duplex negotiation before using this path for 10G uplink traffic.',
+                    device_name=switch.name,
+                    port_idx=port.port_idx,
+                )
+            )
+
+        if port_errors > 0 or port_drops > 1000:
+            severity = 'CRITICAL' if port.crc_errors > 100 or port_errors > 1000 else 'WARNING'
+            findings.append(
+                STPValidationFinding(
+                    severity=severity,
+                    category='Errors',
+                    message=(
+                        f'{switch.name} port {port.port_idx} has errors/drops '
+                        f'(errors={port_errors}, drops={port_drops}).'
+                    ),
+                    recommendation='Inspect transceivers, cables, patching, and port counters before expansion.',
+                    device_name=switch.name,
+                    port_idx=port.port_idx,
+                )
+            )
+
+    critical_count = sum(1 for finding in findings if finding.severity == 'CRITICAL')
+    warning_count = sum(1 for finding in findings if finding.severity == 'WARNING')
+    if critical_count:
+        readiness = 'NOT_READY'
+    elif warning_count:
+        readiness = 'READY_WITH_WARNINGS'
+    else:
+        readiness = 'READY'
+
+    return STPNetworkValidationReport(
+        planned_flex_xg_switches=planned_flex_xg_switches,
+        target_speed_mbps=target_speed_mbps,
+        switches_analyzed=len(topology.switches),
+        inter_switch_links=len(topology.connections),
+        ten_gig_links=len(ten_gig_ports),
+        blocked_ports_count=topology.blocked_ports_count,
+        stp_changes_required=len(stp_changes),
+        validation_passed=critical_count == 0,
+        readiness=readiness,
+        findings=findings,
+        stp_changes=stp_changes,
     )
 
 
@@ -833,5 +1106,71 @@ def format_stp_report_markdown(report: STPOptimizationReport) -> str:
     lines.append('| Distribution | 8192-12288 | One hop from core |')
     lines.append('| Access | 16384-28672 | Two+ hops from core |')
     lines.append('| Default | 32768 | UniFi default (not recommended) |')
+
+    return '\n'.join(lines)
+
+
+def format_10g_validation_report_markdown(report: STPNetworkValidationReport) -> str:
+    """Format 10G expansion validation report as markdown."""
+    lines = [
+        '# UniFi 10G Expansion Validation Report',
+        f'*Generated: {report.timestamp}*',
+        '',
+        '## Summary',
+        f'- **Readiness**: {report.readiness}',
+        f'- **Validation Passed**: {"Yes" if report.validation_passed else "No"}',
+        f'- **Planned USW Flex XG Switches**: {report.planned_flex_xg_switches}',
+        f'- **Switches Analyzed**: {report.switches_analyzed}',
+        f'- **Inter-switch Links**: {report.inter_switch_links}',
+        f'- **10G Inter-switch Ports**: {report.ten_gig_links}',
+        f'- **Blocked STP Ports**: {report.blocked_ports_count}',
+        f'- **STP Priority Changes Required**: {report.stp_changes_required}',
+        '',
+    ]
+
+    if report.findings:
+        lines.append('## Findings')
+        lines.append('')
+        lines.append('| Severity | Category | Device | Port | Finding | Recommendation |')
+        lines.append('|----------|----------|--------|------|---------|----------------|')
+        for finding in report.findings:
+            device = finding.device_name or ''
+            port = str(finding.port_idx) if finding.port_idx is not None else ''
+            lines.append(
+                f'| {finding.severity} | {finding.category} | {device} | {port} | '
+                f'{finding.message} | {finding.recommendation} |'
+            )
+        lines.append('')
+    else:
+        lines.extend(
+            [
+                '## Findings',
+                '',
+                'No critical or warning findings detected.',
+                '',
+            ]
+        )
+
+    if report.stp_changes:
+        lines.append('## Recommended STP Priority Changes')
+        lines.append('')
+        lines.append('| Switch | Current | Recommended | Reason |')
+        lines.append('|--------|---------|-------------|--------|')
+        for change in report.stp_changes:
+            lines.append(
+                f'| {change.device_name} | {change.current_priority} | '
+                f'{change.new_priority} | {change.reason} |'
+            )
+        lines.append('')
+
+    lines.extend(
+        [
+            '## Post-install Checks',
+            '',
+            f'- Verify each USW Flex XG uplink negotiates at {report.target_speed_mbps // 1000}G full-duplex.',
+            '- Re-run `unifi-mapper stp analyze` and confirm the root bridge is still the intended core switch.',
+            '- Re-run this validation after cabling the new switches and investigate any new port errors.',
+        ]
+    )
 
     return '\n'.join(lines)

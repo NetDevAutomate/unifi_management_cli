@@ -104,3 +104,26 @@ tools:
     description: Format STP report as markdown with mermaid diagrams
     priority: P3
     tags: [stp, spanning-tree, report, markdown, mermaid]
+
+  validate_10g_expansion_readiness:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: validate_10g_expansion_readiness
+    description: Validate STP, 10G link readiness, and port errors before adding USW Flex XG switches
+    priority: P2
+    tags: [stp, spanning-tree, 10g, flex-xg, validation, errors]
+    parameters:
+      planned_flex_xg_switches:
+        type: integer
+        default: 2
+        description: Number of USW Flex XG switches planned for installation
+      target_speed_mbps:
+        type: integer
+        default: 10000
+        description: Target uplink speed in Mbps
+
+  format_10g_validation_report_markdown:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: format_10g_validation_report_markdown
+    description: Format 10G expansion validation report as markdown
+    priority: P3
+    tags: [stp, 10g, report, markdown]

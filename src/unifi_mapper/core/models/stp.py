@@ -3,6 +3,7 @@
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field
+from unifi_mapper.core.models.capability import SwitchCapabilityClass
 
 
 class STPPortState(str, Enum):
@@ -55,6 +56,15 @@ class STPPortConfig(BaseModel):
     is_uplink: bool = Field(
         default=False, description='Whether this port connects to a higher-tier switch'
     )
+    is_up: bool = Field(default=False, description='Whether the physical link is up')
+    enabled: bool = Field(default=True, description='Whether the port is administratively enabled')
+    link_speed_mbps: int = Field(default=0, description='Current negotiated speed in Mbps')
+    full_duplex: bool = Field(default=True, description='Whether the link is full duplex')
+    rx_errors: int = Field(default=0, description='Receive error counter')
+    tx_errors: int = Field(default=0, description='Transmit error counter')
+    rx_dropped: int = Field(default=0, description='Receive dropped packet counter')
+    tx_dropped: int = Field(default=0, description='Transmit dropped packet counter')
+    crc_errors: int = Field(default=0, description='CRC error counter')
 
 
 class SwitchSTPConfig(BaseModel):
@@ -87,6 +97,18 @@ class SwitchSTPConfig(BaseModel):
     )
     connected_to_gateway: bool = Field(
         default=False, description='Whether directly connected to gateway/router'
+    )
+    capability: SwitchCapabilityClass = Field(
+        default=SwitchCapabilityClass.UNKNOWN,
+        description='Hardware capability class derived from the device model',
+    )
+    root_eligible: bool = Field(
+        default=False,
+        description='Whether this switch may act as the STP root bridge',
+    )
+    tier_reason: str = Field(
+        default='',
+        description='Human-readable explanation for assigned hierarchy tier',
     )
 
 
@@ -168,6 +190,36 @@ class STPOptimizationReport(BaseModel):
     recommendations: list[str] = Field(default_factory=list, description='General recommendations')
     current_diagram: str = Field(default='', description='Mermaid diagram of current topology')
     optimal_diagram: str = Field(default='', description='Mermaid diagram of optimal topology')
+
+
+class STPValidationFinding(BaseModel):
+    """A validation finding for STP and 10G expansion readiness."""
+
+    severity: str = Field(description='INFO, WARNING, or CRITICAL')
+    category: str = Field(description='Finding category')
+    message: str = Field(description='Human-readable finding')
+    recommendation: str = Field(description='Recommended action')
+    device_name: str | None = Field(default=None, description='Related device name')
+    port_idx: int | None = Field(default=None, description='Related port index')
+
+
+class STPNetworkValidationReport(BaseModel):
+    """Validation report for local UniFi STP health and 10G expansion readiness."""
+
+    timestamp: str = Field(
+        default_factory=lambda: datetime.now().isoformat(), description='When report was generated'
+    )
+    planned_flex_xg_switches: int = Field(description='Number of USW Flex XG switches planned')
+    target_speed_mbps: int = Field(default=10000, description='Target uplink speed in Mbps')
+    switches_analyzed: int = Field(description='Number of switches analyzed')
+    inter_switch_links: int = Field(description='Number of discovered switch-to-switch links')
+    ten_gig_links: int = Field(description='Number of discovered 10G switch-to-switch links')
+    blocked_ports_count: int = Field(description='Number of blocked/discarding STP ports')
+    stp_changes_required: int = Field(description='Number of recommended STP priority changes')
+    validation_passed: bool = Field(description='True when no critical findings exist')
+    readiness: str = Field(description='READY, READY_WITH_WARNINGS, or NOT_READY')
+    findings: list[STPValidationFinding] = Field(default_factory=list)
+    stp_changes: list[STPChange] = Field(default_factory=list)
 
 
 # STP Priority Standards

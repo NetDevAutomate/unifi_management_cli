@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-import pytest
-
+from unifi_mapper.analysis.stp_optimizer import (
+    _calculate_hierarchy_tiers,
+    _parse_stp_role,
+    _parse_stp_state,
+    _render_stp_diagram,
+    calculate_optimal_priorities,
+    format_stp_report_markdown,
+)
+from unifi_mapper.core.models.capability import SwitchCapabilityClass
 from unifi_mapper.core.models.stp import (
     STP_PRIORITY_ACCESS_BASE,
     STP_PRIORITY_CORE,
@@ -18,13 +25,7 @@ from unifi_mapper.core.models.stp import (
     STPTopology,
     SwitchSTPConfig,
 )
-from unifi_mapper.analysis.stp_optimizer import (
-    _parse_stp_state,
-    _parse_stp_role,
-    _calculate_hierarchy_tiers,
-    _render_stp_diagram,
-    format_stp_report_markdown,
-)
+from unifi_mapper.core.utils.overrides import STPOverrides
 
 
 class TestSTPModels:
@@ -241,6 +242,8 @@ class TestHierarchyTierCalculation:
             name='Core',
             mac='00:00:00:00:00:01',
             connected_to_gateway=True,
+            capability=SwitchCapabilityClass.AGGREGATION,
+            root_eligible=True,
         )
         switches = [core]
         _calculate_hierarchy_tiers(switches)
@@ -253,6 +256,8 @@ class TestHierarchyTierCalculation:
             name='Core',
             mac='00:00:00:00:00:01',
             connected_to_gateway=True,
+            capability=SwitchCapabilityClass.AGGREGATION,
+            root_eligible=True,
             port_states=[
                 STPPortConfig(port_idx=1, connected_device_id='dist1'),
             ],
@@ -261,6 +266,7 @@ class TestHierarchyTierCalculation:
             device_id='dist1',
             name='Distribution',
             mac='00:00:00:00:00:02',
+            capability=SwitchCapabilityClass.ACCESS_POE,
             port_states=[
                 STPPortConfig(port_idx=1, connected_device_id='core1'),
             ],
@@ -277,6 +283,8 @@ class TestHierarchyTierCalculation:
             name='Core',
             mac='00:00:00:00:00:01',
             connected_to_gateway=True,
+            capability=SwitchCapabilityClass.AGGREGATION,
+            root_eligible=True,
             port_states=[
                 STPPortConfig(port_idx=1, connected_device_id='dist1'),
             ],
@@ -285,6 +293,7 @@ class TestHierarchyTierCalculation:
             device_id='dist1',
             name='Distribution',
             mac='00:00:00:00:00:02',
+            capability=SwitchCapabilityClass.ACCESS_POE,
             port_states=[
                 STPPortConfig(port_idx=1, connected_device_id='core1'),
                 STPPortConfig(port_idx=2, connected_device_id='access1'),
@@ -294,6 +303,7 @@ class TestHierarchyTierCalculation:
             device_id='access1',
             name='Access',
             mac='00:00:00:00:00:03',
+            capability=SwitchCapabilityClass.ACCESS_POE,
             port_states=[
                 STPPortConfig(port_idx=1, connected_device_id='dist1'),
             ],
@@ -303,6 +313,142 @@ class TestHierarchyTierCalculation:
         assert core.hierarchy_tier == 0
         assert dist.hierarchy_tier == 1
         assert access.hierarchy_tier == 2
+
+
+class TestCapabilityAwareTiering:
+    """Tests for capability-aware hierarchy + root guard (Phase 0 fix)."""
+
+    def _make_switch(
+        self,
+        device_id: str,
+        name: str,
+        mac: str,
+        capability: SwitchCapabilityClass,
+        *,
+        connected_to_gateway: bool = False,
+        root_eligible: bool | None = None,
+        connected_device_ids: tuple[str, ...] = (),
+    ) -> SwitchSTPConfig:
+        if root_eligible is None:
+            root_eligible = capability in (
+                SwitchCapabilityClass.AGGREGATION,
+                SwitchCapabilityClass.CORE_DISTRIBUTION,
+            )
+        return SwitchSTPConfig(
+            device_id=device_id,
+            name=name,
+            mac=mac,
+            capability=capability,
+            connected_to_gateway=connected_to_gateway,
+            root_eligible=root_eligible,
+            port_states=[
+                STPPortConfig(port_idx=i, connected_device_id=peer)
+                for i, peer in enumerate(connected_device_ids, start=1)
+            ],
+        )
+
+    def test_access_class_gateway_neighbor_is_not_core(self) -> None:
+        """Access switch cabled to gateway must be Tier 1, not Tier 0."""
+        agg = self._make_switch(
+            'agg1',
+            'Xray3 USW Flex XG',
+            '02:00:fe:02:00:09',
+            SwitchCapabilityClass.AGGREGATION,
+            connected_to_gateway=True,
+        )
+        access = self._make_switch(
+            'access1',
+            'Xray3 USW-Lite-16-PoE',
+            '02:00:fe:02:00:13',
+            SwitchCapabilityClass.ACCESS_POE,
+            connected_to_gateway=True,
+        )
+
+        _calculate_hierarchy_tiers([agg, access])
+
+        assert agg.hierarchy_tier == 0
+        assert access.hierarchy_tier == 1
+        assert (
+            'not root-eligible' in access.tier_reason.lower()
+            or 'distribution' in access.tier_reason.lower()
+        )
+
+    def test_multiple_aggregation_gateway_neighbors_share_tier_0(self) -> None:
+        """Two AGGREGATION switches on the gateway both land in Tier 0."""
+        agg1 = self._make_switch(
+            'agg1',
+            'Xray3 USW Flex XG',
+            '02:00:fe:02:00:09',
+            SwitchCapabilityClass.AGGREGATION,
+            connected_to_gateway=True,
+        )
+        agg2 = self._make_switch(
+            'agg2',
+            'Mike2 10G Aggregation USW Flex XG',
+            '78:45:58:62:f1:4a',
+            SwitchCapabilityClass.AGGREGATION,
+            connected_to_gateway=True,
+        )
+        _calculate_hierarchy_tiers([agg1, agg2])
+        assert agg1.hierarchy_tier == 0
+        assert agg2.hierarchy_tier == 0
+
+    def test_override_force_access_demotes_gateway_neighbor(self) -> None:
+        """force_access override demotes a gateway-connected AGGREGATION to Tier 1."""
+        agg = self._make_switch(
+            'agg1',
+            'Xray3 USW Flex XG',
+            '02:00:fe:02:00:09',
+            SwitchCapabilityClass.AGGREGATION,
+            connected_to_gateway=True,
+        )
+        # Would normally be Tier 0, but is forced to Access by override.
+        overrides = STPOverrides(
+            force_access_macs=frozenset({'0200fe020009'}),
+        )
+        _calculate_hierarchy_tiers([agg], overrides=overrides)
+        assert agg.hierarchy_tier == 1
+        assert 'force_access' in agg.tier_reason
+
+    async def test_root_guard_refuses_priority_4096_for_access_class(self) -> None:
+        """Even if access switch reached Tier 0 somehow, priority stays >= 8192."""
+        bad = self._make_switch(
+            'x',
+            'Rogue Access',
+            'aa:bb:cc:dd:ee:ff',
+            SwitchCapabilityClass.ACCESS_POE,
+        )
+        bad.hierarchy_tier = 0  # contrived
+        topology = STPTopology(switches=[bad])
+
+        changes = await calculate_optimal_priorities(topology)
+
+        # Switch's optimal_priority must be >= distribution floor
+        assert bad.optimal_priority is not None
+        assert bad.optimal_priority >= 8192
+        # And change reason must mention the guard
+        for change in changes:
+            if change.device_id == 'x':
+                assert 'root-guard' in change.reason.lower()
+                assert change.new_priority >= 8192
+
+    async def test_aggregation_tier_0_gets_4096(self) -> None:
+        """AGGREGATION at Tier 0 receives priority 4096 from optimiser."""
+        agg = self._make_switch(
+            'agg1',
+            'Xray3 USW Flex XG',
+            '02:00:fe:02:00:09',
+            SwitchCapabilityClass.AGGREGATION,
+            connected_to_gateway=True,
+        )
+        agg.hierarchy_tier = 0
+        agg.current_priority = 8192
+        topology = STPTopology(switches=[agg])
+
+        changes = await calculate_optimal_priorities(topology)
+
+        assert agg.optimal_priority == 4096
+        assert any(c.device_id == 'agg1' and c.new_priority == 4096 for c in changes)
 
 
 class TestSTPDiagramRendering:
@@ -339,11 +485,15 @@ class TestSTPDiagramRendering:
     def test_render_blocked_connection(self) -> None:
         """Test rendering blocked STP connection."""
         sw1 = SwitchSTPConfig(
-            device_id='sw1', name='SW1', mac='00:00:00:00:00:01',
+            device_id='sw1',
+            name='SW1',
+            mac='00:00:00:00:00:01',
             hierarchy_tier=0,
         )
         sw2 = SwitchSTPConfig(
-            device_id='sw2', name='SW2', mac='00:00:00:00:00:02',
+            device_id='sw2',
+            name='SW2',
+            mac='00:00:00:00:00:02',
             hierarchy_tier=1,
         )
         conn = STPConnection(

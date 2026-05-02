@@ -898,5 +898,107 @@ def stp_report(
         raise typer.Exit(1)
 
 
+@stp_app.command("validate-10g")
+def stp_validate_10g(
+    planned_switches: Annotated[
+        int,
+        typer.Option(
+            '--planned-switches',
+            help='Number of USW Flex XG switches planned for installation',
+            min=1,
+        ),
+    ] = 2,
+    target_speed: Annotated[
+        int,
+        typer.Option('--target-speed', help='Target uplink speed in Mbps'),
+    ] = 10000,
+    output: Annotated[
+        Optional[Path],
+        typer.Option('--output', '-o', help='Optional markdown report path'),
+    ] = None,
+):
+    """Validate STP, 10G uplinks, and port errors before adding Flex XG switches."""
+    import asyncio
+
+    config = state.config_path
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🌳 [bold]10G Expansion Validation[/bold]")
+    console.print(f"🔌 Planned USW Flex XG switches: [cyan]{planned_switches}[/cyan]")
+
+    try:
+        from .cli import load_env_from_config
+
+        load_env_from_config(str(config))
+
+        from .analysis.stp_optimizer import (
+            format_10g_validation_report_markdown,
+            validate_10g_expansion_readiness,
+        )
+
+        console.print("📡 [dim]Discovering STP topology and port counters...[/dim]")
+        report = asyncio.run(
+            validate_10g_expansion_readiness(
+                planned_flex_xg_switches=planned_switches,
+                target_speed_mbps=target_speed,
+            )
+        )
+
+        status_style = {
+            'READY': 'green',
+            'READY_WITH_WARNINGS': 'yellow',
+            'NOT_READY': 'red',
+        }.get(report.readiness, 'white')
+        console.print(f"\n📊 Readiness: [{status_style}]{report.readiness}[/]")
+        console.print(f"  Switches: [cyan]{report.switches_analyzed}[/cyan]")
+        console.print(f"  Inter-switch links: [cyan]{report.inter_switch_links}[/cyan]")
+        console.print(f"  10G ports: [cyan]{report.ten_gig_links}[/cyan]")
+        console.print(f"  Blocked STP ports: [yellow]{report.blocked_ports_count}[/yellow]")
+        console.print(f"  STP changes required: [yellow]{report.stp_changes_required}[/yellow]")
+
+        if report.findings:
+            table = Table(title="Validation Findings", show_header=True)
+            table.add_column("Severity", style="bold")
+            table.add_column("Category", style="cyan")
+            table.add_column("Device", style="magenta")
+            table.add_column("Port", style="yellow")
+            table.add_column("Finding")
+            table.add_column("Recommendation", style="dim")
+
+            for finding in report.findings:
+                severity_style = 'red' if finding.severity == 'CRITICAL' else 'yellow'
+                table.add_row(
+                    f'[{severity_style}]{finding.severity}[/]',
+                    finding.category,
+                    finding.device_name or '',
+                    str(finding.port_idx) if finding.port_idx is not None else '',
+                    finding.message,
+                    finding.recommendation,
+                )
+            console.print(table)
+        else:
+            console.print("✅ [bold green]No critical or warning findings detected[/bold green]")
+
+        if output:
+            markdown = format_10g_validation_report_markdown(report)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(markdown)
+            console.print(f"📄 Report saved to [cyan]{output}[/cyan]")
+
+        if not report.validation_passed:
+            raise typer.Exit(2)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()

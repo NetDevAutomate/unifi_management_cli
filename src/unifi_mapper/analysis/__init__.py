@@ -21,6 +21,7 @@ STP Optimization Tools:
 - generate_stp_report: Generate comprehensive STP optimization report
 - apply_stp_changes: Apply priority changes via API (supports dry-run mode)
 - format_stp_report_markdown: Format STP report as markdown with mermaid diagrams
+- validate_10g_expansion_readiness: Validate STP, link speed, and errors before 10G expansion
 """
 
 from unifi_mapper.analysis.capacity_planning import get_capacity_report
@@ -33,10 +34,13 @@ from unifi_mapper.analysis.qos_validation import validate_qos
 from unifi_mapper.analysis.storm_detection import detect_storms
 from unifi_mapper.analysis.stp_optimizer import (
     apply_stp_changes,
+    build_10g_expansion_validation_report,
     calculate_optimal_priorities,
     discover_stp_topology,
+    format_10g_validation_report_markdown,
     format_stp_report_markdown,
     generate_stp_report,
+    validate_10g_expansion_readiness,
 )
 from unifi_mapper.analysis.vlan_diagnostics import diagnose_vlans
 
@@ -56,8 +60,11 @@ __all__ = [
     'get_firmware_report',
     # STP tools
     'apply_stp_changes',
+    'build_10g_expansion_validation_report',
     'calculate_optimal_priorities',
     'discover_stp_topology',
+    'format_10g_validation_report_markdown',
     'format_stp_report_markdown',
     'generate_stp_report',
+    'validate_10g_expansion_readiness',
 ]
