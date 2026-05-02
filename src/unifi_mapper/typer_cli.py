@@ -1274,7 +1274,7 @@ def stp_apply_plan(
     ],
     dry_run: Annotated[
         bool,
-        typer.Option('--dry-run', help='🔍 Preview plan application without applying')
+        typer.Option('--dry-run/--no-dry-run', help='🔍 Preview plan application without applying')
     ] = True,
     force: Annotated[
         bool,
@@ -1332,7 +1332,7 @@ def stp_rollback_plan(
     ],
     dry_run: Annotated[
         bool,
-        typer.Option('--dry-run', help='🔍 Preview rollback without applying')
+        typer.Option('--dry-run/--no-dry-run', help='🔍 Preview rollback without applying')
     ] = True,
     force: Annotated[
         bool,
