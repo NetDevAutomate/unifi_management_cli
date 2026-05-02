@@ -44,6 +44,34 @@ tools:
     priority: P2
     tags: [lag, aggregation, redundancy, health]
 
+  find_lag_candidates:
+    module: unifi_mapper.analysis.lag_monitoring
+    handler: find_lag_candidates
+    description: Find parallel healthy links that could be configured as LACP LAGs
+    priority: P2
+    tags: [lag, aggregation, lacp, candidate, capacity]
+
+  audit_mtu_consistency:
+    module: unifi_mapper.analysis.mtu_audit
+    handler: audit_mtu_consistency
+    description: Audit MTU and jumbo-frame consistency across inter-switch links
+    priority: P2
+    tags: [mtu, jumbo, switch, uplink, validation]
+
+  analyze_radio_optimization:
+    module: unifi_mapper.analysis.radio_optimization
+    handler: analyze_radio_optimization
+    description: Analyze Wi-Fi radio channel reuse and transmit power settings
+    priority: P2
+    tags: [wifi, radio, channel, transmit-power, optimization]
+
+  validate_port_profiles:
+    module: unifi_mapper.analysis.port_profile_validation
+    handler: validate_port_profiles
+    description: Validate STP Edge, BPDU Guard, and uplink safety on applied port profiles
+    priority: P2
+    tags: [port-profile, stp, bpdu-guard, edge, validation]
+
   validate_qos:
     module: unifi_mapper.analysis.qos_validation
     handler: validate_qos
@@ -104,3 +132,61 @@ tools:
     description: Format STP report as markdown with mermaid diagrams
     priority: P3
     tags: [stp, spanning-tree, report, markdown, mermaid]
+
+  audit_stp_path_costs:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: audit_stp_path_costs
+    description: Audit STP path costs for IEEE long-path-cost consistency
+    priority: P2
+    tags: [stp, spanning-tree, path-cost, 10g, validation]
+
+  validate_10g_expansion_readiness:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: validate_10g_expansion_readiness
+    description: Validate STP, 10G link readiness, and port errors before adding USW Flex XG switches
+    priority: P2
+    tags: [stp, spanning-tree, 10g, flex-xg, validation, errors]
+    parameters:
+      planned_flex_xg_switches:
+        type: integer
+        default: 2
+        description: Number of USW Flex XG switches planned for installation
+      target_speed_mbps:
+        type: integer
+        default: 10000
+        description: Target uplink speed in Mbps
+
+  format_10g_validation_report_markdown:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: format_10g_validation_report_markdown
+    description: Format 10G expansion validation report as markdown
+    priority: P3
+    tags: [stp, 10g, report, markdown]
+
+  create_stp_change_plan:
+    module: unifi_mapper.analysis.stp_change_plan
+    handler: create_stp_change_plan
+    description: Create convergence-aware STP priority change plan with rollback bundle
+    priority: P2
+    tags: [stp, change-plan, rollback, maintenance]
+
+  snapshot_stp_topology:
+    module: unifi_mapper.analysis.stp_snapshot
+    handler: snapshot_stp_topology
+    description: Create serializable STP topology snapshot
+    priority: P2
+    tags: [stp, snapshot, diff, baseline]
+
+  diff_stp_snapshots:
+    module: unifi_mapper.analysis.stp_snapshot
+    handler: diff_stp_snapshots
+    description: Diff two STP topology snapshots
+    priority: P2
+    tags: [stp, snapshot, diff, drift]
+
+  stp_preflight_simulate_add:
+    module: unifi_mapper.analysis.stp_preflight
+    handler: stp_preflight_simulate_add
+    description: Simulate planned switch additions and STP root expectations
+    priority: P2
+    tags: [stp, preflight, simulate, flex-xg, planning]

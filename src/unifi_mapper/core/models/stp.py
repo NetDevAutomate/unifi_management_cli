@@ -55,6 +55,23 @@ class STPPortConfig(BaseModel):
     is_uplink: bool = Field(
         default=False, description='Whether this port connects to a higher-tier switch'
     )
+    is_up: bool = Field(default=False, description='Whether the physical link is up')
+    enabled: bool = Field(default=True, description='Whether the port is administratively enabled')
+    link_speed_mbps: int = Field(default=0, description='Current negotiated speed in Mbps')
+    full_duplex: bool = Field(default=True, description='Whether the link is full duplex')
+    rx_errors: int = Field(default=0, description='Receive error counter')
+    tx_errors: int = Field(default=0, description='Transmit error counter')
+    rx_dropped: int = Field(default=0, description='Receive dropped packet counter')
+    tx_dropped: int = Field(default=0, description='Transmit dropped packet counter')
+    crc_errors: int = Field(default=0, description='CRC error counter')
+
+
+def _empty_port_configs() -> list[STPPortConfig]:
+    return []
+
+
+def _empty_port_indices() -> list[int]:
+    return []
 
 
 class SwitchSTPConfig(BaseModel):
@@ -79,11 +96,21 @@ class SwitchSTPConfig(BaseModel):
     root_port_idx: int | None = Field(
         default=None, description='Port index pointing toward root bridge'
     )
+    root_eligible: bool = Field(
+        default=True, description='Whether switch may be elected STP root'
+    )
+    root_preference: int = Field(
+        default=100, description='Lower value is preferred among eligible roots'
+    )
+    root_eligibility_reason: str = Field(
+        default='', description='Why the switch is or is not root eligible'
+    )
     port_states: list[STPPortConfig] = Field(
-        default_factory=lambda: [], description='STP state for each port'
+        default_factory=_empty_port_configs, description='STP state for each port'
     )
     uplink_ports: list[int] = Field(
-        default_factory=lambda: [], description='Port indices that are uplinks to higher tiers'
+        default_factory=_empty_port_indices,
+        description='Port indices that are uplinks to higher tiers',
     )
     connected_to_gateway: bool = Field(
         default=False, description='Whether directly connected to gateway/router'
@@ -107,6 +134,14 @@ class STPConnection(BaseModel):
     is_blocked: bool = Field(default=False, description='Whether this link is blocked by STP')
 
 
+def _empty_switch_configs() -> list[SwitchSTPConfig]:
+    return []
+
+
+def _empty_stp_connections() -> list[STPConnection]:
+    return []
+
+
 class STPTopology(BaseModel):
     """Complete STP topology for the network."""
 
@@ -122,10 +157,12 @@ class STPTopology(BaseModel):
     gateway_id: str | None = Field(default=None, description='Device ID of the network gateway')
     gateway_name: str | None = Field(default=None, description='Name of the network gateway')
     switches: list[SwitchSTPConfig] = Field(
-        default_factory=list, description='All switches with their STP configuration'
+        default_factory=_empty_switch_configs,
+        description='All switches with their STP configuration',
     )
     connections: list[STPConnection] = Field(
-        default_factory=list, description='All inter-switch connections'
+        default_factory=_empty_stp_connections,
+        description='All inter-switch connections',
     )
     loops_detected: bool = Field(
         default=False, description='Whether potential STP loops were detected'
@@ -146,6 +183,14 @@ class STPChange(BaseModel):
     reason: str = Field(description='Explanation for the change')
 
 
+def _empty_stp_changes() -> list[STPChange]:
+    return []
+
+
+def _empty_strings() -> list[str]:
+    return []
+
+
 class STPOptimizationReport(BaseModel):
     """Complete STP optimization report with diagrams and recommendations."""
 
@@ -159,15 +204,64 @@ class STPOptimizationReport(BaseModel):
     optimal_root_reason: str = Field(default='', description='Why this switch should be root')
     changes_required: int = Field(description='Number of priority changes needed')
     changes: list[STPChange] = Field(
-        default_factory=list, description='List of recommended changes'
+        default_factory=_empty_stp_changes, description='List of recommended changes'
     )
     topology: STPTopology = Field(description='Current STP topology')
     issues: list[str] = Field(
-        default_factory=list, description='Issues found in current configuration'
+        default_factory=_empty_strings, description='Issues found in current configuration'
     )
-    recommendations: list[str] = Field(default_factory=list, description='General recommendations')
+    recommendations: list[str] = Field(
+        default_factory=_empty_strings, description='General recommendations'
+    )
     current_diagram: str = Field(default='', description='Mermaid diagram of current topology')
     optimal_diagram: str = Field(default='', description='Mermaid diagram of optimal topology')
+
+
+class STPValidationFinding(BaseModel):
+    """A validation finding for STP and 10G expansion readiness."""
+
+    severity: str = Field(description='INFO, WARNING, or CRITICAL')
+    category: str = Field(description='Finding category')
+    message: str = Field(description='Human-readable finding')
+    recommendation: str = Field(description='Recommended action')
+    device_name: str | None = Field(default=None, description='Related device name')
+    port_idx: int | None = Field(default=None, description='Related port index')
+
+
+class STPPathCostFinding(BaseModel):
+    """A finding from STP path-cost sanity checks."""
+
+    severity: str = Field(description='INFO, WARNING, or CRITICAL')
+    device_name: str = Field(description='Switch name')
+    port_idx: int = Field(description='Port index on the switch')
+    link_speed_mbps: int = Field(description='Negotiated link speed in Mbps')
+    path_cost: int = Field(description='Configured or reported STP path cost')
+    expected_long_cost: int = Field(description='Expected IEEE long path cost')
+    message: str = Field(description='Human-readable finding')
+    recommendation: str = Field(description='Recommended action')
+
+
+def _empty_validation_findings() -> list[STPValidationFinding]:
+    return []
+
+
+class STPNetworkValidationReport(BaseModel):
+    """Validation report for local UniFi STP health and 10G expansion readiness."""
+
+    timestamp: str = Field(
+        default_factory=lambda: datetime.now().isoformat(), description='When report was generated'
+    )
+    planned_flex_xg_switches: int = Field(description='Number of USW Flex XG switches planned')
+    target_speed_mbps: int = Field(default=10000, description='Target uplink speed in Mbps')
+    switches_analyzed: int = Field(description='Number of switches analyzed')
+    inter_switch_links: int = Field(description='Number of discovered switch-to-switch links')
+    ten_gig_links: int = Field(description='Number of discovered 10G switch-to-switch links')
+    blocked_ports_count: int = Field(description='Number of blocked/discarding STP ports')
+    stp_changes_required: int = Field(description='Number of recommended STP priority changes')
+    validation_passed: bool = Field(description='True when no critical findings exist')
+    readiness: str = Field(description='READY, READY_WITH_WARNINGS, or NOT_READY')
+    findings: list[STPValidationFinding] = Field(default_factory=_empty_validation_findings)
+    stp_changes: list[STPChange] = Field(default_factory=_empty_stp_changes)
 
 
 # STP Priority Standards

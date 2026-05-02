@@ -332,6 +332,196 @@ def analyze_link_quality(
     console.print("💡 Full implementation available via: [cyan]unifi-network-toolkit analyze link-quality[/cyan]")
 
 
+@analyze_app.command("port-profiles")
+def analyze_port_profiles():
+    """🔌 Validate port profile safety for STP Edge, BPDU Guard, and uplinks."""
+    import asyncio
+
+    config = state.config_path
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🔌 [bold]Port Profile Validation[/bold]")
+
+    try:
+        load_env_from_config(str(config))
+
+        from .analysis.port_profile_validation import validate_port_profiles
+
+        report = asyncio.run(validate_port_profiles())
+        console.print(f"Devices analyzed: [cyan]{report.devices_analyzed}[/cyan]")
+        console.print(f"Ports analyzed: [cyan]{report.ports_analyzed}[/cyan]")
+        console.print(f"Findings: [yellow]{report.findings_count}[/yellow]")
+
+        if report.findings:
+            table = Table(title="Port Profile Findings", show_header=True)
+            table.add_column("Severity", style="bold")
+            table.add_column("Category", style="cyan")
+            table.add_column("Device", style="magenta")
+            table.add_column("Port", style="yellow")
+            table.add_column("Profile")
+            table.add_column("Finding")
+
+            for finding in report.findings:
+                severity_style = 'red' if finding.severity == 'CRITICAL' else 'yellow'
+                if finding.severity == 'INFO':
+                    severity_style = 'blue'
+                table.add_row(
+                    f'[{severity_style}]{finding.severity}[/]',
+                    finding.category,
+                    finding.device_name,
+                    str(finding.port_idx),
+                    finding.profile_name,
+                    finding.message,
+                )
+            console.print(table)
+        else:
+            console.print("✅ [bold green]No port profile findings detected[/bold green]")
+
+        if not report.validation_passed:
+            raise typer.Exit(2)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@analyze_app.command("lag-candidates")
+def analyze_lag_candidates(
+    min_links: int = typer.Option(2, "--min-links", help="Minimum parallel links", min=2),
+):
+    """🔗 Find parallel links that may be LACP candidates."""
+    import asyncio
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🔗 [bold]LAG Candidate Finder[/bold]")
+
+    try:
+        load_env_from_config(str(state.config_path))
+        from .analysis.lag_monitoring import find_lag_candidates
+
+        report = asyncio.run(find_lag_candidates(min_links=min_links))
+        console.print(f"Devices analyzed: [cyan]{report.devices_analyzed}[/cyan]")
+        console.print(f"Candidates: [yellow]{report.candidate_count}[/yellow]")
+
+        if report.candidates:
+            table = Table(title="LAG Candidates", show_header=True)
+            table.add_column("Device A", style="cyan")
+            table.add_column("Ports A", style="yellow")
+            table.add_column("Device B", style="magenta")
+            table.add_column("Links")
+            table.add_column("Capacity")
+            for candidate in report.candidates:
+                table.add_row(
+                    candidate.device_a,
+                    ','.join(str(port) for port in candidate.device_a_ports),
+                    candidate.device_b,
+                    str(candidate.link_count),
+                    f'{candidate.total_capacity_mbps} Mbps',
+                )
+            console.print(table)
+        else:
+            console.print("No LAG candidates detected.")
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if state.debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@analyze_app.command("mtu")
+def analyze_mtu():
+    """📏 Audit MTU consistency across inter-switch links."""
+    import asyncio
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("📏 [bold]MTU Consistency Audit[/bold]")
+
+    try:
+        load_env_from_config(str(state.config_path))
+        from .analysis.mtu_audit import audit_mtu_consistency
+
+        report = asyncio.run(audit_mtu_consistency())
+        console.print(f"Links analyzed: [cyan]{report.links_analyzed}[/cyan]")
+        console.print(f"Findings: [yellow]{report.findings_count}[/yellow]")
+        if report.findings:
+            table = Table(title="MTU Findings", show_header=True)
+            table.add_column("Severity", style="bold")
+            table.add_column("Link", style="cyan")
+            table.add_column("MTU")
+            table.add_column("Finding")
+            for finding in report.findings:
+                table.add_row(
+                    finding.severity,
+                    f'{finding.device_a}:{finding.port_a} -> {finding.device_b}:{finding.port_b or ""}',
+                    f'{finding.mtu_a}/{finding.mtu_b or "unknown"}',
+                    finding.message,
+                )
+            console.print(table)
+        if not report.validation_passed:
+            raise typer.Exit(2)
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if state.debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@analyze_app.command("radio")
+def analyze_radio():
+    """📶 Analyze Wi-Fi radio channel and transmit power optimisation."""
+    import asyncio
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("📶 [bold]Radio Optimisation Analysis[/bold]")
+
+    try:
+        load_env_from_config(str(state.config_path))
+        from .analysis.radio_optimization import analyze_radio_optimization
+
+        report = asyncio.run(analyze_radio_optimization())
+        console.print(f"APs analyzed: [cyan]{report.aps_analyzed}[/cyan]")
+        console.print(f"Radios analyzed: [cyan]{report.radios_analyzed}[/cyan]")
+        console.print(f"Findings: [yellow]{report.findings_count}[/yellow]")
+        if report.findings:
+            table = Table(title="Radio Findings", show_header=True)
+            table.add_column("Severity", style="bold")
+            table.add_column("Category", style="cyan")
+            table.add_column("AP", style="magenta")
+            table.add_column("Band")
+            table.add_column("Channel")
+            table.add_column("Finding")
+            for finding in report.findings:
+                table.add_row(
+                    finding.severity,
+                    finding.category,
+                    finding.ap_name,
+                    finding.band,
+                    str(finding.channel or ''),
+                    finding.message,
+                )
+            console.print(table)
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if state.debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
 @diagnose_app.command("health")
 def diagnose_health(
     detailed: bool = typer.Option(False, "--detailed", help="🔬 Include detailed device analysis")
@@ -340,6 +530,72 @@ def diagnose_health(
 
     console.print("🏥 [bold]Network Health Check[/bold]")
     console.print("💡 Full implementation available via: [cyan]unifi-network-toolkit diagnose network-health[/cyan]")
+
+
+@diagnose_app.command("inter-vlan")
+def diagnose_inter_vlan(
+    source: str = typer.Argument(..., help="Source endpoint IP, MAC, hostname, or device name"),
+    destination: str = typer.Argument(..., help="Destination endpoint IP, MAC, hostname, or device name"),
+    protocol: str = typer.Option("icmp", "--protocol", help="Protocol to check"),
+    port: Optional[str] = typer.Option(None, "--port", help="Optional destination port"),
+):
+    """🔀 Check inter-VLAN routing and firewall verdict between two endpoints."""
+    import asyncio
+
+    config = state.config_path
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🔀 [bold]Inter-VLAN Routing Check[/bold]")
+    console.print(f"Source: [cyan]{source}[/cyan]")
+    console.print(f"Destination: [cyan]{destination}[/cyan]")
+
+    try:
+        load_env_from_config(str(config))
+
+        from .connectivity.inter_vlan import check_inter_vlan_routing
+
+        report = asyncio.run(
+            check_inter_vlan_routing(
+                source=source,
+                destination=destination,
+                protocol=protocol,
+                port=port,
+            )
+        )
+
+        verdict_style = {
+            'allow': 'green',
+            'deny': 'red',
+            'unknown': 'yellow',
+        }.get(report.verdict, 'white')
+        console.print(f"Verdict: [{verdict_style}]{report.verdict.upper()}[/]")
+        console.print(f"Source VLAN: [cyan]{report.source_vlan or 'unknown'}[/cyan]")
+        console.print(f"Destination VLAN: [cyan]{report.destination_vlan or 'unknown'}[/cyan]")
+        console.print(f"Route required: [cyan]{'yes' if report.route_required else 'no'}[/cyan]")
+
+        if report.matching_rules:
+            console.print("Matching rules:")
+            for rule in report.matching_rules:
+                console.print(f"  - {rule}")
+
+        if report.recommendations:
+            console.print("Recommendations:")
+            for recommendation in report.recommendations:
+                console.print(f"  - {recommendation}")
+
+        if not report.validation_passed:
+            raise typer.Exit(2)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -721,6 +977,10 @@ def stp_optimize(
         bool,
         typer.Option('--force', '-f', help='⚠️ Skip confirmation when applying')
     ] = False,
+    plan: Annotated[
+        Optional[Path],
+        typer.Option('--plan', help='📄 Write reversible STP change plan JSON')
+    ] = None,
 ):
     """🔧 Calculate and optionally apply optimal STP priorities.
 
@@ -795,6 +1055,14 @@ def stp_optimize(
         console.print(table)
         console.print(f"\n📊 [bold]{len(changes)} change(s) recommended[/bold]")
 
+        if plan:
+            from .analysis.stp_change_plan import create_stp_change_plan
+
+            change_plan = create_stp_change_plan(changes)
+            plan.parent.mkdir(parents=True, exist_ok=True)
+            plan.write_text(change_plan.model_dump_json(indent=2))
+            console.print(f"📄 STP change plan saved to [cyan]{plan}[/cyan]")
+
         if not dry_run:
             if not force:
                 confirm = typer.confirm(
@@ -819,6 +1087,122 @@ def stp_optimize(
                 for failure in result.get('failed', []):
                     console.print(f"   • {failure['device_name']}: {failure['error']}")
 
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@stp_app.command("apply")
+def stp_apply_plan(
+    plan: Annotated[
+        Path,
+        typer.Option('--plan', help='📄 STP change plan JSON from stp optimize --plan')
+    ],
+    dry_run: Annotated[
+        bool,
+        typer.Option('--dry-run', help='🔍 Preview plan application without applying')
+    ] = True,
+    force: Annotated[
+        bool,
+        typer.Option('--force', '-f', help='⚠️ Skip confirmation when applying')
+    ] = False,
+):
+    """Apply a saved convergence-aware STP plan."""
+    import asyncio
+
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    try:
+        load_env_from_config(str(state.config_path))
+
+        from .analysis.stp_change_plan import STPChangePlan
+        from .analysis.stp_optimizer import apply_stp_changes
+
+        change_plan = STPChangePlan.model_validate_json(plan.read_text())
+        console.print("⚡ [bold]STP Plan Apply[/bold]")
+        console.print(f"Plan: [cyan]{plan}[/cyan]")
+        console.print(f"Changes: [yellow]{len(change_plan.changes)}[/yellow]")
+
+        if not dry_run and not force:
+            confirm = typer.confirm(
+                f"Apply {len(change_plan.changes)} STP change(s)? This may cause brief network disruption.",
+                default=False,
+            )
+            if not confirm:
+                console.print("❌ [yellow]Operation cancelled[/yellow]")
+                raise typer.Exit(0)
+
+        result = asyncio.run(apply_stp_changes(change_plan.changes, dry_run=dry_run))
+        _print_stp_apply_result(result)
+
+        if result.get('failed'):
+            raise typer.Exit(2)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@stp_app.command("rollback")
+def stp_rollback_plan(
+    plan: Annotated[
+        Path,
+        typer.Argument(help='📄 STP change plan JSON to roll back')
+    ],
+    dry_run: Annotated[
+        bool,
+        typer.Option('--dry-run', help='🔍 Preview rollback without applying')
+    ] = True,
+    force: Annotated[
+        bool,
+        typer.Option('--force', '-f', help='⚠️ Skip confirmation when applying rollback')
+    ] = False,
+):
+    """Roll back a saved STP change plan."""
+    import asyncio
+
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    try:
+        load_env_from_config(str(state.config_path))
+
+        from .analysis.stp_change_plan import STPChangePlan
+        from .analysis.stp_optimizer import apply_stp_changes
+
+        change_plan = STPChangePlan.model_validate_json(plan.read_text())
+        console.print("↩️ [bold]STP Plan Rollback[/bold]")
+        console.print(f"Plan: [cyan]{plan}[/cyan]")
+        console.print(f"Rollback changes: [yellow]{len(change_plan.rollback)}[/yellow]")
+
+        if not dry_run and not force:
+            confirm = typer.confirm(
+                f"Apply {len(change_plan.rollback)} rollback change(s)? This may cause brief network disruption.",
+                default=False,
+            )
+            if not confirm:
+                console.print("❌ [yellow]Operation cancelled[/yellow]")
+                raise typer.Exit(0)
+
+        result = asyncio.run(apply_stp_changes(change_plan.rollback, dry_run=dry_run))
+        _print_stp_apply_result(result)
+
+        if result.get('failed'):
+            raise typer.Exit(2)
+
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f"❌ [bold red]Error: {e}[/bold red]")
         if debug:
@@ -896,6 +1280,331 @@ def stp_report(
         if debug:
             console.print_exception(show_locals=True)
         raise typer.Exit(1)
+
+
+@stp_app.command("snapshot")
+def stp_snapshot(
+    output: Annotated[
+        Path,
+        typer.Option('--output', '-o', help='📄 Output STP snapshot JSON path')
+    ],
+):
+    """Capture a replayable STP topology snapshot."""
+    import asyncio
+
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    try:
+        load_env_from_config(str(state.config_path))
+
+        from .analysis.stp_optimizer import discover_stp_topology
+        from .analysis.stp_snapshot import snapshot_stp_topology
+
+        console.print("📸 [bold]STP Snapshot[/bold]")
+        topology = asyncio.run(discover_stp_topology())
+        snapshot = snapshot_stp_topology(topology)
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(snapshot.model_dump_json(indent=2))
+        console.print(f"📄 Snapshot saved to [cyan]{output}[/cyan]")
+        console.print(f"Root bridge: [green]{snapshot.root_bridge_name or 'Unknown'}[/green]")
+        console.print(f"Switches: [cyan]{len(snapshot.switches)}[/cyan]")
+
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@stp_app.command("diff")
+def stp_diff(
+    baseline: Annotated[
+        Path,
+        typer.Argument(help='📄 Baseline STP snapshot JSON')
+    ],
+    output: Annotated[
+        Optional[Path],
+        typer.Option('--output', '-o', help='Optional output diff JSON path')
+    ] = None,
+):
+    """Diff a saved STP snapshot against the current live topology."""
+    import asyncio
+
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    try:
+        load_env_from_config(str(state.config_path))
+
+        from .analysis.stp_optimizer import discover_stp_topology
+        from .analysis.stp_snapshot import (
+            STPSnapshot,
+            diff_stp_snapshots,
+            snapshot_stp_topology,
+        )
+
+        console.print("🔎 [bold]STP Snapshot Diff[/bold]")
+        before = STPSnapshot.model_validate_json(baseline.read_text())
+        topology = asyncio.run(discover_stp_topology())
+        after = snapshot_stp_topology(topology)
+        diff = diff_stp_snapshots(before, after)
+
+        console.print(f"Changes: [yellow]{len(diff.changes)}[/yellow]")
+        if diff.changes:
+            table = Table(title="STP Changes", show_header=True)
+            table.add_column("Type", style="cyan")
+            table.add_column("Subject", style="magenta")
+            table.add_column("Before")
+            table.add_column("After")
+            for change in diff.changes:
+                table.add_row(
+                    change.change_type,
+                    change.subject,
+                    str(change.before),
+                    str(change.after),
+                )
+            console.print(table)
+        else:
+            console.print("✅ [bold green]No STP changes detected[/bold green]")
+
+        if output:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(diff.model_dump_json(indent=2))
+            console.print(f"📄 Diff saved to [cyan]{output}[/cyan]")
+
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@stp_app.command("preflight")
+def stp_preflight(
+    planned_switches: Annotated[
+        str,
+        typer.Option(
+            '--simulate-add',
+            help='Planned switch model/count, for example USW-Flex-XG:2',
+        ),
+    ] = 'USW-Flex-XG:2',
+    uplink: Annotated[
+        list[str],
+        typer.Option('--uplink', help='Expected uplink target switch name')
+    ] = [],
+    output: Annotated[
+        Optional[Path],
+        typer.Option('--output', '-o', help='Optional preflight report JSON path')
+    ] = None,
+):
+    """Simulate adding planned switches and report expected STP root/priority state."""
+    import asyncio
+
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    try:
+        load_env_from_config(str(state.config_path))
+
+        from .analysis.stp_optimizer import discover_stp_topology
+        from .analysis.stp_preflight import stp_preflight_simulate_add
+
+        console.print("🧪 [bold]STP Preflight Simulation[/bold]")
+        planned_models = _parse_planned_switches(planned_switches)
+        topology = asyncio.run(discover_stp_topology())
+        report = stp_preflight_simulate_add(
+            topology,
+            planned_models=planned_models,
+            uplink_targets=uplink,
+        )
+
+        console.print(f"Simulated switches added: [cyan]{report.simulated_switches_added}[/cyan]")
+        console.print(f"Expected root: [green]{report.expected_root or 'Unknown'}[/green]")
+
+        table = Table(title="Required Priorities", show_header=True)
+        table.add_column("Switch", style="cyan")
+        table.add_column("Priority", style="yellow")
+        for switch_name, priority in report.required_priorities.items():
+            table.add_row(switch_name, str(priority))
+        console.print(table)
+
+        if report.checklist:
+            console.print("\nChecklist:")
+            for item in report.checklist:
+                console.print(f"  • {item}")
+
+        if output:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(report.model_dump_json(indent=2))
+            console.print(f"📄 Preflight report saved to [cyan]{output}[/cyan]")
+
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@stp_app.command("validate-10g")
+def stp_validate_10g(
+    planned_switches: Annotated[
+        int,
+        typer.Option(
+            '--planned-switches',
+            help='Number of USW Flex XG switches planned for installation',
+            min=1,
+        ),
+    ] = 2,
+    target_speed: Annotated[
+        int,
+        typer.Option('--target-speed', help='Target uplink speed in Mbps'),
+    ] = 10000,
+    drops_threshold: Annotated[
+        int,
+        typer.Option(
+            '--drops-threshold',
+            help='Drops-only counter threshold before reporting a warning',
+            min=0,
+        ),
+    ] = 100000,
+    output: Annotated[
+        Optional[Path],
+        typer.Option('--output', '-o', help='Optional markdown report path'),
+    ] = None,
+):
+    """Validate STP, 10G uplinks, and port errors before adding Flex XG switches."""
+    import asyncio
+
+    config = state.config_path
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🌳 [bold]10G Expansion Validation[/bold]")
+    console.print(f"🔌 Planned USW Flex XG switches: [cyan]{planned_switches}[/cyan]")
+
+    try:
+        from .cli import load_env_from_config
+
+        load_env_from_config(str(config))
+
+        from .analysis.stp_optimizer import (
+            format_10g_validation_report_markdown,
+            validate_10g_expansion_readiness,
+        )
+
+        console.print("📡 [dim]Discovering STP topology and port counters...[/dim]")
+        report = asyncio.run(
+            validate_10g_expansion_readiness(
+                planned_flex_xg_switches=planned_switches,
+                target_speed_mbps=target_speed,
+                drops_threshold=drops_threshold,
+            )
+        )
+
+        status_style = {
+            'READY': 'green',
+            'READY_WITH_WARNINGS': 'yellow',
+            'NOT_READY': 'red',
+        }.get(report.readiness, 'white')
+        console.print(f"\n📊 Readiness: [{status_style}]{report.readiness}[/]")
+        console.print(f"  Switches: [cyan]{report.switches_analyzed}[/cyan]")
+        console.print(f"  Inter-switch links: [cyan]{report.inter_switch_links}[/cyan]")
+        console.print(f"  10G ports: [cyan]{report.ten_gig_links}[/cyan]")
+        console.print(f"  Blocked STP ports: [yellow]{report.blocked_ports_count}[/yellow]")
+        console.print(f"  STP changes required: [yellow]{report.stp_changes_required}[/yellow]")
+
+        if report.findings:
+            table = Table(title="Validation Findings", show_header=True)
+            table.add_column("Severity", style="bold")
+            table.add_column("Category", style="cyan")
+            table.add_column("Device", style="magenta")
+            table.add_column("Port", style="yellow")
+            table.add_column("Finding")
+            table.add_column("Recommendation", style="dim")
+
+            for finding in report.findings:
+                severity_style = 'red' if finding.severity == 'CRITICAL' else 'yellow'
+                table.add_row(
+                    f'[{severity_style}]{finding.severity}[/]',
+                    finding.category,
+                    finding.device_name or '',
+                    str(finding.port_idx) if finding.port_idx is not None else '',
+                    finding.message,
+                    finding.recommendation,
+                )
+            console.print(table)
+        else:
+            console.print("✅ [bold green]No critical or warning findings detected[/bold green]")
+
+        if output:
+            markdown = format_10g_validation_report_markdown(report)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(markdown)
+            console.print(f"📄 Report saved to [cyan]{output}[/cyan]")
+
+        if not report.validation_passed:
+            raise typer.Exit(2)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+def _print_stp_apply_result(result: dict[str, object]) -> None:
+    applied = result.get('applied', [])
+    failed = result.get('failed', [])
+    console.print(str(result.get('message', '')))
+    if isinstance(applied, list) and applied:
+        table = Table(title="Applied Changes" if not result.get('dry_run') else "Planned Changes", show_header=True)
+        table.add_column("Switch", style="cyan")
+        table.add_column("Current", style="red")
+        table.add_column("New", style="green")
+        table.add_column("Status")
+        for item in applied:
+            if not isinstance(item, dict):
+                continue
+            table.add_row(
+                str(item.get('device_name', '')),
+                str(item.get('current_priority', '')),
+                str(item.get('new_priority', '')),
+                str(item.get('status', '')),
+            )
+        console.print(table)
+    if isinstance(failed, list) and failed:
+        console.print(f"❌ [bold red]Failed {len(failed)} change(s)[/bold red]")
+        for item in failed:
+            if isinstance(item, dict):
+                console.print(f"   • {item.get('device_name', '')}: {item.get('error', '')}")
+
+
+def _parse_planned_switches(value: str) -> dict[str, int]:
+    planned: dict[str, int] = {}
+    for raw_part in value.split(','):
+        part = raw_part.strip()
+        if not part:
+            continue
+        if ':' in part:
+            model, count_text = part.rsplit(':', 1)
+            planned[model.strip()] = int(count_text)
+        else:
+            planned[part] = 1
+    if not planned:
+        raise typer.BadParameter('At least one planned switch model is required')
+    return planned
 
 
 if __name__ == "__main__":

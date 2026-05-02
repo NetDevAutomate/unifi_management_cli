@@ -1,7 +1,9 @@
 """LAG (Link Aggregation) monitoring tool for UniFi networks."""
 
+import re
 from datetime import datetime
-from typing import Any
+from pydantic import BaseModel, Field
+from typing import Any, cast
 from unifi_mapper.core.models import (
     LACPState,
     LAGGroup,
@@ -16,6 +18,36 @@ from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 # Thresholds for LAG health assessment
 LOAD_IMBALANCE_WARNING = 30  # % difference from average considered imbalanced
 MIN_ACTIVE_MEMBERS_PERCENT = 50  # Minimum % of members that should be active
+
+
+def _empty_int_list() -> list[int]:
+    return []
+
+
+def _empty_lag_candidates() -> list['LAGCandidate']:
+    return []
+
+
+class LAGCandidate(BaseModel):
+    """A candidate parallel-link group that could become a LAG."""
+
+    device_a: str
+    device_b: str
+    device_a_ports: list[int] = Field(default_factory=_empty_int_list)
+    device_b_ports: list[int] = Field(default_factory=_empty_int_list)
+    link_count: int
+    min_speed_mbps: int
+    total_capacity_mbps: int
+    recommendation: str
+
+
+class LAGCandidateReport(BaseModel):
+    """Report of LAG candidates discovered from LLDP links."""
+
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    devices_analyzed: int = 0
+    candidate_count: int = 0
+    candidates: list[LAGCandidate] = Field(default_factory=_empty_lag_candidates)
 
 
 async def monitor_lags(
@@ -179,6 +211,113 @@ async def monitor_lags(
             )
 
 
+async def find_lag_candidates(min_links: int = 2) -> LAGCandidateReport:
+    """Find parallel healthy inter-switch links that may be LACP candidates."""
+    async with UniFiClient() as client:
+        devices = await client.get_devices()
+    return find_lag_candidates_from_data(devices, min_links=min_links)
+
+
+def find_lag_candidates_from_data(
+    devices: list[dict[str, Any]],
+    min_links: int = 2,
+) -> LAGCandidateReport:
+    """Find LAG candidates from UniFi device dictionaries."""
+    devices_by_mac = {
+        _normalize_mac(device.get('mac')): device
+        for device in devices
+        if _normalize_mac(device.get('mac'))
+    }
+    grouped_links: dict[
+        tuple[str, str],
+        dict[
+            tuple[tuple[str, int], tuple[str, int]],
+            tuple[str, str, int, int, int],
+        ],
+    ] = {}
+    devices_analyzed = 0
+
+    for device in devices:
+        if device.get('type') not in ('usw', 'switch', 'udm', 'udmpro'):
+            continue
+        devices_analyzed += 1
+        local_device_id = str(device.get('_id'))
+        existing_lag_ports = _existing_lag_ports(device)
+        ports_by_idx = _ports_by_idx(device)
+        for lldp in _dict_list(device.get('lldp_table')):
+            local_port = _as_int(lldp.get('local_port_idx'))
+            if local_port in existing_lag_ports:
+                continue
+            remote_mac = _normalize_mac(lldp.get('chassis_id'))
+            remote_device = devices_by_mac.get(remote_mac)
+            if remote_device is None:
+                continue
+            remote_device_id = str(remote_device.get('_id'))
+            remote_port = _lldp_remote_port_idx(lldp)
+            if remote_port and remote_port in _existing_lag_ports(remote_device):
+                continue
+            port = ports_by_idx.get(local_port)
+            if port is None or not _port_is_candidate_member(port):
+                continue
+            sorted_pair = sorted([local_device_id, remote_device_id])
+            pair = (sorted_pair[0], sorted_pair[1])
+            if remote_port <= 0:
+                remote_port = -local_port
+            sorted_endpoints = sorted(
+                ((local_device_id, local_port), (remote_device_id, remote_port))
+            )
+            canonical_link = (sorted_endpoints[0], sorted_endpoints[1])
+            grouped_links.setdefault(pair, {})[canonical_link] = (
+                local_device_id,
+                remote_device_id,
+                local_port,
+                remote_port,
+                _as_int(port.get('speed')),
+            )
+
+    candidates: list[LAGCandidate] = []
+    devices_by_id = {str(device.get('_id')): device for device in devices}
+    for pair, links_by_endpoint in grouped_links.items():
+        links = list(links_by_endpoint.values())
+        if len(links) < min_links:
+            continue
+        speeds = [speed for _, _, _, _, speed in links]
+        if not speeds or len(set(speeds)) != 1:
+            continue
+        device_a_id, device_b_id = pair
+        device_a = devices_by_id.get(device_a_id, {})
+        device_b = devices_by_id.get(device_b_id, {})
+        ports_by_device: dict[str, set[int]] = {device_a_id: set(), device_b_id: set()}
+        for local_id, remote_id, local_port, remote_port, _ in links:
+            ports_by_device.setdefault(local_id, set()).add(local_port)
+            if remote_port > 0:
+                ports_by_device.setdefault(remote_id, set()).add(remote_port)
+        if (
+            len(ports_by_device.get(device_a_id, set())) < min_links
+            or len(ports_by_device.get(device_b_id, set())) < min_links
+        ):
+            continue
+        min_speed = min(speeds)
+        candidates.append(
+            LAGCandidate(
+                device_a=str(device_a.get('name') or device_a.get('mac')),
+                device_b=str(device_b.get('name') or device_b.get('mac')),
+                device_a_ports=sorted(ports_by_device.get(device_a_id, set())),
+                device_b_ports=sorted(ports_by_device.get(device_b_id, set())),
+                link_count=len(links),
+                min_speed_mbps=min_speed,
+                total_capacity_mbps=min_speed * len(links),
+                recommendation='Review both ends for LACP compatibility before configuring a LAG.',
+            )
+        )
+
+    return LAGCandidateReport(
+        devices_analyzed=devices_analyzed,
+        candidate_count=len(candidates),
+        candidates=candidates,
+    )
+
+
 def _extract_lag_groups(
     device: dict[str, Any],
     device_id: str,
@@ -211,12 +350,16 @@ def _extract_lag_groups(
         total_tx_bytes = 0
 
         for port_idx in member_ports:
-            port_data = next((p for p in port_table if p.get('port_idx') == port_idx), {})
+            empty_port: dict[str, Any] = {}
+            port_data = cast(
+                dict[str, Any],
+                next((p for p in port_table if p.get('port_idx') == port_idx), empty_port),
+            )
 
-            link_up = port_data.get('up', False)
-            enabled = port_data.get('enable', True)
+            link_up = bool(port_data.get('up', False))
+            enabled = bool(port_data.get('enable', True))
             is_active = link_up and enabled
-            speed = port_data.get('speed', 0)
+            speed = _as_int(port_data.get('speed'))
 
             member = LAGMember(
                 port_idx=port_idx,
@@ -285,6 +428,65 @@ def _extract_lag_groups(
         lag_groups.append(lag)
 
     return lag_groups
+
+
+def _existing_lag_ports(device: dict[str, Any]) -> set[int]:
+    ports: set[int] = set()
+    for aggregate in _dict_list(device.get('port_aggregates')):
+        members = aggregate.get('member_ports')
+        if isinstance(members, list):
+            member_values = cast(list[Any], members)
+            ports.update(_as_int(member) for member in member_values)
+    return ports
+
+
+def _ports_by_idx(device: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    return {
+        _as_int(port.get('port_idx')): port
+        for port in _dict_list(device.get('port_table'))
+    }
+
+
+def _port_is_candidate_member(port: dict[str, Any]) -> bool:
+    enabled = port.get('enabled', port.get('enable', True))
+    return bool(port.get('up')) and bool(enabled) and _as_int(port.get('speed')) > 0
+
+
+def _lldp_remote_port_idx(lldp: dict[str, Any]) -> int:
+    for key in ('remote_port_idx', 'uplink_remote_port', 'port_idx', 'port_id'):
+        port_idx = _parse_port_idx(lldp.get(key))
+        if port_idx:
+            return port_idx
+    return 0
+
+
+def _dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    values = cast(list[Any], value)
+    return [cast(dict[str, Any], item) for item in values if isinstance(item, dict)]
+
+
+def _normalize_mac(value: Any) -> str:
+    return str(value or '').lower().replace(':', '').replace('-', '')
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_port_idx(value: Any) -> int:
+    port_idx = _as_int(value)
+    if port_idx:
+        return port_idx
+    text = str(value or '')
+    match = re.search(r'(\d+)\s*$', text)
+    if match:
+        return _as_int(match.group(1))
+    return 0
 
 
 def _calculate_load_balance_score(members: list[LAGMember]) -> float:

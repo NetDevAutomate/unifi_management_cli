@@ -38,6 +38,30 @@ tools:
         required: true
         description: Destination IP address
 
+  check_inter_vlan_routing:
+    module: unifi_mapper.connectivity.inter_vlan
+    handler: check_inter_vlan_routing
+    description: Check endpoint VLANs and firewall verdict for inter-VLAN routing
+    priority: P1
+    tags: [vlan, inter-vlan, routing, firewall, endpoint]
+    parameters:
+      source:
+        type: string
+        required: true
+        description: Source endpoint IP, MAC, hostname, or device name
+      destination:
+        type: string
+        required: true
+        description: Destination endpoint IP, MAC, hostname, or device name
+      protocol:
+        type: string
+        default: icmp
+        description: Protocol to check
+      port:
+        type: string
+        required: false
+        description: Optional destination port
+
   traceroute:
     module: unifi_mapper.connectivity.traceroute
     handler: traceroute

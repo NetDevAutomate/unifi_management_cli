@@ -21,23 +21,49 @@ STP Optimization Tools:
 - generate_stp_report: Generate comprehensive STP optimization report
 - apply_stp_changes: Apply priority changes via API (supports dry-run mode)
 - format_stp_report_markdown: Format STP report as markdown with mermaid diagrams
+- validate_10g_expansion_readiness: Validate STP, link speed, and errors before 10G expansion
 """
 
 from unifi_mapper.analysis.capacity_planning import get_capacity_report
 from unifi_mapper.analysis.firmware_advisor import get_firmware_report
 from unifi_mapper.analysis.ip_conflicts import detect_ip_conflicts
-from unifi_mapper.analysis.lag_monitoring import monitor_lags
+from unifi_mapper.analysis.lag_monitoring import find_lag_candidates, monitor_lags
 from unifi_mapper.analysis.link_quality import analyze_link_quality
 from unifi_mapper.analysis.mac_analyzer import analyze_mac_table
+from unifi_mapper.analysis.mtu_audit import audit_mtu_consistency
+from unifi_mapper.analysis.port_counter_baseline import (
+    PortCounterBaselineStore,
+    PortCounterSnapshot,
+    default_baseline_path,
+    diff_snapshots,
+    port_counter_key,
+    snapshot_from_port,
+    snapshots_from_switches,
+)
+from unifi_mapper.analysis.port_profile_validation import (
+    PortProfileFinding,
+    PortProfileValidationReport,
+    validate_port_profiles,
+    validate_port_profiles_from_data,
+)
 from unifi_mapper.analysis.qos_validation import validate_qos
+from unifi_mapper.analysis.radio_optimization import analyze_radio_optimization
 from unifi_mapper.analysis.storm_detection import detect_storms
 from unifi_mapper.analysis.stp_optimizer import (
     apply_stp_changes,
+    build_10g_expansion_validation_report,
+    audit_stp_path_costs,
     calculate_optimal_priorities,
     discover_stp_topology,
+    expected_long_path_cost,
+    format_10g_validation_report_markdown,
     format_stp_report_markdown,
     generate_stp_report,
+    validate_10g_expansion_readiness,
 )
+from unifi_mapper.analysis.stp_change_plan import create_stp_change_plan
+from unifi_mapper.analysis.stp_preflight import stp_preflight_simulate_add
+from unifi_mapper.analysis.stp_snapshot import diff_stp_snapshots, snapshot_stp_topology
 from unifi_mapper.analysis.vlan_diagnostics import diagnose_vlans
 
 
@@ -48,16 +74,39 @@ __all__ = [
     'diagnose_vlans',
     # P2 tools
     'analyze_link_quality',
+    'analyze_radio_optimization',
+    'audit_mtu_consistency',
+    'find_lag_candidates',
     'get_capacity_report',
     'monitor_lags',
     'validate_qos',
     # P3 tools
     'analyze_mac_table',
     'get_firmware_report',
+    'PortCounterBaselineStore',
+    'PortCounterSnapshot',
+    'default_baseline_path',
+    'diff_snapshots',
+    'port_counter_key',
+    'snapshot_from_port',
+    'snapshots_from_switches',
+    'PortProfileFinding',
+    'PortProfileValidationReport',
+    'validate_port_profiles',
+    'validate_port_profiles_from_data',
     # STP tools
     'apply_stp_changes',
+    'build_10g_expansion_validation_report',
+    'audit_stp_path_costs',
     'calculate_optimal_priorities',
     'discover_stp_topology',
+    'expected_long_path_cost',
+    'format_10g_validation_report_markdown',
     'format_stp_report_markdown',
     'generate_stp_report',
+    'validate_10g_expansion_readiness',
+    'create_stp_change_plan',
+    'diff_stp_snapshots',
+    'snapshot_stp_topology',
+    'stp_preflight_simulate_add',
 ]
