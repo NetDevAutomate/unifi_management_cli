@@ -9,13 +9,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import TYPE_CHECKING, Annotated, Any
-
 from pydantic import BaseModel, Field
+from typing import TYPE_CHECKING, Annotated, Any
 
 
 if TYPE_CHECKING:
-    from uiprotect.data import AiPort, Camera, Chime, Doorlock, Light, NVR, Sensor
+    from uiprotect.data import NVR, AiPort, Camera, Chime, Doorlock, Light, Sensor
 
 
 class DeviceType(str, Enum):

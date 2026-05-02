@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""
-Shell completion installation for unifi-mapper CLI.
+"""Shell completion installation for unifi-mapper CLI.
+
 Supports bash and zsh with comprehensive argument completion.
 """
 
@@ -199,7 +199,7 @@ def install_zsh_completion(force: bool = False) -> bool:
 
         # Check if directory is in fpath
         if str(target_dir) not in zsh_fpath:
-            print(f"\n📝 To enable completions, add to your ~/.zshrc:")
+            print("\n📝 To enable completions, add to your ~/.zshrc:")
             print(f"   fpath=({target_dir} $fpath)")
             print("   autoload -Uz compinit && compinit")
             print("   Then run: source ~/.zshrc")

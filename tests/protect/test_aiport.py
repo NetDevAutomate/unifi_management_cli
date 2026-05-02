@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
-
 import pytest
-
+from datetime import datetime, timedelta, timezone
 from unifi_mapper.protect.aiport import (
     AICapability,
     AICapabilityType,
@@ -25,6 +22,7 @@ from unifi_mapper.protect.events import (
     ProtectModelType,
 )
 from unifi_mapper.protect.models import DeviceState, DeviceType, ProtectAIPort
+from unittest.mock import MagicMock, patch
 
 
 # =============================================================================

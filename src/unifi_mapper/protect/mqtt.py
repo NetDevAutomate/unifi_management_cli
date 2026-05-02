@@ -21,11 +21,9 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
-
 from loguru import logger  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field, SecretStr
-
+from typing import TYPE_CHECKING, Any
 from unifi_mapper.protect.events import (
     EventHandler,
     ProtectEvent,

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""
-Main port mapper module for the UniFi Port Mapper.
+"""Main port mapper module for the UniFi Port Mapper.
+
 Contains the UnifiPortMapper class for managing port names based on LLDP/CDP information.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
-
 from .api_client import UnifiApiClient
 from .network_topology import NetworkTopology
+from typing import Any, Dict, List, Optional
+
 
 log = logging.getLogger(__name__)
 
@@ -21,13 +21,12 @@ class UnifiPortMapper:
         base_url: str,
         site: str = "default",
         verify_ssl: bool = False,
-        username: str = None,
-        password: str = None,
-        api_token: str = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        api_token: Optional[str] = None,
         timeout: int = 10,
     ):
-        """
-        Initialize the UnifiPortMapper.
+        """Initialize the UnifiPortMapper.
 
         Args:
             base_url: The base URL of the Unifi Controller (e.g., https://unifi.local:8443)
@@ -62,8 +61,7 @@ class UnifiPortMapper:
         self.topology = NetworkTopology()
 
     def login(self) -> bool:
-        """
-        Login to the UniFi Controller.
+        """Login to the UniFi Controller.
 
         Returns:
             bool: True if login was successful, False otherwise
@@ -71,8 +69,7 @@ class UnifiPortMapper:
         return self.api_client.login()
 
     def logout(self) -> bool:
-        """
-        Logout from the UniFi Controller.
+        """Logout from the UniFi Controller.
 
         Returns:
             bool: True if logout was successful, False otherwise
@@ -80,8 +77,7 @@ class UnifiPortMapper:
         return self.api_client.logout()
 
     def get_sites(self) -> List[Dict[str, Any]]:
-        """
-        Get all sites from the UniFi Controller.
+        """Get all sites from the UniFi Controller.
 
         Returns:
             List[Dict[str, Any]]: List of sites
@@ -89,17 +85,17 @@ class UnifiPortMapper:
         return self.api_client.get_sites()
 
     def get_devices(self) -> List[Dict[str, Any]]:
-        """
-        Get all devices from the UniFi Controller.
+        """Get all devices from the UniFi Controller.
 
         Returns:
             List[Dict[str, Any]]: List of devices
         """
-        return self.api_client.get_devices(self.api_client.site)
+        response = self.api_client.get_devices(self.api_client.site)
+        data = response.get("data", response)
+        return data if isinstance(data, list) else []
 
     def get_device_ports(self, device_id: str) -> List[Dict[str, Any]]:
-        """
-        Get all ports for a device.
+        """Get all ports for a device.
 
         Args:
             device_id: Device ID
@@ -110,8 +106,7 @@ class UnifiPortMapper:
         return self.api_client.get_device_ports(self.api_client.site, device_id)
 
     def get_lldp_info(self, device_id: str) -> Dict[str, Dict[str, Any]]:
-        """
-        Get LLDP/CDP information for a device's ports.
+        """Get LLDP/CDP information for a device's ports.
 
         Args:
             device_id: Device ID
@@ -124,13 +119,13 @@ class UnifiPortMapper:
     def update_port_name(
         self, device_id: str, port_idx: int, new_name: str, verify_update: bool = True
     ) -> bool:
-        """
-        Update the name of a port.
+        """Update the name of a port.
 
         Args:
             device_id: Device ID
             port_idx: Port index
             new_name: New port name
+            verify_update: Whether to verify that the update persisted
 
         Returns:
             bool: True if the update was successful, False otherwise
@@ -140,19 +135,19 @@ class UnifiPortMapper:
         )
 
     def get_clients(self) -> List[Dict[str, Any]]:
-        """
-        Get all clients (wired and wireless) from the UniFi Controller.
+        """Get all clients (wired and wireless) from the UniFi Controller.
 
         Returns:
             List[Dict[str, Any]]: List of clients
         """
-        return self.api_client.get_clients(self.api_client.site)
+        response = self.api_client.get_clients(self.api_client.site)
+        data = response.get("data", response)
+        return data if isinstance(data, list) else []
 
     def get_client_port_mapping(
         self, device_mac: str
     ) -> Dict[int, List[Dict[str, Any]]]:
-        """
-        Get mapping of ports to connected clients for a specific device.
+        """Get mapping of ports to connected clients for a specific device.
 
         Args:
             device_mac: MAC address of the device
@@ -161,17 +156,8 @@ class UnifiPortMapper:
             Dict[int, List[Dict[str, Any]]]: Dictionary mapping port indices to lists of connected clients
         """
         clients_response = self.get_clients()
-        port_clients = {}
-
-        # Handle the response structure - could be dict with 'data' key or list
-        clients_data = []
-        if isinstance(clients_response, dict) and "data" in clients_response:
-            clients_data = clients_response["data"]
-        elif isinstance(clients_response, list):
-            clients_data = clients_response
-        else:
-            log.warning(f"Unexpected clients response format: {type(clients_response)}")
-            return port_clients
+        port_clients: Dict[int, List[Dict[str, Any]]] = {}
+        clients_data = clients_response
 
         for client in clients_data:
             # Skip if client is not a dict
@@ -227,8 +213,7 @@ class UnifiPortMapper:
     def format_client_names(
         self, clients: List[Dict[str, Any]], max_names: int = 2
     ) -> str:
-        """
-        Format client names for port naming.
+        """Format client names for port naming.
 
         Args:
             clients: List of client information dictionaries
@@ -284,8 +269,7 @@ class UnifiPortMapper:
     def batch_update_port_names(
         self, device_id: str, port_updates: Dict[int, str], verify_updates: bool = True
     ) -> bool:
-        """
-        Update multiple port names for a device in a single API call with verification.
+        """Update multiple port names for a device in a single API call with verification.
 
         Args:
             device_id: Device ID
@@ -306,7 +290,7 @@ class UnifiPortMapper:
         )
 
         # Enhanced debug logging for troubleshooting
-        log.debug(f"=== BATCH UPDATE PORT NAMES DEBUG ===")
+        log.debug("=== BATCH UPDATE PORT NAMES DEBUG ===")
         log.debug(f"Device ID: {device_id}")
         log.debug(f"Port updates requested: {json_module.dumps(port_updates, indent=2, default=str)}")
         log.debug(f"Verify updates: {verify_updates}")
@@ -343,7 +327,7 @@ class UnifiPortMapper:
             return False
 
         # Enhanced debug logging - log the modified port_table before API call
-        log.debug(f"=== SENDING PORT TABLE UPDATE ===")
+        log.debug("=== SENDING PORT TABLE UPDATE ===")
         log.debug(f"Total ports in table: {len(port_table)}")
         log.debug(f"Ports modified: {updated_count}")
         for port in port_table:
@@ -397,8 +381,7 @@ class UnifiPortMapper:
         return True
 
     def _force_device_provision(self, device_id: str, device_mac: str) -> bool:
-        """
-        Force device provisioning to ensure configuration changes persist.
+        """Force device provisioning to ensure configuration changes persist.
 
         This is a critical step for UniFi controllers where API calls return HTTP 200
         but changes don't actually persist to the device until provisioning is triggered.
@@ -422,7 +405,7 @@ class UnifiPortMapper:
             provision_data = {"cmd": "force-provision", "mac": device_mac}
 
             # Enhanced debug logging for troubleshooting
-            log.debug(f"=== FORCE PROVISION DEBUG ===")
+            log.debug("=== FORCE PROVISION DEBUG ===")
             log.debug(f"Endpoint: {provision_endpoint}")
             log.debug(f"Device ID: {device_id}")
             log.debug(f"Device MAC: {device_mac}")
@@ -434,7 +417,7 @@ class UnifiPortMapper:
             )
 
             # Enhanced response logging
-            log.debug(f"=== FORCE PROVISION RESPONSE ===")
+            log.debug("=== FORCE PROVISION RESPONSE ===")
             log.debug(f"Status code: {response.status_code}")
             log.debug(f"Response headers: {dict(response.headers)}")
 
@@ -474,8 +457,7 @@ class UnifiPortMapper:
         dry_run: bool = False,
         discover_all: bool = False,
     ) -> int:
-        """
-        Run the port mapper with the specified options.
+        """Run the port mapper with the specified options.
 
         Args:
             output_path: Path to the output report file
@@ -488,4 +470,11 @@ class UnifiPortMapper:
         """
         from .run_methods import run_port_mapper as run_method
 
-        return run_method(self, output_path, diagram_path, dry_run, discover_all)
+        return run_method(
+            self,
+            self.api_client.site,
+            dry_run=dry_run,
+            output_path=output_path,
+            diagram_path=diagram_path,
+            show_connected_devices=discover_all,
+        )

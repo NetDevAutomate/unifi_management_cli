@@ -9,18 +9,20 @@ Usage:
 """
 
 import asyncio
+import onvif
 import os
 import sys
 from dataclasses import dataclass
-
-import onvif
 from onvif import ONVIFCamera
+
 
 WSDL_DIR = os.path.join(os.path.dirname(onvif.__file__), "wsdl")
 
 
 @dataclass
 class CameraConfig:
+    """ONVIF camera connection settings."""
+
     name: str
     ip: str
     port: int
@@ -222,6 +224,7 @@ async def test_rtsp(config: CameraConfig):
 
 
 async def main():
+    """Run the ONVIF stream test CLI."""
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)

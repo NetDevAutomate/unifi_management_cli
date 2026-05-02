@@ -380,4 +380,4 @@ class DNSPolicyManager:
             List of domain names.
         """
         policies = await self.get_all_policies()
-        return sorted(set(p.domain for p in policies))
+        return sorted({p.domain for p in policies})

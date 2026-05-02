@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-UniFi Network Inventory and Firmware Management CLI.
+"""UniFi Network Inventory and Firmware Management CLI.
 
 Provides inventory listing, firmware version reporting, and firmware update capabilities.
 Integrated into the main unifi-mapper CLI as subcommands.
@@ -9,20 +8,19 @@ Integrated into the main unifi-mapper CLI as subcommands.
 import logging
 import os
 import time
+import typer
+from .api_client import UnifiApiClient
+from .cli import get_default_config_path, load_env_from_config
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
-
-import typer
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
-from rich import box
+from typing import Optional
 
-from .api_client import UnifiApiClient
-from .cli import get_default_config_path, load_env_from_config
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -92,7 +90,7 @@ def get_device_type(model: str, device_type_field: str = "") -> str:
 def get_api_client(config_path: Optional[str] = None) -> tuple[UnifiApiClient, str]:
     """Create and authenticate API client."""
     if config_path is None:
-        config_path = get_default_config_path()
+        config_path = str(get_default_config_path())
 
     load_env_from_config(config_path)
 

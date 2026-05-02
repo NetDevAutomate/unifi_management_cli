@@ -10,12 +10,9 @@ Tests cover:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 from pydantic import SecretStr
-
+from typing import TYPE_CHECKING
 from unifi_mapper.protect.client import (
     AuthenticationError,
     ConnectionError,
@@ -25,10 +22,11 @@ from unifi_mapper.protect.client import (
     create_client,
 )
 from unifi_mapper.protect.config import ProtectConfig
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 if TYPE_CHECKING:
-    from pytest_mock import MockerFixture
+    pass
 
 
 @pytest.fixture
@@ -514,7 +512,7 @@ class TestUniFiProtectClientContextManager:
             mock_api_class.return_value = mock_api
 
             with pytest.raises(ValueError):
-                async with UniFiProtectClient(protect_config) as client:
+                async with UniFiProtectClient(protect_config):
                     raise ValueError('Test error')
 
             mock_api.close_session.assert_called_once()
@@ -553,7 +551,7 @@ class TestCreateClient:
             mock_api.close_session = AsyncMock()
             mock_api_class.return_value = mock_api
 
-            async with create_client(protect_config) as client:
+            async with create_client(protect_config):
                 pass
 
             mock_api.close_session.assert_called_once()

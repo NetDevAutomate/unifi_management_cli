@@ -290,6 +290,9 @@ def _generate_performance_report(
         return NetworkPerformanceReport(
             timestamp=datetime.now().isoformat(),
             total_devices_analyzed=0,
+            average_cpu=None,
+            average_memory=None,
+            average_load=None,
             high_performers=[],
             average_performers=[],
             poor_performers=[],

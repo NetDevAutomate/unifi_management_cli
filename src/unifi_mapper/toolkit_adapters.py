@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""
-Adapter layer to make MCP server tools work with synchronous API client.
+"""Adapter layer to make MCP server tools work with synchronous API client.
+
 Provides synchronous wrappers for async toolkit functions.
 """
 
 import logging
 from typing import Any, Dict, List, Optional
+
 
 log = logging.getLogger(__name__)
 
@@ -178,9 +179,8 @@ class ToolkitAdapter:
             log.error(f"Error in network health check: {e}")
             return {"error": str(e)}
 
-    def _resolve_device_name_to_id(self, device_name_or_id: str) -> str:
-        """
-        Resolve device name to device ID.
+    def _resolve_device_name_to_id(self, device_name_or_id: str) -> str | None:
+        """Resolve device name to device ID.
 
         Args:
             device_name_or_id: Either a device name or device ID

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Enhanced UniFi Protect Monitor - Full Debug & AI Analytics
+"""Enhanced UniFi Protect Monitor - Full Debug & AI Analytics.
 
 Monitors AI Ports, cameras, smart detection, and stream health in real-time.
 Provides comprehensive visibility into:
@@ -22,13 +21,12 @@ Usage:
 """
 import argparse
 import logging
+import requests
 import time
 import warnings
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import requests
 
 warnings.filterwarnings("ignore")
 
@@ -36,8 +34,7 @@ log = logging.getLogger(__name__)
 
 
 class ProtectMonitor:
-    """
-    Real-time monitor for UniFi Protect devices with AI analytics.
+    """Real-time monitor for UniFi Protect devices with AI analytics.
 
     Provides comprehensive monitoring of:
     - AI Ports: pairing status, smart detection capabilities, camera capacity
@@ -62,8 +59,7 @@ class ProtectMonitor:
         poll_interval: int = 3,
         log_file: Optional[str] = None,
     ):
-        """
-        Initialize the Protect Monitor.
+        """Initialize the Protect Monitor.
 
         Args:
             base_url: UniFi controller URL (e.g., https://192.0.2.1)
@@ -91,8 +87,7 @@ class ProtectMonitor:
                 f.write(line + "\n")
 
     def login(self) -> bool:
-        """
-        Login to Protect API.
+        """Login to Protect API.
 
         Note: Protect API requires `remember: True` and `strict: True` flags
         for successful authentication, unlike the Network API.
@@ -142,8 +137,7 @@ class ProtectMonitor:
         return None
 
     def get_events(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Get recent events (smart detections, motion, etc.).
+        """Get recent events (smart detections, motion, etc.).
 
         Args:
             limit: Maximum number of events to return
@@ -252,7 +246,7 @@ class ProtectMonitor:
     def extract_camera_state(self, cam: Dict[str, Any]) -> Dict[str, Any]:
         """Extract comprehensive camera state for monitoring."""
         tpc = cam.get("thirdPartyCameraInfo", {})
-        stats = cam.get("stats", {})
+        cam.get("stats", {})
         sd_settings = cam.get("smartDetectSettings", {})
         lenses = cam.get("lenses", [])
 
@@ -334,7 +328,7 @@ class ProtectMonitor:
         )
 
         # Camera Pairing
-        print(f"\n  📷 Camera Pairing:")
+        print("\n  📷 Camera Pairing:")
         print(
             f"     Paired Cameras: {len(ap_state['pairedCameras'])} / "
             f"{ap_state['maxCameraCapacity']}"
@@ -359,7 +353,7 @@ class ProtectMonitor:
         )
 
         # Capabilities
-        print(f"\n  ⚙️ Capabilities:")
+        print("\n  ⚙️ Capabilities:")
         print(f"     Supported: {', '.join(ap_state['supportedSmartTypes'])}")
         if ap_state["supportedAudioTypes"]:
             print(f"     Audio: {', '.join(ap_state['supportedAudioTypes'][:5])}...")
@@ -400,24 +394,24 @@ class ProtectMonitor:
 
         # Recording
         if cam_state["recordingStart"] or cam_state["recordingEnd"]:
-            print(f"\n  🎬 Recording:")
+            print("\n  🎬 Recording:")
             print(f"     Start: {self.format_timestamp(cam_state['recordingStart'])}")
             print(f"     End: {self.format_timestamp(cam_state['recordingEnd'])}")
 
         # AI Port Pairing
         paired_icon = "✅" if cam_state["aiportId"] else "❌"
-        print(f"\n  🔗 AI Port Pairing:")
+        print("\n  🔗 AI Port Pairing:")
         print(f"     isPairedWithAiPort: {cam_state['isPairedWithAiPort']}")
         print(f"     aiportId: {cam_state['aiportId'] or 'NOT SET'} {paired_icon}")
         print(f"     AI Capacity Points: {cam_state['aiPortCapacityPoints']}")
 
         # Stream Info
-        print(f"\n  📡 Stream:")
+        print("\n  📡 Stream:")
         print(f"     RTSP Client: {cam_state['rtspClient'] or 'None'}")
         if cam_state["rtspUrl"]:
             url = cam_state["rtspUrl"]
             if "127.0.0.1" in url:
-                print(f"     RTSP URL: 🏠 DIRECT (127.0.0.1) - Stream to UDMPM")
+                print("     RTSP URL: 🏠 DIRECT (127.0.0.1) - Stream to UDMPM")
             else:
                 print(f"     RTSP URL: 🔌 VIA AI PORT - {url[:60]}...")
         print(f"     Has Audio: {cam_state['hasAudio']}")
@@ -450,7 +444,7 @@ class ProtectMonitor:
             return
 
         print(f"\n{'═' * 60}")
-        print(f"📋 RECENT EVENTS (last hour)")
+        print("📋 RECENT EVENTS (last hour)")
         print(f"{'═' * 60}")
 
         for event in events[:10]:
@@ -518,8 +512,7 @@ class ProtectMonitor:
         return changes
 
     def run(self, show_full: bool = True) -> None:
-        """
-        Main monitoring loop.
+        """Main monitoring loop.
 
         Args:
             show_full: Show full status on changes (default: True)

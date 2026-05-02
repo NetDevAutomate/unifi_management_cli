@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-UniFi Backup Decrypt Proof-of-Concept
+"""UniFi Backup Decrypt Proof-of-Concept.
 
 This script decrypts UniFi backup files (.unf) and dumps their BSON contents
 to help understand the backup structure before building the full feature.
@@ -22,6 +21,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
 
 try:
     from Crypto.Cipher import AES
@@ -62,8 +62,7 @@ class BSONParseError(BackupDecryptError):
 
 
 def decrypt_backup(encrypted_data: bytes) -> bytes:
-    """
-    Decrypt UniFi backup data using AES-128-CBC.
+    """Decrypt UniFi backup data using AES-128-CBC.
 
     Args:
         encrypted_data: Raw encrypted bytes from .unf file
@@ -91,8 +90,7 @@ def decrypt_backup(encrypted_data: bytes) -> bytes:
 
 
 def extract_db_gz(zip_data: bytes) -> bytes:
-    """
-    Extract db.gz from decrypted ZIP archive.
+    """Extract db.gz from decrypted ZIP archive.
 
     Args:
         zip_data: Decrypted ZIP file bytes
@@ -128,8 +126,7 @@ def extract_db_gz(zip_data: bytes) -> bytes:
 
 
 def decompress_db(db_gz_data: bytes) -> bytes:
-    """
-    Decompress gzipped database.
+    """Decompress gzipped database.
 
     Args:
         db_gz_data: Gzipped BSON data
@@ -144,8 +141,7 @@ def decompress_db(db_gz_data: bytes) -> bytes:
 
 
 def parse_bson_documents(bson_data: bytes) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Parse concatenated BSON documents into collections.
+    """Parse concatenated BSON documents into collections.
 
     UniFi backups contain multiple BSON documents concatenated together.
     Each document typically has a '_type' field indicating the collection.
@@ -265,6 +261,7 @@ def dump_collection_detail(
 
 
 def main():
+    """Run the backup decrypt proof-of-concept CLI."""
     parser = argparse.ArgumentParser(
         description="Decrypt and analyze UniFi backup files (.unf)",
         formatter_class=argparse.RawDescriptionHelpFormatter,

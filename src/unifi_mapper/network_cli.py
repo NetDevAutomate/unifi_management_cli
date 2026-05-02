@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""
-Enhanced UniFi Network Toolkit CLI.
+"""Enhanced UniFi Network Toolkit CLI.
+
 Comprehensive network analysis, discovery, and troubleshooting capabilities.
 """
 
 import argparse
 import logging
 import sys
-from pathlib import Path
-from typing import Any, Dict, List
-
 from .completions import install_completions
+from pathlib import Path
+from typing import Any, Dict
 
 
 # Configure logging
@@ -347,15 +346,12 @@ def handle_find_command(args, config):
     log.info(f"Searching for {args.find_type}: {getattr(args, args.find_type, 'all')}")
 
     if args.find_type == "device":
-        from .discovery.find_device import find_device_sync
         log.info(f"Found devices matching: {args.query}")
 
     elif args.find_type == "ip":
-        from .discovery.find_ip import find_ip_sync
         log.info(f"Located IP address: {args.ip}")
 
     elif args.find_type == "mac":
-        from .discovery.find_mac import find_mac_sync
         log.info(f"Located MAC address: {args.mac}")
 
     else:
@@ -404,8 +400,8 @@ def print_link_quality_results(results: Dict[str, Any]):
         log.error(f"Analysis failed: {results['error']}")
         return
 
-    print(f"\n🔍 Link Quality Analysis")
-    print(f"═════════════════════════")
+    print("\n🔍 Link Quality Analysis")
+    print("═════════════════════════")
     print(f"Devices analyzed: {results['devices_analyzed']}")
     print(f"Ports with errors: {results['ports_with_errors']}")
 
@@ -425,20 +421,20 @@ def print_network_health_results(results: Dict[str, Any]):
         log.error(f"Health check failed: {results['error']}")
         return
 
-    print(f"\n🏥 Network Health Report")
-    print(f"═══════════════════════")
+    print("\n🏥 Network Health Report")
+    print("═══════════════════════")
     print(f"Overall Status: {results['overall_health']}")
     print(f"Total devices: {results['total_devices']}")
     print(f"Adopted devices: {results['adopted_devices']}")
     print(f"Offline devices: {results['offline_devices']}")
 
     if results["issues"]:
-        print(f"\n⚠️  Issues found:")
+        print("\n⚠️  Issues found:")
         for issue in results["issues"]:
             severity_icon = "🚨" if issue["severity"] == "high" else "⚠️"
             print(f"  {severity_icon} {issue['device']}: {issue['issue']}")
     else:
-        print(f"\n✅ All devices healthy")
+        print("\n✅ All devices healthy")
 
 
 

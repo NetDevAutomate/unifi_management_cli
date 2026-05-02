@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
-"""
-Report generator module for the UniFi Port Mapper.
+"""Report generator module for the UniFi Port Mapper.
+
 Contains functions for generating port mapping reports.
 """
 
 import datetime
-from typing import Dict
-
 from .models import DeviceInfo
+from typing import Dict
 
 
 def generate_port_mapping_report(
     devices: Dict[str, DeviceInfo], output_path: str
 ) -> None:
-    """
-    Generate a port mapping report.
+    """Generate a port mapping report.
 
     Args:
         devices: Dictionary of devices

@@ -23,10 +23,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any
-
 from loguru import logger  # type: ignore[import-untyped]
-
+from typing import TYPE_CHECKING, Any
 from unifi_mapper.protect.analytics import DeviceHealth, DeviceHealthStatus
 from unifi_mapper.protect.events import (
     EventFilter,

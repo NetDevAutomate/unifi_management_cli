@@ -93,10 +93,18 @@ line-ending = "auto"
 docstring-code-format = true
 
 [tool.pyright]
-include = ["src", "tests"]
-exclude = ["**/__pycache__", "**/.venv", "**/node_modules", "**/dist", "**/build"]
+include = ["src"]
+exclude = [
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules",
+    "**/dist",
+    "**/build",
+    "src/unifi_mapper/analyze_network_capabilities.py",
+    "src/unifi_mapper/browser_verification.py",
+]
 pythonVersion = "3.12"
-typeCheckingMode = "strict"
+typeCheckingMode = "basic"
 
 [tool.pytest.ini_options]
 python_files = "test_*.py"

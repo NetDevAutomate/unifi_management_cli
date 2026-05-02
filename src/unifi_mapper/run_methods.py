@@ -1,17 +1,16 @@
 import json
 import logging
 import os
-
 from .models import DeviceInfo, PortInfo
 from .network_topology import NetworkTopology
 from .report_generator import generate_port_mapping_report
+
 
 log = logging.getLogger(__name__)
 
 
 def infer_connections_from_clients(api_client, site_id, devices):
-    """
-    Infer connections between devices based on client information.
+    """Infer connections between devices based on client information.
 
     Args:
         api_client: UnifiApiClient instance
@@ -79,8 +78,7 @@ def infer_connections_from_clients(api_client, site_id, devices):
 
 
 def infer_device_connections(api_client, site_id, devices):
-    """
-    Infer connections between devices based on various data sources.
+    """Infer connections between devices based on various data sources.
 
     Args:
         api_client: UnifiApiClient instance
@@ -108,8 +106,7 @@ def infer_device_connections(api_client, site_id, devices):
 
 
 def infer_connections_from_subnets(devices):
-    """
-    Infer connections between devices based on IP subnet relationships.
+    """Infer connections between devices based on IP subnet relationships.
 
     Args:
         devices: Dictionary of devices
@@ -191,8 +188,7 @@ def infer_connections_from_subnets(devices):
 
 
 def infer_connections_from_device_types(devices):
-    """
-    Infer connections between devices based on device types and names.
+    """Infer connections between devices based on device types and names.
 
     Args:
         devices: Dictionary of devices
@@ -328,8 +324,7 @@ def infer_connections_from_device_types(devices):
 
 
 def get_devices_and_lldp_data(port_mapper, site_id):
-    """
-    Helper function to extract devices and LLDP data for smart port mapping.
+    """Helper function to extract devices and LLDP data for smart port mapping.
 
     Args:
         port_mapper: UnifiPortMapper instance
@@ -378,8 +373,7 @@ def run_port_mapper(
     show_connected_devices=False,
     verify_updates=False,
 ):
-    """
-    Run the port mapper.
+    """Run the port mapper.
 
     Args:
         port_mapper: UnifiPortMapper instance
@@ -491,9 +485,6 @@ def run_port_mapper(
             enhanced_port_name = port_name
 
             # Check current port state
-            is_default_name = (
-                port_name == f"Port {port_idx}" or port_name.startswith("Port ")
-            )
             is_uplink = (
                 port.get("is_uplink", False)
                 or "uplink" in port_name.lower()
@@ -726,8 +717,8 @@ def run_port_mapper(
 
         # Get device information
         client_name = client.get("name", client.get("hostname", "Unknown Client"))
-        client_mac = client.get("mac", "Unknown MAC")
-        client_ip = client.get("ip", "Unknown IP")
+        client.get("mac", "Unknown MAC")
+        client.get("ip", "Unknown IP")
         client_device_type = client.get("dev_cat_name", "Unknown")
 
         # Handle potential type issues with dev_vendor and dev_id
@@ -739,8 +730,6 @@ def run_port_mapper(
             dev_vendor = str(dev_vendor)
         if not isinstance(dev_id, str):
             dev_id = str(dev_id)
-
-        client_model = dev_vendor + " " + dev_id
 
         # Check if this is an unadopted access point appearing as a client
         # (based on device category or name patterns)

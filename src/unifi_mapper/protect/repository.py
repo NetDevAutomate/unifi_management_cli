@@ -7,10 +7,8 @@ including caching, filtering, and convenient access methods.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Generic, TypeVar
-
 from loguru import logger  # type: ignore[import-untyped]
-
+from typing import TYPE_CHECKING, Generic, TypeVar
 from unifi_mapper.protect.models import (
     DeviceType,
     ProtectAIPort,

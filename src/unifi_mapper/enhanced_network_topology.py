@@ -1,26 +1,23 @@
 #!/usr/bin/env python3
-"""
-Enhanced network topology module for the UniFi Port Mapper.
+"""Enhanced network topology module for the UniFi Port Mapper.
+
 Contains the NetworkTopology class for managing network topology visualization.
 """
 
 import json
 import logging
-from typing import Dict
-
 from .models import DeviceInfo, PortInfo
+from typing import Dict, Optional
+
 
 log = logging.getLogger(__name__)
 
 
 class NetworkTopology:
-    """
-    Class for managing network topology visualization.
-    """
+    """Class for managing network topology visualization."""
 
-    def __init__(self, devices: Dict[str, DeviceInfo] = None):
-        """
-        Initialize the NetworkTopology class.
+    def __init__(self, devices: Optional[Dict[str, DeviceInfo]] = None):
+        """Initialize the NetworkTopology class.
 
         Args:
             devices: Dictionary of devices by ID
@@ -29,8 +26,7 @@ class NetworkTopology:
         self.connections = []
 
     def add_device(self, device_id: str, name: str, model: str, mac: str, ip: str):
-        """
-        Add a device to the topology.
+        """Add a device to the topology.
 
         Args:
             device_id: Device ID
@@ -54,8 +50,7 @@ class NetworkTopology:
         source_port_idx: int,
         target_port_idx: int,
     ) -> None:
-        """
-        Add a connection between two devices.
+        """Add a connection between two devices.
 
         Args:
             source_device_id: Source device ID
@@ -125,8 +120,7 @@ class NetworkTopology:
         )
 
     def is_unifi_device(self, device_id):
-        """
-        Determine if a device is a UniFi device based on model and name.
+        """Determine if a device is a UniFi device based on model and name.
 
         Args:
             device_id: Device ID
@@ -171,8 +165,7 @@ class NetworkTopology:
         return False
 
     def is_switch(self, device_id):
-        """
-        Determine if a device is a switch based on model and name.
+        """Determine if a device is a switch based on model and name.
 
         Args:
             device_id: Device ID
@@ -228,8 +221,7 @@ class NetworkTopology:
         return False
 
     def is_router(self, device_id):
-        """
-        Determine if a device is a router based on model and name.
+        """Determine if a device is a router based on model and name.
 
         Args:
             device_id: Device ID
@@ -259,8 +251,7 @@ class NetworkTopology:
         return False
 
     def is_ap(self, device_id):
-        """
-        Determine if a device is an access point based on model and name.
+        """Determine if a device is an access point based on model and name.
 
         Args:
             device_id: Device ID
@@ -300,8 +291,8 @@ class NetworkTopology:
         return False
 
     def infer_missing_connections(self):
-        """
-        Infer missing connections between switches and routers.
+        """Infer missing connections between switches and routers.
+
         This helps ensure all switches are connected to the network.
         """
         # First, identify all switches and routers
@@ -416,8 +407,7 @@ class NetworkTopology:
     def generate_png_diagram(
         self, output_path: str, layout_style: str = "hierarchical"
     ) -> None:
-        """
-        Generate a PNG diagram using Graphviz with hierarchical layout.
+        """Generate a PNG diagram using Graphviz with hierarchical layout.
 
         Args:
             output_path: Path to save the PNG file
@@ -452,8 +442,7 @@ class NetworkTopology:
     def generate_svg_diagram(
         self, output_path: str, layout_style: str = "hierarchical"
     ) -> None:
-        """
-        Generate an SVG diagram using Graphviz with hierarchical layout.
+        """Generate an SVG diagram using Graphviz with hierarchical layout.
 
         Args:
             output_path: Path to save the SVG file
@@ -553,7 +542,7 @@ class NetworkTopology:
                     isp_connections.append(("ISP", port_name))
 
         # Deduplicate ISP names
-        unique_isps = list(set(isp[0] for isp in isp_connections))
+        unique_isps = list({isp[0] for isp in isp_connections})
         if unique_isps:
             log.info(f"Detected ISP connections: {unique_isps}")
         if isp_connections:
@@ -760,8 +749,7 @@ class NetworkTopology:
         return "\\n".join(lines)
 
     def _group_devices_by_location_and_type(self) -> dict:
-        """
-        Group devices by location and type for hierarchical layout.
+        """Group devices by location and type for hierarchical layout.
 
         Returns:
             Dict[location, Dict[type, List[device]]]
@@ -784,8 +772,7 @@ class NetworkTopology:
         return groups
 
     def _extract_location(self, name: str) -> str:
-        """
-        Extract location from device name.
+        """Extract location from device name.
 
         Args:
             name: Device name (e.g., "Office Switch" or "Lounge US 8")
@@ -882,8 +869,7 @@ class NetworkTopology:
         return "unknown"
 
     def generate_dot_diagram(self, output_path: str) -> None:
-        """
-        Generate a DOT diagram of the network topology.
+        """Generate a DOT diagram of the network topology.
 
         Args:
             output_path: Path to save the DOT file
@@ -893,8 +879,7 @@ class NetworkTopology:
             f.write("DOT diagram would be generated here")
 
     def generate_mermaid_diagram(self, output_path: str) -> None:
-        """
-        Generate a Mermaid diagram of the network topology.
+        """Generate a Mermaid diagram of the network topology.
 
         Args:
             output_path: Path to save the Mermaid file
@@ -906,8 +891,7 @@ class NetworkTopology:
     def generate_html_diagram(
         self, output_path: str, show_connected_devices: bool = False
     ) -> None:
-        """
-        Generate an HTML diagram of the network topology.
+        """Generate an HTML diagram of the network topology.
 
         Args:
             output_path: Path to save the HTML file

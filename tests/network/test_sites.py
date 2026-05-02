@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import pytest
+from unifi_mapper.network.models import SiteInfo
 from unifi_mapper.network.sites import (
     SiteManager,
     SiteStats,
     SiteSummary,
 )
-from unifi_mapper.network.models import SiteInfo
 from unittest.mock import AsyncMock, MagicMock
 
 

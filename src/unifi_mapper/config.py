@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""
-Configuration management for UniFi Network Mapper.
+"""Configuration management for UniFi Network Mapper.
+
 Centralizes configuration loading and validation.
 """
 
@@ -10,14 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+
 log = logging.getLogger(__name__)
 
 
 @dataclass
 class UnifiConfig:
-    """
-    Centralized configuration with validation and output preferences.
-    """
+    """Centralized configuration with validation and output preferences."""
 
     base_url: str
     site: str = "default"
@@ -64,8 +63,7 @@ class UnifiConfig:
 
     @classmethod
     def from_env(cls, env_file: str = ".env") -> "UnifiConfig":
-        """
-        Load configuration from environment file.
+        """Load configuration from environment file.
 
         Args:
             env_file: Path to environment file
@@ -119,8 +117,7 @@ class UnifiConfig:
         )
 
     def to_dict(self) -> dict:
-        """
-        Export configuration as dictionary for API client initialization.
+        """Export configuration as dictionary for API client initialization.
 
         Returns:
             Dictionary with all configuration values

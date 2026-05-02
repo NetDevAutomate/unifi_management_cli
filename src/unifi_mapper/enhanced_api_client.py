@@ -1,28 +1,17 @@
 #!/usr/bin/env python3
-"""
-Enhanced API client combining improvements from both versions.
+"""Enhanced API client combining improvements from both versions.
+
 Provides better error handling, automatic provisioning, and reliable verification.
 """
 
-import asyncio
-import datetime
-import hashlib
 import logging
-import time
-from typing import Any, Dict, List, Optional, Union
-
-import httpx
 import requests
-from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
-
+import time
 from .exceptions import (
-    UniFiApiError,
-    UniFiAuthenticationError,
-    UniFiConnectionError,
-    UniFiPermissionError,
-    UniFiTimeoutError,
     UniFiValidationError,
 )
+from typing import Any, Dict, Optional
+
 
 log = logging.getLogger(__name__)
 
@@ -38,9 +27,9 @@ class EnhancedUnifiApiClient:
         base_url: str,
         site: str = "default",
         verify_ssl: bool = False,
-        username: str = None,
-        password: str = None,
-        api_token: str = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        api_token: Optional[str] = None,
         timeout: int = 10,
         max_retries: int = 3,
         retry_delay: float = 1.0,
@@ -95,6 +84,9 @@ class EnhancedUnifiApiClient:
 
     def _authenticate_token(self) -> bool:
         """Authenticate using API token."""
+        if not self._api_token:
+            return False
+
         self.session.headers.update({"X-API-KEY": self._api_token})
 
         endpoint = self._build_api_path("self")
@@ -449,6 +441,6 @@ class EnhancedUnifiApiClient:
         if update_success and not verify_updates:
             log.warning(f"Verification SKIPPED for device {device_id} - changes may not persist!")
             # Return assumed success for all ports (unverified)
-            verification_results = {p: None for p in port_updates.keys()}  # None = unverified
+            verification_results = dict.fromkeys(port_updates, True)
 
         return update_success, verification_results

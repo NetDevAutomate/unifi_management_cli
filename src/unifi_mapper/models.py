@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""
-Models for the UniFi Port Mapper.
+"""Models for the UniFi Port Mapper.
+
 Contains data classes for port and device information.
 """
 
@@ -24,13 +24,12 @@ class PortInfo:
         speed: int = 1000,
         full_duplex: bool = True,
         has_lldp_info: bool = False,
-        lldp_info: Dict[str, Any] = None,
+        lldp_info: Optional[Dict[str, Any]] = None,
         connected_device_name: Optional[str] = None,
         connected_port_name: Optional[str] = None,
         poe: bool = False,
     ):
-        """
-        Initialize a PortInfo object.
+        """Initialize a PortInfo object.
 
         Args:
             idx: Port index
@@ -45,6 +44,7 @@ class PortInfo:
             lldp_info: LLDP/CDP information
             connected_device_name: Name of the connected device
             connected_port_name: Name of the connected port
+            poe: Whether the port provides Power over Ethernet
         """
         self.id = f"port_{idx}"
         self.name = name
@@ -69,16 +69,12 @@ class PortInfo:
         self.poe = poe
 
     def get_display_name(self) -> str:
-        """
-        Get a display name for the port that includes media type and speed.
-        """
+        """Get a display name for the port that includes media type and speed."""
         speed_str = f"{self.speed / 1000}G" if self.speed >= 1000 else f"{self.speed}M"
         return f"{self.name} ({self.media} {speed_str})"
 
     def get_lldp_display_name(self) -> str:
-        """
-        Get a display name based on LLDP/CDP information.
-        """
+        """Get a display name based on LLDP/CDP information."""
         if not self.has_lldp_info:
             return self.name
 
@@ -95,8 +91,7 @@ class PortInfo:
             return self.name
 
     def update_lldp_info(self, lldp_info: Dict[str, Any]) -> None:
-        """
-        Update LLDP/CDP information for the port and set proposed name.
+        """Update LLDP/CDP information for the port and set proposed name.
 
         Args:
             lldp_info: LLDP/CDP information
@@ -129,12 +124,11 @@ class DeviceInfo:
         model: str,
         ip: str,
         mac: str,
-        ports: List[PortInfo] = None,
-        device_type: str = None,
-        lldp_info: Dict[str, Any] = None,
+        ports: Optional[List[PortInfo]] = None,
+        device_type: Optional[str] = None,
+        lldp_info: Optional[Dict[str, Any]] = None,
     ):
-        """
-        Initialize a DeviceInfo object.
+        """Initialize a DeviceInfo object.
 
         Args:
             id: Device ID
@@ -156,8 +150,7 @@ class DeviceInfo:
         self.lldp_info = lldp_info or {}
 
     def get_device_type(self) -> str:
-        """
-        Determine the device type based on the model name.
+        """Determine the device type based on the model name.
 
         Returns:
             str: Device type
@@ -191,8 +184,7 @@ class DeviceInfo:
             return "other"
 
     def get_color(self) -> str:
-        """
-        Get a color for the device based on its type.
+        """Get a color for the device based on its type.
 
         Returns:
             str: Color in hex format
@@ -444,7 +436,7 @@ class NetworkTopologyChange:
 class NetworkConfiguration:
     """Store network configuration snapshots for comparison."""
 
-    def __init__(self, timestamp: datetime = None):
+    def __init__(self, timestamp: Optional[datetime] = None):
         """Initialize network configuration snapshot."""
         self.timestamp = timestamp or datetime.now()
         self.devices: Dict[str, Dict[str, Any]] = {}
@@ -582,8 +574,8 @@ class NetworkAnalysisResult:
         category: str,
         priority: str,
         description: str,
-        device_id: str = None,
-        port_idx: int = None,
+        device_id: Optional[str] = None,
+        port_idx: Optional[int] = None,
     ):
         """Add improvement recommendation."""
         self.recommendations.append(
@@ -619,5 +611,3 @@ class NetworkAnalysisResult:
                 issues.append(issue)
 
         return issues
-
-

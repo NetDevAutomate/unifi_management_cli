@@ -1,7 +1,7 @@
 """Client trace tool for following client connection paths."""
 
 from pydantic import Field
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from unifi_mapper.core.models import NetworkPath, PathHop
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
@@ -225,9 +225,9 @@ def _find_device_by_mac(mac: str, devices_data: list[dict[str, Any]]) -> dict[st
     return None
 
 
-def _map_device_type(unifi_type: str) -> str:
+def _map_device_type(unifi_type: str) -> Literal['switch', 'ap', 'gateway', 'client']:
     """Map UniFi device type to our device type."""
-    type_mapping = {
+    type_mapping: dict[str, Literal['switch', 'ap', 'gateway', 'client']] = {
         'usw': 'switch',
         'uap': 'ap',
         'ugw': 'gateway',

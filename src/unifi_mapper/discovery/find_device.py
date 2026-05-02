@@ -2,7 +2,7 @@
 
 import time
 from pydantic import Field
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from unifi_mapper.core.models import Device
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
@@ -136,7 +136,7 @@ def _search_clients(identifier: str, clients_data: list[dict[str, Any]]) -> Devi
 def _convert_device_data(device_info: dict[str, Any], source: str) -> Device:
     """Convert UniFi device API data to Device model."""
     # Map UniFi device types to our types
-    type_mapping = {
+    type_mapping: dict[str, Literal['switch', 'ap', 'gateway', 'client']] = {
         'usw': 'switch',  # UniFi Switch
         'uap': 'ap',  # UniFi Access Point
         'ugw': 'gateway',  # UniFi Gateway
@@ -145,7 +145,9 @@ def _convert_device_data(device_info: dict[str, Any], source: str) -> Device:
     }
 
     unifi_type = device_info.get('type', '').lower()
-    device_type = type_mapping.get(unifi_type, 'switch')  # Default to switch
+    device_type: Literal['switch', 'ap', 'gateway', 'client'] = type_mapping.get(
+        unifi_type, 'switch'
+    )
 
     return Device(
         mac=device_info.get('mac', ''),

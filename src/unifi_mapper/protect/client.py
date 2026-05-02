@@ -10,18 +10,16 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from enum import Enum
+from loguru import logger  # type: ignore[import-untyped]
 from types import TracebackType
 from typing import TYPE_CHECKING, AsyncIterator, Callable
-
-from loguru import logger  # type: ignore[import-untyped]
 from uiprotect import ProtectApiClient
 from uiprotect.data import Bootstrap
-
 from unifi_mapper.protect.config import ProtectConfig
 
 
 if TYPE_CHECKING:
-    from uiprotect.data import AiPort, Camera, Chime, Doorlock, Light, NVR, Sensor
+    from uiprotect.data import NVR, AiPort, Camera, Chime, Doorlock, Light, Sensor
 
 
 class ConnectionState(Enum):

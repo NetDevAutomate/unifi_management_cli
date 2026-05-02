@@ -6,11 +6,8 @@ for real-time WebSocket updates from UniFi Protect.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from unittest.mock import MagicMock
-
 import pytest
-
+from datetime import datetime, timezone
 from unifi_mapper.protect.events import (
     EventFilter,
     EventHandler,
@@ -20,6 +17,7 @@ from unifi_mapper.protect.events import (
     ProtectEventType,
     ProtectModelType,
 )
+from unittest.mock import MagicMock
 
 
 class TestProtectEventCategory:

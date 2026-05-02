@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""
-Analyze network device capabilities for port naming support.
-"""
+"""Analyze network device capabilities for port naming support."""
 
 import logging
 import sys
 from pathlib import Path
 
+
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from unifi_mapper.api_client import UnifiApiClient
+from unifi_mapper.cli import load_env_from_config
 from unifi_mapper.config import UnifiConfig
 from unifi_mapper.device_capabilities import DeviceCapabilityDetector
-from unifi_mapper.cli import load_env_from_config
+
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)

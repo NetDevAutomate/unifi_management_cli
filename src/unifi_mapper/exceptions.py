@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""
-Exception hierarchy for UniFi API operations.
+"""Exception hierarchy for UniFi API operations.
+
 Provides structured error handling with retry/no-retry classification.
 """
 
@@ -26,9 +26,13 @@ class UniFiPermanentError(UniFiApiError):
 class UniFiAuthenticationError(UniFiPermanentError):
     """Authentication failures (401, 403)."""
 
-    def __init__(self, message: str, auth_method: str = None, status_code: int = None):
-        """
-        Initialize authentication error with context.
+    def __init__(
+        self,
+        message: str,
+        auth_method: str | None = None,
+        status_code: int | None = None,
+    ):
+        """Initialize authentication error with context.
 
         Args:
             message: Error message

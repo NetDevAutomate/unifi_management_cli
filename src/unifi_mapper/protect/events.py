@@ -26,9 +26,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any
-
 from loguru import logger  # type: ignore[import-untyped]
+from typing import TYPE_CHECKING, Any
 from uiprotect.data import (
     EventType,
     ModelType,
