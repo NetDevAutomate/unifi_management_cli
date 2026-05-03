@@ -66,6 +66,7 @@ Generated: 2026-05-02
     - 20.5 [Protect Event Pipeline](#205-protect-event-pipeline)
     - 20.6 [MCP Tool Discovery and Execution Workflow](#206-mcp-tool-discovery-and-execution-workflow)
 21. [Exception Hierarchy](#21-exception-hierarchy)
+22. [scripts/ Directory](#22-scripts-directory)
 
 ---
 
@@ -74,7 +75,7 @@ Generated: 2026-05-02
 The UniFi Management CLI is a Python package (`unifi_mapper`) that provides three distinct interface layers over UniFi Controller APIs:
 
 1. **CLI tools** - argparse and Typer-based command-line interfaces for network operators
-2. **Analysis and diagnostics tools** - 20+ domain-specific modules for network analysis
+2. **Analysis and diagnostics tools** - 30+ domain-specific modules for network analysis
 3. **MCP server** - A FastMCP server that exposes all tools to AI agents via the Model Context Protocol
 
 The codebase contains two generations of API client code. The legacy synchronous path (`api_client.py`, `port_mapper.py`, `run_methods.py`) handles the original port-mapping workflow. The modern async path (`core/utils/client.py`, `network/client.py`, `protect/client.py`) serves the analysis, network control, and Protect integration packages.
@@ -109,7 +110,7 @@ graph TB
     end
 
     subgraph "Domain Packages"
-        ANA["analysis/\n20+ modules"]
+        ANA["analysis/\n30+ modules"]
         DIA["diagnostics/\n4 tools"]
         DIS["discovery/\n4 tools"]
         CON["connectivity/\n4 tools"]
@@ -875,6 +876,18 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 | `traffic_matrix.py` | `analyze_traffic_matrix` | Summarises top talkers and placement hints |
 | `vlan_coverage.py` | `audit_vlan_coverage` | Checks required VLAN propagation on trunk and planned uplink ports |
 | `vlan_diagnostics.py` | `diagnose_vlans` | Validates VLAN definitions, gateways, trunks, and inter-VLAN assumptions |
+| `bandwidth_test.py` | `run_bandwidth_test` | iperf3 bandwidth testing via SSH to gateway |
+| `channel_optimiser.py` | `analyze_channels`, `optimize_5ghz`, `optimize_24ghz`, `generate_report` | Auto-channel optimiser with utilization-weighted channel assignment |
+| `client_density.py` | `analyze_client_density` | Wireless client density analysis per AP |
+| `config_drift.py` | `snapshot_config`, `detect_drift` | Configuration drift detection with baseline snapshot and diff |
+| `dhcp_pool.py` | `check_dhcp_pool_utilization` | DHCP pool utilization and exhaustion analysis |
+| `latency_matrix.py` | `run_latency_matrix` | Gateway-centric ping matrix via SSH across all device and client IPs |
+| `link_error_tracking.py` | `snapshot_link_errors`, `compare_link_errors` | Link error rate tracking with baseline deltas for active degradation detection |
+| `neighbour_scan.py` | `scan_neighbours`, `get_cached_neighbours` | RF neighbour AP scanning for external network detection per channel |
+| `poe_budget.py` | `check_poe_budget` | PoE budget validation: per-switch consumption vs capacity |
+| `radio_config.py` | `snapshot_radio_config`, `apply_radio_config`, `restore_radio_config`, `build_optimisation_plan` | Radio config management: snapshot, apply, restore, and optimisation planning |
+| `roaming_analysis.py` | `snapshot_client_associations`, `analyze_roaming` | Client roaming pattern analysis to identify sticky clients and frequent roamers |
+| `uplink_redundancy.py` | `check_uplink_redundancy` | Uplink single-point-of-failure detection and failover validation |
 
 `stp_optimizer.py` is the hub for STP analysis. It discovers switches from `stat/device`, extracts STP state from `port_table`, builds LLDP-derived `STPConnection` records, annotates root eligibility, then feeds specialised helpers such as drift detection, snapshots, Root Guard auditing, 10G path-cost validation, and change-plan generation.
 
@@ -1512,6 +1525,14 @@ classDiagram
 `UniFiAuthenticationError` carries `auth_method` and `status_code` attributes for diagnostic context.
 
 The async `core/` and `protect/` stacks use separate exception classes (`ToolError`, `ProtectClientError`, `NetworkClientError`) rather than extending this hierarchy, reflecting the generational split in the codebase.
+
+---
+
+## 22. `scripts/` Directory
+
+| Script | Purpose |
+|---|---|
+| `unifi-cron.sh` | Master cron/scheduler script supporting macOS (launchd) and Linux (crontab). Installs, updates, and removes scheduled audit jobs: link errors + roaming every 5 min, config drift + health + radio hourly, port naming every 30 min. Subcommands: `install`, `status`, `run-all`, `update`, `uninstall`. |
 
 ---
 

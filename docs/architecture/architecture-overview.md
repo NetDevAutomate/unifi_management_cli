@@ -1,7 +1,7 @@
 # UniFi Management CLI - Architecture Overview
 
-**Document version**: 1.0  
-**Last updated**: 2026-05-02
+**Document version**: 1.1  
+**Last updated**: 2026-05-03
 **Codebase root**: `src/unifi_mapper/`
 
 > **See also**: [C4 Architecture](c4-architecture.md) | [Codebase Map](codemap.md) | [Use Cases](../guides/use-cases-and-howto.md) | [Troubleshooting](../operations/troubleshooting-and-runbook.md)
@@ -19,11 +19,13 @@
 7. [Layer 5: Network Control Plane](#7-layer-5-network-control-plane)
 8. [Layer 6: Protect Integration](#8-layer-6-protect-integration)
 9. [Layer 7: Core Domain](#9-layer-7-core-domain)
-10. [Design Patterns](#10-design-patterns)
-11. [Key Workflows (Sequence Diagrams)](#11-key-workflows-sequence-diagrams)
-12. [Module Dependency Graph](#12-module-dependency-graph)
-13. [External Interfaces](#13-external-interfaces)
-14. [Configuration and Credential Management](#14-configuration-and-credential-management)
+10. [Layer 8: SSH Integration](#10-layer-8-ssh-integration)
+11. [Layer 9: Scheduling and Automation](#11-layer-9-scheduling-and-automation)
+12. [Design Patterns](#12-design-patterns)
+13. [Key Workflows (Sequence Diagrams)](#13-key-workflows-sequence-diagrams)
+14. [Module Dependency Graph](#14-module-dependency-graph)
+15. [External Interfaces](#15-external-interfaces)
+16. [Configuration and Credential Management](#16-configuration-and-credential-management)
 
 ---
 
@@ -32,7 +34,7 @@
 The UniFi Management CLI is an enterprise-grade Python automation platform for managing UniFi networks. It solves three distinct operational problems:
 
 - **Topology discovery and port naming**: LLDP-driven automatic port labelling with device-aware capability detection.
-- **Network diagnostics**: 30+ analysis and diagnostic tools covering IP conflicts, STP, VLANs, QoS, performance, and security.
+- **Network diagnostics**: 40+ analysis and diagnostic tools covering IP conflicts, STP, VLANs, QoS, performance, security, DHCP pools, PoE budgets, client density, uplink redundancy, latency, radio configuration, roaming, and configuration drift.
 - **AI-assisted troubleshooting**: An MCP server exposing the full tool surface to Claude and other AI agents for natural-language network operations.
 
 The platform is delivered as four CLI entry points plus an MCP server, all installed from a single Python package:
@@ -48,7 +50,7 @@ The platform is delivered as four CLI entry points plus an MCP server, all insta
 
 ## 2. Layered Architecture
 
-The system is organised into seven layers. Dependencies flow strictly downward; the only upward flow is return values and events.
+The system is organised into nine layers. Dependencies flow strictly downward; the only upward flow is return values and events.
 
 ```mermaid
 graph TB
@@ -57,6 +59,10 @@ graph TB
         NC["network_cli.py\nunifi-network-toolkit"]
         IC["inventory_cli.py\nunifi-inventory"]
         MCP["mcp/server.py\nunifi-mcp"]
+    end
+
+    subgraph SCHED["Layer 9 - Scheduling"]
+        CRON["unifi-cron.sh\nlaunchd / crontab"]
     end
 
     subgraph INT["Layer 2 - Intelligence"]
@@ -76,10 +82,16 @@ graph TB
     end
 
     subgraph AT["Layer 4 - Analysis Toolkit"]
-        AN["analysis/ (30 registered tools)"]
+        AN["analysis/ (42 registered tools)"]
         DG["diagnostics/ (4 tools)"]
         DS["discovery/ (4 tools)"]
         CN["connectivity/ (4 registered tools)"]
+    end
+
+    subgraph SSH["Layer 8 - SSH Integration"]
+        SSHL["asyncssh\nGateway SSH tunnel"]
+        PING["Latency matrix\nping via UDM"]
+        IPERF["Bandwidth test\niperf3 via UDM"]
     end
 
     subgraph NCP["Layer 5 - Network Control Plane"]
@@ -101,6 +113,7 @@ graph TB
         EX["exceptions.py\nException hierarchy"]
     end
 
+    SCHED -->|"invokes CLI"| UI
     UI --> INT
     UI --> API
     UI --> AT
@@ -108,6 +121,7 @@ graph TB
     INT --> CD
     API --> CD
     AT --> API
+    AT --> SSH
     AT --> NCP
     AT --> CD
     NCP --> API
@@ -115,6 +129,7 @@ graph TB
     PR --> CD
     MCP --> AT
     MCP --> PR
+    SSH --> CD
 ```
 
 ---
@@ -129,9 +144,10 @@ graph LR
         APP["app: Typer\n(root)"]
         CMD_DISCOVER["discover\nLLDP topology + port naming"]
         CMD_FIND["find\nDevice / IP / MAC / client"]
-        CMD_ANALYZE["analyze\nLink quality / VLANs / STP / QoS"]
-        CMD_DIAGNOSE["diagnose\nHealth / perf / connectivity"]
+        CMD_ANALYZE["analyze\nLink quality / VLANs / STP / QoS\nlink-errors / roaming / config-drift / neighbours"]
+        CMD_DIAGNOSE["diagnose\nHealth / perf / connectivity\nall / latency-matrix / bandwidth"]
         CMD_STP["stp\nSTP topology and optimization"]
+        CMD_RADIO["radio\nsnapshot / optimize / restore\nauto-channel / report"]
         CMD_INV["inventory\nDevice management"]
         CMD_VFY["verify\nPort update verification"]
         CMD_DIAG["diagram\nGraphviz / Mermaid output"]
@@ -163,6 +179,7 @@ graph LR
     APP --> CMD_ANALYZE
     APP --> CMD_DIAGNOSE
     APP --> CMD_STP
+    APP --> CMD_RADIO
     APP --> CMD_INV
     APP --> CMD_VFY
     APP --> CMD_DIAG
@@ -206,7 +223,7 @@ The root callback intercepts `--connected-devices`, `--dry-run`, and `--verify-u
 
 ### MCP Server (mcp/server.py)
 
-The `unifi-mcp` server is built on FastMCP. It exposes three public discovery meta-tools that implement the Code Mode pattern (see [Section 10](#10-design-patterns)):
+The `unifi-mcp` server is built on FastMCP. It exposes three public discovery meta-tools that implement the Code Mode pattern (see [Section 12](#12-design-patterns)):
 
 | Tool | Purpose |
 | --- | --- |
@@ -215,6 +232,35 @@ The `unifi-mcp` server is built on FastMCP. It exposes three public discovery me
 | `get_tool_info` | Fetch full parameter schema for a named tool |
 
 The MCP server does not hard-code any domain logic. It delegates discovery to the `ToolRegistry` and underlying YAML manifests. Executable `ToolProxy` objects are available through the registry for host code and tests; they are not currently a public FastMCP `execute_tool` surface.
+
+### New CLI command groups (v1.1)
+
+**`radio` subcommand group** — manages Wi-Fi radio configuration with reversible operations:
+
+| Command | Module | Purpose |
+| --- | --- | --- |
+| `radio snapshot` | `analysis/radio_config.py` | Backup current AP radio settings to JSON |
+| `radio optimize` | `analysis/radio_config.py` | Apply optimised radio settings (auto-snapshots first) |
+| `radio restore` | `analysis/radio_config.py` | Restore a previous radio snapshot |
+| `radio auto-channel` | `analysis/channel_optimiser.py` | Utilization-weighted channel assignment |
+| `radio report` | `analysis/channel_optimiser.py` | Generate markdown radio optimisation report |
+
+**New `diagnose` commands** — comprehensive diagnostics runner and gateway-level tools:
+
+| Command | Module | Purpose |
+| --- | --- | --- |
+| `diagnose all` | 11 analysis modules | Run all checks with pass/warn/fail summary table |
+| `diagnose latency-matrix` | `analysis/latency_matrix.py` | SSH to UDM, ping all device/client IPs |
+| `diagnose bandwidth` | `analysis/bandwidth_test.py` | iperf3 throughput test via SSH to gateway |
+
+**New `analyze` commands** — time-series analysis with snapshot/compare pattern:
+
+| Command | Module | Purpose |
+| --- | --- | --- |
+| `analyze link-errors` | `analysis/link_error_tracking.py` | Baseline snapshot + delta comparison |
+| `analyze roaming` | `analysis/roaming_analysis.py` | Client-to-AP association tracking |
+| `analyze config-drift` | `analysis/config_drift.py` | Device config snapshot + diff |
+| `analyze neighbours` | `analysis/neighbour_scan.py` | RF spectrum scan for external networks |
 
 ---
 
@@ -398,7 +444,7 @@ async with UniFiProtectClient(config) as client:
 
 ### UniFiClient (core/utils/client.py)
 
-A second async client built with `httpx` for use by the analysis toolkit. Consumes credentials from the `get_credentials()` fallback chain (see Section 14). This client follows the async context manager pattern and is the standard client for all toolkit tools.
+A second async client built with `httpx` for use by the analysis toolkit. Consumes credentials from the `get_credentials()` fallback chain (see Section 16). This client follows the async context manager pattern and is the standard client for all toolkit tools.
 
 ### ToolkitAdapter (toolkit_adapters.py)
 
@@ -408,23 +454,49 @@ The adapter bridges the async-capable toolkit with the synchronous `UnifiApiClie
 
 ## 6. Layer 4: Analysis Toolkit
 
-The toolkit is 21 individual async functions organised across four sub-packages. All tools are registered via YAML manifests and exposed through the MCP server.
+The toolkit is 42 individual async functions organised across four sub-packages plus an SSH integration layer. All tools are registered via YAML manifests and exposed through the MCP server.
 
 ### Tool inventory
 
 ```mermaid
 graph TD
-    subgraph analysis["analysis/ (30 registered tools)"]
-        A1["detect_ip_conflicts"]
-        A2["detect_storms"]
-        A3["diagnose_vlans"]
-        A4["analyze_link_quality"]
-        A5["get_capacity_report"]
-        A6["monitor_lags"]
-        A7["validate_qos"]
-        A8["analyze_mac_table"]
-        A9["get_firmware_report"]
-        A10["discover_stp_topology\ncalculate_optimal_priorities\ngenerate_stp_report\napply_stp_changes\nformat_stp_report_markdown"]
+    subgraph analysis["analysis/ (42 registered tools)"]
+        direction LR
+        subgraph original["Original Tools"]
+            A1["detect_ip_conflicts"]
+            A2["detect_storms"]
+            A3["diagnose_vlans"]
+            A4["analyze_link_quality"]
+            A5["get_capacity_report"]
+            A6["monitor_lags"]
+            A7["validate_qos"]
+            A8["analyze_mac_table"]
+            A9["get_firmware_report"]
+            A10["STP suite (5 tools)\ndiscover, optimize, report\napply, format"]
+        end
+        subgraph new_infra["Infrastructure Health (new)"]
+            N1["check_dhcp_pool_utilization"]
+            N2["check_poe_budget"]
+            N3["analyze_client_density"]
+            N4["check_uplink_redundancy"]
+        end
+        subgraph new_radio["Radio Management (new)"]
+            N5["snapshot_radio_config"]
+            N6["apply_radio_config"]
+            N7["restore_radio_config"]
+            N8["analyze_channels\n(channel_optimiser)"]
+            N9["optimize_channels\n(channel_optimiser)"]
+        end
+        subgraph new_ssh["SSH-Based (new)"]
+            N10["run_latency_matrix\n(asyncssh → UDM → ping)"]
+            N11["run_bandwidth_test\n(asyncssh → UDM → iperf3)"]
+        end
+        subgraph new_timeseries["Time-Series Analysis (new)"]
+            N12["snapshot_link_errors\ncompare_link_errors"]
+            N13["snapshot_client_associations\nanalyze_roaming"]
+            N14["snapshot_config\ncompare_config"]
+            N15["scan_neighbours"]
+        end
     end
 
     subgraph diagnostics["diagnostics/ (4 tools)"]
@@ -448,6 +520,42 @@ graph TD
     end
 ```
 
+### New analysis module categories
+
+The 12 new analysis modules fall into four functional groups:
+
+**Infrastructure health** — single-shot checks that return a Pydantic report:
+
+| Module | Function | Returns |
+| --- | --- | --- |
+| `dhcp_pool.py` | `check_dhcp_pool_utilization()` | `DHCPPoolReport` — per-network pool size, active clients, exhaustion warnings |
+| `poe_budget.py` | `check_poe_budget()` | `PoEBudgetReport` — per-switch PoE consumption vs capacity |
+| `client_density.py` | `analyze_client_density()` | `ClientDensityReport` — per-AP client count, avg signal, overload flags |
+| `uplink_redundancy.py` | `check_uplink_redundancy()` | `UplinkRedundancyReport` — single-uplink SPOF detection |
+
+**Radio management** — snapshot/apply/restore lifecycle:
+
+| Module | Functions | Purpose |
+| --- | --- | --- |
+| `radio_config.py` | `snapshot_radio_config`, `apply_radio_config`, `restore_radio_config` | Reversible AP radio changes |
+| `channel_optimiser.py` | `analyze_channels`, `optimize_channels` | Utilization-weighted channel assignment with DFS penalty scoring |
+
+**SSH-based tools** — require `asyncssh` and gateway SSH credentials:
+
+| Module | Function | Purpose |
+| --- | --- | --- |
+| `latency_matrix.py` | `run_latency_matrix()` | SSH to UDM, ping all device/client IPs, build RTT/loss matrix |
+| `bandwidth_test.py` | `run_bandwidth_test()` | SSH to UDM, run iperf3 to target, report throughput |
+
+**Time-series analysis** — snapshot/compare pattern with JSON baselines:
+
+| Module | Functions | Purpose |
+| --- | --- | --- |
+| `link_error_tracking.py` | `snapshot_link_errors`, `compare_link_errors` | Port error counter deltas to distinguish active degradation from historical |
+| `roaming_analysis.py` | `snapshot_client_associations`, `analyze_roaming` | Track client-to-AP associations over time, identify sticky clients |
+| `config_drift.py` | `snapshot_config`, `compare_config` | Full device config snapshot + diff against baseline |
+| `neighbour_scan.py` | `scan_neighbours` | RF spectrum scan for external networks per channel |
+
 ### YAML manifest pattern
 
 Each category has a manifest file under `mcp/manifests/`. The manifest declares the tool's module path, handler function, description, priority, and tags. This decouples tool metadata from implementation and allows the MCP server to serve discovery without importing any tool code at startup.
@@ -468,21 +576,60 @@ Priority levels (`P1` through `P3`) help AI agents decide which tools to invoke 
 
 ### Tool implementation pattern
 
-Each tool function:
+Every analysis tool follows the same four-phase pattern:
 
-1. Creates a `UniFiClient` (async context manager from `core/utils/client.py`).
-2. Fetches the necessary API data.
-3. Returns a structured Pydantic model from `core/models/`.
+```mermaid
+flowchart LR
+    A["async function\n(public API)"] --> B["UniFiClient\n(async context manager)"]
+    B --> C["Pure analysis\n(no I/O, testable)"]
+    C --> D["Pydantic model\n(typed return)"]
+```
+
+1. **Async entry point**: The public function is always `async def`. CLI commands wrap it with `asyncio.run()`.
+2. **Data fetch via `UniFiClient`**: All API calls happen inside an `async with UniFiClient() as client:` block. The client handles auth, retries, and session cleanup.
+3. **Pure analysis**: A private `_analyze_*()` function receives raw API dicts and returns structured results. This function has no I/O — it is pure computation and fully unit-testable.
+4. **Pydantic model return**: The result is always a typed Pydantic v2 model from `core/models/`, ensuring consistent serialisation for CLI, MCP, and test consumers.
 
 ```python
-async def diagnose_vlans(
-    source_vlan: int | None = None,
-    dest_vlan: int | None = None,
-) -> VLANDiagnosticReport:
+# Canonical pattern (all 12 new modules follow this exactly)
+async def check_dhcp_pool_utilization() -> DHCPPoolReport:
     async with UniFiClient() as client:
         networks = await client.get_networks()
-        # ... analysis logic ...
-    return VLANDiagnosticReport(checks=checks, ...)
+        clients = await client.get_clients()
+
+    pools, warnings, recs = _analyze_dhcp_pools(networks, clients)
+    return DHCPPoolReport(pools=pools, warnings=warnings, ...)
+```
+
+**SSH-based tools** extend this pattern by adding an `asyncssh` connection phase between data fetch and analysis:
+
+```python
+async def run_latency_matrix(...) -> LatencyMatrixReport:
+    creds = Credentials.from_env()
+    async with UniFiClient() as client:
+        devices = await client.get_devices()       # Phase 2: API fetch
+    targets = _build_target_list(devices, ...)      # Phase 3: pure analysis
+    results = await _ping_targets_via_ssh(creds, targets, ...)  # SSH phase
+    return LatencyMatrixReport(results=results, ...)  # Phase 4: Pydantic model
+```
+
+**Time-series tools** use a snapshot/compare variant where the first call writes a JSON baseline and the second call diffs against it:
+
+```python
+# Snapshot phase (writes baseline)
+async def snapshot_link_errors(output_path: str) -> dict:
+    async with UniFiClient() as client:
+        devices = await client.get_devices()
+    snapshot = _build_snapshot(devices)
+    Path(output_path).write_text(json.dumps(snapshot))
+    return snapshot
+
+# Compare phase (reads baseline, fetches current, diffs)
+async def compare_link_errors(baseline_path: str, threshold: int) -> dict:
+    async with UniFiClient() as client:
+        devices = await client.get_devices()
+    baseline = json.loads(Path(baseline_path).read_text())
+    return _compute_deltas(baseline, _build_snapshot(devices), threshold)
 ```
 
 ---
@@ -697,7 +844,88 @@ graph TD
 
 ---
 
-## 10. Design Patterns
+## 10. Layer 8: SSH Integration
+
+Two analysis tools require direct SSH access to the UDM gateway to execute commands that cannot be performed via the REST API. Both use `asyncssh` for non-blocking SSH sessions.
+
+```mermaid
+graph TD
+    subgraph ssh_layer["SSH Integration Layer"]
+        LM["latency_matrix.py\nrun_latency_matrix()"]
+        BW["bandwidth_test.py\nrun_bandwidth_test()"]
+        CREDS["Credentials.from_env()\n+ UNIFI_SSH_USERNAME\n+ UNIFI_SSH_PASSWORD"]
+    end
+
+    subgraph gateway["UDM Pro Max (SSH target)"]
+        PING["ping -c N -W T <ip>"]
+        IPERF["iperf3 -c <ip> -t D -P P -J"]
+    end
+
+    LM -->|"asyncssh.connect()"| PING
+    BW -->|"asyncssh.connect()"| IPERF
+    CREDS --> LM
+    CREDS --> BW
+```
+
+**Why SSH?** The UniFi REST API provides no endpoint for active probing (ping, traceroute, iperf3). SSH to the gateway is the only way to measure real latency and throughput from the network's vantage point — analogous to running `show ip route` or `ping` from a router's CLI in traditional networking.
+
+**Connection pattern**: Both tools use `asyncssh.connect()` with `known_hosts=None` (self-signed UDM certs) and `preferred_auth='keyboard-interactive,password'`. Credentials come from `UNIFI_SSH_USERNAME` / `UNIFI_SSH_PASSWORD` environment variables, falling back to the main controller password.
+
+**Latency matrix** SSHs once, then runs `ping -c {count} -W {timeout} {ip}` for each target IP sequentially, parsing RTT stats from stdout. Returns a `LatencyMatrixReport` with per-target `LatencyResult` entries.
+
+**Bandwidth test** SSHs once, runs `iperf3 -c {target} -t {duration} -P {parallel} -J` (JSON output mode), and parses the structured result. Supports `--reverse` for download testing and `--bidir` for bidirectional.
+
+---
+
+## 11. Layer 9: Scheduling and Automation
+
+`scripts/unifi-cron.sh` provides cross-platform scheduled execution of audit tasks. It is a standalone shell script with no Python dependencies — it invokes `uv run unifi-mapper` subcommands.
+
+```mermaid
+graph TD
+    subgraph scheduler["unifi-cron.sh"]
+        INSTALL["install\nCreate scheduled tasks"]
+        UNINSTALL["uninstall\nRemove scheduled tasks"]
+        STATUS["status\nShow task status"]
+        RUNALL["run-all\nManual trigger"]
+    end
+
+    subgraph platform["Platform Adapters"]
+        LAUNCHD["macOS\nlaunchd plist files\n~/Library/LaunchAgents/"]
+        CRONTAB["Linux\ncrontab entries\nmarked with # UNIFI-MANAGEMENT-CLI"]
+    end
+
+    subgraph tasks["Scheduled Tasks"]
+        T1["link-error-snapshot\nevery 5 min"]
+        T2["client-roaming-snapshot\nevery 5 min"]
+        T3["config-drift-check\nevery hour"]
+        T4["diagnose-all\nevery hour"]
+        T5["radio-report\nevery hour"]
+        T6["port-naming\nevery 30 min"]
+    end
+
+    INSTALL --> LAUNCHD
+    INSTALL --> CRONTAB
+    LAUNCHD --> tasks
+    CRONTAB --> tasks
+```
+
+**Schedule summary**:
+
+| Task | Interval | CLI command |
+| --- | --- | --- |
+| Link error snapshot | 5 min | `analyze link-errors --snapshot` |
+| Client roaming snapshot | 5 min | `analyze roaming --snapshot` |
+| Config drift check | 1 hour | `analyze config-drift` |
+| Full diagnostics | 1 hour | `diagnose all` |
+| Radio report | 1 hour | `radio report -o reports/channel-report.md` |
+| Port naming | 30 min | `--verify-updates --connected-devices` |
+
+The scheduler writes logs to `$PROJECT_DIR/logs/` with one log file per task. On macOS, each task is a launchd plist under `~/Library/LaunchAgents/com.unifi-management.{name}.plist`. On Linux, entries are appended to the user's crontab with a `# UNIFI-MANAGEMENT-CLI` marker for clean uninstall.
+
+---
+
+## 12. Design Patterns
 
 ### Adapter Pattern (toolkit_adapters.py)
 
@@ -761,7 +989,7 @@ class DeviceRepository(Generic[T]):
 
 ### Lazy Loading / Proxy Pattern (mcp/registry.py)
 
-`ToolProxy` defers importing a tool's implementation module until the first `execute()` call. This keeps MCP server startup fast even though 53 tools are registered -- only the YAML manifests are parsed at startup:
+`ToolProxy` defers importing a tool's implementation module until the first `execute()` call. This keeps MCP server startup fast even though 61 tools are registered -- only the YAML manifests are parsed at startup:
 
 ```python
 class ToolProxy:
@@ -802,13 +1030,13 @@ The MCP server implements a progressive-disclosure pattern designed for AI agent
 3. ToolRegistry.get_tool("detect_ip_conflicts").execute() -> result
 ```
 
-This keeps the AI's tool list short and avoids overwhelming the model with schema for all 53 tools at once. The agent requests detail only for tools it intends to use.
+This keeps the AI's tool list short and avoids overwhelming the model with schema for all 61 tools at once. The agent requests detail only for tools it intends to use.
 
 ---
 
-## 11. Key Workflows (Sequence Diagrams)
+## 13. Key Workflows (Sequence Diagrams)
 
-### 11.1 Port Discovery and Naming Flow
+### 13.1 Port Discovery and Naming Flow
 
 ```mermaid
 sequenceDiagram
@@ -864,7 +1092,7 @@ sequenceDiagram
     SPM-->>CLI: summary {attempted, successful, skipped, failed}
 ```
 
-### 11.2 API Authentication Flow
+### 13.2 API Authentication Flow
 
 ```mermaid
 sequenceDiagram
@@ -893,7 +1121,7 @@ sequenceDiagram
     end
 ```
 
-### 11.3 MCP Tool Discovery and Execution Flow
+### 13.3 MCP Tool Discovery and Execution Flow
 
 ```mermaid
 sequenceDiagram
@@ -928,7 +1156,7 @@ sequenceDiagram
     PROXY-->>HOST: result
 ```
 
-### 11.4 Protect Event Processing Flow
+### 13.4 Protect Event Processing Flow
 
 ```mermaid
 sequenceDiagram
@@ -968,9 +1196,36 @@ sequenceDiagram
     end
 ```
 
+### 13.5 Comprehensive Diagnostics Runner Flow
+
+The `diagnose all` command runs 11 independent analysis checks sequentially, each following the canonical async pattern, and aggregates results into a pass/warn/fail summary:
+
+```mermaid
+sequenceDiagram
+    participant CLI as typer_cli.py
+    participant CHECK as Analysis Module
+    participant UC as UniFiClient
+    participant API as UniFi Controller
+
+    CLI->>CLI: load_env_from_config()
+
+    loop 11 checks (link quality, capacity, port profiles, MTU, SFP, radio, firmware, DHCP, PoE, client density, uplink)
+        CLI->>CHECK: asyncio.run(check_fn())
+        CHECK->>UC: async with UniFiClient()
+        UC->>API: GET /stat/device, /stat/sta, etc.
+        API-->>UC: JSON response
+        UC-->>CHECK: parsed data
+        CHECK->>CHECK: _analyze_*() pure logic
+        CHECK-->>CLI: Pydantic report
+        CLI->>CLI: _extract_status(report) → PASS|WARN|FAIL
+    end
+
+    CLI->>CLI: Rich Table summary
+```
+
 ---
 
-## 12. Module Dependency Graph
+## 14. Module Dependency Graph
 
 The following graph shows the primary import relationships between modules. Arrows point from importer to imported.
 
@@ -981,6 +1236,10 @@ graph TD
         NCLI["network_cli"]
         ICLI["inventory_cli"]
         MCPS["mcp/server"]
+    end
+
+    subgraph scheduling["Scheduling"]
+        CRON["unifi-cron.sh"]
     end
 
     subgraph cli_shared["Shared CLI"]
@@ -1012,6 +1271,12 @@ graph TD
         CN["connectivity/*"]
     end
 
+    subgraph ssh_layer["SSH Integration"]
+        ASYNCSSH["asyncssh"]
+        LM["analysis/latency_matrix"]
+        BW["analysis/bandwidth_test"]
+    end
+
     subgraph network_cp["Network Control Plane"]
         NW["network/*"]
     end
@@ -1031,6 +1296,7 @@ graph TD
         ERR["core/utils/errors"]
     end
 
+    CRON -->|"uv run"| TCLI
     TCLI --> CLI
     TCLI --> SPM
     TCLI --> PM
@@ -1067,6 +1333,12 @@ graph TD
     CN --> UC
     CN --> CM
 
+    LM --> UC
+    LM --> ASYNCSSH
+    LM --> AUTH
+    BW --> ASYNCSSH
+    BW --> AUTH
+
     NW --> UC
 
     PE --> PC
@@ -1082,9 +1354,9 @@ graph TD
 
 ---
 
-## 13. External Interfaces
+## 15. External Interfaces
 
-### 13.1 UniFi Network REST API
+### 15.1 UniFi Network REST API
 
 | Interface | Protocol | Auth | Notes |
 | --- | --- | --- | --- |
@@ -1106,7 +1378,7 @@ Key endpoints consumed:
 
 **Write field distinction**: `port_table` is read-only (populated by the controller firmware). The writable field is `port_overrides` — a sparse array containing only ports with non-default configuration. This is a documented but non-obvious behaviour that affects all port configuration writes.
 
-### 13.2 UniFi Protect WebSocket API
+### 15.2 UniFi Protect WebSocket API
 
 | Interface | Protocol | Library |
 | --- | --- | --- |
@@ -1116,11 +1388,21 @@ Key endpoints consumed:
 
 Event types consumed: motion, smart detect zones, doorbell, sensor state, device online/offline, NVR system events.
 
-### 13.3 ONVIF (IP Camera Protocol)
+### 15.3 ONVIF (IP Camera Protocol)
 
 Used by `protect/aiport.py` to communicate with third-party cameras paired to UniFi AI Ports. Handled via the `onvif-zeep-async` library.
 
-### 13.4 MQTT (Home Assistant Integration)
+### 15.3a SSH (Gateway Management Plane)
+
+Used by `analysis/latency_matrix.py` and `analysis/bandwidth_test.py` to execute commands on the UDM gateway. Handled via `asyncssh`.
+
+| Interface | Protocol | Auth | Notes |
+| --- | --- | --- | --- |
+| UDM SSH | SSH (port 22) | Password (`UNIFI_SSH_USERNAME` / `UNIFI_SSH_PASSWORD`) | `known_hosts=None` for self-signed |
+
+Commands executed: `ping` (latency matrix), `iperf3` (bandwidth test).
+
+### 15.4 MQTT (Home Assistant Integration)
 
 `protect/mqtt.py` publishes events to an MQTT broker using the Home Assistant MQTT Discovery convention. The bridge auto-generates discovery payloads so Home Assistant registers Protect devices without manual configuration.
 
@@ -1130,16 +1412,16 @@ Used by `protect/aiport.py` to communicate with third-party cameras paired to Un
 | `unifi/protect/<device_id>/state` | Device state updates |
 | `unifi/protect/<device_id>/event` | Event payloads (motion, detection, etc.) |
 
-### 13.5 MCP Protocol
+### 15.5 MCP Protocol
 
 The MCP server implements the Model Context Protocol (MCP) 1.0 specification using the FastMCP SDK. AI clients connect via stdio (for local use) or SSE (for remote deployment). The server exports:
 
 - 3 public discovery meta-tools (search, list, info)
-- 53 registered automation tools in YAML manifests, executable through `ToolRegistry` / `ToolProxy` in host code
+- 61 registered automation tools in YAML manifests, executable through `ToolRegistry` / `ToolProxy` in host code
 
 ---
 
-## 14. Configuration and Credential Management
+## 16. Configuration and Credential Management
 
 ### Configuration resolution order
 
