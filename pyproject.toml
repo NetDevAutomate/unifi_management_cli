@@ -19,6 +19,7 @@ dependencies = [
     "uiprotect>=7.0.0",  # UniFi Protect async API client
     "mcp>=1.0.0",  # Model Context Protocol SDK (includes FastMCP)
     "pyyaml>=6.0",  # YAML manifest parsing for MCP tools
+    "asyncssh>=2.22.0",
 ]
 license = { text = "MIT" }
 authors = [{ name = "ataylor" }]
