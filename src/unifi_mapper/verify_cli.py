@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""
-CLI command for comprehensive port name verification.
+"""CLI command for comprehensive port name verification.
+
 Implements multiple verification techniques to detect API lying.
 """
 
 import argparse
 import logging
 import sys
-from typing import Dict, List
-
 from .api_client import UnifiApiClient
 from .config import UnifiConfig
 from .ground_truth_verification import verify_with_ground_truth
+
 
 log = logging.getLogger(__name__)
 
@@ -326,7 +325,7 @@ def analyze_current_state(api_client, args):
                 if not name_matches:
                     api_cache_issues += 1
 
-    print(f"\n📊 Analysis Summary:")
+    print("\n📊 Analysis Summary:")
     print(f"Total LLDP ports: {total_lldp_ports}")
     print(f"Potential API cache issues: {api_cache_issues}")
 

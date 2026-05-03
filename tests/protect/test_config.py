@@ -10,17 +10,15 @@ Tests cover:
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from typing import TYPE_CHECKING
-
 import pytest
+from pathlib import Path
 from pydantic import SecretStr, ValidationError
-
+from typing import TYPE_CHECKING
 from unifi_mapper.protect.config import ProtectConfig, _load_env_file
 
 
 if TYPE_CHECKING:
-    from pytest_mock import MockerFixture
+    pass
 
 
 class TestProtectConfig:

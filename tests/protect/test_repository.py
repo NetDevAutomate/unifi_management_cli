@@ -6,12 +6,9 @@ used for caching and accessing device data.
 
 from __future__ import annotations
 
+import pytest
 from datetime import datetime, timedelta, timezone
 from ipaddress import IPv4Address
-from unittest.mock import MagicMock
-
-import pytest
-
 from unifi_mapper.protect.models import (
     DeviceType,
     ProtectCamera,
@@ -22,6 +19,7 @@ from unifi_mapper.protect.repository import (
     DeviceRepository,
     ProtectDeviceCache,
 )
+from unittest.mock import MagicMock
 
 
 class TestDeviceRepository:

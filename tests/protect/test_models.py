@@ -7,13 +7,10 @@ converting from uiprotect library objects.
 
 from __future__ import annotations
 
+import pytest
 from datetime import datetime, timedelta, timezone
 from ipaddress import IPv4Address
 from typing import Any
-from unittest.mock import MagicMock
-
-import pytest
-
 from unifi_mapper.protect.models import (
     BaseDevice,
     DeviceState,
@@ -27,6 +24,7 @@ from unifi_mapper.protect.models import (
     ProtectNVR,
     ProtectSensor,
 )
+from unittest.mock import MagicMock
 
 
 class TestDeviceType:

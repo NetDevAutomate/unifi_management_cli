@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
-"""
-API client module for the UniFi Port Mapper.
+"""API client module for the UniFi Port Mapper.
+
 Contains the UnifiApiClient class for interacting with the UniFi Controller API.
 """
 
 import datetime
 import hashlib
 import logging
-import time
-from typing import Any, Dict, List, Optional
-
 import requests
-from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
-
+import time
 from .exceptions import (
     UniFiApiError,
     UniFiAuthenticationError,
@@ -21,13 +17,15 @@ from .exceptions import (
     UniFiTimeoutError,
     UniFiValidationError,
 )
+from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
+from typing import Any, Dict, List, Optional
+
 
 log = logging.getLogger(__name__)
 
 
 def _sanitize_for_logging(value: str, max_chars: int = 4) -> str:
-    """
-    Sanitize sensitive values for logging by showing only first/last few characters.
+    """Sanitize sensitive values for logging by showing only first/last few characters.
 
     Args:
         value: The sensitive value to sanitize
@@ -42,8 +40,7 @@ def _sanitize_for_logging(value: str, max_chars: int = 4) -> str:
 
 
 def _hash_for_verification(value: str) -> str:
-    """
-    Create a hash of sensitive data for verification purposes without exposing the actual value.
+    """Create a hash of sensitive data for verification purposes without exposing the actual value.
 
     Args:
         value: The value to hash
@@ -77,8 +74,7 @@ def _is_mac_address(value: str) -> bool:
 
 
 def _sanitize_response_for_logging(response_text: str, max_length: int = 200) -> str:
-    """
-    Sanitize response text for logging by removing potential sensitive information.
+    """Sanitize response text for logging by removing potential sensitive information.
 
     Args:
         response_text: Raw response text
@@ -134,15 +130,14 @@ class UnifiApiClient:
         base_url: str,
         site: str = "default",
         verify_ssl: bool = False,
-        username: str = None,
-        password: str = None,
-        api_token: str = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        api_token: Optional[str] = None,
         timeout: int = 10,
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ):
-        """
-        Initialize the UnifiApiClient.
+        """Initialize the UnifiApiClient.
 
         Args:
             base_url: The base URL of the UniFi Controller (e.g., https://unifi.local:8443)
@@ -230,8 +225,7 @@ class UnifiApiClient:
         }
 
     def _retry_request(self, func, *args, **kwargs):
-        """
-        Execute a request with retry logic and exponential backoff.
+        """Execute a request with retry logic and exponential backoff.
 
         Args:
             func: Function to execute
@@ -334,8 +328,7 @@ class UnifiApiClient:
             raise UniFiApiError(f"Request failed after {self.max_retries} attempts")
 
     def login(self) -> bool:
-        """
-        Login to the UniFi Controller.
+        """Login to the UniFi Controller.
 
         Returns:
             bool: True if login was successful, False otherwise
@@ -375,8 +368,7 @@ class UnifiApiClient:
             raise UniFiApiError(f"Login failed: {e}")
 
     def _perform_login(self) -> bool:
-        """
-        Internal method to perform the actual login process.
+        """Internal method to perform the actual login process.
 
         Returns:
             bool: True if login was successful, False otherwise
@@ -424,6 +416,8 @@ class UnifiApiClient:
             log.debug(f"Attempting token authentication with hash: {self._token_hash}")
 
             # Try X-API-KEY header first
+            if not self._api_token:
+                raise UniFiValidationError("API token authentication selected but no token provided")
             self.session.headers.update({"X-API-KEY": self._api_token})
 
             try:
@@ -556,8 +550,7 @@ class UnifiApiClient:
         return False
 
     def logout(self) -> bool:
-        """
-        Logout from the UniFi Controller and clear session.
+        """Logout from the UniFi Controller and clear session.
 
         Returns:
             bool: True if logout was successful, False otherwise
@@ -596,8 +589,8 @@ class UnifiApiClient:
             return False
 
     def clear_credentials(self) -> None:
-        """
-        Securely clear stored credentials from memory.
+        """Securely clear stored credentials from memory.
+
         This should be called when the client is no longer needed.
         """
         if self._password:
@@ -628,12 +621,11 @@ class UnifiApiClient:
         """Destructor to ensure credentials are cleared when object is destroyed."""
         try:
             self.clear_credentials()
-        except:
+        except Exception:
             pass  # Ignore errors during cleanup
 
     def _validate_site_id(self, site_id: str) -> str:
-        """
-        Validate and sanitize site_id to prevent injection attacks.
+        """Validate and sanitize site_id to prevent injection attacks.
 
         Args:
             site_id: Site ID to validate
@@ -661,8 +653,7 @@ class UnifiApiClient:
         return sanitized
 
     def _validate_device_id(self, device_id: str) -> str:
-        """
-        Validate and sanitize device_id to prevent injection attacks.
+        """Validate and sanitize device_id to prevent injection attacks.
 
         Args:
             device_id: Device ID to validate
@@ -690,8 +681,7 @@ class UnifiApiClient:
         return sanitized
 
     def _validate_port_name(self, port_name: str) -> str:
-        """
-        Validate and sanitize port name to prevent injection attacks.
+        """Validate and sanitize port name to prevent injection attacks.
 
         Args:
             port_name: Port name to validate
@@ -718,9 +708,31 @@ class UnifiApiClient:
 
         return sanitized
 
+    def get_sites(self) -> List[Dict[str, Any]]:
+        """Get all sites from the UniFi Controller."""
+        if not self.is_authenticated and not self.login():
+            log.error("Not authenticated, cannot get sites")
+            return []
+
+        endpoint = (
+            f"{self.base_url}/proxy/network/api/self/sites"
+            if self.is_unifi_os
+            else f"{self.base_url}/api/self/sites"
+        )
+        try:
+            self.session.headers.update(self.legacy_headers)
+            response = self._retry_request(lambda: self.session.get(endpoint, timeout=self.timeout))
+            if response.status_code == 200:
+                payload = response.json()
+                data = payload.get("data", payload)
+                return data if isinstance(data, list) else []
+            log.error(f"Failed to get sites: {response.status_code}")
+        except Exception as e:
+            log.error(f"Error getting sites: {e}")
+        return []
+
     def get_devices(self, site_id: str) -> Dict[str, Any]:
-        """
-        Get all devices from the UniFi Controller.
+        """Get all devices from the UniFi Controller.
 
         Args:
             site_id: Site ID
@@ -784,8 +796,7 @@ class UnifiApiClient:
         return {}
 
     def get_clients(self, site_id: str) -> Dict[str, Any]:
-        """
-        Get all clients from the UniFi Controller.
+        """Get all clients from the UniFi Controller.
 
         Args:
             site_id: Site ID
@@ -849,8 +860,7 @@ class UnifiApiClient:
         return {}
 
     def get_device_details(self, site_id: str, device_id: str) -> Dict[str, Any]:
-        """
-        Get detailed information about a device.
+        """Get detailed information about a device.
 
         Args:
             site_id: Site ID
@@ -1005,8 +1015,7 @@ class UnifiApiClient:
         return device_details
 
     def get_device_ports(self, site_id: str, device_id: str) -> List[Dict[str, Any]]:
-        """
-        Get all ports for a device.
+        """Get all ports for a device.
 
         Args:
             site_id: Site ID
@@ -1173,8 +1182,7 @@ class UnifiApiClient:
         return default_ports
 
     def get_lldp_info(self, site_id: str, device_id: str) -> Dict[str, Dict[str, Any]]:
-        """
-        Get LLDP/CDP information for a device's ports with MAC resolution.
+        """Get LLDP/CDP information for a device's ports with MAC resolution.
 
         Args:
             site_id: Site ID
@@ -1359,8 +1367,7 @@ class UnifiApiClient:
     def update_port_name(
         self, site_id: str, device_id: str, port_idx: int, name: str
     ) -> bool:
-        """
-        Update the name of a port.
+        """Update the name of a port.
 
         Args:
             site_id: Site ID
@@ -1447,8 +1454,7 @@ class UnifiApiClient:
     def update_device_port_table(
         self, device_id: str, port_table: List[Dict[str, Any]]
     ) -> bool:
-        """
-        Update port names for a device using port_overrides (the correct writeable field).
+        """Update port names for a device using port_overrides (the correct writeable field).
 
         IMPORTANT: port_table is READ-ONLY - it reflects current state but changes don't persist.
         port_overrides is the WRITEABLE field for persistent port configuration changes.
@@ -1536,8 +1542,7 @@ class UnifiApiClient:
         device_details: Dict[str, Any],
         port_table: List[Dict[str, Any]],
     ) -> bool:
-        """
-        Update port configuration using port_overrides field (the correct approach).
+        """Update port configuration using port_overrides field (the correct approach).
 
         port_overrides is the WRITEABLE field for port configuration changes.
         port_table is READ-ONLY and reflects current device state.
@@ -1650,7 +1655,7 @@ class UnifiApiClient:
             )
 
             # Enhanced debug logging for troubleshooting persistence issues
-            log.debug(f"=== PORT OVERRIDE UPDATE DEBUG ===")
+            log.debug("=== PORT OVERRIDE UPDATE DEBUG ===")
             log.debug(f"Endpoint: {endpoint}")
             log.debug(f"Device ID: {device_id}")
             log.debug(f"Device MAC: {device_details.get('mac')}")
@@ -1667,7 +1672,7 @@ class UnifiApiClient:
 
             # Log the complete update payload
             import json as json_module
-            log.debug(f"Full update payload:")
+            log.debug("Full update payload:")
             log.debug(json_module.dumps(update_data, indent=2, default=str))
 
             # Log config version fields
@@ -1683,7 +1688,7 @@ class UnifiApiClient:
             response = self._retry_request(_try_update_port_overrides)
 
             # Enhanced response logging
-            log.debug(f"=== API RESPONSE DEBUG ===")
+            log.debug("=== API RESPONSE DEBUG ===")
             log.debug(f"Status code: {response.status_code}")
             log.debug(f"Response headers: {dict(response.headers)}")
 
@@ -1724,8 +1729,7 @@ class UnifiApiClient:
         device_details: Dict[str, Any],
         port_table: List[Dict[str, Any]],
     ) -> bool:
-        """
-        Update device configuration with complete device context (recommended approach).
+        """Update device configuration with complete device context (recommended approach).
 
         Args:
             device_id: Device ID
@@ -1795,8 +1799,7 @@ class UnifiApiClient:
     def _update_ports_via_port_endpoint(
         self, device_id: str, port_table: List[Dict[str, Any]]
     ) -> bool:
-        """
-        Try updating ports via port-specific API endpoint.
+        """Try updating ports via port-specific API endpoint.
 
         Args:
             device_id: Device ID
@@ -1875,8 +1878,7 @@ class UnifiApiClient:
         device_details: Dict[str, Any],
         port_table: List[Dict[str, Any]],
     ) -> bool:
-        """
-        Fallback to legacy device update method (original implementation).
+        """Fallback to legacy device update method (original implementation).
 
         Args:
             device_id: Device ID
@@ -1930,8 +1932,7 @@ class UnifiApiClient:
     def verify_port_update(
         self, device_id: str, port_idx: int, expected_name: str, max_retries: int = 5
     ) -> bool:
-        """
-        Verify that a port name update was successfully applied and persisted.
+        """Verify that a port name update was successfully applied and persisted.
 
         Args:
             device_id: Device ID
@@ -1991,8 +1992,7 @@ class UnifiApiClient:
         return False
 
     def get_device_mac_from_id(self, device_id: str) -> Optional[str]:
-        """
-        Get the MAC address for a device ID.
+        """Get the MAC address for a device ID.
 
         Args:
             device_id: Device ID
@@ -2009,8 +2009,7 @@ class UnifiApiClient:
         return None
 
     def debug_device_config(self, device_id: str) -> Dict[str, Any]:
-        """
-        Get comprehensive device configuration for debugging purposes.
+        """Get comprehensive device configuration for debugging purposes.
 
         Args:
             device_id: Device ID
@@ -2097,8 +2096,7 @@ class UnifiApiClient:
         return debug_info
 
     def list_devices_with_names(self) -> List[Dict[str, Any]]:
-        """
-        Get a list of all devices with their names and IDs for easy reference.
+        """Get a list of all devices with their names and IDs for easy reference.
 
         Returns:
             List of device information dictionaries

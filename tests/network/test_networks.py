@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import pytest
-from unifi_mapper.network.networks import (
-    NetworkManager,
-    NetworkStats,
-    NetworkSummary,
-)
 from unifi_mapper.network.models import (
     DHCPConfig,
     DHCPMode,
     NetworkInfo,
     NetworkPurpose,
+)
+from unifi_mapper.network.networks import (
+    NetworkManager,
+    NetworkStats,
+    NetworkSummary,
 )
 from unittest.mock import AsyncMock, MagicMock
 

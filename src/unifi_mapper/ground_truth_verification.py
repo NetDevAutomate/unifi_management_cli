@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""
-Ground truth verification using browser automation.
+"""Ground truth verification using browser automation.
+
 Bypasses the lying UniFi API by checking actual controller UI state.
 """
 
 import logging
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
+
 
 log = logging.getLogger(__name__)
 
@@ -15,8 +16,7 @@ class GroundTruthVerifier:
     """Verification system that checks actual UniFi controller UI instead of trusting API."""
 
     def __init__(self, api_client, browser_credentials: Optional[Dict[str, str]] = None):
-        """
-        Initialize ground truth verifier.
+        """Initialize ground truth verifier.
 
         Args:
             api_client: UniFi API client (for device lookups only, not for verification)
@@ -30,8 +30,7 @@ class GroundTruthVerifier:
         device_updates: Dict[str, Dict[int, str]],
         use_browser: bool = False
     ) -> Dict[str, Dict[int, bool]]:
-        """
-        Verify port updates using ground truth methods instead of API polling.
+        """Verify port updates using ground truth methods instead of API polling.
 
         Args:
             device_updates: Dict mapping device_id to {port_idx: expected_name}
@@ -49,9 +48,7 @@ class GroundTruthVerifier:
         self,
         device_updates: Dict[str, Dict[int, str]]
     ) -> Dict[str, Dict[int, bool]]:
-        """
-        Enhanced API verification that uses multiple techniques to detect lying responses.
-        """
+        """Enhanced API verification that uses multiple techniques to detect lying responses."""
         results = {}
 
         for device_id, port_updates in device_updates.items():
@@ -64,7 +61,7 @@ class GroundTruthVerifier:
 
             if not device_details:
                 log.error(f"Cannot verify {device_id} - device details unavailable")
-                device_results = {port_idx: False for port_idx in port_updates}
+                device_results = dict.fromkeys(port_updates, False)
                 results[device_id] = device_results
                 continue
 
@@ -98,9 +95,8 @@ class GroundTruthVerifier:
         expected_name: str,
         num_reads: int = 5,
         delay_between_reads: float = 2.0
-    ) -> Dict[str, any]:
-        """
-        Read the same port name multiple times with delays to detect cache inconsistency.
+    ) -> Dict[str, Any]:
+        """Read the same port name multiple times with delays to detect cache inconsistency.
 
         Returns:
             {
@@ -177,8 +173,8 @@ class GroundTruthVerifier:
         self,
         device_updates: Dict[str, Dict[int, str]]
     ) -> Dict[str, Dict[int, bool]]:
-        """
-        Verify port updates by checking actual UniFi controller UI via browser automation.
+        """Verify port updates by checking actual UniFi controller UI via browser automation.
+
         This is the most reliable method since it bypasses all API caching issues.
         """
         try:
@@ -195,9 +191,7 @@ class GroundTruthVerifier:
         device_updates: Dict[str, Dict[int, str]],
         verification_results: Dict[str, Dict[int, bool]]
     ) -> str:
-        """
-        Generate detailed verification report showing discrepancies.
-        """
+        """Generate detailed verification report showing discrepancies."""
         report_lines = []
         report_lines.append("=" * 80)
         report_lines.append("GROUND TRUTH VERIFICATION REPORT")
@@ -255,8 +249,7 @@ def verify_with_ground_truth(
     device_updates: Dict[str, Dict[int, str]],
     browser_credentials: Optional[Dict[str, str]] = None
 ) -> Tuple[Dict[str, Dict[int, bool]], str]:
-    """
-    Perform ground truth verification and return results with detailed report.
+    """Perform ground truth verification and return results with detailed report.
 
     Args:
         api_client: UniFi API client

@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unifi_mapper.network.models import (
     ACLProtocol,
-    IPAddressMatching,
-    PortMatching,
     TrafficMatchingList,
     TrafficMatchingListType,
 )
@@ -521,7 +519,7 @@ class TrafficMatchingListManager:
         lists = await self.get_all_lists()
         result = []
         for traffic_list in lists:
-            entry = {
+            entry: dict[str, Any] = {
                 'name': traffic_list.name,
                 'type': traffic_list.type.value,
             }

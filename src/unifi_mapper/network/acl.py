@@ -13,7 +13,6 @@ from unifi_mapper.network.models import (
     ACLActionType,
     ACLProtocol,
     ACLRule,
-    ACLTrafficFilter,
 )
 
 

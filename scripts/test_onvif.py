@@ -2,9 +2,10 @@
 """Simple ONVIF camera test script using onvif-zeep-async."""
 
 import asyncio
-import os
 import onvif
+import os
 from onvif import ONVIFCamera
+
 
 # WSDL files are bundled with the onvif package
 WSDL_DIR = os.path.join(os.path.dirname(onvif.__file__), "wsdl")
@@ -25,7 +26,7 @@ async def test_camera(ip: str, port: int, user: str, password: str):
         devicemgmt = camera.create_devicemgmt_service()
         info = await devicemgmt.GetDeviceInformation()
 
-        print(f"\n✅ Connection successful!")
+        print("\n✅ Connection successful!")
         print(f"   Manufacturer: {info.Manufacturer}")
         print(f"   Model: {info.Model}")
         print(f"   Firmware: {info.FirmwareVersion}")
@@ -33,7 +34,7 @@ async def test_camera(ip: str, port: int, user: str, password: str):
 
         # Get capabilities
         caps = await devicemgmt.GetCapabilities()
-        print(f"\n📋 Capabilities:")
+        print("\n📋 Capabilities:")
         print(f"   Media: {bool(caps.Media)}")
         print(f"   PTZ: {bool(caps.PTZ) if hasattr(caps, 'PTZ') else False}")
         print(f"   Events: {bool(caps.Events) if hasattr(caps, 'Events') else False}")

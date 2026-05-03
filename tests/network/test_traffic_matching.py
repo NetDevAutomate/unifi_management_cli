@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import pytest
-from unifi_mapper.network.traffic_matching import (
-    TrafficMatchingListManager,
-    TrafficListSummary,
-    PortListInfo,
-    IPAddressListInfo,
-)
 from unifi_mapper.network.models import (
     ACLProtocol,
-    PortMatching,
     IPAddressMatching,
+    PortMatching,
     TrafficMatchingList,
     TrafficMatchingListType,
+)
+from unifi_mapper.network.traffic_matching import (
+    IPAddressListInfo,
+    PortListInfo,
+    TrafficListSummary,
+    TrafficMatchingListManager,
 )
 from unittest.mock import AsyncMock, MagicMock
 

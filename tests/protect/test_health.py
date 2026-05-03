@@ -14,12 +14,9 @@ Tests cover:
 
 from __future__ import annotations
 
+import pytest
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
-
 from unifi_mapper.protect.analytics import DeviceHealth, DeviceHealthStatus
 from unifi_mapper.protect.events import (
     EventHandler,
@@ -36,6 +33,7 @@ from unifi_mapper.protect.health import (
     HealthThresholds,
     HealthTransition,
 )
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 # ============================================================================

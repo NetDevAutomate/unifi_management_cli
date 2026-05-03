@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-UniFi Network Inventory and Firmware Management CLI.
+"""UniFi Network Inventory and Firmware Management CLI.
 
 Provides inventory listing, firmware version reporting, and firmware update capabilities.
 Integrated into the main unifi-mapper CLI as subcommands.
@@ -9,20 +8,19 @@ Integrated into the main unifi-mapper CLI as subcommands.
 import logging
 import os
 import time
+import typer
+from .api_client import UnifiApiClient
+from .cli import get_default_config_path, load_env_from_config
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
-
-import typer
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
-from rich import box
+from typing import Optional
 
-from .api_client import UnifiApiClient
-from .cli import get_default_config_path, load_env_from_config
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -92,7 +90,7 @@ def get_device_type(model: str, device_type_field: str = "") -> str:
 def get_api_client(config_path: Optional[str] = None) -> tuple[UnifiApiClient, str]:
     """Create and authenticate API client."""
     if config_path is None:
-        config_path = get_default_config_path()
+        config_path = str(get_default_config_path())
 
     load_env_from_config(config_path)
 
@@ -244,6 +242,30 @@ def display_model_summary(devices: list[dict], device_type: str):
         console.print(f"  • {model}: {len(names)} device(s)")
 
     console.print()
+
+
+def find_firmware_skew(
+    categorized: dict[str, list[dict]],
+    filter_types: set[str],
+) -> dict[str, dict[str, list[str]]]:
+    """Group devices by model and return models with mixed firmware versions."""
+    show_all = "all" in filter_types
+    by_model: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+
+    for device_type, devices in categorized.items():
+        if not show_all and device_type not in filter_types:
+            continue
+        for device in devices:
+            model = device.get("model", "Unknown")
+            version = device.get("version", "Unknown")
+            name = device.get("name", "Unnamed")
+            by_model[model][version].append(name)
+
+    return {
+        model: dict(versions)
+        for model, versions in by_model.items()
+        if len(versions) > 1
+    }
 
 
 def _save_inventory_report(categorized: dict, filter_types: set, output_path: str, show_all: bool):
@@ -528,6 +550,79 @@ def check_updates(
             console.print()
 
     console.print("Run 'unifi-mapper inventory update-firmware --filter <type>' to upgrade devices")
+    client.logout()
+
+
+@inventory_app.command("firmware-skew")
+def firmware_skew(
+    filter: str = typer.Option(
+        "all",
+        "--filter", "-f",
+        help="Device types: all, switch, ap, firewall (comma-separated)",
+    ),
+    stp_window: bool = typer.Option(
+        False,
+        "--stp-window",
+        help="Warn when firmware changes overlap an STP maintenance window",
+    ),
+    config: Optional[str] = typer.Option(
+        None,
+        "--config", "-c",
+        help="Path to .env config file",
+    ),
+):
+    """📦 Report firmware version skew by model."""
+    filter_types = parse_filter(filter)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        progress.add_task("Connecting to UniFi controller...", total=None)
+        client, site = get_api_client(config)
+
+        progress.add_task("Fetching devices...", total=None)
+        categorized = fetch_and_categorize_devices(client, site)
+
+    skew = find_firmware_skew(categorized, filter_types)
+
+    console.print("[bold]Firmware Skew Report[/bold]")
+    console.print(f"Site: {site}")
+
+    if stp_window:
+        console.print(
+            "[yellow]Maintenance guard: do not combine firmware upgrades with STP root or priority changes.[/yellow]"
+        )
+
+    if not skew:
+        console.print("[bold green]✅ No firmware skew detected by model[/bold green]")
+        client.logout()
+        return
+
+    table = Table(title="Firmware Skew By Model", show_header=True)
+    table.add_column("Model", style="cyan")
+    table.add_column("Version", style="yellow")
+    table.add_column("Devices")
+
+    for model, versions in sorted(skew.items()):
+        first = True
+        for version, names in sorted(versions.items()):
+            table.add_row(
+                model if first else "",
+                version,
+                ", ".join(sorted(names)),
+            )
+            first = False
+
+    console.print(table)
+
+    if stp_window:
+        console.print(
+            "[bold yellow]Recommendation:[/bold yellow] finish STP convergence work first, then schedule firmware updates in a separate window."
+        )
+
     client.logout()
 
 

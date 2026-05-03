@@ -19,7 +19,8 @@ A practical reference for every major workflow in the UniFi Management CLI platf
 9. [MCP Server for AI-Assisted Troubleshooting](#9-mcp-server-for-ai-assisted-troubleshooting)
 10. [Ground Truth Verification](#10-ground-truth-verification)
 11. [CLI Entry Point Reference](#11-cli-entry-point-reference)
-12. [Architecture Overview](#12-architecture-overview)
+12. [Network Safety Workflows](#12-network-safety-workflows)
+13. [Architecture Overview](#13-architecture-overview)
 
 ---
 
@@ -77,7 +78,7 @@ Install the tool, create the XDG-compliant configuration directory, write your c
 
 ### Prerequisites
 
-- Python 3.11+ with `uv` installed
+- Python 3.12+ with `uv` installed
 - Access to a UniFi controller (Network Application or Dream Machine)
 - An API token (preferred) or admin username/password
 - The controller URL, including port (443 for UniFi OS, 8443 for legacy Network Application)
@@ -1287,14 +1288,14 @@ detect_ip_conflicts()
 | `list_categories` | Get all categories and their tool names |
 | `get_tool_info` | Get full parameter details for a specific tool |
 
-### Tool Categories Reference (36 tools total)
+### Tool Categories Reference (53 registered automation tools)
 
 | Category | Count | Tools |
 |----------|-------|-------|
-| analysis | 14 | `detect_ip_conflicts`, `detect_storms`, `diagnose_vlans`, `analyze_link_quality`, `get_capacity_report`, `monitor_lags`, `validate_qos`, `analyze_mac_table`, `get_firmware_report`, `discover_stp_topology`, `calculate_optimal_priorities`, `generate_stp_report`, `apply_stp_changes`, `format_stp_report_markdown` |
+| analysis | 30 | STP, VLAN, MTU, SFP, radio, traffic matrix, LAG, QoS, capacity, firmware, IP conflicts, storm detection, MAC table, change-plan, snapshot, drift, guard, preflight, and 10G validation tools |
 | diagnostics | 4 | `network_health_check`, `performance_analysis`, `security_audit`, `connectivity_analysis` |
 | discovery | 4 | `find_device`, `find_ip`, `find_mac`, `client_trace` |
-| connectivity | 3 | `firewall_check`, `path_analysis`, `traceroute` |
+| connectivity | 4 | `firewall_check`, `path_analysis`, `check_inter_vlan_routing`, `traceroute` |
 | network | 6 | `get_firewall_zones`, `get_firewall_policies`, `get_acl_rules`, `get_dns_policies`, `get_clients`, `get_networks` |
 | protect | 5 | `get_cameras`, `get_nvr_info`, `get_sensors`, `get_lights`, `get_doorbells` |
 
@@ -1593,7 +1594,169 @@ flowchart TD
 
 ---
 
-## 12. Architecture Overview
+## 12. Network Safety Workflows
+
+### Safe STP Change Workflow
+
+Use this workflow for root-bridge changes, 10G expansion, or planned switch installs. The key rule is simple: collect a baseline, generate a reversible plan, apply only in a maintenance window, and verify with independent checks afterwards.
+
+```mermaid
+flowchart TD
+    A([Need STP/network change]) --> B[stp snapshot --output baseline.json]
+    B --> C[stp preflight --simulate-add USW-Flex-XG:2 --uplink TARGET]
+    C --> D[stp optimize --dry-run]
+    D --> E[stp optimize --plan stp-plan.json]
+    E --> F{Maintenance window approved?}
+    F -->|No| G[Stop with plan artefacts only]
+    F -->|Yes| H[stp apply --plan stp-plan.json]
+    H --> I[stp analyze]
+    I --> J[stp validate-10g --planned-switches 2]
+    J --> K[stp guard]
+    K --> L[analyze vlan-coverage --required-vlans ...]
+    L --> M{Any critical finding?}
+    M -->|Yes| N[stp rollback stp-plan.json]
+    M -->|No| O[stp snapshot --output post-change.json]
+    O --> P[stp diff baseline.json]
+```
+
+```bash
+# 1. Capture the current root, priorities, port states, path costs, and counters
+uv run unifi-mapper stp snapshot --output reports/stp-baseline.json
+
+# 2. Simulate planned Flex XG additions and expected root election
+uv run unifi-mapper stp preflight \
+  --simulate-add USW-Flex-XG:2 \
+  --uplink "Xray3 USW Flex XG 10G" \
+  --uplink "Mike2 10G Aggregation USW Flex XG" \
+  --output reports/stp-preflight.json
+
+# 3. Generate a reversible change plan
+uv run unifi-mapper stp optimize --dry-run
+uv run unifi-mapper stp optimize --plan reports/stp-plan.json
+
+# 4. Apply during the maintenance window
+uv run unifi-mapper stp apply --plan reports/stp-plan.json
+
+# 5. Verify independently
+uv run unifi-mapper stp analyze
+uv run unifi-mapper stp validate-10g --planned-switches 2 --output reports/stp-10g-validation.md
+uv run unifi-mapper stp guard
+uv run unifi-mapper stp diff reports/stp-baseline.json
+
+# 6. Roll back if post-checks show the wrong root, blocked uplinks, or critical path/counter findings
+uv run unifi-mapper stp rollback reports/stp-plan.json
+```
+
+### 10G Expansion Readiness
+
+Run the 10G validator before cabling additional aggregation switches. It combines STP root checks, blocked ports, path-cost sanity, 10G link speeds, port counters, and Root Guard recommendations.
+
+```bash
+uv run unifi-mapper stp validate-10g \
+  --planned-switches 2 \
+  --drops-threshold 100000 \
+  --output reports/stp-10g-validation.md
+```
+
+Interpretation:
+
+| Readiness | Meaning | Operator action |
+|-----------|---------|-----------------|
+| `READY` | No blocking findings | Proceed with the planned physical work |
+| `READY_WITH_WARNINGS` | No critical blockers, but counters or advisory findings exist | Inspect warnings and proceed only if understood |
+| `NOT_READY` | STP root, blocked-port, path-cost, or critical link findings exist | Fix before installing more switches |
+
+### VLAN Coverage Before Cabling
+
+Use VLAN coverage when a planned Flex XG or trunk uplink must carry known VLANs.
+
+```bash
+uv run unifi-mapper analyze vlan-coverage \
+  --required-vlans 1,10,20,30,40,50 \
+  --planned-uplink "Xray3 USW Flex XG 10G" \
+  --planned-uplink "Mike2 10G Aggregation USW Flex XG"
+```
+
+The audit flags trunk/planned-uplink ports missing required VLANs. Access/client ports are ignored so the report stays focused on inter-switch paths.
+
+### Inter-VLAN Endpoint Validation
+
+Use this when two endpoints are on different VLANs and you need to know whether routing and firewall policy should allow the path.
+
+```bash
+uv run unifi-mapper diagnose inter-vlan 203.0.113.10 198.51.100.11
+uv run unifi-mapper diagnose inter-vlan 203.0.113.10 198.51.100.11 --protocol tcp --port 443
+```
+
+The check resolves endpoints, identifies source and destination VLANs, confirms gateway availability, and evaluates matching LAN/firewall policy where available.
+
+### Port Naming Verification
+
+For port naming, use verification by default. UniFi API responses can be stale, so the tool does not trust a single read after mutation.
+
+```bash
+uv run unifi-mapper discover \
+  --connected-devices \
+  --verify-updates \
+  --output reports/port-naming-verify.md \
+  --diagram reports/topology-port-naming-verify.mermaid \
+  --format mermaid
+```
+
+Expected success criteria:
+
+- Verification count equals attempted update count.
+- Failed verification count is zero.
+- Generated Mermaid topology matches the expected physical design.
+
+### Port Counters And Baselines
+
+UniFi exposes cumulative counters. In most cases the API does not provide a safe per-port counter reset operation, so the practical pattern is to keep local baselines and compare deltas between runs.
+
+```bash
+# Snapshot/delta support lives in the Python baseline module and is used by 10G validation.
+uv run unifi-mapper stp validate-10g --planned-switches 2 --drops-threshold 100000
+```
+
+The local baseline path is:
+
+```text
+${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/port-counters.json
+```
+
+Use a new baseline after a known-good physical state, then treat new CRC/errors as actionable. Drops-only findings are lower confidence because multicast/broadcast filtering can increment drops without a bad cable.
+
+### LAG Candidate Review
+
+The LAG candidate finder detects parallel LLDP links and proposes LACP candidates, but it does not apply LAGs. Review NAS and server NIC LAG requirements first, because changing UniFi LAGs before endpoint bonding is a common way to create avoidable outages.
+
+```bash
+uv run unifi-mapper analyze lag-candidates --min-links 2
+```
+
+### Radio Channel And Power Optimisation
+
+There is a read-only radio optimisation tool. It analyzes AP radio tables, flags channel reuse, and highlights high/manual transmit-power patterns that can cause sticky clients or co-channel contention.
+
+```bash
+uv run unifi-mapper analyze radio
+```
+
+Use the report as evidence for a manual RF plan. The tool does not currently mutate AP channel or power settings.
+
+### SFP Diagnostics
+
+SFP diagnostics are available when UniFi exposes module fields in `port_table`.
+
+```bash
+uv run unifi-mapper analyze sfp
+```
+
+The audit reports vendor, part, serial, temperature, Tx/Rx dBm, loss-of-signal, and fault flags. Weak RX power below `-10 dBm` and unexpectedly high RX power above `-3 dBm` are flagged for inspection.
+
+---
+
+## 13. Architecture Overview
 
 ### Application Flow Diagram
 
@@ -1612,10 +1775,10 @@ flowchart TB
     end
 
     subgraph Analysis["Analysis Toolkit"]
-        G[analysis - 14 tools]
+        G[analysis - 30 tools]
         H[diagnostics - 4 tools]
         I[discovery - 4 tools]
-        J[connectivity - 3 tools]
+        J[connectivity - 4 tools]
         K[network - 6 tools]
         L[protect - 5 tools]
     end
@@ -1658,7 +1821,7 @@ flowchart TB
 | `port_mapper.py` | Traditional port mapping (LLDP to port name) |
 | `smart_port_mapper.py` | SmartPortMapper with verification and cache-busting |
 | `mcp/server.py` | FastMCP server, tool registry, meta-tools |
-| `mcp/manifests/` | YAML tool definitions for all 36 tools |
+| `mcp/manifests/` | YAML tool definitions for all 53 registered automation tools |
 | `analysis/stp_optimizer.py` | STP topology discovery, priority calculation, report generation |
 | `protect/client.py` | Async wrapper around uiprotect ProtectApiClient |
 | `protect/mqtt.py` | MQTT bridge with Home Assistant discovery |

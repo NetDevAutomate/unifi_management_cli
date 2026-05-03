@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""
-Smart Port Mapper with Device-Aware Capabilities.
+"""Smart Port Mapper with Device-Aware Capabilities.
+
 Respects device limitations and provides appropriate strategies per device model.
 """
 
 import logging
-from typing import Dict, List, Tuple
-
-from .device_capabilities import DeviceCapabilityDetector, PortNamingSupport
+from .device_capabilities import DeviceCapability, DeviceCapabilityDetector, PortNamingSupport
 from .ground_truth_verification import verify_with_ground_truth
+from typing import Any, Dict, List
+
 
 log = logging.getLogger(__name__)
 
@@ -23,13 +23,12 @@ class SmartPortMapper:
 
     def smart_update_ports(
         self,
-        devices_data: List[Dict],
-        lldp_data: Dict[str, Dict],
+        devices_data: List[Dict[str, Any]],
+        lldp_data: Dict[str, Dict[str, Any]],
         verify_updates: bool = True,
         dry_run: bool = False
-    ) -> Dict[str, any]:
-        """
-        Update port names using device-aware strategies.
+    ) -> Dict[str, Any]:
+        """Update port names using device-aware strategies.
 
         Args:
             devices_data: List of device information
@@ -55,10 +54,13 @@ class SmartPortMapper:
 
         for device in devices_data:
             device_id = device.get("_id")
+            if not isinstance(device_id, str):
+                log.warning("Skipping device without _id")
+                continue
             device_name = device.get("name", "Unknown")
             device_model = device.get("model", "Unknown")
             firmware_version = device.get("version", "Unknown")
-            device_ip = device.get("ip", "Unknown")
+            device.get("ip", "Unknown")
 
             log.info(f"Processing {device_name} ({device_model}) - Firmware {firmware_version}")
 
@@ -153,10 +155,9 @@ class SmartPortMapper:
         device_id: str,
         device_name: str,
         port_updates: Dict[int, str],
-        capability: object
+        capability: DeviceCapability
     ) -> bool:
         """Apply port updates using device-appropriate strategy."""
-
         if capability.port_naming_support == PortNamingSupport.RESETS_AUTOMATICALLY:
             log.warning(f"⚠️  {device_name}: Device auto-resets configurations - update likely to fail")
             # Still attempt but warn user
@@ -215,10 +216,9 @@ class SmartPortMapper:
 
     def _perform_ground_truth_verification(
         self,
-        results: Dict[str, any]
-    ) -> Dict[str, any]:
+        results: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Perform ground truth verification on attempted updates."""
-
         # Build device_updates dict for verification
         device_updates = {}
 
@@ -261,10 +261,9 @@ class SmartPortMapper:
 
     def generate_smart_mapping_report(
         self,
-        results: Dict[str, any]
+        results: Dict[str, Any]
     ) -> str:
         """Generate comprehensive report with device-aware recommendations."""
-
         report_lines = []
         report_lines.append("=" * 80)
         report_lines.append("SMART PORT MAPPING REPORT")
@@ -300,7 +299,7 @@ class SmartPortMapper:
                 report_lines.append(f"   • {failure['device_name']} Port {failure['port_idx']}: Expected '{failure['expected_name']}'")
 
         # Recommendations section
-        report_lines.append(f"\n💡 RECOMMENDATIONS")
+        report_lines.append("\n💡 RECOMMENDATIONS")
         report_lines.append("=" * 50)
 
         if summary["skipped_incompatible"] > 0:

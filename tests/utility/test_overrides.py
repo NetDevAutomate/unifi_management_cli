@@ -1,18 +1,15 @@
-"""Tests for STP overrides loader."""
+"""Tests for STP override loading."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from unifi_mapper.core.utils.overrides import (
-    STPOverrides,
-    load_stp_overrides,
-)
+from unifi_mapper.core.utils.overrides import STPOverrides, load_stp_overrides
 
 
 def test_missing_file_returns_empty(tmp_path: Path) -> None:
-    """Missing override file yields empty overrides, never raises."""
-    target = tmp_path / 'does_not_exist.yaml'
-    result = load_stp_overrides(target)
+    """Missing override file yields empty overrides."""
+    result = load_stp_overrides(tmp_path / 'missing.yaml')
+
     assert isinstance(result, STPOverrides)
     assert result.root_eligible_macs == frozenset()
     assert result.force_access_macs == frozenset()
@@ -46,29 +43,35 @@ def test_valid_file_round_trip(tmp_path: Path) -> None:
 
 
 def test_malformed_yaml_returns_empty(tmp_path: Path) -> None:
-    """Invalid YAML does not raise; overrides come back empty."""
+    """Invalid YAML does not raise."""
     target = tmp_path / 'bad.yaml'
     target.write_text(': :\n  - broken', encoding='utf-8')
+
     result = load_stp_overrides(target)
+
     assert result.root_eligible_macs == frozenset()
     assert result.force_access_macs == frozenset()
 
 
 def test_non_dict_root_returns_empty(tmp_path: Path) -> None:
-    """Top-level list (not dict) yields empty overrides."""
+    """Top-level list yields empty overrides."""
     target = tmp_path / 'list.yaml'
     target.write_text('- 1\n- 2\n', encoding='utf-8')
+
     result = load_stp_overrides(target)
+
     assert result.root_eligible_macs == frozenset()
 
 
-def test_non_list_values_ignored(tmp_path: Path) -> None:
-    """Scalar values for MAC keys are coerced to empty lists."""
+def test_non_list_values_are_ignored(tmp_path: Path) -> None:
+    """Scalar values for MAC keys are ignored."""
     target = tmp_path / 'mixed.yaml'
     target.write_text(
         'root_eligible_macs: not-a-list\nforce_access_macs: also-not-a-list\n',
         encoding='utf-8',
     )
+
     result = load_stp_overrides(target)
+
     assert result.root_eligible_macs == frozenset()
     assert result.force_access_macs == frozenset()

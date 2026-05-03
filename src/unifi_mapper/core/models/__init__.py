@@ -65,6 +65,7 @@ from unifi_mapper.core.models.stp import (
     STPChange,
     STPConnection,
     STPOptimizationReport,
+    STPPathCostFinding,
     STPPortConfig,
     STPPortState,
     STPRole,
@@ -76,6 +77,9 @@ from unifi_mapper.core.models.vlan import VLAN
 
 __all__ = [
     # Analysis models
+    'SwitchCapabilityClass',
+    'is_access_class',
+    'is_root_eligible',
     'CapacityReport',
     'ConflictingClient',
     'DeviceCapacity',
@@ -135,6 +139,7 @@ __all__ = [
     'STPChange',
     'STPConnection',
     'STPOptimizationReport',
+    'STPPathCostFinding',
     'STPPortConfig',
     'STPPortState',
     'STPRole',

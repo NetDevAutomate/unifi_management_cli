@@ -44,6 +44,55 @@ tools:
     priority: P2
     tags: [lag, aggregation, redundancy, health]
 
+  find_lag_candidates:
+    module: unifi_mapper.analysis.lag_monitoring
+    handler: find_lag_candidates
+    description: Find parallel healthy links that could be configured as LACP LAGs
+    priority: P2
+    tags: [lag, aggregation, lacp, candidate, capacity]
+
+  audit_mtu_consistency:
+    module: unifi_mapper.analysis.mtu_audit
+    handler: audit_mtu_consistency
+    description: Audit MTU and jumbo-frame consistency across inter-switch links
+    priority: P2
+    tags: [mtu, jumbo, switch, uplink, validation]
+
+  analyze_radio_optimization:
+    module: unifi_mapper.analysis.radio_optimization
+    handler: analyze_radio_optimization
+    description: Analyze Wi-Fi radio channel reuse and transmit power settings
+    priority: P2
+    tags: [wifi, radio, channel, transmit-power, optimization]
+
+  audit_sfp_diagnostics:
+    module: unifi_mapper.analysis.sfp_diagnostics
+    handler: audit_sfp_diagnostics
+    description: Pull SFP/SFP+ module identity and DOM diagnostics from UniFi port tables
+    priority: P2
+    tags: [sfp, transceiver, optics, dom, diagnostics]
+
+  audit_vlan_coverage:
+    module: unifi_mapper.analysis.vlan_coverage
+    handler: audit_vlan_coverage
+    description: Check required VLAN coverage on trunk and planned uplink ports
+    priority: P2
+    tags: [vlan, trunk, uplink, flex-xg, validation]
+
+  analyze_traffic_matrix:
+    module: unifi_mapper.analysis.traffic_matrix
+    handler: analyze_traffic_matrix
+    description: Analyze available UniFi traffic statistics for top flows and 10G placement hints
+    priority: P2
+    tags: [traffic, matrix, top-talkers, capacity, 10g]
+
+  validate_port_profiles:
+    module: unifi_mapper.analysis.port_profile_validation
+    handler: validate_port_profiles
+    description: Validate STP Edge, BPDU Guard, and uplink safety on applied port profiles
+    priority: P2
+    tags: [port-profile, stp, bpdu-guard, edge, validation]
+
   validate_qos:
     module: unifi_mapper.analysis.qos_validation
     handler: validate_qos
@@ -105,6 +154,13 @@ tools:
     priority: P3
     tags: [stp, spanning-tree, report, markdown, mermaid]
 
+  audit_stp_path_costs:
+    module: unifi_mapper.analysis.stp_optimizer
+    handler: audit_stp_path_costs
+    description: Audit STP path costs for IEEE long-path-cost consistency
+    priority: P2
+    tags: [stp, spanning-tree, path-cost, 10g, validation]
+
   validate_10g_expansion_readiness:
     module: unifi_mapper.analysis.stp_optimizer
     handler: validate_10g_expansion_readiness
@@ -127,3 +183,45 @@ tools:
     description: Format 10G expansion validation report as markdown
     priority: P3
     tags: [stp, 10g, report, markdown]
+
+  create_stp_change_plan:
+    module: unifi_mapper.analysis.stp_change_plan
+    handler: create_stp_change_plan
+    description: Create convergence-aware STP priority change plan with rollback bundle
+    priority: P2
+    tags: [stp, change-plan, rollback, maintenance]
+
+  snapshot_stp_topology:
+    module: unifi_mapper.analysis.stp_snapshot
+    handler: snapshot_stp_topology
+    description: Create serializable STP topology snapshot
+    priority: P2
+    tags: [stp, snapshot, diff, baseline]
+
+  diff_stp_snapshots:
+    module: unifi_mapper.analysis.stp_snapshot
+    handler: diff_stp_snapshots
+    description: Diff two STP topology snapshots
+    priority: P2
+    tags: [stp, snapshot, diff, drift]
+
+  stp_preflight_simulate_add:
+    module: unifi_mapper.analysis.stp_preflight
+    handler: stp_preflight_simulate_add
+    description: Simulate planned switch additions and STP root expectations
+    priority: P2
+    tags: [stp, preflight, simulate, flex-xg, planning]
+
+  audit_stp_guard_recommendations:
+    module: unifi_mapper.analysis.stp_guard
+    handler: audit_stp_guard_recommendations
+    description: Audit Root Guard candidates and STP topology-change counters
+    priority: P2
+    tags: [stp, root-guard, tcn, topology-change, validation]
+
+  detect_stp_config_drift:
+    module: unifi_mapper.analysis.stp_drift
+    handler: detect_stp_config_drift
+    description: Compare live STP topology against desired intent mapping
+    priority: P2
+    tags: [stp, drift, intent, gitops, validation]

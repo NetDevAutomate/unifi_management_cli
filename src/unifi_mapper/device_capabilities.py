@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""
-UniFi Device Capability Detection System.
+"""UniFi Device Capability Detection System.
+
 Determines which devices support reliable port naming based on model and firmware.
 """
 
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 
 log = logging.getLogger(__name__)
 
@@ -143,8 +144,7 @@ class DeviceCapabilityDetector:
         device_model: str,
         firmware_version: str
     ) -> DeviceCapability:
-        """
-        Detect device capabilities based on model and firmware.
+        """Detect device capabilities based on model and firmware.
 
         Args:
             device_model: UniFi device model code
@@ -200,8 +200,7 @@ class DeviceCapabilityDetector:
         device_model: str,
         firmware_version: str
     ) -> Tuple[bool, str]:
-        """
-        Determine if port naming should be attempted on this device.
+        """Determine if port naming should be attempted on this device.
 
         Returns:
             Tuple of (should_attempt, reason_if_not)
@@ -227,9 +226,8 @@ class DeviceCapabilityDetector:
         self,
         device_model: str,
         firmware_version: str
-    ) -> Dict[str, any]:
-        """
-        Get recommended update strategy for this device.
+    ) -> Dict[str, Any]:
+        """Get recommended update strategy for this device.
 
         Returns:
             Dict with strategy recommendations
@@ -282,7 +280,7 @@ class DeviceCapabilityDetector:
 
     def generate_compatibility_report(
         self,
-        devices: List[Dict[str, any]]
+        devices: List[Dict[str, Any]]
     ) -> str:
         """Generate device compatibility report for port naming."""
         report_lines = []

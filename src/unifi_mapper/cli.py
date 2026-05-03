@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""
-CLI entry point for UniFi Network Mapper.
+"""CLI entry point for UniFi Network Mapper.
+
 Enables running from anywhere with config file specification.
 """
 
@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+
 
 # Configure logging
 logging.basicConfig(
@@ -20,8 +21,7 @@ log = logging.getLogger(__name__)
 
 
 def load_env_from_config(config_path: str) -> None:
-    """
-    Load environment variables from specified config file.
+    """Load environment variables from specified config file.
 
     Args:
         config_path: Path to .env configuration file
@@ -88,9 +88,7 @@ def get_default_config_path() -> Path:
 
 
 def main():
-    """
-    Main CLI entry point with subcommand support and XDG Base Directory support.
-    """
+    """Main CLI entry point with subcommand support and XDG Base Directory support."""
     # Check for install-completions subcommand first
     if len(sys.argv) > 1 and sys.argv[1] == "install-completions":
         from .completions import main as completions_main
@@ -167,7 +165,6 @@ def main():
 
     # Import after env loaded
     try:
-        from .api_client import UnifiApiClient
         from .config import UnifiConfig
         from .port_mapper import UnifiPortMapper
         from .run_methods import run_port_mapper
@@ -227,8 +224,8 @@ def main():
         # Check if smart mapping is needed (when verification is enabled)
         if args.verify_updates:
             log.info("🧠 Using Smart Port Mapping with device-aware capabilities...")
-            from .smart_port_mapper import SmartPortMapper
             from .run_methods import get_devices_and_lldp_data
+            from .smart_port_mapper import SmartPortMapper
 
             # Get devices and LLDP data
             devices_data, lldp_data = get_devices_and_lldp_data(port_mapper, config.site)

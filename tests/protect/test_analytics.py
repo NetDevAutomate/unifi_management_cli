@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, Mock
-
 import pytest
-
+from datetime import datetime, timedelta, timezone
 from unifi_mapper.protect.analytics import (
     CorrelatedEventGroup,
     CorrelationRule,
@@ -22,12 +19,13 @@ from unifi_mapper.protect.analytics import (
 from unifi_mapper.protect.events import (
     EventFilter,
     EventHandler,
+    ProtectAction,
     ProtectEvent,
     ProtectEventCategory,
     ProtectEventType,
     ProtectModelType,
-    ProtectAction,
 )
+from unittest.mock import MagicMock, Mock
 
 
 class TestSmartDetectType:

@@ -209,9 +209,9 @@ class UniFiClient:
 
             if response.status_code == 200:
                 # Extract session token from cookies
-                for cookie in response.cookies:
-                    if cookie.name in ('unifises', 'TOKEN'):
-                        self._session_token = cookie.value
+                for cookie_name, cookie_value in response.cookies.items():
+                    if cookie_name in ('unifises', 'TOKEN'):
+                        self._session_token = cookie_value
                         break
 
                 self._authenticated = True
@@ -228,7 +228,7 @@ class UniFiClient:
 
         return False
 
-    async def get(self, path: str, **params: Any) -> dict[str, Any]:
+    async def get(self, path: str, **params: Any) -> Any:
         """Make authenticated GET request to UniFi API.
 
         Args:
@@ -246,7 +246,7 @@ class UniFiClient:
 
         return await self._request('GET', path, params=params)
 
-    async def post(self, path: str, data: Any = None, **params: Any) -> dict[str, Any]:
+    async def post(self, path: str, data: Any = None, **params: Any) -> Any:
         """Make authenticated POST request to UniFi API.
 
         Args:
@@ -262,7 +262,7 @@ class UniFiClient:
 
         return await self._request('POST', path, json=data, params=params)
 
-    async def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+    async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         """Make authenticated request to UniFi API."""
         if not self._client:
             raise ToolError(
@@ -308,7 +308,7 @@ class UniFiClient:
                 suggestion='Check network connectivity and controller status',
             )
 
-    async def put(self, path: str, data: Any = None, **params: Any) -> dict[str, Any]:
+    async def put(self, path: str, data: Any = None, **params: Any) -> Any:
         """Make authenticated PUT request to UniFi API.
 
         Args:

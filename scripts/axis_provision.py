@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-AXIS Device Provisioning Script
+"""AXIS Device Provisioning Script.
 
 Reads configuration from ~/.config/axiscam/config.yaml and ensures all devices have:
 - ataylor admin account
@@ -13,13 +12,13 @@ Usage:
 
 import argparse
 import asyncio
+import httpx
 import sys
-from dataclasses import dataclass, field
+import yaml
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
-import httpx
-import yaml
 
 # Debug flag for verbose logging
 DEBUG = False
@@ -33,6 +32,8 @@ def debug_log(msg: str) -> None:
 
 @dataclass
 class Device:
+    """AXIS device connection and provisioning metadata."""
+
     name: str
     address: str
     port: int
@@ -46,6 +47,8 @@ class Device:
 
 @dataclass
 class UserConfig:
+    """AXIS local user account desired state."""
+
     name: str
     password: str
     role: str = "administrator"
@@ -53,12 +56,16 @@ class UserConfig:
 
 @dataclass
 class OnvifUser:
+    """ONVIF account desired state."""
+
     name: str
     password: str
 
 
 @dataclass
 class MqttConfig:
+    """MQTT broker credentials for AXIS device publishing."""
+
     broker: str
     username: str
     password: str
@@ -95,6 +102,7 @@ class AxisProvisioner:
     """Provision AXIS devices with user accounts and MQTT settings."""
 
     def __init__(self, device: Device, dry_run: bool = False):
+        """Initialize the provisioner for one AXIS device."""
         self.device = device
         self.dry_run = dry_run
         self.base_url = f"http://{device.address}:{device.port}"
@@ -494,7 +502,7 @@ class AxisProvisioner:
             if ":" in broker_host:
                 broker_host, port_str = broker_host.rsplit(":", 1)
                 broker_port = int(port_str)
-            use_tls = broker.startswith("mqtts://")
+            broker.startswith("mqtts://")
 
             # Try the MQTT client API (newer devices)
             payload = {
@@ -654,6 +662,7 @@ class AxisProvisioner:
 
 
 async def main():
+    """Run the AXIS provisioning CLI."""
     global DEBUG
     parser = argparse.ArgumentParser(description="Provision AXIS devices")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without making changes")

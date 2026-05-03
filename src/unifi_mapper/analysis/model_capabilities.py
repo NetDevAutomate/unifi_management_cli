@@ -1,31 +1,4 @@
-"""Capability classification for UniFi switch / gateway hardware.
-
-Used by the STP optimizer to decide which switches may act as the STP
-root bridge. Topology-only classification (is the device gateway-
-connected?) is insufficient: a small 1G access switch may be cabled to
-the gateway without being architecturally suitable as root.
-
-Classification rules (model substring, case-insensitive):
-
-* ``GATEWAY``        - UDM / USG / UGW appliances (never a switch root).
-* ``AGGREGATION``    - 10G+ aggregation switches (USFXG, USXG, USAGGPRO,
-                       US24XG, US48XG, US-XG-*).  Root-eligible.
-* ``CORE_DISTRIBUTION`` - Enterprise 1G+ distribution switches
-                       (USW-Pro-*, USW-Enterprise-*).  Root-eligible.
-* ``ACCESS_POE``     - Access switches with PoE budget (USW-Lite-*-PoE,
-                       USW-Flex-*-PoE, US-*-60W, US-8-*, USM-*).
-* ``ACCESS``         - Access switches without PoE (USW-Flex-*,
-                       USW-Lite-*, basic USC-*).
-* ``UNKNOWN``        - Not recognised; treated as non-root-eligible by
-                       default.
-
-The optimizer applies a root-guard policy: an ``ACCESS`` or
-``ACCESS_POE`` class switch will never be assigned STP priority below
-:data:`unifi_mapper.core.models.stp.STP_PRIORITY_DISTRIBUTION` (8192),
-even if it is gateway-adjacent or listed in ``root_eligible_macs``
-override.  Only ``AGGREGATION`` and ``CORE_DISTRIBUTION`` are allowed
-at the core tier.
-"""
+"""Capability classification for UniFi switch and gateway hardware."""
 
 from __future__ import annotations
 
@@ -45,11 +18,21 @@ __all__ = [
 
 
 def _normalise(model: str) -> str:
-    return model.upper().replace('-', '').replace('_', '').strip()
+    return model.upper().replace('-', '').replace('_', '').replace(' ', '').strip()
 
+
+_GATEWAY_TOKENS: tuple[str, ...] = (
+    'UDM',
+    'USG',
+    'UGW',
+    'UXG',
+    'UCG',
+)
 
 _AGGREGATION_TOKENS: tuple[str, ...] = (
     'USFXG',
+    'USWFLEXXG',
+    'FLEXXG',
     'USXG',
     'USAGGPRO',
     'USAGG',
@@ -67,14 +50,6 @@ _CORE_DISTRIBUTION_TOKENS: tuple[str, ...] = (
     'USPROHD',
     'US24PRO',
     'US48PRO',
-)
-
-_GATEWAY_TOKENS: tuple[str, ...] = (
-    'UDM',
-    'USG',
-    'UGW',
-    'UXG',
-    'UCG',
 )
 
 _ACCESS_POE_TOKENS: tuple[str, ...] = (
@@ -111,13 +86,7 @@ _ACCESS_TOKENS: tuple[str, ...] = (
 
 
 def classify_model(model: str) -> SwitchCapabilityClass:
-    """Return the capability class for a UniFi device model string.
-
-    Matching is substring-based against an upper-cased, hyphen/underscore-
-    stripped form of ``model``.  The order of checks matters: gateway
-    first, then aggregation (most specific hardware), then
-    core-distribution, then access-PoE, then access.
-    """
+    """Classify a UniFi model string into an STP capability class."""
     if not model:
         return SwitchCapabilityClass.UNKNOWN
 

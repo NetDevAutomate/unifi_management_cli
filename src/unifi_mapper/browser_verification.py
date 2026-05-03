@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""
-Browser-based verification for UniFi port name updates.
+"""Browser-based verification for UniFi port name updates.
+
 Uses Playwright to directly check the controller UI since the API lies about port names.
 """
 
 import asyncio
 import logging
-import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
+
 
 log = logging.getLogger(__name__)
 
@@ -78,8 +78,7 @@ class BrowserVerifier:
         expected_name: str,
         max_attempts: int = 3
     ) -> Tuple[bool, str]:
-        """
-        Verify port name by checking actual UniFi controller UI.
+        """Verify port name by checking actual UniFi controller UI.
 
         Args:
             device_name: Device name to find
@@ -160,8 +159,7 @@ class BrowserVerifier:
         self,
         verifications: List[Dict[str, any]]
     ) -> Dict[str, Tuple[bool, str]]:
-        """
-        Verify multiple port names across different devices.
+        """Verify multiple port names across different devices.
 
         Args:
             verifications: List of dicts with keys:
@@ -199,8 +197,7 @@ def verify_ports_with_browser(
     password: str,
     verifications: List[Dict[str, any]]
 ) -> Dict[str, Tuple[bool, str]]:
-    """
-    Synchronous wrapper for browser-based port verification.
+    """Synchronous wrapper for browser-based port verification.
 
     Args:
         controller_url: UniFi controller URL
@@ -225,8 +222,7 @@ def verify_ports_with_browser(
 def create_verification_list_from_updates(
     device_updates: Dict[str, Dict[str, any]]
 ) -> List[Dict[str, any]]:
-    """
-    Convert device updates to verification list format.
+    """Convert device updates to verification list format.
 
     Args:
         device_updates: Dict mapping device_id to device info and port updates

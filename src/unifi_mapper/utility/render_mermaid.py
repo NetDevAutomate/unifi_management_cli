@@ -82,8 +82,8 @@ def _render_path_diagram(path_data: Any) -> str:
         raise ValueError('Path data must be NetworkPath object or dict')
 
     # Handle both NetworkPath objects and dictionaries
-    if hasattr(path_data, 'hops'):
-        hops = path_data.hops
+    if isinstance(path_data, NetworkPath):
+        hops: list[Any] = list(path_data.hops)
         source = path_data.source
         destination = path_data.destination
         firewall_verdict = path_data.firewall_verdict
@@ -103,20 +103,35 @@ def _render_path_diagram(path_data: Any) -> str:
 
     prev_node = None
     for hop in hops:
-        node_id = f'H{hop.hop_number}' if hasattr(hop, 'hop_number') else f'H{len(lines)}'
+        hop_data: Any = hop
+        node_id = (
+            f'H{hop_data.hop_number}' if hasattr(hop_data, 'hop_number') else f'H{len(lines)}'
+        )
 
         # Get hop attributes (handle both object and dict)
         device_name = (
-            hop.device_name if hasattr(hop, 'device_name') else hop.get('device_name', 'Unknown')
+            hop_data.device_name
+            if hasattr(hop_data, 'device_name')
+            else hop_data.get('device_name', 'Unknown')
         )
         device_type = (
-            hop.device_type if hasattr(hop, 'device_type') else hop.get('device_type', 'unknown')
+            hop_data.device_type
+            if hasattr(hop_data, 'device_type')
+            else hop_data.get('device_type', 'unknown')
         )
-        interface = hop.interface if hasattr(hop, 'interface') else hop.get('interface', 'unknown')
-        vlan = hop.vlan if hasattr(hop, 'vlan') else hop.get('vlan')
-        latency_ms = hop.latency_ms if hasattr(hop, 'latency_ms') else hop.get('latency_ms')
+        interface = (
+            hop_data.interface
+            if hasattr(hop_data, 'interface')
+            else hop_data.get('interface', 'unknown')
+        )
+        vlan = hop_data.vlan if hasattr(hop_data, 'vlan') else hop_data.get('vlan')
+        latency_ms = (
+            hop_data.latency_ms if hasattr(hop_data, 'latency_ms') else hop_data.get('latency_ms')
+        )
         is_blocked = (
-            hop.is_blocked if hasattr(hop, 'is_blocked') else hop.get('firewall_result') == 'deny'
+            hop_data.is_blocked
+            if hasattr(hop_data, 'is_blocked')
+            else hop_data.get('firewall_result') == 'deny'
         )
 
         # Node label with device info
@@ -352,7 +367,10 @@ def _get_vlan_id_from_name(vlan_name: str, vlans: list[dict[str, str]]) -> int:
     """Get VLAN ID from name."""
     for vlan in vlans:
         if vlan.get('name') == vlan_name:
-            return vlan.get('id', 1)
+            try:
+                return int(vlan.get('id', 1))
+            except (TypeError, ValueError):
+                return 1
     return 1  # Default VLAN
 
 

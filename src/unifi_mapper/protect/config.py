@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Annotated, Any
-
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from typing import Annotated, Any
 
 
 class ProtectConfig(BaseModel):

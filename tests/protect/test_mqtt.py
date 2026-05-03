@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import pytest
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
-
 from unifi_mapper.protect.events import (
     ProtectAction,
     ProtectEvent,
-    ProtectEventCategory,
     ProtectEventType,
     ProtectModelType,
 )
@@ -26,6 +21,7 @@ from unifi_mapper.protect.mqtt import (
     MQTTConnectionState,
     MQTTMessage,
 )
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 # ============================================================================
@@ -792,6 +788,6 @@ class TestTopicPrefixConfiguration:
         """Test using custom discovery prefix."""
         client = create_mock_client()
         config = MQTTConfig(discovery_prefix='custom_ha')
-        bridge = MQTTBridge(client, config)
+        MQTTBridge(client, config)
 
         assert config.discovery_prefix == 'custom_ha'
