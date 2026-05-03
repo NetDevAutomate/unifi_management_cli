@@ -2625,3 +2625,130 @@ def analyze_config_drift(
         console.print(table)
     else:
         console.print("[green]✅ No configuration drift detected[/green]")
+
+
+# ─── Neighbour AP Scan Commands ──────────────────────────────────────────────
+
+
+@analyze_app.command("neighbours")
+def analyze_neighbours(
+    ap_name: Optional[str] = typer.Option(None, "--ap", "-a", help="Specific AP to scan (default: all)"),
+    cached: bool = typer.Option(False, "--cached", help="Read cached results without triggering new scan"),
+    wait: int = typer.Option(30, "--wait", "-w", help="Seconds to wait for scan results"),
+):
+    """📡 Scan for neighbouring APs and external interference sources."""
+    import asyncio
+
+    from rich.table import Table
+
+    from unifi_mapper.analysis.neighbour_scan import get_cached_neighbours, scan_neighbours
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("📡 [bold]Neighbour AP Scan[/bold]\n")
+
+    if cached:
+        report = asyncio.run(get_cached_neighbours())
+    else:
+        console.print(f"Triggering RF scan (waiting {wait}s for results)...")
+        report = asyncio.run(scan_neighbours(ap_name=ap_name, wait_seconds=wait))
+
+    if not report["results"]:
+        console.print("[yellow]No scan results available. Try again or increase --wait.[/yellow]")
+        return
+
+    for ap_result in report["results"]:
+        if ap_result.get("status") != "OK":
+            console.print(f"  ⚠️ {ap_result['ap']}: {ap_result.get('status', 'unknown')}")
+            continue
+
+        console.print(f"\n[bold]{ap_result['ap']}[/bold] — {ap_result['total_neighbours']} neighbours")
+
+        # Channel summary
+        ch_summary = ap_result.get("channel_summary", {})
+        if ch_summary:
+            ch_str = ", ".join(f"ch{ch}:{count}" for ch, count in sorted(ch_summary.items()))
+            console.print(f"  Channels: {ch_str}")
+
+        # Strongest neighbours
+        strongest = ap_result.get("strongest", [])
+        if strongest:
+            table = Table(show_header=True, title=f"Strongest Neighbours ({ap_result['ap']})")
+            table.add_column("SSID")
+            table.add_column("Channel", justify="right")
+            table.add_column("RSSI", justify="right")
+            table.add_column("BSSID", style="dim")
+
+            for n in strongest[:10]:
+                rssi = n.get("rssi", 0)
+                style = "red" if rssi > -50 else "yellow" if rssi > -70 else "green"
+                table.add_row(
+                    n.get("ssid", "<hidden>"),
+                    str(n.get("channel", "?")),
+                    f"[{style}]{rssi}[/{style}]",
+                    n.get("bssid", ""),
+                )
+            console.print(table)
+
+
+# ─── Bandwidth Test Commands ─────────────────────────────────────────────────
+
+
+@diagnose_app.command("bandwidth")
+def diagnose_bandwidth(
+    target: str = typer.Argument(..., help="Target IP running iperf3 -s"),
+    duration: int = typer.Option(10, "--duration", "-d", help="Test duration in seconds"),
+    reverse: bool = typer.Option(False, "--reverse", "-R", help="Test download (target→UDM) instead of upload"),
+    bidirectional: bool = typer.Option(False, "--bidir", help="Test both directions"),
+    parallel: int = typer.Option(1, "--parallel", "-P", help="Number of parallel streams"),
+):
+    """⚡ Run iperf3 bandwidth test from UDM to a target device."""
+    import asyncio
+
+    from unifi_mapper.analysis.bandwidth_test import run_bandwidth_test
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("⚡ [bold]Bandwidth Test (iperf3 via SSH)[/bold]\n")
+    console.print(f"Target: [cyan]{target}[/cyan]")
+    console.print(f"Duration: {duration}s | Streams: {parallel}\n")
+
+    if bidirectional:
+        # Upload
+        console.print("▶ Upload (UDM → target)...")
+        up = asyncio.run(run_bandwidth_test(target, duration, reverse=False, parallel=parallel))
+        if up["status"] == "OK":
+            console.print(f"  [green]{up['throughput_mbps']} Mbps[/green] ({up['throughput_gbps']} Gbps)")
+            if "retransmits" in up:
+                console.print(f"  Retransmits: {up['retransmits']}")
+        else:
+            console.print(f"  [red]FAILED: {up.get('error', 'unknown')}[/red]")
+
+        # Download
+        console.print("\n▼ Download (target → UDM)...")
+        down = asyncio.run(run_bandwidth_test(target, duration, reverse=True, parallel=parallel))
+        if down["status"] == "OK":
+            console.print(f"  [green]{down['throughput_mbps']} Mbps[/green] ({down['throughput_gbps']} Gbps)")
+            if "retransmits" in down:
+                console.print(f"  Retransmits: {down['retransmits']}")
+        else:
+            console.print(f"  [red]FAILED: {down.get('error', 'unknown')}[/red]")
+    else:
+        direction = "download" if reverse else "upload"
+        console.print(f"{'▼' if reverse else '▶'} Testing {direction}...")
+        result = asyncio.run(run_bandwidth_test(target, duration, reverse=reverse, parallel=parallel))
+
+        if result["status"] == "OK":
+            console.print(f"\n  [green]{result['throughput_mbps']} Mbps[/green] ({result['throughput_gbps']} Gbps)")
+            console.print(f"  Direction: {result['direction']}")
+            if "retransmits" in result:
+                console.print(f"  Retransmits: {result['retransmits']}")
+            if "bytes_transferred" in result:
+                gb = result["bytes_transferred"] / 1_073_741_824
+                console.print(f"  Transferred: {gb:.2f} GB")
+        else:
+            console.print(f"\n  [red]FAILED: {result.get('error', 'unknown')}[/red]")
