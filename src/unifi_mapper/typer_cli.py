@@ -2435,3 +2435,193 @@ def radio_report(
     console.print(f"\n📄 Markdown report saved to [green]{output}[/green]")
     console.print(f"   Changes needed: 5GHz={report['summary']['changes_5ghz']}, "
                   f"2.4GHz={report['summary']['changes_24ghz']}")
+
+
+# ─── Link Error Tracking Commands ────────────────────────────────────────────
+
+
+@analyze_app.command("link-errors")
+def analyze_link_errors(
+    snapshot: bool = typer.Option(False, "--snapshot", help="Take a baseline snapshot"),
+    baseline: str = typer.Option("reports/link-error-baseline.json", "--baseline", "-b", help="Baseline file path"),
+    threshold: float = typer.Option(10.0, "--threshold", "-t", help="Error rate threshold (errors/min)"),
+):
+    """📈 Track link error rates between snapshots to detect active degradation."""
+    import asyncio
+
+    from rich.table import Table
+
+    from unifi_mapper.analysis.link_error_tracking import compare_link_errors, snapshot_link_errors
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    if snapshot:
+        console.print("📸 [bold]Link Error Baseline Snapshot[/bold]\n")
+        result = asyncio.run(snapshot_link_errors(baseline))
+        dev_count = len(result["devices"])
+        port_count = sum(len(d["ports"]) for d in result["devices"])
+        console.print(f"Captured: {dev_count} devices, {port_count} ports")
+        console.print(f"Saved to: [green]{baseline}[/green]")
+        console.print("\n💡 Run again without --snapshot to compare against this baseline")
+        return
+
+    console.print("📈 [bold]Link Error Rate Analysis[/bold]\n")
+    try:
+        report = asyncio.run(compare_link_errors(baseline, threshold))
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print(f"Baseline: {report['baseline_timestamp']}")
+    console.print(f"Elapsed: {report['elapsed_minutes']} minutes")
+    console.print(f"Ports with new errors: {report['ports_with_new_errors']}")
+    console.print(f"Ports flagged (>{threshold}/min): [{'red' if report['ports_flagged'] else 'green'}]{report['ports_flagged']}[/{'red' if report['ports_flagged'] else 'green'}]\n")
+
+    if report["all_deltas"]:
+        table = Table(title="Error Rate Deltas (top 20)")
+        table.add_column("Device", style="cyan")
+        table.add_column("Port")
+        table.add_column("Errors Δ", justify="right")
+        table.add_column("Drops Δ", justify="right")
+        table.add_column("Rate/min", justify="right")
+        table.add_column("Status")
+
+        for d in report["all_deltas"]:
+            rate = d["rate_per_min"]
+            status = "[red]🚨 CRITICAL[/red]" if rate > 100 else "[yellow]⚠️ WARNING[/yellow]" if rate >= threshold else "[green]OK[/green]"
+            table.add_row(
+                d["device"], d["port_name"],
+                str(d["rx_errors_delta"] + d["tx_errors_delta"]),
+                str(d["rx_dropped_delta"] + d["tx_dropped_delta"]),
+                f"{rate:.1f}", status,
+            )
+        console.print(table)
+    else:
+        console.print("[green]✅ No new errors since baseline[/green]")
+
+
+# ─── Client Roaming Commands ─────────────────────────────────────────────────
+
+
+@analyze_app.command("roaming")
+def analyze_roaming_cmd(
+    snapshot: bool = typer.Option(False, "--snapshot", help="Record current client associations"),
+    history: str = typer.Option("reports/client-roaming-history.json", "--history", "-h", help="History file path"),
+):
+    """📡 Analyze client roaming patterns and detect sticky clients."""
+    import asyncio
+
+    from rich.table import Table
+
+    from unifi_mapper.analysis.roaming_analysis import analyze_roaming, snapshot_client_associations
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    if snapshot:
+        console.print("📸 [bold]Client Association Snapshot[/bold]\n")
+        result = asyncio.run(snapshot_client_associations(history))
+        console.print(f"Clients tracked: {result['clients_tracked']}")
+        console.print(f"Snapshots stored: {result['snapshots_stored']}")
+        console.print(f"History: [green]{history}[/green]")
+        console.print("\n💡 Run periodically (every 5 min) to build roaming history")
+        return
+
+    console.print("📡 [bold]Client Roaming Analysis[/bold]\n")
+    try:
+        report = asyncio.run(analyze_roaming(history))
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print(f"Snapshots analyzed: {report['snapshots_analyzed']}")
+    console.print(f"Time span: {report['time_span']}")
+    console.print(f"Clients tracked: {report['clients_tracked']}")
+    console.print(f"Roaming clients: {report['roaming_clients']}")
+    console.print(f"Sticky clients: {report['sticky_clients']}\n")
+
+    if report["roamers"]:
+        table = Table(title="Roaming Clients")
+        table.add_column("Client", style="cyan")
+        table.add_column("Transitions", justify="right")
+        table.add_column("APs Used")
+        table.add_column("Avg RSSI", justify="right")
+
+        for r in report["roamers"][:15]:
+            table.add_row(r["client"], str(r["transitions"]), ", ".join(r["aps_used"]), str(r["avg_rssi"]))
+        console.print(table)
+
+    if report["sticky"]:
+        console.print()
+        table = Table(title="Sticky Clients (low RSSI, not roaming)")
+        table.add_column("Client", style="cyan")
+        table.add_column("Stuck On")
+        table.add_column("Avg RSSI", justify="right")
+        table.add_column("Min RSSI", justify="right")
+
+        for s in report["sticky"]:
+            table.add_row(s["client"], s["stuck_on"], str(s["avg_rssi"]), f"[red]{s['min_rssi']}[/red]")
+        console.print(table)
+
+
+# ─── Configuration Drift Commands ────────────────────────────────────────────
+
+
+@analyze_app.command("config-drift")
+def analyze_config_drift(
+    snapshot: bool = typer.Option(False, "--snapshot", help="Take a config baseline snapshot"),
+    baseline: str = typer.Option("reports/config-baseline.json", "--baseline", "-b", help="Baseline file path"),
+):
+    """🔍 Detect configuration drift from baseline (catches manual UI changes)."""
+    import asyncio
+
+    from rich.table import Table
+
+    from unifi_mapper.analysis.config_drift import detect_drift, snapshot_config
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    if snapshot:
+        console.print("📸 [bold]Configuration Baseline Snapshot[/bold]\n")
+        result = asyncio.run(snapshot_config(baseline))
+        console.print(f"Devices captured: {len(result['devices'])}")
+        console.print(f"Saved to: [green]{baseline}[/green]")
+        console.print("\n💡 Run without --snapshot to detect drift from this baseline")
+        return
+
+    console.print("🔍 [bold]Configuration Drift Detection[/bold]\n")
+    try:
+        report = asyncio.run(detect_drift(baseline))
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print(f"Baseline: {report['baseline_timestamp']}")
+    console.print(f"Devices checked: {report['devices_checked']}")
+    console.print(f"Drifts detected: [{'red' if report['drifts_detected'] else 'green'}]{report['drifts_detected']}[/{'red' if report['drifts_detected'] else 'green'}]\n")
+
+    if report["drifts"]:
+        table = Table(title="Configuration Drifts")
+        table.add_column("Device", style="cyan")
+        table.add_column("Field")
+        table.add_column("Type")
+        table.add_column("Details")
+
+        for drift in report["drifts"]:
+            dtype = drift["type"]
+            style = "[red]" if dtype == "REMOVED" else "[yellow]"
+            if dtype == "CHANGED":
+                details = f"changed"
+            elif dtype == "REMOVED":
+                details = "field removed"
+            else:
+                details = drift.get("details", "")
+            table.add_row(drift["device"], drift.get("field", "—"), f"{style}{dtype}[/]", details)
+        console.print(table)
+    else:
+        console.print("[green]✅ No configuration drift detected[/green]")
