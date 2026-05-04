@@ -668,6 +668,7 @@ async def calculate_optimal_priorities(
                 optimal_priority = base_priority
             switch.optimal_priority = optimal_priority
 
+            guard_reason = ''
             if switch.current_priority != optimal_priority:
                 reason = (
                     f'{tier_name} switch should have priority {optimal_priority}{guard_reason}'
