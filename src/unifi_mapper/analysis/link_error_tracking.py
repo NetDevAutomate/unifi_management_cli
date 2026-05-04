@@ -27,6 +27,7 @@ async def snapshot_link_errors(output_path: str = DEFAULT_BASELINE_PATH) -> dict
         dev_entry = {
             "device_id": d["_id"],
             "name": d.get("name", "Unknown"),
+            "uptime": d.get("uptime", 0),
             "ports": [],
         }
         for p in d.get("port_table", []):
@@ -79,11 +80,30 @@ async def compare_link_errors(
     elapsed_minutes = max((now - baseline_time).total_seconds() / 60, 1)
 
     # Build baseline lookup: (device_id, port_idx) -> counters
+    # Also track baseline uptime per device for reboot detection
     baseline_lookup = {}
+    baseline_uptime = {}
     for dev in baseline["devices"]:
+        baseline_uptime[dev["device_id"]] = dev.get("uptime", 0)
         for port in dev["ports"]:
             key = (dev["device_id"], port["port_idx"])
             baseline_lookup[key] = port
+
+    # Detect devices that rebooted between snapshots
+    # A reboot is: current uptime < baseline uptime (counter reset to 0 on boot)
+    rebooted_devices: dict[str, dict] = {}
+    for d in devices:
+        if d.get("type") not in ("usw", "udm", "udmpro"):
+            continue
+        dev_id = d["_id"]
+        prev_uptime = baseline_uptime.get(dev_id)
+        curr_uptime = d.get("uptime", 0)
+        if prev_uptime is not None and curr_uptime < prev_uptime:
+            rebooted_devices[dev_id] = {
+                "name": d.get("name", "Unknown"),
+                "previous_uptime_s": prev_uptime,
+                "current_uptime_s": curr_uptime,
+            }
 
     flagged = []
     all_deltas = []
@@ -122,10 +142,13 @@ async def compare_link_errors(
                 "total_delta": total_delta,
                 "rate_per_min": round(rate_per_min, 1),
                 "elapsed_minutes": round(elapsed_minutes, 1),
+                "reboot_detected": dev_id in rebooted_devices,
             }
             all_deltas.append(entry)
 
-            if rate_per_min >= threshold_errors_per_min:
+            # Skip flagging on rebooted devices: counter resets make deltas
+            # meaningless (the "new" counters started at 0 after boot).
+            if rate_per_min >= threshold_errors_per_min and dev_id not in rebooted_devices:
                 entry["severity"] = "CRITICAL" if rate_per_min > 100 else "WARNING"
                 flagged.append(entry)
 
@@ -142,4 +165,5 @@ async def compare_link_errors(
         "ports_flagged": len(flagged),
         "flagged": flagged,
         "all_deltas": all_deltas[:20],  # Top 20
+        "rebooted_devices": list(rebooted_devices.values()),
     }

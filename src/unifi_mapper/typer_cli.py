@@ -2481,6 +2481,16 @@ def analyze_link_errors(
     console.print(f"Ports with new errors: {report['ports_with_new_errors']}")
     console.print(f"Ports flagged (>{threshold}/min): [{'red' if report['ports_flagged'] else 'green'}]{report['ports_flagged']}[/{'red' if report['ports_flagged'] else 'green'}]\n")
 
+    # Surface devices that rebooted between snapshots — their counter deltas
+    # are suppressed from flagging because the reset to 0 makes rates meaningless.
+    rebooted = report.get("rebooted_devices", [])
+    if rebooted:
+        reboot_names = ", ".join(d["name"] for d in rebooted)
+        console.print(
+            f"[yellow]⚠️  {len(rebooted)} device(s) rebooted since baseline: {reboot_names}[/yellow]"
+        )
+        console.print("[dim]   Their port deltas are shown but excluded from flagging (counters reset on boot).[/dim]\n")
+
     if report["all_deltas"]:
         table = Table(title="Error Rate Deltas (top 20)")
         table.add_column("Device", style="cyan")
@@ -2492,7 +2502,14 @@ def analyze_link_errors(
 
         for d in report["all_deltas"]:
             rate = d["rate_per_min"]
-            status = "[red]🚨 CRITICAL[/red]" if rate > 100 else "[yellow]⚠️ WARNING[/yellow]" if rate >= threshold else "[green]OK[/green]"
+            if d.get("reboot_detected"):
+                status = "[yellow]🔄 REBOOT[/yellow]"
+            elif rate > 100:
+                status = "[red]🚨 CRITICAL[/red]"
+            elif rate >= threshold:
+                status = "[yellow]⚠️ WARNING[/yellow]"
+            else:
+                status = "[green]OK[/green]"
             table.add_row(
                 d["device"], d["port_name"],
                 str(d["rx_errors_delta"] + d["tx_errors_delta"]),

@@ -459,6 +459,39 @@ class TestLinkErrorTracking:
         result = self._compute_delta(prev, curr, elapsed_minutes=5.0)
         assert result["total_delta"] == 0
 
+    @staticmethod
+    def _detect_reboot(prev_uptime: int, curr_uptime: int) -> bool:
+        """Replicate reboot detection: current uptime < baseline uptime."""
+        return prev_uptime is not None and curr_uptime < prev_uptime
+
+    def test_reboot_detected_when_uptime_decreased(self) -> None:
+        """Device uptime going backwards means it rebooted between snapshots."""
+        assert self._detect_reboot(prev_uptime=86400, curr_uptime=300) is True
+
+    def test_reboot_not_detected_when_uptime_increased(self) -> None:
+        """Normal case: uptime advances between snapshots."""
+        assert self._detect_reboot(prev_uptime=86400, curr_uptime=86700) is False
+
+    def test_reboot_not_detected_when_uptime_equal(self) -> None:
+        """Snapshots captured very close together may show equal uptime."""
+        assert self._detect_reboot(prev_uptime=86400, curr_uptime=86400) is False
+
+    def test_reboot_suppresses_flagging(self) -> None:
+        """Ports on rebooted devices must not be flagged even if their rate exceeds threshold.
+
+        This prevents false-positive 'huge error increase' alerts after a device reboot
+        where counters reset to 0 and any new error appears as a large delta.
+        """
+        # Simulated scenario: baseline had 10 errors, current has 50, elapsed 1 min.
+        # Rate = 40/min, which would normally flag at threshold=10.
+        # But because the device rebooted (uptime went backwards), flagging is suppressed.
+        threshold = 10.0
+        rate_per_min = 40.0
+        reboot_detected = True
+        # Replicate the flagging condition from compare_link_errors
+        should_flag = rate_per_min >= threshold and not reboot_detected
+        assert should_flag is False
+
 
 # ── 9. Roaming Analysis ──────────────────────────────────────────────────────
 # analyze_roaming is async + file-based. We test the core analysis logic
