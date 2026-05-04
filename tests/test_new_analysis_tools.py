@@ -1444,3 +1444,115 @@ class TestNeighbourTrend:
         assert result["disappeared_count"] == 1
         assert result["moved_count"] == 1
         assert result["signal_changed_count"] == 1
+
+
+# ── 14. RF Strategy — dataclasses, enums, constants (Phase D T4) ─────────────
+
+
+class TestRFStrategyDataclasses:
+    """Tests for rf_strategy.py module scaffolding — constants, enums,
+    and frozen dataclasses. Pure structural tests; no business logic yet
+    (T5+ will add scorecard computation).
+    """
+
+    def test_confidence_enum_values(self) -> None:
+        """All three confidence levels stringify to their designed values."""
+        from unifi_mapper.analysis.rf_strategy import Confidence
+
+        assert Confidence.GREEN == "green"
+        assert Confidence.YELLOW == "yellow"
+        assert Confidence.RED == "red"
+        # StrEnum members ARE strings — supports direct equality and .value
+        assert Confidence.GREEN.value == "green"
+
+    def test_mode_enum_values(self) -> None:
+        """Four modes with correct string values per D4 design."""
+        from unifi_mapper.analysis.rf_strategy import Mode
+
+        assert Mode.HARD_DISABLE == "hard"
+        assert Mode.SOFT == "soft"
+        assert Mode.HYBRID == "hybrid"
+        assert Mode.NONE == "none"
+
+    def test_band_enum_values(self) -> None:
+        """Band values are the canonical 2.4ghz / 5ghz strings (literal dots)."""
+        from unifi_mapper.analysis.rf_strategy import Band
+
+        assert Band.TWO_FOUR == "2.4ghz"
+        assert Band.FIVE == "5ghz"
+
+    def test_ap_recommendation_is_frozen(self) -> None:
+        """Dataclass is frozen — mutation raises FrozenInstanceError."""
+        import dataclasses
+
+        from unifi_mapper.analysis.rf_strategy import (
+            APRecommendation,
+            Band,
+            Confidence,
+            Mode,
+        )
+
+        rec = APRecommendation(
+            ap_name="Kitchen",
+            ap_mac="aa:bb:cc:00:00:01",
+            band=Band.TWO_FOUR,
+            mode=Mode.HARD_DISABLE,
+            confidence=Confidence.GREEN,
+            current_width=20,
+            recommended_width=20,
+            current_channel=1,
+            recommended_channel=6,
+            current_tx_power=20,
+            recommended_tx_power=20,
+            rationale=("neighbour crowd",),
+            displaced_clients=(),
+            coverage_score=0.85,
+        )
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            rec.ap_name = "Office"  # type: ignore[misc]
+
+    def test_rf_strategy_plan_schema_version_locked(self) -> None:
+        """Static guard — schema version 1.0 must not drift silently.
+        Any change needs a deliberate version bump + applier compatibility logic."""
+        from unifi_mapper.analysis.rf_strategy import PLAN_SCHEMA_VERSION
+
+        assert PLAN_SCHEMA_VERSION == "1.0"
+
+    def test_constants_match_design_doc(self) -> None:
+        """Locked design-doc constants. Changes here demand a design-doc update."""
+        from unifi_mapper.analysis import rf_strategy as rfs
+
+        assert rfs.MIN_HISTORY_HOURS == 48.0                # Q1
+        assert rfs.WIDTH_24GHZ_FORCED == 20                 # Q2
+        assert rfs.MAC_OVERHEAD_FACTOR == 0.55              # D3
+        assert rfs.DFS_PENALTY_FACTOR == 0.80               # D3
+        assert rfs.WIDTH_TIEBREAKER_MARGIN == 0.10          # D3
+
+        # Scorecard weights must sum to 1.0 (convex combination)
+        weight_sum = (
+            rfs.COVERAGE_WEIGHT_ROAM_HISTORY
+            + rfs.COVERAGE_WEIGHT_AP_OVERLAP
+            + rfs.COVERAGE_WEIGHT_RSSI_MARGIN
+        )
+        assert weight_sum == pytest.approx(1.0)
+
+        # Threshold ordering — GREEN requires more coverage than YELLOW
+        assert rfs.CONFIDENCE_GREEN_THRESHOLD > rfs.CONFIDENCE_YELLOW_THRESHOLD
+
+    def test_client_impact_tuple_fields_immutable(self) -> None:
+        """known_other_aps is a tuple on the frozen dataclass —
+        prevents accidental mutation of per-client state."""
+        from unifi_mapper.analysis.rf_strategy import ClientImpact, Risk
+
+        impact = ClientImpact(
+            mac="11:22:33:44:55:66",
+            name="phone",
+            known_other_aps=("Kitchen", "Office"),
+            current_rssi=-60,
+            predicted_impact="roam to Office",
+            risk=Risk.LOW,
+        )
+
+        assert isinstance(impact.known_other_aps, tuple)
+        assert impact.known_other_aps == ("Kitchen", "Office")
