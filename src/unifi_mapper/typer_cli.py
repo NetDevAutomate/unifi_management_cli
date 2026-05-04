@@ -2633,61 +2633,57 @@ def analyze_config_drift(
 @analyze_app.command("neighbours")
 def analyze_neighbours(
     ap_name: Optional[str] = typer.Option(None, "--ap", "-a", help="Specific AP to scan (default: all)"),
-    cached: bool = typer.Option(False, "--cached", help="Read cached results without triggering new scan"),
-    wait: int = typer.Option(30, "--wait", "-w", help="Seconds to wait for scan results"),
+    cached: bool = typer.Option(False, "--cached", help="DEPRECATED: no-op, data is always fresh"),
 ):
     """📡 Scan for neighbouring APs and external interference sources."""
     import asyncio
 
     from rich.table import Table
 
-    from unifi_mapper.analysis.neighbour_scan import get_cached_neighbours, scan_neighbours
+    from unifi_mapper.analysis.neighbour_scan import scan_neighbours
 
     load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
 
+    if cached:
+        console.print("[yellow]⚠️  --cached is deprecated (neighbour data is now always fresh). Flag will be removed in a future release.[/yellow]")
+
     console.print("📡 [bold]Neighbour AP Scan[/bold]\n")
 
-    if cached:
-        report = asyncio.run(get_cached_neighbours())
-    else:
-        console.print(f"Triggering RF scan (waiting {wait}s for results)...")
-        report = asyncio.run(scan_neighbours(ap_name=ap_name, wait_seconds=wait))
+    report = asyncio.run(scan_neighbours(ap_name=ap_name))
 
-    if not report["results"]:
-        console.print("[yellow]No scan results available. Try again or increase --wait.[/yellow]")
+    if not report["aps"]:
+        console.print("[yellow]No neighbour data available.[/yellow]")
         return
 
-    for ap_result in report["results"]:
-        if ap_result.get("status") != "OK":
-            console.print(f"  ⚠️ {ap_result['ap']}: {ap_result.get('status', 'unknown')}")
-            continue
-
-        console.print(f"\n[bold]{ap_result['ap']}[/bold] — {ap_result['total_neighbours']} neighbours")
+    for ap_entry in report["aps"]:
+        ap_display = ap_entry["ap_name"]
+        total = ap_entry["total_neighbours"]
+        console.print(f"\n[bold]{ap_display}[/bold] — {total} neighbours")
 
         # Channel summary
-        ch_summary = ap_result.get("channel_summary", {})
+        ch_summary = ap_entry.get("channel_summary", {})
         if ch_summary:
             ch_str = ", ".join(f"ch{ch}:{count}" for ch, count in sorted(ch_summary.items()))
             console.print(f"  Channels: {ch_str}")
 
-        # Strongest neighbours
-        strongest = ap_result.get("strongest", [])
+        # Strongest neighbours (by signal dBm)
+        strongest = ap_entry.get("strongest", [])
         if strongest:
-            table = Table(show_header=True, title=f"Strongest Neighbours ({ap_result['ap']})")
+            table = Table(show_header=True, title=f"Strongest Neighbours ({ap_display})")
             table.add_column("SSID")
             table.add_column("Channel", justify="right")
-            table.add_column("RSSI", justify="right")
+            table.add_column("Signal (dBm)", justify="right")
             table.add_column("BSSID", style="dim")
 
             for n in strongest[:10]:
-                rssi = n.get("rssi", 0)
-                style = "red" if rssi > -50 else "yellow" if rssi > -70 else "green"
+                signal = n.get("signal", -100)
+                style = "red" if signal > -50 else "yellow" if signal > -70 else "green"
                 table.add_row(
-                    n.get("ssid", "<hidden>"),
+                    n.get("essid", "<hidden>") or "<hidden>",
                     str(n.get("channel", "?")),
-                    f"[{style}]{rssi}[/{style}]",
+                    f"[{style}]{signal}[/{style}]",
                     n.get("bssid", ""),
                 )
             console.print(table)

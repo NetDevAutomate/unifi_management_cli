@@ -1,155 +1,145 @@
-"""Neighbour AP scan for UniFi networks.
+"""Neighbour AP scan via UniFi passive rogue AP detection (stat/rogueap).
 
-Triggers RF environment scans on APs and reports neighbouring networks
-per channel to identify external interference sources.
+Reads always-fresh background-scanned neighbour data instead of triggering
+spectrum-scan (which is deprecated/non-functional on UniFi OS 5.x).
 """
 
-import asyncio
-from datetime import datetime
+from __future__ import annotations
+
+import time
+from typing import Any
 from unifi_mapper.core.utils.client import UniFiClient
-from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
-async def scan_neighbours(
-    ap_name: str | None = None,
-    wait_seconds: int = 30,
-) -> dict:
-    """Trigger RF scan on APs and collect neighbour results.
+# Oracle-validated RSSI thresholds (aligned with 802.11 CCA)
+RSSI_WEIGHT_STRONG = 3.0  # signal > -67 dBm (CCA-ED preamble detect)
+RSSI_WEIGHT_MEDIUM = 1.0  # signal -67 to -82 dBm (CCA energy detect)
+RSSI_WEIGHT_WEAK = 0.5  # signal < -82 dBm (near noise floor)
 
-    Args:
-        ap_name: Specific AP to scan (None = all APs, sequential)
-        wait_seconds: How long to wait for scan results (default 30s)
+# Stale entry filter
+MAX_ROGUE_AGE_SECONDS = 300
 
-    Returns:
-        Report with neighbour APs per channel
+# 2.4 GHz adjacent-channel compensation (dB offsets before RSSI bucketing)
+ADJACENT_CHANNEL_OFFSETS_24GHZ = {
+    0: 0,  # co-channel
+    1: -25,  # ±1 channel spacing
+    2: -40,  # ±2 channel spacing
+}
+
+
+def rssi_weight(signal_dbm: int) -> float:
+    """Return RSSI bucket weight per oracle-validated CCA thresholds.
+
+    Boundaries: -67 falls in MEDIUM, -82 falls in WEAK.
+    """
+    if signal_dbm > -67:
+        return RSSI_WEIGHT_STRONG
+    if signal_dbm > -82:
+        return RSSI_WEIGHT_MEDIUM
+    return RSSI_WEIGHT_WEAK
+
+
+def effective_rssi_for_channel(
+    signal_dbm: int,
+    source_channel: int,
+    target_channel: int,
+    band: str,
+) -> int | None:
+    """Compute effective RSSI an AP on source_channel contributes to target_channel.
+
+    - 5 GHz ('na'): None unless source == target (channels don't overlap)
+    - 2.4 GHz ('ng'): applies dB offset based on channel distance;
+      None if distance > 2
+    """
+    if band == "na":
+        return signal_dbm if source_channel == target_channel else None
+    distance = abs(source_channel - target_channel)
+    offset = ADJACENT_CHANNEL_OFFSETS_24GHZ.get(distance)
+    if offset is None:
+        return None
+    return signal_dbm + offset
+
+
+def compute_channel_neighbour_score(
+    neighbours: list[dict[str, Any]],
+    target_channel: int,
+    band: str,
+) -> float:
+    """Sum RSSI-weighted neighbour contribution for target_channel."""
+    total = 0.0
+    for nb in neighbours:
+        source_ch = nb.get("channel", 0)
+        signal = nb.get("signal", -100)
+        effective = effective_rssi_for_channel(signal, source_ch, target_channel, band)
+        if effective is None:
+            continue
+        total += rssi_weight(effective)
+    return total
+
+
+def _group_rogue_entries(
+    rogue_entries: list[dict[str, Any]],
+    ap_mac_to_name: dict[str, str],
+    filter_ap_mac: str | None = None,
+) -> list[dict[str, Any]]:
+    """Group stat/rogueap entries by detecting AP.
+
+    Filters: is_ubnt=True excluded, age > MAX_ROGUE_AGE_SECONDS excluded,
+    optionally filter to single ap_mac.
+    """
+    by_ap: dict[str, list[dict[str, Any]]] = {}
+    for entry in rogue_entries:
+        if entry.get("is_ubnt", False):
+            continue
+        if entry.get("age", 0) > MAX_ROGUE_AGE_SECONDS:
+            continue
+        ap_mac = entry.get("ap_mac", "")
+        if filter_ap_mac and ap_mac != filter_ap_mac:
+            continue
+        by_ap.setdefault(ap_mac, []).append(entry)
+
+    result = []
+    for ap_mac, entries in by_ap.items():
+        channel_summary: dict[int, int] = {}
+        for e in entries:
+            ch = e.get("channel", 0)
+            channel_summary[ch] = channel_summary.get(ch, 0) + 1
+        strongest = sorted(
+            entries, key=lambda e: e.get("signal", -100), reverse=True
+        )[:5]
+        result.append({
+            "ap_mac": ap_mac,
+            "ap_name": ap_mac_to_name.get(ap_mac, ap_mac),
+            "channel_summary": channel_summary,
+            "neighbours": entries,
+            "total_neighbours": len(entries),
+            "strongest": strongest,
+        })
+    return result
+
+
+async def scan_neighbours(ap_name: str | None = None) -> dict[str, Any]:
+    """Fetch passive neighbour AP data from stat/rogueap endpoint.
+
+    Always-fresh data; no scan trigger, no wait. UniFi controller runs
+    passive background scanning continuously on UniFi OS 5.x.
     """
     async with UniFiClient() as client:
+        rogue = await client.get_rogue_aps()
         devices = await client.get_devices()
 
-    aps = [d for d in devices if d.get('type') == 'uap']
+    ap_mac_to_name = {
+        d["mac"]: d.get("name", d["mac"])
+        for d in devices
+        if d.get("type") == "uap"
+    }
+
+    filter_mac = None
     if ap_name:
-        aps = [d for d in aps if ap_name.lower() in d.get('name', '').lower()]
-        if not aps:
-            raise ToolError(
-                message=f"No AP matching '{ap_name}' found",
-                error_code=ErrorCodes.NO_DATA,
-            )
+        for mac, name in ap_mac_to_name.items():
+            if ap_name.lower() in name.lower():
+                filter_mac = mac
+                break
 
-    results = []
-    for ap in aps:
-        mac = ap['mac']
-        name = ap.get('name', 'Unknown')
-
-        # Trigger scan
-        async with UniFiClient() as client:
-            path = client.build_path('cmd/devmgr')
-            try:
-                await client.post(path, {'cmd': 'spectrum-scan', 'mac': mac})
-            except ToolError as e:
-                if 'InProgress' in str(e):
-                    pass  # Already scanning, just wait
-                else:
-                    results.append({'ap': name, 'status': 'SCAN_FAILED', 'error': str(e)})
-                    continue
-
-        # Wait for scan to complete
-        await asyncio.sleep(wait_seconds)
-
-        # Read results
-        async with UniFiClient() as client:
-            devices2 = await client.get_devices()
-
-        ap2 = next((d for d in devices2 if d['mac'] == mac), None)
-        if not ap2:
-            continue
-
-        scan_table = ap2.get('scan_radio_table', [])
-        if not scan_table:
-            results.append({'ap': name, 'status': 'NO_RESULTS', 'neighbours': []})
-            continue
-
-        # Parse neighbours
-        neighbours = []
-        for entry in scan_table:
-            neighbours.append(
-                {
-                    'bssid': entry.get('bssid', ''),
-                    'ssid': entry.get('essid', '<hidden>'),
-                    'channel': entry.get('channel', 0),
-                    'rssi': entry.get('rssi', 0),
-                    'security': entry.get('security', ''),
-                    'is_adhoc': entry.get('is_adhoc', False),
-                }
-            )
-
-        # Sort by signal strength
-        neighbours.sort(key=lambda x: -(x.get('rssi') or -100))
-
-        # Summarise by channel
-        channel_summary: dict[int, int] = {}
-        for n in neighbours:
-            ch = n['channel']
-            channel_summary[ch] = channel_summary.get(ch, 0) + 1
-
-        results.append(
-            {
-                'ap': name,
-                'status': 'OK',
-                'total_neighbours': len(neighbours),
-                'channel_summary': dict(sorted(channel_summary.items())),
-                'strongest': neighbours[:10],
-            }
-        )
-
-    return {
-        'timestamp': datetime.now().isoformat(),
-        'aps_scanned': len(results),
-        'results': results,
-    }
-
-
-async def get_cached_neighbours() -> dict:
-    """Read any cached scan results without triggering new scans.
-
-    Useful for checking results after a scan has already been triggered.
-    """
-    async with UniFiClient() as client:
-        devices = await client.get_devices()
-
-    results = []
-    for d in devices:
-        if d.get('type') != 'uap':
-            continue
-        scan_table = d.get('scan_radio_table', [])
-        if not scan_table:
-            continue
-
-        neighbours = []
-        channel_summary: dict[int, int] = {}
-        for entry in scan_table:
-            ch = entry.get('channel', 0)
-            channel_summary[ch] = channel_summary.get(ch, 0) + 1
-            neighbours.append(
-                {
-                    'bssid': entry.get('bssid', ''),
-                    'ssid': entry.get('essid', '<hidden>'),
-                    'channel': entry.get('channel', 0),
-                    'rssi': entry.get('rssi', 0),
-                }
-            )
-
-        neighbours.sort(key=lambda x: -(x.get('rssi') or -100))
-        results.append(
-            {
-                'ap': d.get('name', 'Unknown'),
-                'total_neighbours': len(neighbours),
-                'channel_summary': dict(sorted(channel_summary.items())),
-                'strongest': neighbours[:10],
-            }
-        )
-
-    return {
-        'timestamp': datetime.now().isoformat(),
-        'aps_with_data': len(results),
-        'results': results,
-    }
+    aps = _group_rogue_entries(rogue, ap_mac_to_name, filter_ap_mac=filter_mac)
+    return {"timestamp": time.time(), "aps": aps}

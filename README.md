@@ -159,7 +159,7 @@ unifi-mapper radio auto-channel --band 5ghz --report radio-report.md
 unifi-mapper radio report -o radio-report.md
 ```
 
-The auto-channel optimiser scores 5 GHz channels by measured utilization with DFS penalty, and distributes 2.4 GHz across channels 1/6/13 weighted by average utilization.
+The auto-channel optimiser scores 5 GHz channels by measured utilization + DFS penalty + neighbour-AP congestion (RSSI-weighted, CCA-aligned), and distributes 2.4 GHz across channels 1/6/13 accounting for both own-AP utilization and adjacent-channel neighbour interference.
 
 ### Analysis Tools
 
@@ -176,9 +176,9 @@ unifi-mapper analyze roaming
 unifi-mapper analyze config-drift --snapshot
 unifi-mapper analyze config-drift
 
-# Neighbour AP scan — RF spectrum scan for external networks
-unifi-mapper analyze neighbours --ap "Living Room" --wait 90
-unifi-mapper analyze neighbours --cached
+# Neighbour AP scan — passive detection via stat/rogueap (always-fresh)
+unifi-mapper analyze neighbours
+unifi-mapper analyze neighbours --ap "Living Room"
 ```
 
 ### Scheduled Audits
@@ -344,7 +344,7 @@ UniFi Network Application 10.0.162+ resolves most device-level rejection issues.
 - Link Error Rate Tracking: Baseline snapshot and delta comparison for active degradation detection
 - Client Roaming Analysis: Periodic association snapshots to identify sticky clients and frequent roamers
 - Configuration Drift Detection: Full device config snapshot and diff against baseline
-- Neighbour AP Scan: RF spectrum scan for external networks per channel
+- Neighbour AP Scan: Passive neighbour AP detection (always-fresh, no scan trigger needed)
 - MAC Address Analysis: MAC table inspection and conflict detection
 - VLAN Diagnostics: VLAN configuration validation
 - Storm Detection: Broadcast storm identification
