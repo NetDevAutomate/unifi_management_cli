@@ -1042,6 +1042,234 @@ class TestNeighbourScan:
         assert len(result) == 1
         assert result[0]["ap_name"] == "Living Room"
 
+    # ── Phase D T3: AP-to-AP RF overlap ──────────────────────────────────────
+
+    def test_ap_to_ap_overlap_simple(self) -> None:
+        """Observed BSSID in our_ap_bssids → overlap recorded by
+        (observer_ap_name, observed_ap_name) pair. External neighbour excluded."""
+        from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
+
+        ap_mac_to_name = {
+            "aa:bb:cc:00:00:01": "Kitchen",
+            "aa:bb:cc:00:00:02": "Office",
+        }
+        # Per-AP vAP BSSIDs (typically offset from the AP's own mac)
+        our_bssids = {"aa:bb:cc:00:00:01:24", "aa:bb:cc:00:00:02:24"}
+        # Augment ap_mac_to_name so BSSIDs resolve to AP names too
+        ap_mac_to_name["aa:bb:cc:00:00:01:24"] = "Kitchen"
+        ap_mac_to_name["aa:bb:cc:00:00:02:24"] = "Office"
+
+        entries = [
+            # Kitchen (ap_mac=01) observes Office BSSID at -55
+            _make_rogue_entry(
+                ap_mac="aa:bb:cc:00:00:01",
+                bssid="aa:bb:cc:00:00:02:24",
+                signal=-55,
+            ),
+            # Office (ap_mac=02) observes Kitchen BSSID at -58
+            _make_rogue_entry(
+                ap_mac="aa:bb:cc:00:00:02",
+                bssid="aa:bb:cc:00:00:01:24",
+                signal=-58,
+            ),
+            # Kitchen observes external neighbour at -70 (not in our_bssids)
+            _make_rogue_entry(
+                ap_mac="aa:bb:cc:00:00:01",
+                bssid="99:99:99:99:99:99",
+                signal=-70,
+            ),
+        ]
+
+        result = compute_ap_to_ap_overlap(entries, our_bssids, ap_mac_to_name)
+
+        assert result == {
+            ("Kitchen", "Office"): -55,
+            ("Office", "Kitchen"): -58,
+        }
+
+    def test_ap_to_ap_overlap_multiple_radios_keeps_strongest(self) -> None:
+        """Observer hears same neighbour BSSID on 2.4 and 5 radios →
+        keep the stronger (less negative) RSSI."""
+        from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
+
+        ap_mac_to_name = {
+            "aa:bb:cc:00:00:01": "Kitchen",
+            "aa:bb:cc:00:00:02:24": "Office",
+        }
+        our_bssids = {"aa:bb:cc:00:00:02:24"}
+
+        entries = [
+            _make_rogue_entry(
+                ap_mac="aa:bb:cc:00:00:01",
+                bssid="aa:bb:cc:00:00:02:24",
+                signal=-72,
+                band="ng",
+            ),
+            _make_rogue_entry(
+                ap_mac="aa:bb:cc:00:00:01",
+                bssid="aa:bb:cc:00:00:02:24",
+                signal=-58,
+                band="na",
+            ),
+        ]
+
+        result = compute_ap_to_ap_overlap(entries, our_bssids, ap_mac_to_name)
+
+        assert result == {("Kitchen", "Office"): -58}
+
+    def test_ap_to_ap_overlap_stale_excluded(self) -> None:
+        """Entry with age > MAX_ROGUE_AGE_SECONDS excluded even if BSSID matches."""
+        from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
+
+        ap_mac_to_name = {
+            "aa:bb:cc:00:00:01": "Kitchen",
+            "aa:bb:cc:00:00:02:24": "Office",
+        }
+        our_bssids = {"aa:bb:cc:00:00:02:24"}
+
+        entries = [
+            _make_rogue_entry(
+                ap_mac="aa:bb:cc:00:00:01",
+                bssid="aa:bb:cc:00:00:02:24",
+                signal=-55,
+                age=400,  # > MAX_ROGUE_AGE_SECONDS=300 → stale
+            ),
+        ]
+
+        result = compute_ap_to_ap_overlap(entries, our_bssids, ap_mac_to_name)
+
+        assert result == {}
+
+    def test_ap_to_ap_overlap_is_ubnt_included(self) -> None:
+        """Key divergence from filter_live_rogue_entries: is_ubnt=True entries
+        ARE kept when their BSSID is in our_ap_bssids (they ARE our network)."""
+        from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
+
+        ap_mac_to_name = {
+            "aa:bb:cc:00:00:01": "Kitchen",
+            "aa:bb:cc:00:00:02:24": "Office",
+        }
+        our_bssids = {"aa:bb:cc:00:00:02:24"}
+
+        entries = [
+            _make_rogue_entry(
+                ap_mac="aa:bb:cc:00:00:01",
+                bssid="aa:bb:cc:00:00:02:24",
+                signal=-60,
+                is_ubnt=True,  # explicitly our own — must still be kept
+            ),
+        ]
+
+        result = compute_ap_to_ap_overlap(entries, our_bssids, ap_mac_to_name)
+
+        assert result == {("Kitchen", "Office"): -60}
+
+    def test_ap_to_ap_overlap_case_insensitive_bssid(self) -> None:
+        """Rogue-entry BSSID compared lowercased against our_ap_bssids."""
+        from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
+
+        ap_mac_to_name = {
+            "aa:bb:cc:00:00:01": "Kitchen",
+            "aa:bb:cc:dd:ee:ff": "Office",
+        }
+        our_bssids = {"aa:bb:cc:dd:ee:ff"}  # lowercase
+
+        entries = [
+            _make_rogue_entry(
+                ap_mac="aa:bb:cc:00:00:01",
+                bssid="AA:BB:CC:DD:EE:FF",  # uppercase — still must match
+                signal=-60,
+            ),
+        ]
+
+        result = compute_ap_to_ap_overlap(entries, our_bssids, ap_mac_to_name)
+
+        assert result == {("Kitchen", "Office"): -60}
+
+    def test_ap_to_ap_overlap_empty_bssid_set(self) -> None:
+        """Empty our_ap_bssids → empty result regardless of input entries."""
+        from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
+
+        ap_mac_to_name = {"aa:bb:cc:00:00:01": "Kitchen"}
+
+        entries = [
+            _make_rogue_entry(
+                ap_mac="aa:bb:cc:00:00:01",
+                bssid="b0:5b:99:ea:5a:76",
+                signal=-60,
+            ),
+        ]
+
+        result = compute_ap_to_ap_overlap(entries, set(), ap_mac_to_name)
+
+        assert result == {}
+
+    def test_get_our_ap_bssids_from_devices(self) -> None:
+        """Walks vap_table on all UAPs, returns lowercased BSSID set."""
+        import asyncio
+
+        from unifi_mapper.analysis.neighbour_scan import get_our_ap_bssids
+
+        class _MockClient:
+            async def get_devices(self):
+                return [
+                    {
+                        "type": "uap",
+                        "mac": "aa:bb:cc:00:00:01",
+                        "name": "Kitchen",
+                        "vap_table": [
+                            {"bssid": "AA:BB:CC:00:00:01:24"},
+                            {"bssid": "AA:BB:CC:00:00:01:5G"},
+                        ],
+                    },
+                    {
+                        "type": "uap",
+                        "mac": "aa:bb:cc:00:00:02",
+                        "name": "Office",
+                        "vap_table": [
+                            {"bssid": "AA:BB:CC:00:00:02:24"},
+                            {"bssid": "AA:BB:CC:00:00:02:5G"},
+                        ],
+                    },
+                ]
+
+        result = asyncio.run(get_our_ap_bssids(_MockClient()))
+
+        assert result == {
+            "aa:bb:cc:00:00:01:24",
+            "aa:bb:cc:00:00:01:5g",
+            "aa:bb:cc:00:00:02:24",
+            "aa:bb:cc:00:00:02:5g",
+        }
+
+    def test_get_our_ap_bssids_skips_non_uaps(self) -> None:
+        """Only type=='uap' devices contribute; switches (usw) ignored."""
+        import asyncio
+
+        from unifi_mapper.analysis.neighbour_scan import get_our_ap_bssids
+
+        class _MockClient:
+            async def get_devices(self):
+                return [
+                    {
+                        "type": "uap",
+                        "mac": "aa:bb:cc:00:00:01",
+                        "vap_table": [{"bssid": "aa:bb:cc:00:00:01:24"}],
+                    },
+                    {
+                        # Switch — must be skipped entirely. Even if it somehow
+                        # had a vap_table (it won't in practice), do not include.
+                        "type": "usw",
+                        "mac": "aa:bb:cc:00:00:99",
+                        "vap_table": [{"bssid": "zz:zz:zz:zz:zz:zz"}],
+                    },
+                ]
+
+        result = asyncio.run(get_our_ap_bssids(_MockClient()))
+
+        assert result == {"aa:bb:cc:00:00:01:24"}
+        assert "zz:zz:zz:zz:zz:zz" not in result
+
 
 # ── 12. Bandwidth Test ───────────────────────────────────────────────────────
 

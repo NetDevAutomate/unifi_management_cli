@@ -95,6 +95,81 @@ def filter_live_rogue_entries(
     ]
 
 
+def _filter_own_network_observations(
+    rogue_entries: list[dict[str, Any]],
+    our_ap_bssids: set[str],
+) -> list[dict[str, Any]]:
+    """Keep only rogue entries observing OUR own BSSIDs, with stale-age filter.
+
+    Inverse of :func:`filter_live_rogue_entries`. Unlike that helper,
+    ``is_ubnt=True`` entries are KEPT here: when an AP hears another of our
+    APs, that IS our own network, which is exactly the signal we want for
+    AP-to-AP RF overlap. The ``is_ubnt`` flag is the controller's own
+    identification of Ubiquiti-manufactured radios; it is not a reliable
+    indicator of our specific deployment, so we use the explicit BSSID
+    allowlist instead.
+    """
+    our_ap_bssids_lower = {b.lower() for b in our_ap_bssids}
+    return [
+        e
+        for e in rogue_entries
+        if e.get("bssid", "").lower() in our_ap_bssids_lower
+        and e.get("age", 0) <= MAX_ROGUE_AGE_SECONDS
+    ]
+
+
+def compute_ap_to_ap_overlap(
+    rogue_entries: list[dict[str, Any]],
+    our_ap_bssids: set[str],
+    ap_mac_to_name: dict[str, str],
+) -> dict[tuple[str, str], int]:
+    """Compute per-AP-pair RSSI overlap from stat/rogueap observations.
+
+    For each entry where the observed `bssid` is one of our own APs' BSSIDs
+    (i.e. observer_ap heard observed_ap's beacon), record the RSSI keyed by
+    (observer_ap_name, observed_ap_name). If multiple radios on the same
+    observer hear the same neighbour BSSID (2.4 + 5 separately), keep the
+    strongest RSSI — max() of negative dBm values is the less-negative one.
+
+    BSSID comparison is case-insensitive; ``our_ap_bssids`` may be supplied
+    in any case (``get_our_ap_bssids`` already returns lowercased).
+
+    Args:
+        rogue_entries: Raw ``stat/rogueap`` payload entries.
+        our_ap_bssids: Set of BSSIDs that belong to our own APs (any case).
+        ap_mac_to_name: Mapping of mac/bssid → friendly AP name. Lookups fall
+            back to the raw mac/bssid string when no name is registered, so
+            the result is always human-readable but never raises.
+
+    Returns:
+        Mapping of (observer_ap_name, observed_ap_name) → strongest RSSI
+        (int dBm). Empty dict if no overlaps found or ``our_ap_bssids`` is
+        empty.
+    """
+    if not our_ap_bssids:
+        return {}
+
+    own_observations = _filter_own_network_observations(rogue_entries, our_ap_bssids)
+    overlap: dict[tuple[str, str], int] = {}
+
+    for entry in own_observations:
+        observer_mac: str = entry.get("ap_mac") or ""
+        observed_bssid: str = (entry.get("bssid") or "").lower()
+        signal = entry.get("signal")
+        if signal is None:
+            continue
+
+        observer_name = ap_mac_to_name.get(observer_mac, observer_mac)
+        observed_name = ap_mac_to_name.get(observed_bssid, observed_bssid)
+        pair: tuple[str, str] = (observer_name, observed_name)
+
+        # max() keeps the stronger signal (less negative dBm).
+        prior = overlap.get(pair)
+        overlap[pair] = signal if prior is None else max(prior, signal)
+
+    return overlap
+
+
 def _group_rogue_entries(
     rogue_entries: list[dict[str, Any]],
     ap_mac_to_name: dict[str, str],
@@ -157,3 +232,26 @@ async def scan_neighbours(ap_name: str | None = None) -> dict[str, Any]:
 
     aps = _group_rogue_entries(rogue, ap_mac_to_name, filter_ap_mac=filter_mac)
     return {"timestamp": datetime.now().isoformat(), "aps": aps}
+
+
+async def get_our_ap_bssids(client: UniFiClient) -> set[str]:
+    """Extract all BSSIDs from our own APs via ``client.get_devices()``.
+
+    Walks ``vap_table`` entries across all devices where ``type == "uap"``
+    and returns the set of lowercased BSSID strings, suitable as the
+    ``our_ap_bssids`` argument to :func:`compute_ap_to_ap_overlap`.
+
+    Non-UAP devices (switches, gateways) are skipped even if they carry an
+    unexpected ``vap_table`` — the filter is on device type, not presence
+    of the field.
+    """
+    devices = await client.get_devices()
+    bssids: set[str] = set()
+    for device in devices:
+        if device.get("type") != "uap":
+            continue
+        for vap in device.get("vap_table", []):
+            bssid = vap.get("bssid")
+            if bssid:
+                bssids.add(bssid.lower())
+    return bssids
