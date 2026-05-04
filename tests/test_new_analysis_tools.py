@@ -2058,3 +2058,504 @@ class TestRFStrategyWidthScoring:
             is_channel_dfs={100: True},  # DFS on ch 100 penalises 80 MHz
         )
         assert result == 40
+
+
+# ── 18. RF Strategy — plan generator + impact preview (Phase D T7) ───────────
+
+
+class TestRFStrategyPlanGeneration:
+    """Tests for generate_plan, _build_client_impacts, and render_impact_preview.
+
+    Split across three logical groups:
+    - _build_client_impacts (pure impact-prediction function, 3 tests)
+    - render_impact_preview (pure text renderer, 2 tests)
+    - generate_plan (async integration orchestrator, 6 tests)
+    """
+
+    # ── _build_client_impacts ─────────────────────────────────────────────────
+
+    def test_build_client_impacts_has_5ghz_history(self) -> None:
+        """Client seen on multiple APs + strong overlap → 'likely roam', LOW risk."""
+        from unifi_mapper.analysis.rf_strategy import (
+            Band,
+            Mode,
+            Risk,
+            _build_client_impacts,
+        )
+
+        current_clients = [{
+            "mac": "aa:bb:cc:11:22:33",
+            "name": "phone-A",
+            "ap_name": "Kitchen",
+            "channel": 6,
+            "rssi": -62,
+        }]
+        mobility_graph = {"aa:bb:cc:11:22:33": {"Kitchen", "Office"}}
+        overlap_matrix = {
+            ("Office", "Kitchen"): -55,  # Office hears Kitchen strongly
+        }
+
+        impacts = _build_client_impacts(
+            ap_name="Kitchen",
+            band=Band.TWO_FOUR,
+            mode=Mode.HARD_DISABLE,
+            current_clients=current_clients,
+            mobility_graph=mobility_graph,
+            overlap_matrix=overlap_matrix,
+        )
+
+        assert len(impacts) == 1
+        impact = impacts[0]
+        assert impact.mac == "aa:bb:cc:11:22:33"
+        assert impact.risk == Risk.LOW
+        assert "Office" in impact.predicted_impact
+        assert "roam" in impact.predicted_impact.lower()
+        assert "Office" in impact.known_other_aps
+
+    def test_build_client_impacts_disconnect_risk(self) -> None:
+        """Client only ever on this AP → DISCONNECT warning, HIGH risk."""
+        from unifi_mapper.analysis.rf_strategy import (
+            Band,
+            Mode,
+            Risk,
+            _build_client_impacts,
+        )
+
+        current_clients = [{
+            "mac": "aa:bb:cc:44:55:66",
+            "name": "old-iot",
+            "ap_name": "Kitchen",
+            "channel": 6,
+            "rssi": -70,
+        }]
+        mobility_graph = {"aa:bb:cc:44:55:66": {"Kitchen"}}  # never roamed
+        overlap_matrix: dict[tuple[str, str], int] = {}
+
+        impacts = _build_client_impacts(
+            ap_name="Kitchen",
+            band=Band.TWO_FOUR,
+            mode=Mode.HARD_DISABLE,
+            current_clients=current_clients,
+            mobility_graph=mobility_graph,
+            overlap_matrix=overlap_matrix,
+        )
+
+        assert len(impacts) == 1
+        impact = impacts[0]
+        assert impact.risk == Risk.HIGH
+        assert "DISCONNECT" in impact.predicted_impact
+        assert impact.known_other_aps == ()
+
+    def test_build_client_impacts_hybrid_mode(self) -> None:
+        """HYBRID mode → reassociate in-place, LOW risk regardless of mobility."""
+        from unifi_mapper.analysis.rf_strategy import (
+            Band,
+            Mode,
+            Risk,
+            _build_client_impacts,
+        )
+
+        # Client with no roam history — in HARD_DISABLE this would be HIGH risk.
+        # In HYBRID the radio stays up, so the risk drops to LOW.
+        current_clients = [{
+            "mac": "aa:bb:cc:77:88:99",
+            "name": "sticky-iot",
+            "ap_name": "Kitchen",
+            "channel": 6,
+            "rssi": -65,
+        }]
+        mobility_graph = {"aa:bb:cc:77:88:99": {"Kitchen"}}  # no roaming
+        overlap_matrix: dict[tuple[str, str], int] = {}
+
+        impacts = _build_client_impacts(
+            ap_name="Kitchen",
+            band=Band.TWO_FOUR,
+            mode=Mode.HYBRID,
+            current_clients=current_clients,
+            mobility_graph=mobility_graph,
+            overlap_matrix=overlap_matrix,
+        )
+
+        assert len(impacts) == 1
+        impact = impacts[0]
+        assert impact.risk == Risk.LOW
+        assert "reassociate" in impact.predicted_impact.lower()
+
+    # ── render_impact_preview ─────────────────────────────────────────────────
+
+    def test_render_impact_preview_contains_expected_sections(self) -> None:
+        """Rendered preview contains the D5 example's key sections / labels."""
+        from unifi_mapper.analysis.rf_strategy import (
+            APRecommendation,
+            Band,
+            ClientImpact,
+            Confidence,
+            Mode,
+            PLAN_SCHEMA_VERSION,
+            PlanSummary,
+            RFStrategyPlan,
+            Risk,
+            render_impact_preview,
+        )
+
+        impact = ClientImpact(
+            mac="aa:bb:cc:11:22:33",
+            name="phone-A",
+            known_other_aps=("Office",),
+            current_rssi=-62,
+            predicted_impact="likely roam to Office",
+            risk=Risk.LOW,
+        )
+        rec = APRecommendation(
+            ap_name="Kitchen",
+            ap_mac="aa:bb:cc:00:00:01",
+            band=Band.TWO_FOUR,
+            mode=Mode.HARD_DISABLE,
+            confidence=Confidence.GREEN,
+            current_width=20,
+            recommended_width=20,
+            current_channel=1,
+            recommended_channel=6,
+            current_tx_power=20,
+            recommended_tx_power=20,
+            rationale=("neighbour crowd on ch 1",),
+            displaced_clients=(impact,),
+            coverage_score=0.85,
+        )
+        summary = PlanSummary(
+            total_aps=1,
+            recommendations_count=1,
+            green_count=1,
+            yellow_count=0,
+            red_count=0,
+            hard_disable_count=1,
+            soft_count=0,
+            hybrid_count=0,
+        )
+        plan = RFStrategyPlan(
+            schema_version=PLAN_SCHEMA_VERSION,
+            generated_at="2026-05-04T20:00:00",
+            tool_version="1.0.0",
+            site="default",
+            history_hours_available=48.5,
+            recommendations=(rec,),
+            summary=summary,
+        )
+
+        output = render_impact_preview(plan)
+
+        # Per-AP section must contain the AP name + key labels.
+        assert "Kitchen" in output
+        assert "Confidence" in output
+        assert "Rationale" in output
+        # Delta table must reference width / channel / power (D5 example).
+        assert "Width" in output
+        assert "Channel" in output
+        assert "Power" in output
+        # Displaced-client block must mention the disassociate concept.
+        # D5 uses "Disassociate" / "Displaced" — render includes one of these.
+        assert "Disassociate" in output or "Displaced" in output
+
+    def test_render_impact_preview_green_empty_plan(self) -> None:
+        """Empty plan → human-readable 'no recommendations' message."""
+        from unifi_mapper.analysis.rf_strategy import (
+            PLAN_SCHEMA_VERSION,
+            PlanSummary,
+            RFStrategyPlan,
+            render_impact_preview,
+        )
+
+        summary = PlanSummary(
+            total_aps=0,
+            recommendations_count=0,
+            green_count=0,
+            yellow_count=0,
+            red_count=0,
+            hard_disable_count=0,
+            soft_count=0,
+            hybrid_count=0,
+        )
+        plan = RFStrategyPlan(
+            schema_version=PLAN_SCHEMA_VERSION,
+            generated_at="2026-05-04T20:00:00",
+            tool_version="1.0.0",
+            site="default",
+            history_hours_available=48.0,
+            recommendations=(),
+            summary=summary,
+        )
+
+        output = render_impact_preview(plan)
+
+        assert "No recommendations" in output
+
+    # ── generate_plan (async orchestrator) ────────────────────────────────────
+
+    @staticmethod
+    def _seed_history(path, snapshots: list[dict]) -> None:
+        """Helper: write a history file with supplied snapshot dicts."""
+        import json
+        path.write_text(json.dumps({"snapshots": snapshots}))
+
+    @staticmethod
+    def _make_mock_client_factory(
+        devices: list[dict],
+        clients: list[dict],
+        rogue_aps: list[dict],
+    ):
+        """Build a UniFiClient stand-in that returns supplied data.
+
+        Returns a factory class usable as a drop-in replacement for
+        ``UniFiClient`` in the rf_strategy module namespace. Each instance
+        supports the async context-manager protocol and the three getters
+        ``generate_plan`` calls.
+        """
+        class _MockClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def get_devices(self):
+                return devices
+
+            async def get_clients(self):
+                return clients
+
+            async def get_rogue_aps(self):
+                return rogue_aps
+
+        return _MockClient
+
+    def test_generate_plan_insufficient_history(self, tmp_path, monkeypatch) -> None:
+        """history_hours_available < min_history_hours → ToolError(CONFIG_INVALID)."""
+        import asyncio
+        from datetime import datetime, timedelta
+
+        from unifi_mapper.analysis import rf_strategy
+        from unifi_mapper.analysis.rf_strategy import generate_plan
+        from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+
+        # Seed a history file spanning only 24h (less than default 48h min).
+        history_file = tmp_path / "history.json"
+        t0 = datetime(2026, 5, 4, 0, 0, 0)
+        self._seed_history(history_file, [
+            {"timestamp": t0.isoformat(), "associations": []},
+            {"timestamp": (t0 + timedelta(hours=24)).isoformat(), "associations": []},
+        ])
+
+        mock = self._make_mock_client_factory(devices=[], clients=[], rogue_aps=[])
+        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+
+        with pytest.raises(ToolError) as exc_info:
+            asyncio.run(generate_plan(history_path=str(history_file)))
+
+        assert exc_info.value.error_code == ErrorCodes.CONFIG_INVALID
+        # Message should name the shortfall so operators can act.
+        assert "48" in exc_info.value.message or "history" in exc_info.value.message.lower()
+
+    def test_generate_plan_min_history_override(self, tmp_path, monkeypatch) -> None:
+        """Passing min_history_hours=24.0 lets a 24h history succeed."""
+        import asyncio
+        from datetime import datetime, timedelta
+
+        from unifi_mapper.analysis import rf_strategy
+        from unifi_mapper.analysis.rf_strategy import generate_plan
+
+        history_file = tmp_path / "history.json"
+        t0 = datetime(2026, 5, 4, 0, 0, 0)
+        self._seed_history(history_file, [
+            {"timestamp": t0.isoformat(), "associations": []},
+            {"timestamp": (t0 + timedelta(hours=24)).isoformat(), "associations": []},
+        ])
+
+        mock = self._make_mock_client_factory(devices=[], clients=[], rogue_aps=[])
+        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+
+        plan = asyncio.run(generate_plan(
+            history_path=str(history_file),
+            min_history_hours=24.0,
+        ))
+
+        assert plan.history_hours_available >= 24.0
+
+    def test_generate_plan_empty_network(self, tmp_path, monkeypatch) -> None:
+        """Zero UAPs on the controller → empty recommendations, zero counts."""
+        import asyncio
+        from datetime import datetime, timedelta
+
+        from unifi_mapper.analysis import rf_strategy
+        from unifi_mapper.analysis.rf_strategy import generate_plan
+
+        history_file = tmp_path / "history.json"
+        t0 = datetime(2026, 5, 4, 0, 0, 0)
+        self._seed_history(history_file, [
+            {"timestamp": t0.isoformat(), "associations": []},
+            {"timestamp": (t0 + timedelta(hours=48)).isoformat(), "associations": []},
+        ])
+
+        # Controller with only a switch — no UAPs.
+        devices = [{"type": "usw", "mac": "aa:bb:cc:99:99:99", "name": "Switch"}]
+        mock = self._make_mock_client_factory(devices=devices, clients=[], rogue_aps=[])
+        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+
+        plan = asyncio.run(generate_plan(history_path=str(history_file)))
+
+        assert plan.recommendations == ()
+        assert plan.summary.total_aps == 0
+        assert plan.summary.recommendations_count == 0
+        assert plan.summary.green_count == 0
+        assert plan.summary.yellow_count == 0
+        assert plan.summary.red_count == 0
+
+    def test_generate_plan_schema_version_stamped(self, tmp_path, monkeypatch) -> None:
+        """plan.schema_version == PLAN_SCHEMA_VERSION ('1.0')."""
+        import asyncio
+        from datetime import datetime, timedelta
+
+        from unifi_mapper.analysis import rf_strategy
+        from unifi_mapper.analysis.rf_strategy import PLAN_SCHEMA_VERSION, generate_plan
+
+        history_file = tmp_path / "history.json"
+        t0 = datetime(2026, 5, 4, 0, 0, 0)
+        self._seed_history(history_file, [
+            {"timestamp": t0.isoformat(), "associations": []},
+            {"timestamp": (t0 + timedelta(hours=48)).isoformat(), "associations": []},
+        ])
+
+        mock = self._make_mock_client_factory(devices=[], clients=[], rogue_aps=[])
+        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+
+        plan = asyncio.run(generate_plan(history_path=str(history_file)))
+
+        assert plan.schema_version == PLAN_SCHEMA_VERSION
+        assert plan.schema_version == "1.0"
+
+    def test_generate_plan_tool_version_stamped(self, tmp_path, monkeypatch) -> None:
+        """plan.tool_version matches the installed package version."""
+        import asyncio
+        from datetime import datetime, timedelta
+        from importlib.metadata import version as pkg_version
+
+        from unifi_mapper.analysis import rf_strategy
+        from unifi_mapper.analysis.rf_strategy import generate_plan
+
+        history_file = tmp_path / "history.json"
+        t0 = datetime(2026, 5, 4, 0, 0, 0)
+        self._seed_history(history_file, [
+            {"timestamp": t0.isoformat(), "associations": []},
+            {"timestamp": (t0 + timedelta(hours=48)).isoformat(), "associations": []},
+        ])
+
+        mock = self._make_mock_client_factory(devices=[], clients=[], rogue_aps=[])
+        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+
+        plan = asyncio.run(generate_plan(history_path=str(history_file)))
+
+        # Should match pyproject.toml version ("0.1.0" at time of writing).
+        assert plan.tool_version == pkg_version("unifi-management-cli")
+
+    def test_generate_plan_counts_match_recommendations(self, tmp_path, monkeypatch) -> None:
+        """Three APs producing 1 GREEN, 1 YELLOW, 1 RED → summary counts match."""
+        import asyncio
+        from datetime import datetime, timedelta
+
+        from unifi_mapper.analysis import rf_strategy
+        from unifi_mapper.analysis.rf_strategy import generate_plan
+
+        # Construct a 48h history where:
+        # - Kitchen's 2.4-only clients have roamed (→ roam_history_score=1.0)
+        # - Office's 2.4-only client stayed put (→ roam_history_score=0.0)
+        # - Living-Room's 2.4-only client stayed put (→ roam_history_score=0.0)
+        history_file = tmp_path / "history.json"
+        t0 = datetime(2026, 5, 4, 0, 0, 0)
+        t48 = t0 + timedelta(hours=48)
+
+        snapshots = [
+            # Hour 0 — seed each client on its "home" AP
+            {
+                "timestamp": t0.isoformat(),
+                "associations": [
+                    # Kitchen client: 2.4-only, starts on Kitchen
+                    {"client_mac": "AA", "client_name": "phone-A", "ap_mac": "aa:k",
+                     "ap_name": "Kitchen", "rssi": -50, "channel": 6, "ssid": "Home"},
+                    # Office client: 2.4-only, stays on Office
+                    {"client_mac": "BB", "client_name": "phone-B", "ap_mac": "aa:o",
+                     "ap_name": "Office", "rssi": -50, "channel": 6, "ssid": "Home"},
+                    # Living-Room client: 2.4-only, stays on Living-Room
+                    {"client_mac": "CC", "client_name": "phone-C", "ap_mac": "aa:l",
+                     "ap_name": "Living-Room", "rssi": -85, "channel": 6, "ssid": "Home"},
+                ],
+            },
+            # Hour 48 — Kitchen client has moved to Office (proved roam capability)
+            {
+                "timestamp": t48.isoformat(),
+                "associations": [
+                    {"client_mac": "AA", "client_name": "phone-A", "ap_mac": "aa:o",
+                     "ap_name": "Office", "rssi": -50, "channel": 6, "ssid": "Home"},
+                    {"client_mac": "BB", "client_name": "phone-B", "ap_mac": "aa:o",
+                     "ap_name": "Office", "rssi": -50, "channel": 6, "ssid": "Home"},
+                    {"client_mac": "CC", "client_name": "phone-C", "ap_mac": "aa:l",
+                     "ap_name": "Living-Room", "rssi": -85, "channel": 6, "ssid": "Home"},
+                ],
+            },
+        ]
+        self._seed_history(history_file, snapshots)
+
+        # Wait — for compute_twofour_only_clients, client AA was seen on BOTH
+        # Kitchen (ch 6) AND Office (ch 6) — still 2.4 both times. To ensure AA
+        # stays 2.4-only, both observations must be on 2.4. That's already
+        # the case (both channel=6). Client AA will appear under Kitchen AND
+        # Office as a 2.4-only client. Good — both Kitchen and Office get
+        # the scorecard treatment.
+        #
+        # But to force distinct GREEN/YELLOW/RED outcomes, we need the overlap
+        # matrix and current_clients RSSI values to differentiate:
+        #   Kitchen: AA roamed → roam=1.0; strong overlap from Office → overlap=1.0;
+        #            solid RSSI → rssi=1.0 → total 1.0 → GREEN
+        #   Office:  both AA and BB on Office on ch 6 → 2.4-only on Office
+        #            AA roamed but BB didn't → roam=0.5
+        #            overlap from Kitchen strong → overlap=1.0
+        #            solid RSSI → rssi=1.0 → total 0.25 + 0.30 + 0.20 = 0.75 → GREEN
+        #   That puts Office as GREEN, not YELLOW. Tweak: remove the Kitchen→Office
+        #   overlap so Office is island → overlap=0.0 → 0.25 + 0.20 = 0.45 → YELLOW ✓
+        #
+        #   Living-Room: CC never roamed → roam=0.0
+        #                no neighbour observations → overlap=0.0
+        #                RSSI -85 (below -75 floor) → rssi=0.0 → total 0.0 → RED ✓
+
+        devices = [
+            {"type": "uap", "mac": "aa:k", "name": "Kitchen",
+             "vap_table": [{"bssid": "aa:k:24"}]},
+            {"type": "uap", "mac": "aa:o", "name": "Office",
+             "vap_table": [{"bssid": "aa:o:24"}]},
+            {"type": "uap", "mac": "aa:l", "name": "Living-Room",
+             "vap_table": [{"bssid": "aa:l:24"}]},
+        ]
+        current_clients = [
+            {"mac": "AA", "name": "phone-A", "ap_mac": "aa:o", "ap_name": "Office",
+             "channel": 6, "rssi": -50, "radio_proto": "ax", "nss": 2, "mcs": 11},
+            {"mac": "BB", "name": "phone-B", "ap_mac": "aa:o", "ap_name": "Office",
+             "channel": 6, "rssi": -50, "radio_proto": "ax", "nss": 2, "mcs": 11},
+            {"mac": "CC", "name": "phone-C", "ap_mac": "aa:l", "ap_name": "Living-Room",
+             "channel": 6, "rssi": -85, "radio_proto": "ax", "nss": 2, "mcs": 11},
+        ]
+        # Rogue entries: Kitchen is observed from Office at strong RSSI;
+        # Office is NOT observed (island); Living-Room is NOT observed.
+        rogue_aps = [
+            {"ap_mac": "aa:o", "bssid": "aa:k:24", "signal": -55, "age": 0,
+             "is_ubnt": True, "channel": 6},
+        ]
+
+        mock = self._make_mock_client_factory(devices, current_clients, rogue_aps)
+        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+
+        plan = asyncio.run(generate_plan(history_path=str(history_file)))
+
+        # Each AP emits ONE 2.4 GHz recommendation + ONE 5 GHz stub (Mode.NONE).
+        # Summary counts 2.4 recommendations only (the scorecard gate).
+        assert plan.summary.total_aps == 3
+        assert plan.summary.green_count == 1   # Kitchen
+        assert plan.summary.yellow_count == 1  # Office
+        assert plan.summary.red_count == 1     # Living-Room

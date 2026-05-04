@@ -14,8 +14,13 @@ T5–T7 and will import from this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as pkg_version
 from typing import Any
+from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 # === Constants (locked design decisions) ===
@@ -631,3 +636,439 @@ def compute_width_recommendation(
         # else: wider is lower than or equal to best → stay with best.
 
     return best_width
+
+
+# === Plan generator + impact preview (Phase D T7) ===
+#
+# Top-level composition. Reads data from the controller, stitches T1–T6
+# outputs, produces an RFStrategyPlan. No writes.
+
+
+# Threshold for distinguishing "strong" vs "weak" inter-AP overlap when
+# predicting post-disable roam behaviour. Matches the compute_ap_overlap_score
+# "strong" cutoff (-60 dBm) to keep the two views consistent.
+_IMPACT_STRONG_OVERLAP_DBM = -60
+
+
+def _best_overlap_target(
+    current_ap: str,
+    candidate_aps: set[str],
+    overlap_matrix: dict[tuple[str, str], int],
+) -> tuple[str | None, int | None]:
+    """Find the candidate AP that hears ``current_ap`` most strongly.
+
+    Returns ``(ap_name, rssi)`` for the best overlap pair, or ``(None, None)``
+    when no overlap is recorded between ``current_ap`` and any candidate.
+    """
+    best_name: str | None = None
+    best_rssi: int | None = None
+    for other in candidate_aps:
+        if other == current_ap:
+            continue
+        rssi = overlap_matrix.get((other, current_ap))
+        if rssi is None:
+            continue
+        if best_rssi is None or rssi > best_rssi:
+            best_rssi = rssi
+            best_name = other
+    return best_name, best_rssi
+
+
+def _build_client_impacts(
+    ap_name: str,
+    band: Band,
+    mode: Mode,
+    current_clients: list[dict[str, Any]],
+    mobility_graph: dict[str, set[str]],
+    overlap_matrix: dict[tuple[str, str], int],
+) -> tuple[ClientImpact, ...]:
+    """Predict per-client impact of a recommendation.
+
+    Scope: wireless clients currently associated to ``ap_name`` on the given
+    ``band`` (2.4 GHz channels for :class:`Band.TWO_FOUR`, 5 GHz otherwise).
+
+    Impact logic:
+    - ``HYBRID`` / ``SOFT`` modes keep the radio up, so every affected
+      client is flagged as LOW risk with a "reassociate in-place" message.
+    - ``HARD_DISABLE`` with ≥1 known other AP + strong overlap (RSSI >=
+      ``_IMPACT_STRONG_OVERLAP_DBM``) → LOW, "likely roam to {target}".
+    - ``HARD_DISABLE`` with ≥1 known other AP but weak / no overlap →
+      MEDIUM, "possible roam to {target}".
+    - ``HARD_DISABLE`` with no known other AP → HIGH, "⚠ DISCONNECT — no
+      known coverage elsewhere".
+    - ``NONE`` mode skipped entirely (no recommendation, no impact).
+    """
+    # Local import to avoid cycling with roaming_analysis at module load.
+    from unifi_mapper.analysis.roaming_analysis import CHANNELS_24GHZ
+
+    if mode == Mode.NONE:
+        return ()
+
+    impacts: list[ClientImpact] = []
+
+    for client in current_clients:
+        if client.get("ap_name") != ap_name:
+            continue
+
+        channel = client.get("channel")
+        on_24ghz = channel in CHANNELS_24GHZ if channel is not None else False
+        if band == Band.TWO_FOUR and not on_24ghz:
+            continue
+        if band == Band.FIVE and on_24ghz:
+            continue
+
+        mac = client.get("mac") or ""
+        known_aps_set = mobility_graph.get(mac, set())
+        other_aps = tuple(sorted(ap for ap in known_aps_set if ap != ap_name))
+        rssi_value = client.get("rssi")
+        rssi = int(rssi_value) if rssi_value is not None else 0
+        name = client.get("name") or client.get("hostname") or mac
+
+        if mode in (Mode.HYBRID, Mode.SOFT):
+            predicted = "reassociate in-place, may roam if signal drops"
+            risk = Risk.LOW
+        else:
+            # HARD_DISABLE — need actual coverage elsewhere.
+            if not other_aps:
+                predicted = "⚠ DISCONNECT — no known coverage elsewhere"
+                risk = Risk.HIGH
+            else:
+                best_target, best_rssi = _best_overlap_target(
+                    ap_name, known_aps_set, overlap_matrix,
+                )
+                if best_target is not None and best_rssi is not None and best_rssi >= _IMPACT_STRONG_OVERLAP_DBM:
+                    predicted = f"likely roam to {best_target}"
+                    risk = Risk.LOW
+                else:
+                    target_label = best_target or other_aps[0]
+                    predicted = f"possible roam to {target_label}"
+                    risk = Risk.MEDIUM
+
+        impacts.append(ClientImpact(
+            mac=mac,
+            name=name,
+            known_other_aps=other_aps,
+            current_rssi=rssi,
+            predicted_impact=predicted,
+            risk=risk,
+        ))
+
+    return tuple(impacts)
+
+
+def render_impact_preview(plan: RFStrategyPlan) -> str:
+    """Render an :class:`RFStrategyPlan` as a plain-text preview.
+
+    Format mirrors the D5 example: per-AP sections with header (name/band/
+    mode/confidence), rationale bullets, width/channel/power delta lines,
+    and a displaced-client block. Pure plain-ASCII for maximum terminal
+    compatibility — ``rich``-based colouring is deferred to Phase 4 (CLI)
+    where it can detect TTY capability.
+    """
+    # Skip early on empty plans with a clear signal to the operator.
+    if not plan.recommendations:
+        return (
+            "No recommendations — network is optimal, or insufficient history "
+            f"(have {plan.history_hours_available:.1f}h, need "
+            f"{MIN_HISTORY_HOURS:.1f}h)."
+        )
+
+    lines: list[str] = []
+    lines.append(
+        f"RF Strategy Plan  (schema {plan.schema_version}, "
+        f"tool {plan.tool_version}, site {plan.site}, "
+        f"{plan.history_hours_available:.1f}h of history)"
+    )
+    summary = plan.summary
+    lines.append(
+        f"Summary: {summary.recommendations_count}/{summary.total_aps} APs — "
+        f"GREEN={summary.green_count} YELLOW={summary.yellow_count} "
+        f"RED={summary.red_count} | "
+        f"hard={summary.hard_disable_count} soft={summary.soft_count} "
+        f"hybrid={summary.hybrid_count}"
+    )
+    lines.append("")
+
+    for rec in plan.recommendations:
+        lines.append("=" * 72)
+        lines.append(
+            f"AP: {rec.ap_name} ({rec.ap_mac})  "
+            f"Band: {rec.band.value}  "
+            f"Mode: {rec.mode.value.upper()}  "
+            f"Confidence: {rec.confidence.value.upper()} "
+            f"(score {rec.coverage_score:.2f})"
+        )
+
+        # Rationale bullets
+        if rec.rationale:
+            lines.append("")
+            lines.append("Rationale:")
+            for reason in rec.rationale:
+                lines.append(f"  - {reason}")
+
+        # Width / channel / power delta table — show rows even when unchanged
+        # so the operator sees the full picture, and mark deltas clearly.
+        lines.append("")
+        lines.append("Proposed changes:")
+        lines.append(f"  Width:   {rec.current_width} MHz -> {rec.recommended_width} MHz"
+                     f"{'  (unchanged)' if rec.current_width == rec.recommended_width else ''}")
+        lines.append(f"  Channel: {rec.current_channel} -> {rec.recommended_channel}"
+                     f"{'  (unchanged)' if rec.current_channel == rec.recommended_channel else ''}")
+        lines.append(f"  Power:   {rec.current_tx_power} dBm -> {rec.recommended_tx_power} dBm"
+                     f"{'  (unchanged)' if rec.current_tx_power == rec.recommended_tx_power else ''}")
+
+        # Displaced-client block
+        if rec.displaced_clients:
+            lines.append("")
+            lines.append(f"Displaced clients (to Disassociate if {rec.mode.value.upper()} applied):")
+            for impact in rec.displaced_clients:
+                other = ", ".join(impact.known_other_aps) if impact.known_other_aps else "(none)"
+                lines.append(
+                    f"  - {impact.name:<24} {impact.mac}  "
+                    f"RSSI {impact.current_rssi:>4} dBm  "
+                    f"risk={impact.risk.value.upper():<6}  "
+                    f"other APs: {other}"
+                )
+                lines.append(f"      -> {impact.predicted_impact}")
+
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+async def generate_plan(
+    site: str = "default",
+    history_path: str = "reports/client-roaming-history.json",
+    min_history_hours: float = MIN_HISTORY_HOURS,
+) -> RFStrategyPlan:
+    """Compose a full RF strategy plan from current controller state + history.
+
+    Orchestrates T1–T6: history gate, data collection, per-AP scorecard,
+    mode + width + channel + power selection, displaced-client prediction,
+    and final ``RFStrategyPlan`` assembly. No controller writes.
+
+    Args:
+        site: UniFi site name (reserved for multi-site support; currently
+            informational, stamped on the plan).
+        history_path: Path to the roaming snapshot history file (written
+            by :func:`snapshot_client_associations`).
+        min_history_hours: Refuse to emit recommendations when the history
+            file spans fewer hours than this. Default 48h (Q1 locked
+            decision); override via CLI ``--min-history-hours`` for local
+            experimentation.
+
+    Raises:
+        ToolError: with ``ErrorCodes.CONFIG_INVALID`` when history is
+            insufficient. Message names the shortfall and suggests remedies.
+    """
+    # Local imports — these modules import from this one indirectly (via
+    # roaming_analysis.CHANNELS_24GHZ), so we keep them function-scoped.
+    from unifi_mapper.analysis.neighbour_scan import (
+        compute_ap_to_ap_overlap,
+        get_our_ap_bssids,
+    )
+    from unifi_mapper.analysis.roaming_analysis import (
+        build_mobility_graph,
+        compute_twofour_only_clients,
+        history_hours_available,
+    )
+
+    # 1. History gate — refuse to emit recommendations below threshold.
+    hours_available = history_hours_available(history_path)
+    if hours_available < min_history_hours:
+        shortfall = min_history_hours - hours_available
+        raise ToolError(
+            message=(
+                f"Insufficient roaming history for recommendations: have "
+                f"{hours_available:.1f}h, need {min_history_hours:.1f}h "
+                f"(short by {shortfall:.1f}h)."
+            ),
+            error_code=ErrorCodes.CONFIG_INVALID,
+            suggestion=(
+                "Wait for more snapshots (baseline cadence: every 5 min) or "
+                "pass --min-history-hours to override for experimentation."
+            ),
+        )
+
+    # 2. Pure file-based inputs (no controller round-trips).
+    twofour_only = compute_twofour_only_clients(history_path)
+    mobility_graph = build_mobility_graph(history_path)
+
+    # 3. Controller state.
+    async with UniFiClient() as client:
+        devices = await client.get_devices()
+        current_clients = await client.get_clients()
+        rogue_entries = await client.get_rogue_aps()
+        our_bssids = await get_our_ap_bssids(client)
+
+    # 4. Build the AP name lookup — used both by the overlap computation
+    # (BSSID → AP name for pair labelling) and by the recommendation loop.
+    ap_mac_to_name: dict[str, str] = {}
+    uaps = [d for d in devices if d.get("type") == "uap"]
+    for d in uaps:
+        mac = d.get("mac", "")
+        name = d.get("name", mac)
+        if mac:
+            ap_mac_to_name[mac] = name
+        for vap in d.get("vap_table", []) or []:
+            bssid = vap.get("bssid")
+            if bssid:
+                ap_mac_to_name[bssid.lower()] = name
+
+    overlap_matrix = compute_ap_to_ap_overlap(
+        rogue_entries=rogue_entries,
+        our_ap_bssids=our_bssids,
+        ap_mac_to_name=ap_mac_to_name,
+    )
+
+    # 5. Per-AP recommendations. One 2.4 GHz recommendation drives the
+    # summary counts; the 5 GHz rec is width/channel/power only (Mode.NONE
+    # for v1 per T7 spec).
+    recommendations: list[APRecommendation] = []
+    green = yellow = red = 0
+    hard = soft = hybrid = 0
+
+    for ap in uaps:
+        ap_name = ap.get("name", ap.get("mac", ""))
+        ap_mac = ap.get("mac", "")
+
+        # Extract current radio config for both bands from radio_table.
+        radios_by_band: dict[str, dict[str, Any]] = {}
+        for radio in ap.get("radio_table", []) or []:
+            band_code = radio.get("radio")  # UniFi: 'ng' = 2.4, 'na' = 5
+            if band_code == "ng":
+                radios_by_band["2.4"] = radio
+            elif band_code == "na":
+                radios_by_band["5"] = radio
+
+        # 2.4 GHz recommendation — scorecard-driven, emits a mode.
+        score = compute_coverage_score(
+            ap_name,
+            twofour_only,
+            mobility_graph,
+            overlap_matrix,
+            current_clients,
+        )
+        confidence = classify_confidence(score)
+
+        # Count IoT devices among this AP's 2.4-only clients (current
+        # observations — we cross-reference the live stat/sta payload since
+        # twofour_only only carries MAC/count/last_seen).
+        twofour_only_macs = {c["client_mac"] for c in twofour_only.get(ap_name, [])}
+        iot_count = sum(
+            1 for c in current_clients
+            if c.get("mac") in twofour_only_macs and classify_iot_client(c)
+        )
+
+        mode_24 = select_disable_mode(confidence, iot_count)
+
+        radio_24 = radios_by_band.get("2.4", {})
+        current_channel_24 = radio_24.get("channel", 0) or 0
+        current_width_24 = radio_24.get("ht", WIDTH_24GHZ_FORCED) or WIDTH_24GHZ_FORCED
+        current_power_24 = radio_24.get("tx_power", 0) or 0
+
+        rationale_24: list[str] = [
+            f"coverage score {score:.2f} → {confidence.value.upper()}",
+        ]
+        if mode_24 == Mode.NONE:
+            rationale_24.append("insufficient safety margin to recommend a change")
+        elif mode_24 == Mode.HARD_DISABLE:
+            rationale_24.append("no IoT clients on 2.4-only — safe clean break")
+        elif mode_24 == Mode.HYBRID:
+            rationale_24.append(f"{iot_count} IoT client(s) on 2.4-only — hybrid keeps them reachable")
+        elif mode_24 == Mode.SOFT:
+            rationale_24.append("yellow confidence — min_rssi only, least disruptive")
+
+        displaced_24 = _build_client_impacts(
+            ap_name=ap_name,
+            band=Band.TWO_FOUR,
+            mode=mode_24,
+            current_clients=current_clients,
+            mobility_graph=mobility_graph,
+            overlap_matrix=overlap_matrix,
+        )
+
+        recommendations.append(APRecommendation(
+            ap_name=ap_name,
+            ap_mac=ap_mac,
+            band=Band.TWO_FOUR,
+            mode=mode_24,
+            confidence=confidence,
+            current_width=int(current_width_24),
+            recommended_width=WIDTH_24GHZ_FORCED,  # Q2: always 20 MHz
+            current_channel=int(current_channel_24),
+            recommended_channel=int(current_channel_24),  # channel tuning is T6-adjacent; v1 leaves 2.4 channel alone unless explicitly overridden
+            current_tx_power=int(current_power_24),
+            recommended_tx_power=HYBRID_TX_POWER_DBM if mode_24 == Mode.HYBRID else int(current_power_24),
+            rationale=tuple(rationale_24),
+            displaced_clients=displaced_24,
+            coverage_score=score,
+        ))
+
+        # Tally summary — 2.4 GHz recommendations drive the counts.
+        if confidence == Confidence.GREEN:
+            green += 1
+        elif confidence == Confidence.YELLOW:
+            yellow += 1
+        else:
+            red += 1
+        if mode_24 == Mode.HARD_DISABLE:
+            hard += 1
+        elif mode_24 == Mode.SOFT:
+            soft += 1
+        elif mode_24 == Mode.HYBRID:
+            hybrid += 1
+
+        # 5 GHz stub — width/channel/power-only, Mode.NONE for v1.
+        radio_5 = radios_by_band.get("5", {})
+        current_channel_5 = radio_5.get("channel", 36) or 36
+        current_width_5 = radio_5.get("ht", 80) or 80
+        current_power_5 = radio_5.get("tx_power", 0) or 0
+
+        # Width recommendation needs channel_scores and neighbour_crowd inputs
+        # we don't yet produce from real data — pass neutral defaults so the
+        # recommendation is a no-op (current width stays). T9 will wire this
+        # into the channel_optimiser output.
+        recommendations.append(APRecommendation(
+            ap_name=ap_name,
+            ap_mac=ap_mac,
+            band=Band.FIVE,
+            mode=Mode.NONE,
+            confidence=Confidence.GREEN,   # not scored for v1
+            current_width=int(current_width_5),
+            recommended_width=int(current_width_5),
+            current_channel=int(current_channel_5),
+            recommended_channel=int(current_channel_5),
+            current_tx_power=int(current_power_5),
+            recommended_tx_power=int(current_power_5),
+            rationale=("5 GHz recommendations are T9-scope (CLI wiring)",),
+            displaced_clients=(),
+            coverage_score=0.0,
+        ))
+
+    recommendations_count = sum(1 for r in recommendations if r.band == Band.TWO_FOUR and r.mode != Mode.NONE)
+    summary = PlanSummary(
+        total_aps=len(uaps),
+        recommendations_count=recommendations_count,
+        green_count=green,
+        yellow_count=yellow,
+        red_count=red,
+        hard_disable_count=hard,
+        soft_count=soft,
+        hybrid_count=hybrid,
+    )
+
+    try:
+        tool_version = pkg_version("unifi-management-cli")
+    except PackageNotFoundError:
+        tool_version = "unknown"
+
+    return RFStrategyPlan(
+        schema_version=PLAN_SCHEMA_VERSION,
+        generated_at=datetime.now().isoformat(),
+        tool_version=tool_version,
+        site=site,
+        history_hours_available=hours_available,
+        recommendations=tuple(recommendations),
+        summary=summary,
+    )
