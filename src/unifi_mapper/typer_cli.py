@@ -2653,6 +2653,10 @@ def analyze_config_drift(
 def analyze_neighbours(
     ap_name: Optional[str] = typer.Option(None, "--ap", "-a", help="Specific AP to scan (default: all)"),
     cached: bool = typer.Option(False, "--cached", help="DEPRECATED: no-op, data is always fresh"),
+    snapshot: bool = typer.Option(False, "--snapshot", help="Capture current neighbour landscape as a baseline"),
+    diff: bool = typer.Option(False, "--diff", help="Compare current landscape against the baseline snapshot"),
+    baseline: str = typer.Option("reports/neighbour-baseline.json", "--baseline", "-b", help="Baseline snapshot file path"),
+    signal_delta: int = typer.Option(10, "--signal-delta", help="dB change threshold for signal-change flagging"),
 ):
     """📡 Scan for neighbouring APs and external interference sources."""
     import asyncio
@@ -2660,6 +2664,10 @@ def analyze_neighbours(
     from rich.table import Table
 
     from unifi_mapper.analysis.neighbour_scan import scan_neighbours
+    from unifi_mapper.analysis.neighbour_trend import (
+        detect_neighbour_trend,
+        snapshot_neighbours,
+    )
 
     load_env_from_config(str(state.config_path))
     if not state.debug:
@@ -2668,6 +2676,111 @@ def analyze_neighbours(
     if cached:
         console.print("[yellow]⚠️  --cached is deprecated (neighbour data is now always fresh). Flag will be removed in a future release.[/yellow]")
 
+    # ── Snapshot mode ────────────────────────────────────────────────────
+    if snapshot:
+        console.print("📸 [bold]Neighbour Baseline Snapshot[/bold]\n")
+        result = asyncio.run(snapshot_neighbours(baseline))
+        console.print(f"Captured: {result['entry_count']} neighbour entries")
+        console.print(f"Saved to: [green]{baseline}[/green]")
+        console.print("\n💡 Run again with --diff to compare future scans against this baseline")
+        return
+
+    # ── Diff mode ────────────────────────────────────────────────────────
+    if diff:
+        console.print("📊 [bold]Neighbour Landscape Trend[/bold]\n")
+        try:
+            report = asyncio.run(detect_neighbour_trend(baseline, signal_delta))
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+        console.print(f"Baseline: {report['baseline_timestamp']}")
+        console.print(f"Current:  {report['current_timestamp']}\n")
+
+        summary = (
+            f"[green]New: {report['new_count']}[/green]   "
+            f"[red]Disappeared: {report['disappeared_count']}[/red]   "
+            f"[yellow]Channel-moved: {report['moved_count']}[/yellow]   "
+            f"[cyan]Signal-changed (≥{signal_delta} dB): {report['signal_changed_count']}[/cyan]"
+        )
+        console.print(summary + "\n")
+
+        # New neighbours
+        if report["new"]:
+            table = Table(show_header=True, title="🆕 New Neighbours")
+            table.add_column("SSID"); table.add_column("Channel", justify="right")
+            table.add_column("Signal (dBm)", justify="right")
+            table.add_column("Detecting AP (MAC)", style="dim"); table.add_column("BSSID", style="dim")
+            for n in report["new"][:15]:
+                sig = n.get("signal", -100)
+                style = "red" if sig > -50 else "yellow" if sig > -70 else "green"
+                table.add_row(
+                    n.get("essid") or "<hidden>",
+                    str(n.get("channel", "?")),
+                    f"[{style}]{sig}[/{style}]",
+                    n.get("ap_mac", ""), n.get("bssid", ""),
+                )
+            console.print(table)
+
+        # Disappeared neighbours
+        if report["disappeared"]:
+            table = Table(show_header=True, title="👋 Disappeared Neighbours")
+            table.add_column("SSID"); table.add_column("Channel", justify="right")
+            table.add_column("Signal (dBm)", justify="right"); table.add_column("BSSID", style="dim")
+            for n in report["disappeared"][:15]:
+                table.add_row(
+                    n.get("essid") or "<hidden>",
+                    str(n.get("channel", "?")),
+                    str(n.get("signal", -100)),
+                    n.get("bssid", ""),
+                )
+            console.print(table)
+
+        # Channel moves
+        if report["moved"]:
+            table = Table(show_header=True, title="🔀 Channel Moves")
+            table.add_column("SSID"); table.add_column("From", justify="right")
+            table.add_column("To", justify="right"); table.add_column("Signal (dBm)", justify="right")
+            table.add_column("BSSID", style="dim")
+            for m in report["moved"][:15]:
+                table.add_row(
+                    m.get("essid") or "<hidden>",
+                    str(m.get("from_channel", "?")),
+                    str(m.get("to_channel", "?")),
+                    str(m.get("signal", -100)),
+                    m.get("bssid", ""),
+                )
+            console.print(table)
+
+        # Signal changes
+        if report["signal_changes"]:
+            table = Table(show_header=True, title=f"📶 Signal Changes (≥{signal_delta} dB)")
+            table.add_column("SSID"); table.add_column("Channel", justify="right")
+            table.add_column("Before", justify="right"); table.add_column("After", justify="right")
+            table.add_column("Δ dB", justify="right"); table.add_column("BSSID", style="dim")
+            for s in report["signal_changes"][:15]:
+                delta = s.get("delta_db", 0)
+                style = "green" if delta > 0 else "red"
+                table.add_row(
+                    s.get("essid") or "<hidden>",
+                    str(s.get("channel", "?")),
+                    str(s.get("signal_before", -100)),
+                    str(s.get("signal_after", -100)),
+                    f"[{style}]{delta:+d}[/{style}]",
+                    s.get("bssid", ""),
+                )
+            console.print(table)
+
+        if (
+            report["new_count"] == 0
+            and report["disappeared_count"] == 0
+            and report["moved_count"] == 0
+            and report["signal_changed_count"] == 0
+        ):
+            console.print("[green]✅ No significant neighbour landscape changes since baseline[/green]")
+        return
+
+    # ── Default: live scan ───────────────────────────────────────────────
     console.print("📡 [bold]Neighbour AP Scan[/bold]\n")
 
     report = asyncio.run(scan_neighbours(ap_name=ap_name))

@@ -773,3 +773,129 @@ class TestBandwidthTest:
         result = _parse_text_output("garbage output", "10.0.0.1", reverse=False, duration=10)
         assert result["status"] == "PARSE_ERROR"
         assert result["throughput_mbps"] == 0
+
+
+# ── 13. Neighbour Trend (baseline snapshot + diff) ───────────────────────────
+# Pure logic tests on _compare_snapshots. The async snapshot/detect wrappers
+# are covered implicitly by live CLI validation.
+
+
+from unifi_mapper.analysis.neighbour_trend import _compare_snapshots
+
+
+class TestNeighbourTrend:
+    """Tests for neighbour landscape trend detection."""
+
+    @staticmethod
+    def _entry(
+        *,
+        ap_mac: str = "aa:00:00:00:00:01",
+        bssid: str = "ff:00:00:00:00:01",
+        essid: str = "Neighbour-1",
+        channel: int = 6,
+        signal: int = -70,
+        band: str = "ng",
+    ) -> dict:
+        return {
+            "ap_mac": ap_mac,
+            "bssid": bssid,
+            "essid": essid,
+            "channel": channel,
+            "signal": signal,
+            "band": band,
+        }
+
+    def test_empty_baseline_and_empty_current_is_no_change(self) -> None:
+        result = _compare_snapshots(
+            {"timestamp": "t1", "entries": []},
+            {"timestamp": "t2", "entries": []},
+            signal_delta_threshold=10,
+        )
+        assert result["new_count"] == 0
+        assert result["disappeared_count"] == 0
+        assert result["moved_count"] == 0
+        assert result["signal_changed_count"] == 0
+
+    def test_new_neighbour_detected(self) -> None:
+        baseline = {"timestamp": "t1", "entries": []}
+        current = {"timestamp": "t2", "entries": [self._entry(bssid="ff:11:22:33:44:55")]}
+        result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
+        assert result["new_count"] == 1
+        assert result["new"][0]["bssid"] == "ff:11:22:33:44:55"
+        assert result["disappeared_count"] == 0
+
+    def test_disappeared_neighbour_detected(self) -> None:
+        baseline = {"timestamp": "t1", "entries": [self._entry(bssid="ff:11:22:33:44:55")]}
+        current = {"timestamp": "t2", "entries": []}
+        result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
+        assert result["disappeared_count"] == 1
+        assert result["disappeared"][0]["bssid"] == "ff:11:22:33:44:55"
+        assert result["new_count"] == 0
+
+    def test_channel_move_detected(self) -> None:
+        baseline = {"timestamp": "t1", "entries": [self._entry(channel=6, signal=-70)]}
+        current = {"timestamp": "t2", "entries": [self._entry(channel=11, signal=-70)]}
+        result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
+        assert result["moved_count"] == 1
+        move = result["moved"][0]
+        assert move["from_channel"] == 6
+        assert move["to_channel"] == 11
+        assert result["new_count"] == 0
+        assert result["disappeared_count"] == 0
+
+    def test_signal_change_above_threshold_flagged(self) -> None:
+        baseline = {"timestamp": "t1", "entries": [self._entry(signal=-80)]}
+        current = {"timestamp": "t2", "entries": [self._entry(signal=-65)]}  # +15 dB
+        result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
+        assert result["signal_changed_count"] == 1
+        change = result["signal_changes"][0]
+        assert change["signal_before"] == -80
+        assert change["signal_after"] == -65
+        assert change["delta_db"] == 15
+
+    def test_signal_change_below_threshold_ignored(self) -> None:
+        baseline = {"timestamp": "t1", "entries": [self._entry(signal=-70)]}
+        current = {"timestamp": "t2", "entries": [self._entry(signal=-65)]}  # +5 dB
+        result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
+        assert result["signal_changed_count"] == 0
+
+    def test_same_bssid_different_detecting_ap_treated_as_separate(self) -> None:
+        """Same neighbour seen by two different own-APs = two independent observations."""
+        baseline = {"timestamp": "t1", "entries": []}
+        current = {
+            "timestamp": "t2",
+            "entries": [
+                self._entry(ap_mac="aa:00:00:00:00:01", bssid="ff:11:22:33:44:55"),
+                self._entry(ap_mac="aa:00:00:00:00:02", bssid="ff:11:22:33:44:55"),
+            ],
+        }
+        result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
+        # Both count as new because keys are (ap_mac, bssid) pairs
+        assert result["new_count"] == 2
+
+    def test_mixed_changes_all_categories(self) -> None:
+        """Realistic case: some new, some gone, some moved, some stable with signal change."""
+        baseline = {
+            "timestamp": "t1",
+            "entries": [
+                self._entry(bssid="aa:01", channel=6, signal=-70),   # will be moved
+                self._entry(bssid="aa:02", channel=1, signal=-80),   # will signal-change
+                self._entry(bssid="aa:03", channel=11, signal=-75),  # will disappear
+                self._entry(bssid="aa:04", channel=6, signal=-65),   # will stay unchanged
+            ],
+        }
+        current = {
+            "timestamp": "t2",
+            "entries": [
+                self._entry(bssid="aa:01", channel=11, signal=-70),  # moved 6 -> 11
+                self._entry(bssid="aa:02", channel=1, signal=-60),   # +20 dB
+                # aa:03 gone
+                self._entry(bssid="aa:04", channel=6, signal=-65),   # unchanged
+                self._entry(bssid="aa:05", channel=36, signal=-55),  # new
+            ],
+        }
+        result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
+        assert result["new_count"] == 1
+        assert result["disappeared_count"] == 1
+        assert result["moved_count"] == 1
+        assert result["signal_changed_count"] == 1

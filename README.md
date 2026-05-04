@@ -179,6 +179,11 @@ unifi-mapper analyze config-drift
 # Neighbour AP scan — passive detection via stat/rogueap (always-fresh)
 unifi-mapper analyze neighbours
 unifi-mapper analyze neighbours --ap "Living Room"
+
+# Neighbour trend tracking — baseline snapshot + diff over time
+unifi-mapper analyze neighbours --snapshot
+unifi-mapper analyze neighbours --diff
+unifi-mapper analyze neighbours --diff --signal-delta 15
 ```
 
 ### Scheduled Audits
