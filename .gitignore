@@ -112,3 +112,6 @@ docs/artefacts/unifi_management_cli_content.md
 
 # Local CLI env symlink
 /.env
+
+# Sisyphus agent session scratch
+.yolo-sisyphus/
