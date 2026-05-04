@@ -1838,3 +1838,223 @@ class TestRFStrategyScorecard:
         # RED: score < yellow threshold (0.4)
         assert classify_confidence(CONFIDENCE_YELLOW_THRESHOLD - 0.0001) == Confidence.RED
         assert classify_confidence(0.0) == Confidence.RED
+
+
+# ── 16. RF Strategy — mode selection (Phase D T6 part A) ─────────────────────
+
+
+class TestRFStrategyModeSelection:
+    """Tests for select_disable_mode (D4 decision tree) and classify_iot_client."""
+
+    def test_mode_select_red_returns_none(self) -> None:
+        """RED confidence → NONE regardless of IoT count (scorecard rejects)."""
+        from unifi_mapper.analysis.rf_strategy import Confidence, Mode, select_disable_mode
+
+        assert select_disable_mode(Confidence.RED, two_four_only_iot_count=0) == Mode.NONE
+        assert select_disable_mode(Confidence.RED, two_four_only_iot_count=5) == Mode.NONE
+
+    def test_mode_select_yellow_returns_soft(self) -> None:
+        """YELLOW confidence → SOFT (min_rssi only — least disruptive)."""
+        from unifi_mapper.analysis.rf_strategy import Confidence, Mode, select_disable_mode
+
+        assert select_disable_mode(Confidence.YELLOW, two_four_only_iot_count=0) == Mode.SOFT
+        assert select_disable_mode(Confidence.YELLOW, two_four_only_iot_count=5) == Mode.SOFT
+
+    def test_mode_select_green_no_iot_hard_disable(self) -> None:
+        """GREEN + no IoT on 2.4-only → HARD_DISABLE (safe, clean break)."""
+        from unifi_mapper.analysis.rf_strategy import Confidence, Mode, select_disable_mode
+
+        assert select_disable_mode(Confidence.GREEN, two_four_only_iot_count=0) == Mode.HARD_DISABLE
+
+    def test_mode_select_green_with_iot_hybrid(self) -> None:
+        """GREEN + ≥1 IoT client on 2.4-only → HYBRID (tx_power + min_rssi)."""
+        from unifi_mapper.analysis.rf_strategy import Confidence, Mode, select_disable_mode
+
+        assert select_disable_mode(Confidence.GREEN, two_four_only_iot_count=1) == Mode.HYBRID
+        assert select_disable_mode(Confidence.GREEN, two_four_only_iot_count=10) == Mode.HYBRID
+
+    def test_classify_iot_client_positive_negative(self) -> None:
+        """Known IoT OUI / hostname substring → True; modern / ambiguous → False."""
+        from unifi_mapper.analysis.rf_strategy import classify_iot_client
+
+        # Positive: known IoT OUI prefix (Shelly)
+        shelly_oui = {"oui": "Shelly", "hostname": "shellyplug-s-12AB34", "radio_proto": "n"}
+        assert classify_iot_client(shelly_oui) is True
+
+        # Positive: hostname substring (tasmota)
+        tasmota = {"oui": "Espressif Inc.", "hostname": "tasmota-kitchen-7AB2", "radio_proto": "n"}
+        assert classify_iot_client(tasmota) is True
+
+        # Negative: modern smartphone — no IoT indicators, modern radio_proto
+        iphone = {"oui": "Apple, Inc.", "hostname": "Hotel-iphone", "radio_proto": "ax"}
+        assert classify_iot_client(iphone) is False
+
+        # Negative: ambiguous laptop — no IoT keywords, radio_proto=ac (modern)
+        laptop = {"oui": "Intel Corporate", "hostname": "workstation-5", "radio_proto": "ac"}
+        assert classify_iot_client(laptop) is False
+
+
+# ── 17. RF Strategy — channel width scoring (Phase D T6 part B) ──────────────
+
+
+class TestRFStrategyWidthScoring:
+    """Tests for PHY rate table, effective throughput formula, and width
+    recommendation logic (including narrower-tiebreaker and DFS penalty).
+    """
+
+    def test_width_24ghz_forced_20(self) -> None:
+        """Band=TWO_FOUR always returns WIDTH_24GHZ_FORCED (20).
+        2.4 GHz at 40 MHz is a footgun — documented, not hidden (Q2)."""
+        from unifi_mapper.analysis.rf_strategy import (
+            WIDTH_24GHZ_FORCED,
+            Band,
+            compute_width_recommendation,
+        )
+
+        # Even if every other input favours a wider width, 2.4 is locked at 20.
+        result = compute_width_recommendation(
+            ap_name="Kitchen",
+            band=Band.TWO_FOUR,
+            current_clients=[],
+            channel_scores={20: {1: 0.0}, 40: {1: 0.0}},
+            neighbour_crowd={20: 1.0, 40: 1.0},
+            is_channel_dfs={1: False},
+        )
+        assert result == WIDTH_24GHZ_FORCED == 20
+
+    def test_phy_rate_ax_wifi6_80mhz(self) -> None:
+        """WiFi 6 rate table: MCS 11 + 2 SS + 80 MHz → 1200 Mbps."""
+        from unifi_mapper.analysis.rf_strategy import compute_nominal_phy_rate
+
+        assert compute_nominal_phy_rate(width_mhz=80, max_mcs=11, nss=2) == 1200
+
+    def test_phy_rate_unknown_returns_zero(self) -> None:
+        """Invalid MCS/NSS → 0 Mbps (no recommendation possible)."""
+        from unifi_mapper.analysis.rf_strategy import compute_nominal_phy_rate
+
+        assert compute_nominal_phy_rate(width_mhz=80, max_mcs=-1, nss=0) == 0
+        assert compute_nominal_phy_rate(width_mhz=999, max_mcs=11, nss=2) == 0
+
+    def test_effective_throughput_clean_channel(self) -> None:
+        """D3 formula: clean channel, no DFS, no crowd → 0.55 × 1200 = 660."""
+        from unifi_mapper.analysis.rf_strategy import compute_effective_throughput
+
+        eff = compute_effective_throughput(
+            width_mhz=80,
+            nominal_phy_rate=1200,
+            worst_sub_channel_occupied_fraction=0.0,
+            is_dfs=False,
+            neighbour_crowd_factor=1.0,
+        )
+        assert eff == pytest.approx(660.0)
+
+    def test_effective_throughput_dfs_penalty(self) -> None:
+        """DFS applies 0.80 multiplier: 660 × 0.80 = 528."""
+        from unifi_mapper.analysis.rf_strategy import compute_effective_throughput
+
+        eff = compute_effective_throughput(
+            width_mhz=80,
+            nominal_phy_rate=1200,
+            worst_sub_channel_occupied_fraction=0.0,
+            is_dfs=True,
+            neighbour_crowd_factor=1.0,
+        )
+        assert eff == pytest.approx(528.0)
+
+    def test_effective_throughput_worst_subchannel(self) -> None:
+        """Worst-sub-channel 50% occupied halves the effective rate: 660 × 0.5 = 330."""
+        from unifi_mapper.analysis.rf_strategy import compute_effective_throughput
+
+        eff = compute_effective_throughput(
+            width_mhz=80,
+            nominal_phy_rate=1200,
+            worst_sub_channel_occupied_fraction=0.5,
+            is_dfs=False,
+            neighbour_crowd_factor=1.0,
+        )
+        assert eff == pytest.approx(330.0)
+
+    def test_width_selection_80_wins_when_clean(self) -> None:
+        """All widths clean, no DFS, no crowd → 80 MHz wins (best nominal rate).
+
+        Hand-calc (MCS 11, 2 SS):
+          80 MHz nominal 1200 → eff 660
+          40 MHz nominal  600 → eff 330
+          20 MHz nominal  300 → eff 165
+        Tiebreaker: is eff(80)=660 < eff(40)=330 × 1.10 = 363? No → 80 wins.
+        """
+        from unifi_mapper.analysis.rf_strategy import Band, compute_width_recommendation
+
+        # Shared client fixture with capability for all three widths.
+        clients = [{"ap_name": "Kitchen", "channel": 36, "rssi": -50, "radio_proto": "ax", "nss": 2}]
+
+        result = compute_width_recommendation(
+            ap_name="Kitchen",
+            band=Band.FIVE,
+            current_clients=clients,
+            channel_scores={
+                20: {36: 0.0},
+                40: {36: 0.0},
+                80: {36: 0.0},
+            },
+            neighbour_crowd={20: 1.0, 40: 1.0, 80: 1.0},
+            is_channel_dfs={36: False},
+        )
+        assert result == 80
+
+    def test_width_selection_narrower_wins_tiebreaker(self) -> None:
+        """eff(wider) < eff(narrower) × 1.10 → prefer narrower.
+
+        Construct inputs where 80 MHz has heavy crowd (wider-but-crowded
+        channels don't deserve to win by a hair) and effective throughputs
+        land close enough to trigger the 10% tiebreaker:
+          80 MHz: 0.55 × 1200 × 1.0 × 1.0 × 0.530 ≈ 349.8
+          40 MHz: 0.55 ×  600 × 1.0 × 1.0 × 0.970 ≈ 320.1
+        Tiebreaker: is 349.8 < 320.1 × 1.10 = 352.1? Yes → 40 wins.
+        """
+        from unifi_mapper.analysis.rf_strategy import Band, compute_width_recommendation
+
+        # MCS 11, 2 SS: rate(80)=1200, rate(40)=600, rate(20)=300.
+        clients = [{"ap_name": "Kitchen", "channel": 36, "rssi": -50, "radio_proto": "ax", "nss": 2, "mcs": 11}]
+
+        result = compute_width_recommendation(
+            ap_name="Kitchen",
+            band=Band.FIVE,
+            current_clients=clients,
+            channel_scores={
+                20: {36: 0.0},
+                40: {36: 0.0},
+                80: {36: 0.0},
+            },
+            neighbour_crowd={20: 1.0, 40: 0.970, 80: 0.530},
+            is_channel_dfs={36: False},
+        )
+        assert result == 40
+
+    def test_width_selection_dfs_excluded_when_client_incompatible(self) -> None:
+        """DFS penalty + crowd can flip recommendation from 80 → 40.
+
+        Construct:
+          80 MHz: DFS=True + crowd=0.5 → eff = 0.55×1200×1.0×0.80×0.5 = 264
+          40 MHz: DFS=False + crowd=1.0 → eff = 0.55× 600×1.0×1.0×1.0 = 330
+          20 MHz: DFS=False + crowd=1.0 → eff = 0.55× 300×1.0×1.0×1.0 = 165
+        40 MHz wins outright (330 > 264). Tiebreaker 40 vs 20: is 330 < 165×1.10=181.5?
+        No → 40 stays.
+        """
+        from unifi_mapper.analysis.rf_strategy import Band, compute_width_recommendation
+
+        clients = [{"ap_name": "Kitchen", "channel": 100, "rssi": -55, "radio_proto": "ax", "nss": 2, "mcs": 11}]
+
+        result = compute_width_recommendation(
+            ap_name="Kitchen",
+            band=Band.FIVE,
+            current_clients=clients,
+            channel_scores={
+                20: {100: 0.0},
+                40: {100: 0.0},
+                80: {100: 0.0},
+            },
+            neighbour_crowd={20: 1.0, 40: 1.0, 80: 0.5},
+            is_channel_dfs={100: True},  # DFS on ch 100 penalises 80 MHz
+        )
+        assert result == 40
