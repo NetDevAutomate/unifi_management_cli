@@ -639,6 +639,218 @@ class TestRoamingAnalysis:
             history_hours_available(str(f))
         assert exc_info.value.error_code == ErrorCodes.CONFIG_INVALID
 
+    # ── Phase D T2: per-AP 2.4-only client tally ─────────────────────────────
+
+    @staticmethod
+    def _write_history(path, snapshots: list[dict]) -> None:
+        """Helper: seed a history file with pre-built snapshot dicts."""
+        import json
+
+        path.write_text(json.dumps({"snapshots": snapshots}))
+
+    @staticmethod
+    def _snapshot(timestamp: str, associations: list[dict]) -> dict:
+        """Helper: build a single snapshot dict."""
+        return {"timestamp": timestamp, "associations": associations}
+
+    @staticmethod
+    def _assoc(
+        client_mac: str,
+        client_name: str,
+        ap_name: str,
+        channel: int | None,
+        rssi: int = -60,
+    ) -> dict:
+        """Helper: build a single association dict matching snapshotter output."""
+        return {
+            "client_mac": client_mac,
+            "client_name": client_name,
+            "ap_mac": f"aa:bb:cc:dd:ee:{hash(ap_name) & 0xff:02x}",
+            "ap_name": ap_name,
+            "rssi": rssi,
+            "channel": channel,
+            "ssid": "HomeWiFi",
+        }
+
+    def test_twofour_only_client_simple(self, tmp_path) -> None:
+        """Client A always on Kitchen 2.4 → listed under Kitchen.
+        Client B always on Kitchen 5 → not listed anywhere.
+        Client C on Kitchen 2.4 AND Office 5 → excluded globally (proved 5 GHz).
+        """
+        from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
+
+        f = tmp_path / "history.json"
+        self._write_history(f, [
+            self._snapshot("2026-05-04T10:00:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
+                self._assoc("BB:B", "laptop-B", "Kitchen", channel=36),
+                self._assoc("CC:C", "tablet-C", "Kitchen", channel=1),
+            ]),
+            self._snapshot("2026-05-04T10:05:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=11),
+                self._assoc("BB:B", "laptop-B", "Kitchen", channel=44),
+                self._assoc("CC:C", "tablet-C", "Office", channel=149),
+            ]),
+        ])
+
+        result = compute_twofour_only_clients(str(f))
+
+        assert set(result.keys()) == {"Kitchen", "Office"}
+        kitchen_macs = {entry["client_mac"] for entry in result["Kitchen"]}
+        assert kitchen_macs == {"AA:A"}, "Only A should be 2.4-only on Kitchen"
+        assert result["Office"] == []
+
+    def test_twofour_only_client_mixed_bands_same_ap(self, tmp_path) -> None:
+        """Client D on Kitchen ch 6 then Kitchen ch 36 → NOT 2.4-only
+        (proved 5 GHz capability on same AP)."""
+        from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
+
+        f = tmp_path / "history.json"
+        self._write_history(f, [
+            self._snapshot("2026-05-04T10:00:00", [
+                self._assoc("DD:D", "dual-D", "Kitchen", channel=6),
+            ]),
+            self._snapshot("2026-05-04T10:05:00", [
+                self._assoc("DD:D", "dual-D", "Kitchen", channel=36),
+            ]),
+        ])
+
+        result = compute_twofour_only_clients(str(f))
+
+        kitchen_macs = {entry["client_mac"] for entry in result.get("Kitchen", [])}
+        assert "DD:D" not in kitchen_macs
+
+    def test_window_filter(self, tmp_path) -> None:
+        """100 snapshots spanning 72 hours, window_hours=24 →
+        only last 24h considered. A client seen ONLY in hours 24–72 on 2.4 GHz
+        must NOT appear."""
+        from datetime import datetime, timedelta
+
+        from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
+
+        f = tmp_path / "history.json"
+        now = datetime(2026, 5, 4, 12, 0, 0)
+        # 100 snapshots, one every ~43 minutes → spans roughly 72h (100 * 43min = 71.7h)
+        snapshots = []
+        for i in range(100):
+            ts = (now - timedelta(hours=72) + timedelta(minutes=43 * i)).isoformat()
+            # Client "OLD" appears in first half of range (hours 0–36 from snapshot[0])
+            # Client "NEW" appears in last half (hours 36–72 from snapshot[0],
+            # i.e. hours 0–36 from now)
+            if i < 50:
+                assocs = [self._assoc("OLD", "old-client", "Kitchen", channel=6)]
+            else:
+                assocs = [self._assoc("NEW", "new-client", "Kitchen", channel=6)]
+            snapshots.append(self._snapshot(ts, assocs))
+
+        self._write_history(f, snapshots)
+
+        result = compute_twofour_only_clients(str(f), window_hours=24.0)
+
+        kitchen_macs = {entry["client_mac"] for entry in result.get("Kitchen", [])}
+        assert "OLD" not in kitchen_macs, "Client outside 24h window must be excluded"
+        assert "NEW" in kitchen_macs, "Client inside 24h window must be included"
+
+    def test_missing_channel_data_skipped(self, tmp_path) -> None:
+        """Client E with every observation having channel=None → excluded
+        (insufficient data to classify band)."""
+        from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
+
+        f = tmp_path / "history.json"
+        self._write_history(f, [
+            self._snapshot("2026-05-04T10:00:00", [
+                self._assoc("EE:E", "unknown-E", "Kitchen", channel=None),
+            ]),
+            self._snapshot("2026-05-04T10:05:00", [
+                self._assoc("EE:E", "unknown-E", "Kitchen", channel=None),
+            ]),
+        ])
+
+        result = compute_twofour_only_clients(str(f))
+
+        kitchen_macs = {entry["client_mac"] for entry in result.get("Kitchen", [])}
+        assert "EE:E" not in kitchen_macs
+
+    def test_aps_with_zero_twofour_only_present(self, tmp_path) -> None:
+        """Every AP seen in the history appears as a key in the result,
+        with an empty list if it has no 2.4-only clients."""
+        from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
+
+        f = tmp_path / "history.json"
+        self._write_history(f, [
+            self._snapshot("2026-05-04T10:00:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
+                self._assoc("BB:B", "laptop-B", "Office", channel=36),
+                self._assoc("CC:C", "tablet-C", "Living-Room", channel=44),
+            ]),
+            self._snapshot("2026-05-04T10:05:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
+                self._assoc("BB:B", "laptop-B", "Office", channel=36),
+                self._assoc("CC:C", "tablet-C", "Living-Room", channel=44),
+            ]),
+        ])
+
+        result = compute_twofour_only_clients(str(f))
+
+        assert set(result.keys()) == {"Kitchen", "Office", "Living-Room"}
+        assert len(result["Kitchen"]) == 1
+        assert result["Office"] == []
+        assert result["Living-Room"] == []
+
+    def test_observation_count_accurate(self, tmp_path) -> None:
+        """Client A appears in 5 snapshots on Kitchen 2.4 → observation_count == 5."""
+        from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
+
+        f = tmp_path / "history.json"
+        self._write_history(f, [
+            self._snapshot(f"2026-05-04T10:0{i}:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
+            ])
+            for i in range(5)
+        ])
+
+        result = compute_twofour_only_clients(str(f))
+
+        entry = next(e for e in result["Kitchen"] if e["client_mac"] == "AA:A")
+        assert entry["observation_count"] == 5
+
+    def test_last_seen_is_iso_string(self, tmp_path) -> None:
+        """last_seen on each entry is the ISO timestamp of the most recent
+        observation for that (ap, client) pair."""
+        from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
+
+        f = tmp_path / "history.json"
+        self._write_history(f, [
+            self._snapshot("2026-05-04T10:00:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
+            ]),
+            self._snapshot("2026-05-04T10:05:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
+            ]),
+            self._snapshot("2026-05-04T10:15:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
+            ]),
+        ])
+
+        result = compute_twofour_only_clients(str(f))
+
+        entry = next(e for e in result["Kitchen"] if e["client_mac"] == "AA:A")
+        assert entry["last_seen"] == "2026-05-04T10:15:00"
+        # Round-trip parse confirms ISO format
+        from datetime import datetime
+        datetime.fromisoformat(entry["last_seen"])
+
+    def test_empty_history_returns_empty_dict(self, tmp_path) -> None:
+        """File with zero snapshots → empty dict, no error."""
+        from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
+
+        f = tmp_path / "history.json"
+        self._write_history(f, [])
+
+        result = compute_twofour_only_clients(str(f))
+
+        assert result == {}
+
 
 # ── 10. Config Drift ─────────────────────────────────────────────────────────
 # detect_drift is async + file-based. We test the comparison logic directly.

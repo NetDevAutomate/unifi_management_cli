@@ -5,8 +5,9 @@ sticky clients that should roam but don't.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
@@ -20,6 +21,14 @@ DEFAULT_ROAMING_PATH = "reports/client-roaming-history.json"
 SNAPSHOT_INTERVAL_SECONDS = 300  # 5 minutes baseline cadence
 RETENTION_HOURS = 48
 MAX_SNAPSHOTS_RETAINED = (RETENTION_HOURS * 3600) // SNAPSHOT_INTERVAL_SECONDS  # = 576
+
+# UniFi 2.4 GHz channels. 1–13 cover US/EU/AU; 14 is JP-only. Any channel
+# outside this set (36, 40, 44, ... 149, 153, 157, 161, 165) is 5 GHz.
+# 6 GHz is not handled here — Phase D scope is 2.4/5 coexistence only, and
+# 6 GHz (Wi-Fi 6E) uses channels 1–233 in a separate UNII-5/6/7/8 space which
+# UniFi exposes via a distinct `ng` vs `na` radio_name. For the current
+# snapshot schema where only `channel` is recorded, assume 1–14 = 2.4 GHz.
+CHANNELS_24GHZ = frozenset(range(1, 15))
 
 
 async def snapshot_client_associations(output_path: str = DEFAULT_ROAMING_PATH) -> dict:
@@ -219,3 +228,128 @@ def history_hours_available(history_path: str = DEFAULT_ROAMING_PATH) -> float:
 
     delta_seconds = (newest - oldest).total_seconds()
     return max(0.0, delta_seconds / 3600.0)
+
+
+def compute_twofour_only_clients(
+    history_path: str = DEFAULT_ROAMING_PATH,
+    window_hours: float = 48.0,
+) -> dict[str, list[dict[str, Any]]]:
+    """Identify clients observed ONLY on 2.4 GHz per AP within the window.
+
+    Walks all snapshots newer than (newest_snapshot - window_hours). For each
+    (ap_name, client_mac) pair, reports clients whose observations in the
+    window on that AP were exclusively on 2.4 GHz channels (see
+    ``CHANNELS_24GHZ``) — AND who never proved 5 GHz capability on ANY AP
+    in the same window. The latter check matters: a client seen on 2.4 on
+    AP-A but 5 on AP-B can safely roam to 5 when 2.4 is disabled on A.
+
+    Args:
+        history_path: Path to the roaming history JSON file.
+        window_hours: How far back to look, relative to the newest snapshot
+            timestamp in the file (not wall-clock ``now``; this keeps the
+            function pure and deterministic for testing).
+
+    Returns:
+        Mapping of ``ap_name -> [{"client_mac": str, "client_name": str,
+        "observation_count": int, "last_seen": iso_str}, ...]``. Every AP
+        observed in the window appears as a key, with an empty list if no
+        2.4-only clients on that AP. Empty dict if the history file is
+        missing, empty, or has no snapshots in the window.
+
+    Notes:
+        - Observations with ``channel is None`` are skipped (not counted
+          toward 2.4 or 5). A client with only None-channel observations is
+          excluded from the result (insufficient data to classify).
+        - Wired clients are already filtered out by
+          ``snapshot_client_associations`` (no ``ap_mac``), so they never
+          reach this code path.
+    """
+    path = Path(history_path)
+    if not path.exists():
+        return {}
+
+    try:
+        history = json.loads(path.read_text())
+    except json.JSONDecodeError as err:
+        raise ToolError(
+            message=f"Roaming history at {history_path} is not valid JSON: {err}",
+            error_code=ErrorCodes.CONFIG_INVALID,
+            suggestion="Inspect the file manually; rerun the snapshot command to rebuild if corrupt.",
+        ) from err
+
+    snapshots = history.get("snapshots", [])
+    if not snapshots:
+        return {}
+
+    # Window cutoff is anchored to the newest snapshot, not wall-clock now —
+    # keeps the function pure/testable without freezing time in tests.
+    try:
+        newest_ts = datetime.fromisoformat(snapshots[-1]["timestamp"])
+    except (KeyError, ValueError, TypeError):
+        return {}
+    cutoff = newest_ts - timedelta(hours=window_hours)
+
+    # Single walk — gather, per (ap_name, client_mac), the list of in-window
+    # observations. Also track, globally, the set of clients seen on 5 GHz
+    # anywhere in the window (those are excluded from all AP buckets).
+    per_ap_client: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    clients_with_5ghz: set[str] = set()
+    aps_seen: set[str] = set()
+
+    for snap in snapshots:
+        try:
+            ts = datetime.fromisoformat(snap["timestamp"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if ts < cutoff:
+            continue
+
+        for assoc in snap.get("associations", []):
+            ap_name = assoc.get("ap_name")
+            client_mac = assoc.get("client_mac")
+            if not ap_name or not client_mac:
+                continue
+
+            aps_seen.add(ap_name)
+            channel = assoc.get("channel")
+
+            # Track global 5 GHz capability proof (any AP, any observation).
+            if channel is not None and channel not in CHANNELS_24GHZ:
+                clients_with_5ghz.add(client_mac)
+
+            per_ap_client.setdefault((ap_name, client_mac), []).append({
+                "timestamp": snap["timestamp"],
+                "channel": channel,
+                "client_name": assoc.get("client_name") or client_mac,
+            })
+
+    # Build result: every AP is a key; populate lists with 2.4-only clients.
+    result: dict[str, list[dict[str, Any]]] = {ap: [] for ap in aps_seen}
+
+    for (ap_name, client_mac), obs in per_ap_client.items():
+        # Skip clients that proved 5 GHz somewhere.
+        if client_mac in clients_with_5ghz:
+            continue
+
+        # Evaluate observations on THIS AP: at least one 2.4 GHz sample,
+        # no 5 GHz samples (already guaranteed by global filter above, but
+        # defensive), and not all channels None.
+        channels = [o["channel"] for o in obs]
+        has_24ghz = any(c in CHANNELS_24GHZ for c in channels if c is not None)
+        if not has_24ghz:
+            # Either all None or all 5 GHz (the latter impossible here given
+            # the global filter, but kept explicit for clarity).
+            continue
+
+        result[ap_name].append({
+            "client_mac": client_mac,
+            "client_name": obs[-1]["client_name"],
+            "observation_count": len(obs),
+            "last_seen": obs[-1]["timestamp"],
+        })
+
+    # Deterministic ordering — sort each AP's list by client_mac.
+    for ap_name in result:
+        result[ap_name].sort(key=lambda entry: entry["client_mac"])
+
+    return result
