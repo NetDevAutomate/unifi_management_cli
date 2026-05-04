@@ -13,6 +13,14 @@ from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 DEFAULT_ROAMING_PATH = "reports/client-roaming-history.json"
 
+# Retention configuration — referenced by rf_strategy.py's 48h history gate.
+# Bumped from 288 (24h) to 576 (48h) during Phase D design to support the
+# scorecard's minimum-history requirement for disable recommendations.
+# See: docs/plans/2026-05-04-phase-d-rf-strategy-design.md
+SNAPSHOT_INTERVAL_SECONDS = 300  # 5 minutes baseline cadence
+RETENTION_HOURS = 48
+MAX_SNAPSHOTS_RETAINED = (RETENTION_HOURS * 3600) // SNAPSHOT_INTERVAL_SECONDS  # = 576
+
 
 async def snapshot_client_associations(output_path: str = DEFAULT_ROAMING_PATH) -> dict:
     """Record current client-to-AP associations for roaming tracking.
@@ -58,8 +66,8 @@ async def snapshot_client_associations(output_path: str = DEFAULT_ROAMING_PATH) 
 
     history["snapshots"].append({"timestamp": now, "associations": associations})
 
-    # Keep last 288 snapshots (24h at 5-min intervals)
-    history["snapshots"] = history["snapshots"][-288:]
+    # Keep the most recent snapshots within the retention window (48h at 5-min intervals = 576).
+    history["snapshots"] = history["snapshots"][-MAX_SNAPSHOTS_RETAINED:]
     path.write_text(json.dumps(history, indent=2))
 
     return {"timestamp": now, "clients_tracked": len(associations), "snapshots_stored": len(history["snapshots"])}
@@ -162,3 +170,52 @@ async def analyze_roaming(history_path: str = DEFAULT_ROAMING_PATH) -> dict:
         "roamers": roamers[:20],
         "sticky": sticky_clients[:10],
     }
+
+
+def history_hours_available(history_path: str = DEFAULT_ROAMING_PATH) -> float:
+    """Return the number of hours between the oldest and newest snapshot.
+
+    Used by the RF strategy scorecard (rf_strategy.py) to gate recommendation
+    emission — recommendations are refused if < MIN_HISTORY_HOURS (48) is
+    available.
+
+    Returns:
+        0.0 if the history file does not exist, has fewer than 2 snapshots,
+        or has any malformed timestamps.
+
+    Raises:
+        ToolError(CONFIG_INVALID) if the history file exists but is not valid
+        JSON or does not contain a "snapshots" list.
+    """
+    path = Path(history_path)
+    if not path.exists():
+        return 0.0
+
+    try:
+        history = json.loads(path.read_text())
+    except json.JSONDecodeError as err:
+        raise ToolError(
+            message=f"Roaming history at {history_path} is not valid JSON: {err}",
+            error_code=ErrorCodes.CONFIG_INVALID,
+            suggestion="Inspect the file manually; rerun the snapshot command to rebuild if corrupt.",
+        ) from err
+
+    snapshots = history.get("snapshots")
+    if not isinstance(snapshots, list):
+        raise ToolError(
+            message=f"Roaming history at {history_path} is missing a 'snapshots' list.",
+            error_code=ErrorCodes.CONFIG_INVALID,
+            suggestion="Delete the file and let snapshot collection rebuild it.",
+        )
+
+    if len(snapshots) < 2:
+        return 0.0
+
+    try:
+        oldest = datetime.fromisoformat(snapshots[0]["timestamp"])
+        newest = datetime.fromisoformat(snapshots[-1]["timestamp"])
+    except (KeyError, ValueError, TypeError):
+        return 0.0
+
+    delta_seconds = (newest - oldest).total_seconds()
+    return max(0.0, delta_seconds / 3600.0)

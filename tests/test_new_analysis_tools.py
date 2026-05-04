@@ -533,6 +533,111 @@ class TestRoamingAnalysis:
         ]
         result = self._classify_client(obs)
         assert result["is_sticky"] is False
+    # ── Phase D T1: 48h retention + history_hours_available helper ───────────
+
+    def test_max_snapshots_retained_constant(self) -> None:
+        """Static guard: accidental future changes to the retention constant
+        would silently break the rf_strategy.py 48h history gate.
+        """
+        from unifi_mapper.analysis.roaming_analysis import (
+            MAX_SNAPSHOTS_RETAINED,
+            RETENTION_HOURS,
+            SNAPSHOT_INTERVAL_SECONDS,
+        )
+        assert SNAPSHOT_INTERVAL_SECONDS == 300
+        assert RETENTION_HOURS == 48
+        assert MAX_SNAPSHOTS_RETAINED == 576
+
+    def test_snapshot_retention_48h(self, tmp_path, monkeypatch) -> None:
+        """snapshot_client_associations trims history to MAX_SNAPSHOTS_RETAINED (576)."""
+        import asyncio
+        import json
+        from datetime import datetime, timedelta
+
+        from unifi_mapper.analysis import roaming_analysis
+
+        # Seed a history file with 600 synthetic snapshots (more than 576)
+        history_file = tmp_path / "history.json"
+        now = datetime(2026, 5, 4, 12, 0, 0)
+        seeded = {
+            "snapshots": [
+                {
+                    "timestamp": (now - timedelta(minutes=5 * (599 - i))).isoformat(),
+                    "associations": [],
+                }
+                for i in range(600)
+            ]
+        }
+        history_file.write_text(json.dumps(seeded))
+
+        # Mock UniFiClient to return empty devices/clients (adds exactly 1 new snapshot)
+        class _MockClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def get_devices(self):
+                return []
+
+            async def get_clients(self):
+                return []
+
+        monkeypatch.setattr(roaming_analysis, "UniFiClient", _MockClient)
+
+        asyncio.run(roaming_analysis.snapshot_client_associations(str(history_file)))
+
+        result = json.loads(history_file.read_text())
+        assert len(result["snapshots"]) == roaming_analysis.MAX_SNAPSHOTS_RETAINED
+
+    def test_history_hours_available_missing_file(self, tmp_path) -> None:
+        """Missing history file → 0.0, no error raised."""
+        from unifi_mapper.analysis.roaming_analysis import history_hours_available
+
+        assert history_hours_available(str(tmp_path / "nonexistent.json")) == 0.0
+
+    def test_history_hours_available_single_snapshot(self, tmp_path) -> None:
+        """Fewer than 2 snapshots → 0.0 (need a span to measure)."""
+        import json
+
+        from unifi_mapper.analysis.roaming_analysis import history_hours_available
+
+        f = tmp_path / "history.json"
+        f.write_text(json.dumps({"snapshots": [{"timestamp": "2026-05-04T12:00:00", "associations": []}]}))
+        assert history_hours_available(str(f)) == 0.0
+
+    def test_history_hours_available_spans_24h(self, tmp_path) -> None:
+        """Oldest and newest timestamps 24h apart → returns 24.0."""
+        import json
+
+        from unifi_mapper.analysis.roaming_analysis import history_hours_available
+
+        f = tmp_path / "history.json"
+        f.write_text(
+            json.dumps(
+                {
+                    "snapshots": [
+                        {"timestamp": "2026-05-04T00:00:00", "associations": []},
+                        {"timestamp": "2026-05-04T06:00:00", "associations": []},
+                        {"timestamp": "2026-05-05T00:00:00", "associations": []},
+                    ]
+                }
+            )
+        )
+        assert history_hours_available(str(f)) == pytest.approx(24.0, abs=0.01)
+
+    def test_history_hours_available_malformed_json(self, tmp_path) -> None:
+        """Malformed JSON → ToolError(CONFIG_INVALID), not silent 0.0."""
+        from unifi_mapper.analysis.roaming_analysis import history_hours_available
+        from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+
+        f = tmp_path / "history.json"
+        f.write_text("{not valid json")
+
+        with pytest.raises(ToolError) as exc_info:
+            history_hours_available(str(f))
+        assert exc_info.value.error_code == ErrorCodes.CONFIG_INVALID
 
 
 # ── 10. Config Drift ─────────────────────────────────────────────────────────
