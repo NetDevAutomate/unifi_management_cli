@@ -6,7 +6,7 @@ spectrum-scan (which is deprecated/non-functional on UniFi OS 5.x).
 
 from __future__ import annotations
 
-import time
+from datetime import datetime
 from typing import Any
 from unifi_mapper.core.utils.client import UniFiClient
 
@@ -77,6 +77,24 @@ def compute_channel_neighbour_score(
     return total
 
 
+def filter_live_rogue_entries(
+    rogue_entries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return only rogue entries that are relevant for neighbour analysis.
+
+    Applies the two standard filters: exclude own-network APs (is_ubnt=True)
+    and exclude stale entries (age > MAX_ROGUE_AGE_SECONDS). Shared between
+    `scan_neighbours` (per-AP grouping) and `channel_optimiser.analyze_channels`
+    (network-wide channel scoring) so both see identical data.
+    """
+    return [
+        e
+        for e in rogue_entries
+        if not e.get("is_ubnt", False)
+        and e.get("age", 0) <= MAX_ROGUE_AGE_SECONDS
+    ]
+
+
 def _group_rogue_entries(
     rogue_entries: list[dict[str, Any]],
     ap_mac_to_name: dict[str, str],
@@ -88,11 +106,7 @@ def _group_rogue_entries(
     optionally filter to single ap_mac.
     """
     by_ap: dict[str, list[dict[str, Any]]] = {}
-    for entry in rogue_entries:
-        if entry.get("is_ubnt", False):
-            continue
-        if entry.get("age", 0) > MAX_ROGUE_AGE_SECONDS:
-            continue
+    for entry in filter_live_rogue_entries(rogue_entries):
         ap_mac = entry.get("ap_mac", "")
         if filter_ap_mac and ap_mac != filter_ap_mac:
             continue
@@ -142,4 +156,4 @@ async def scan_neighbours(ap_name: str | None = None) -> dict[str, Any]:
                 break
 
     aps = _group_rogue_entries(rogue, ap_mac_to_name, filter_ap_mac=filter_mac)
-    return {"timestamp": time.time(), "aps": aps}
+    return {"timestamp": datetime.now().isoformat(), "aps": aps}

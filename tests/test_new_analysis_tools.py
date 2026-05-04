@@ -10,27 +10,12 @@ from unifi_mapper.analysis.dhcp_pool import _analyze_dhcp_pools
 from unifi_mapper.analysis.latency_matrix import _build_target_list, _parse_ping_output
 from unifi_mapper.analysis.poe_budget import _analyze_poe_budgets
 from unifi_mapper.analysis.radio_config import build_optimisation_plan
+from unifi_mapper.analysis.neighbour_scan import (
+    _group_rogue_entries,
+    compute_channel_neighbour_score,
+    rssi_weight,
+)
 from unifi_mapper.analysis.uplink_redundancy import _analyze_uplink_redundancy
-
-
-# Neighbour scan imports — module doesn't exist yet (Task 3).
-# Guarded so the rest of the test file remains importable; tests that use
-# these names will fail with ImportError at call-site via _ns_import_error.
-_ns_import_error: ImportError | None = None
-try:
-    from unifi_mapper.analysis.neighbour_scan import (
-        MAX_ROGUE_AGE_SECONDS,  # noqa: F401
-        RSSI_WEIGHT_MEDIUM,  # noqa: F401
-        RSSI_WEIGHT_STRONG,  # noqa: F401
-        RSSI_WEIGHT_WEAK,  # noqa: F401
-        _group_rogue_entries,
-        compute_channel_neighbour_score,
-        effective_rssi_for_channel,  # noqa: F401
-        rssi_weight,
-        scan_neighbours,  # noqa: F401
-    )
-except ImportError as exc:
-    _ns_import_error = exc
 
 
 # ── Shared fixtures ──────────────────────────────────────────────────────────
@@ -595,12 +580,6 @@ class TestConfigDrift:
 # Tests target the new helper functions in neighbour_scan.py (Task 3).
 
 
-def _require_neighbour_scan() -> None:
-    """Raise the stored ImportError if neighbour_scan module is missing."""
-    if _ns_import_error is not None:
-        raise _ns_import_error
-
-
 def _make_rogue_entry(
     *,
     bssid: str = "b0:5b:99:ea:5a:76",
@@ -644,7 +623,6 @@ class TestNeighbourScan:
 
     def test_parse_rogue_entries_groups_by_ap(self) -> None:
         """Raw entries with mixed ap_mac values produce correct per-AP grouping."""
-        _require_neighbour_scan()
         entries = [
             _make_rogue_entry(ap_mac="aa:bb:cc:00:00:01", channel=6, signal=-70),
             _make_rogue_entry(ap_mac="aa:bb:cc:00:00:01", channel=36, signal=-55),
@@ -665,7 +643,6 @@ class TestNeighbourScan:
 
     def test_parse_rogue_entries_filters_own_network(self) -> None:
         """Entries with is_ubnt=True are excluded."""
-        _require_neighbour_scan()
         entries = [
             _make_rogue_entry(is_ubnt=True, signal=-60),
             _make_rogue_entry(is_ubnt=False, signal=-70),
@@ -676,7 +653,6 @@ class TestNeighbourScan:
 
     def test_parse_rogue_entries_filters_stale(self) -> None:
         """Entries with age > MAX_ROGUE_AGE_SECONDS are excluded."""
-        _require_neighbour_scan()
         entries = [
             _make_rogue_entry(age=0, signal=-60),
             _make_rogue_entry(age=301, signal=-65, bssid="aa:bb:cc:dd:ee:ff"),
@@ -687,7 +663,6 @@ class TestNeighbourScan:
 
     def test_parse_rogue_entries_empty(self) -> None:
         """Empty input produces empty aps list."""
-        _require_neighbour_scan()
         result = _group_rogue_entries([], {})
         assert result == []
 
@@ -704,12 +679,10 @@ class TestNeighbourScan:
     )
     def test_rssi_weight_buckets(self, signal_dbm: int, expected_weight: float) -> None:
         """Oracle-validated RSSI weighting thresholds."""
-        _require_neighbour_scan()
         assert rssi_weight(signal_dbm) == expected_weight
 
     def test_channel_neighbour_score_5ghz(self) -> None:
         """5 GHz: weighted sum of co-channel neighbours, no adjacent compensation."""
-        _require_neighbour_scan()
         neighbours = [
             _make_rogue_entry(channel=36, signal=-60, band="na"),  # strong → 3.0
             _make_rogue_entry(channel=36, signal=-75, band="na"),  # medium → 1.0
@@ -721,7 +694,6 @@ class TestNeighbourScan:
 
     def test_channel_neighbour_score_24ghz_adjacent(self) -> None:
         """2.4 GHz: AP on ch 4 at -60 dBm contributes to ch 6 with -25 dB offset."""
-        _require_neighbour_scan()
         neighbours = [
             _make_rogue_entry(channel=4, signal=-60, band="ng"),
         ]
@@ -731,7 +703,6 @@ class TestNeighbourScan:
 
     def test_channel_neighbour_score_24ghz_far_channel(self) -> None:
         """2.4 GHz: AP on ch 1 does not contribute to ch 11 (distance > 2)."""
-        _require_neighbour_scan()
         neighbours = [
             _make_rogue_entry(channel=1, signal=-55, band="ng"),
         ]
@@ -740,7 +711,6 @@ class TestNeighbourScan:
 
     def test_ap_name_filter(self) -> None:
         """When filter_ap_mac provided, only matching entries appear."""
-        _require_neighbour_scan()
         entries = [
             _make_rogue_entry(ap_mac="aa:bb:cc:00:00:01", signal=-60),
             _make_rogue_entry(ap_mac="aa:bb:cc:00:00:02", signal=-70),

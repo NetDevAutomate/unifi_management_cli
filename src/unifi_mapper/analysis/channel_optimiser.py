@@ -6,8 +6,8 @@ for both 5GHz and 2.4GHz bands. Generates before/after reports in table and mark
 
 from datetime import datetime
 from unifi_mapper.analysis.neighbour_scan import (
-    MAX_ROGUE_AGE_SECONDS,
     compute_channel_neighbour_score,
+    filter_live_rogue_entries,
 )
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
@@ -79,12 +79,8 @@ async def analyze_channels() -> dict:
             # so channel optimisation still works using own-AP utilization alone.
             rogue_entries = []
 
-    # Filter rogue entries: exclude own-network (is_ubnt) and stale
-    all_neighbours = [
-        e
-        for e in rogue_entries
-        if not e.get('is_ubnt', False) and e.get('age', 0) <= MAX_ROGUE_AGE_SECONDS
-    ]
+    # Filter rogue entries via the shared helper (exclude own-network and stale)
+    all_neighbours = filter_live_rogue_entries(rogue_entries)
 
     aps = []
     for d in devices:
