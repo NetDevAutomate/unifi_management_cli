@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 
 # === Constants (locked design decisions) ===
@@ -163,3 +164,154 @@ class RFStrategyPlan:
     history_hours_available: float     # from roaming_analysis.history_hours_available
     recommendations: tuple[APRecommendation, ...]
     summary: PlanSummary
+
+
+# === Scorecard (Phase D T5) ===
+#
+# Three proxy scores combined by the weights above. Each returns 0.0-1.0,
+# where 1.0 means "disabling 2.4 GHz here is low-risk" and 0.0 means "high risk".
+
+
+# Thresholds for the two continuous scores, kept local to this section for
+# readability — the scoring semantics belong with the score functions, not
+# in the module-top constants table (which is for policy-level locks).
+_AP_OVERLAP_STRONG_DBM = -60      # >= this → full score
+_AP_OVERLAP_WEAK_DBM = -75        # <= this → zero score
+_RSSI_MARGIN_SOLID_DBM = -55      # median >= this → full score
+_RSSI_MARGIN_EDGE_DBM = -75       # median <= this → zero score
+
+
+def _linear_score(value: float, low: float, high: float) -> float:
+    """Clamp ``value`` to [low, high] then project to [0.0, 1.0]."""
+    if value >= high:
+        return 1.0
+    if value <= low:
+        return 0.0
+    return (value - low) / (high - low)
+
+
+def compute_roam_history_score(
+    ap_name: str,
+    twofour_only_clients: dict[str, list[dict[str, Any]]],
+    mobility_graph: dict[str, set[str]],
+) -> float:
+    """Fraction of 2.4-only clients on this AP that have roamed elsewhere.
+
+    A 2.4-only client whose mobility graph spans >1 AP has proven roam
+    capability — disabling 2.4 GHz here should cause it to pick up another
+    AP rather than disconnect. Returns 1.0 when there are no 2.4-only
+    clients to worry about on this AP.
+    """
+    clients = twofour_only_clients.get(ap_name, [])
+    if not clients:
+        return 1.0
+
+    roamed = sum(
+        1 for c in clients
+        if len(mobility_graph.get(c.get("client_mac", ""), set())) > 1
+    )
+    return roamed / len(clients)
+
+
+def compute_ap_overlap_score(
+    ap_name: str,
+    overlap_matrix: dict[tuple[str, str], int],
+) -> float:
+    """Strength of coverage by neighbouring APs.
+
+    Uses the MAX RSSI at which any other AP hears this AP's BSSID. -60 dBm
+    or better → 1.0 (strong coverage); -75 dBm or worse → 0.0 (island AP).
+    Linear between.
+    """
+    rssi_values = [
+        rssi for (observer, observed), rssi in overlap_matrix.items()
+        if observed == ap_name
+    ]
+    if not rssi_values:
+        return 0.0
+
+    strongest = max(rssi_values)
+    return _linear_score(
+        float(strongest),
+        low=float(_AP_OVERLAP_WEAK_DBM),
+        high=float(_AP_OVERLAP_STRONG_DBM),
+    )
+
+
+def compute_rssi_margin_score(
+    ap_name: str,
+    current_clients: list[dict[str, Any]],
+) -> float:
+    """Median RSSI comfort of the 2.4 GHz clients on this AP.
+
+    Only wireless clients associated to ``ap_name`` on a 2.4 GHz channel
+    count. Returns 1.0 when there are no such clients (nothing to worry
+    about) and 0.0 when clients exist but every ``rssi`` is missing
+    (insufficient data, be cautious).
+    """
+    # Local import avoids a top-level cycle risk; roaming_analysis does not
+    # import this module, but keeping the dep local is cheap and robust.
+    from unifi_mapper.analysis.roaming_analysis import CHANNELS_24GHZ
+
+    twofour_rssis: list[int] = []
+    has_twofour_client = False
+
+    for client in current_clients:
+        if client.get("ap_name") != ap_name:
+            continue
+        channel = client.get("channel")
+        if channel not in CHANNELS_24GHZ:
+            continue
+        has_twofour_client = True
+        rssi = client.get("rssi")
+        if rssi is not None:
+            twofour_rssis.append(rssi)
+
+    if not has_twofour_client:
+        return 1.0
+    if not twofour_rssis:
+        return 0.0
+
+    twofour_rssis.sort()
+    mid = len(twofour_rssis) // 2
+    if len(twofour_rssis) % 2 == 1:
+        median = float(twofour_rssis[mid])
+    else:
+        median = (twofour_rssis[mid - 1] + twofour_rssis[mid]) / 2.0
+
+    return _linear_score(
+        median,
+        low=float(_RSSI_MARGIN_EDGE_DBM),
+        high=float(_RSSI_MARGIN_SOLID_DBM),
+    )
+
+
+def compute_coverage_score(
+    ap_name: str,
+    twofour_only_clients: dict[str, list[dict[str, Any]]],
+    mobility_graph: dict[str, set[str]],
+    overlap_matrix: dict[tuple[str, str], int],
+    current_clients: list[dict[str, Any]],
+) -> float:
+    """Weighted sum of the three proxy scores. Returns 0.0-1.0."""
+    return (
+        COVERAGE_WEIGHT_ROAM_HISTORY
+        * compute_roam_history_score(ap_name, twofour_only_clients, mobility_graph)
+        + COVERAGE_WEIGHT_AP_OVERLAP
+        * compute_ap_overlap_score(ap_name, overlap_matrix)
+        + COVERAGE_WEIGHT_RSSI_MARGIN
+        * compute_rssi_margin_score(ap_name, current_clients)
+    )
+
+
+def classify_confidence(score: float) -> Confidence:
+    """Map a 0.0-1.0 coverage score to a GREEN/YELLOW/RED bucket.
+
+    Boundaries are inclusive on the upper side: ``score == 0.7`` → GREEN,
+    ``score == 0.4`` → YELLOW.
+    """
+    if score >= CONFIDENCE_GREEN_THRESHOLD:
+        return Confidence.GREEN
+    if score >= CONFIDENCE_YELLOW_THRESHOLD:
+        return Confidence.YELLOW
+    return Confidence.RED

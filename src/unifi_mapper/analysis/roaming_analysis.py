@@ -353,3 +353,63 @@ def compute_twofour_only_clients(
         result[ap_name].sort(key=lambda entry: entry["client_mac"])
 
     return result
+
+
+def build_mobility_graph(
+    history_path: str = DEFAULT_ROAMING_PATH,
+    window_hours: float = 48.0,
+) -> dict[str, set[str]]:
+    """Build ``{client_mac: set[ap_name]}`` for all clients seen in the window.
+
+    A client whose set has more than one AP name has proven roam capability —
+    this is the mobility evidence the RF-strategy scorecard uses to decide
+    whether a 2.4-only client on a given AP can safely be displaced.
+
+    Window cutoff is anchored to the newest snapshot in the file (not
+    wall-clock now), matching the pattern used by
+    :func:`compute_twofour_only_clients` for pure/deterministic behaviour
+    in tests.
+
+    Returns an empty dict when the history file is missing, not yet written,
+    or contains no snapshots in the window.
+    """
+    path = Path(history_path)
+    if not path.exists():
+        return {}
+
+    try:
+        history = json.loads(path.read_text())
+    except json.JSONDecodeError as err:
+        raise ToolError(
+            message=f"Roaming history at {history_path} is not valid JSON: {err}",
+            error_code=ErrorCodes.CONFIG_INVALID,
+            suggestion="Inspect the file manually; rerun the snapshot command to rebuild if corrupt.",
+        ) from err
+
+    snapshots = history.get("snapshots", [])
+    if not snapshots:
+        return {}
+
+    try:
+        newest_ts = datetime.fromisoformat(snapshots[-1]["timestamp"])
+    except (KeyError, ValueError, TypeError):
+        return {}
+    cutoff = newest_ts - timedelta(hours=window_hours)
+
+    graph: dict[str, set[str]] = {}
+    for snap in snapshots:
+        try:
+            ts = datetime.fromisoformat(snap["timestamp"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if ts < cutoff:
+            continue
+
+        for assoc in snap.get("associations", []):
+            client_mac = assoc.get("client_mac")
+            ap_name = assoc.get("ap_name")
+            if not client_mac or not ap_name:
+                continue
+            graph.setdefault(client_mac, set()).add(ap_name)
+
+    return graph

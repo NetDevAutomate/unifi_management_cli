@@ -851,6 +851,63 @@ class TestRoamingAnalysis:
 
         assert result == {}
 
+    # ── Phase D T5: build_mobility_graph helper (used by rf_strategy scorecard) ──
+
+    def test_build_mobility_graph_empty_history(self, tmp_path) -> None:
+        """Missing / empty history → empty graph, no error."""
+        from unifi_mapper.analysis.roaming_analysis import build_mobility_graph
+
+        missing = tmp_path / "nonexistent.json"
+        assert build_mobility_graph(str(missing)) == {}
+
+        empty = tmp_path / "empty.json"
+        self._write_history(empty, [])
+        assert build_mobility_graph(str(empty)) == {}
+
+    def test_build_mobility_graph_single_ap_clients(self, tmp_path) -> None:
+        """Client seen on a single AP → mobility_graph[mac] == {'Kitchen'}."""
+        from unifi_mapper.analysis.roaming_analysis import build_mobility_graph
+
+        f = tmp_path / "history.json"
+        self._write_history(f, [
+            self._snapshot("2026-05-04T10:00:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
+            ]),
+            self._snapshot("2026-05-04T10:05:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=11),
+            ]),
+        ])
+
+        graph = build_mobility_graph(str(f))
+
+        assert graph == {"AA:A": {"Kitchen"}}
+
+    def test_build_mobility_graph_multi_ap_clients(self, tmp_path) -> None:
+        """Client seen on multiple APs → mobility_graph[mac] includes all APs."""
+        from unifi_mapper.analysis.roaming_analysis import build_mobility_graph
+
+        f = tmp_path / "history.json"
+        self._write_history(f, [
+            self._snapshot("2026-05-04T10:00:00", [
+                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
+                self._assoc("BB:B", "laptop-B", "Office", channel=36),
+            ]),
+            self._snapshot("2026-05-04T10:05:00", [
+                self._assoc("AA:A", "phone-A", "Office", channel=36),
+                self._assoc("BB:B", "laptop-B", "Office", channel=36),
+            ]),
+            self._snapshot("2026-05-04T10:10:00", [
+                self._assoc("AA:A", "phone-A", "Living-Room", channel=44),
+            ]),
+        ])
+
+        graph = build_mobility_graph(str(f))
+
+        assert graph == {
+            "AA:A": {"Kitchen", "Office", "Living-Room"},
+            "BB:B": {"Office"},
+        }
+
 
 # ── 10. Config Drift ─────────────────────────────────────────────────────────
 # detect_drift is async + file-based. We test the comparison logic directly.
@@ -1556,3 +1613,228 @@ class TestRFStrategyDataclasses:
 
         assert isinstance(impact.known_other_aps, tuple)
         assert impact.known_other_aps == ("Kitchen", "Office")
+
+
+# ── 15. RF Strategy — coverage scorecard (Phase D T5) ────────────────────────
+
+
+class TestRFStrategyScorecard:
+    """Tests for the three-proxy coverage scorecard (rf_strategy module).
+
+    Layering:
+    - compute_roam_history_score — fraction of 2.4-only clients that have roamed
+    - compute_ap_overlap_score — strength of this AP's coverage by neighbours
+    - compute_rssi_margin_score — median RSSI comfort of 2.4 GHz clients
+    - compute_coverage_score — weighted sum of the three above
+    - classify_confidence — maps 0.0-1.0 score → GREEN/YELLOW/RED
+    """
+
+    # ── compute_roam_history_score ────────────────────────────────────────────
+
+    def test_roam_history_score_all_roamed(self) -> None:
+        """All 2.4-only clients on this AP have roamed to ≥1 other AP → 1.0."""
+        from unifi_mapper.analysis.rf_strategy import compute_roam_history_score
+
+        twofour_only = {
+            "Kitchen": [
+                {"client_mac": "AA", "client_name": "a", "observation_count": 5, "last_seen": "2026-05-04T10:00"},
+                {"client_mac": "BB", "client_name": "b", "observation_count": 4, "last_seen": "2026-05-04T10:00"},
+                {"client_mac": "CC", "client_name": "c", "observation_count": 3, "last_seen": "2026-05-04T10:00"},
+            ],
+        }
+        mobility_graph = {
+            "AA": {"Kitchen", "Office"},
+            "BB": {"Kitchen", "Living-Room"},
+            "CC": {"Kitchen", "Office", "Living-Room"},
+        }
+
+        assert compute_roam_history_score("Kitchen", twofour_only, mobility_graph) == 1.0
+
+    def test_roam_history_score_none_roamed(self) -> None:
+        """No 2.4-only client has roamed (all single-AP in mobility graph) → 0.0."""
+        from unifi_mapper.analysis.rf_strategy import compute_roam_history_score
+
+        twofour_only = {
+            "Kitchen": [
+                {"client_mac": "AA", "client_name": "a", "observation_count": 5, "last_seen": "2026-05-04T10:00"},
+                {"client_mac": "BB", "client_name": "b", "observation_count": 4, "last_seen": "2026-05-04T10:00"},
+            ],
+        }
+        mobility_graph = {
+            "AA": {"Kitchen"},
+            "BB": {"Kitchen"},
+        }
+
+        assert compute_roam_history_score("Kitchen", twofour_only, mobility_graph) == 0.0
+
+    def test_roam_history_score_mixed(self) -> None:
+        """2 of 3 clients have roamed → 2/3 ≈ 0.667."""
+        from unifi_mapper.analysis.rf_strategy import compute_roam_history_score
+
+        twofour_only = {
+            "Kitchen": [
+                {"client_mac": "AA", "client_name": "a", "observation_count": 5, "last_seen": "t"},
+                {"client_mac": "BB", "client_name": "b", "observation_count": 4, "last_seen": "t"},
+                {"client_mac": "CC", "client_name": "c", "observation_count": 3, "last_seen": "t"},
+            ],
+        }
+        mobility_graph = {
+            "AA": {"Kitchen", "Office"},   # roamed
+            "BB": {"Kitchen", "Office"},   # roamed
+            "CC": {"Kitchen"},              # stayed put
+        }
+
+        score = compute_roam_history_score("Kitchen", twofour_only, mobility_graph)
+        assert score == pytest.approx(2 / 3, abs=0.001)
+
+    def test_roam_history_score_no_twofour_only_clients(self) -> None:
+        """AP has no 2.4-only clients → 1.0 (nothing to save, disable is safe)."""
+        from unifi_mapper.analysis.rf_strategy import compute_roam_history_score
+
+        # Two valid shapes: AP absent from dict, or AP present with empty list.
+        assert compute_roam_history_score("Kitchen", {}, {}) == 1.0
+        assert compute_roam_history_score("Kitchen", {"Kitchen": []}, {}) == 1.0
+
+    # ── compute_ap_overlap_score ──────────────────────────────────────────────
+
+    def test_ap_overlap_score_strong(self) -> None:
+        """Strongest neighbour-observed RSSI ≥ -60 → score 1.0."""
+        from unifi_mapper.analysis.rf_strategy import compute_ap_overlap_score
+
+        overlap = {
+            ("Office", "Kitchen"): -55,       # Office hears Kitchen at -55 (strong)
+            ("Living-Room", "Kitchen"): -72,  # also heard, weaker
+        }
+
+        assert compute_ap_overlap_score("Kitchen", overlap) == 1.0
+
+    def test_ap_overlap_score_weak(self) -> None:
+        """Strongest observation at -80 dBm (below -75 floor) → 0.0 (island AP)."""
+        from unifi_mapper.analysis.rf_strategy import compute_ap_overlap_score
+
+        overlap = {("Office", "Kitchen"): -80}
+
+        assert compute_ap_overlap_score("Kitchen", overlap) == 0.0
+
+    def test_ap_overlap_score_linear_midrange(self) -> None:
+        """RSSI -67.5 is midpoint of [-75, -60] → score ≈ 0.5."""
+        from unifi_mapper.analysis.rf_strategy import compute_ap_overlap_score
+
+        # Use -68 (integer RSSI, typical data shape) → expect (−68 − −75) / 15 ≈ 0.467
+        overlap = {("Office", "Kitchen"): -68}
+        assert compute_ap_overlap_score("Kitchen", overlap) == pytest.approx(7 / 15, abs=0.01)
+
+    def test_ap_overlap_score_island_ap(self) -> None:
+        """AP not present as observed in matrix → 0.0 (no neighbour hears it)."""
+        from unifi_mapper.analysis.rf_strategy import compute_ap_overlap_score
+
+        overlap = {("Office", "Living-Room"): -60}  # Kitchen not in matrix at all
+
+        assert compute_ap_overlap_score("Kitchen", overlap) == 0.0
+
+    # ── compute_rssi_margin_score ─────────────────────────────────────────────
+
+    def test_rssi_margin_score_solid(self) -> None:
+        """Median RSSI -50 across 3 2.4-GHz clients on Kitchen → 1.0."""
+        from unifi_mapper.analysis.rf_strategy import compute_rssi_margin_score
+
+        clients = [
+            {"ap_mac": "aa", "ap_name": "Kitchen", "channel": 6, "rssi": -50},
+            {"ap_mac": "aa", "ap_name": "Kitchen", "channel": 1, "rssi": -48},
+            {"ap_mac": "aa", "ap_name": "Kitchen", "channel": 11, "rssi": -52},
+            {"ap_mac": "bb", "ap_name": "Office", "channel": 6, "rssi": -90},  # different AP — ignored
+        ]
+
+        assert compute_rssi_margin_score("Kitchen", clients) == 1.0
+
+    def test_rssi_margin_score_edge(self) -> None:
+        """Median RSSI -76 (below -75 floor) → 0.0."""
+        from unifi_mapper.analysis.rf_strategy import compute_rssi_margin_score
+
+        clients = [
+            {"ap_name": "Kitchen", "channel": 6, "rssi": -76},
+            {"ap_name": "Kitchen", "channel": 1, "rssi": -78},
+            {"ap_name": "Kitchen", "channel": 11, "rssi": -76},
+        ]
+
+        assert compute_rssi_margin_score("Kitchen", clients) == 0.0
+
+    def test_rssi_margin_score_empty(self) -> None:
+        """Zero 2.4 GHz clients on the AP → 1.0 (nothing to worry about)."""
+        from unifi_mapper.analysis.rf_strategy import compute_rssi_margin_score
+
+        # Clients on 5 GHz (channel 36) must be excluded from 2.4 GHz score.
+        clients = [{"ap_name": "Kitchen", "channel": 36, "rssi": -60}]
+
+        assert compute_rssi_margin_score("Kitchen", clients) == 1.0
+        assert compute_rssi_margin_score("Kitchen", []) == 1.0
+
+    def test_rssi_margin_score_all_missing_rssi(self) -> None:
+        """Clients present on 2.4 but every rssi is None → 0.0 (cautious)."""
+        from unifi_mapper.analysis.rf_strategy import compute_rssi_margin_score
+
+        clients = [
+            {"ap_name": "Kitchen", "channel": 6, "rssi": None},
+            {"ap_name": "Kitchen", "channel": 6, "rssi": None},
+        ]
+
+        assert compute_rssi_margin_score("Kitchen", clients) == 0.0
+
+    # ── compute_coverage_score (weighted sum) ─────────────────────────────────
+
+    def test_coverage_score_weights_sum_correctly(self) -> None:
+        """Synthetic inputs → hand-calculated weighted sum."""
+        from unifi_mapper.analysis import rf_strategy as rfs
+        from unifi_mapper.analysis.rf_strategy import compute_coverage_score
+
+        # Construct inputs that produce: roam=1.0, overlap=1.0, rssi=1.0 → score 1.0
+        twofour_only = {"Kitchen": [{"client_mac": "AA", "client_name": "a", "observation_count": 1, "last_seen": "t"}]}
+        mobility_graph = {"AA": {"Kitchen", "Office"}}
+        overlap = {("Office", "Kitchen"): -55}
+        clients = [{"ap_name": "Kitchen", "channel": 6, "rssi": -50}]
+
+        assert compute_coverage_score("Kitchen", twofour_only, mobility_graph, overlap, clients) == pytest.approx(1.0)
+
+        # Construct: roam=0.0, overlap=0.0, rssi=0.0 → score 0.0
+        twofour_only2 = {"Kitchen": [{"client_mac": "BB", "client_name": "b", "observation_count": 1, "last_seen": "t"}]}
+        mobility_graph2 = {"BB": {"Kitchen"}}
+        overlap2 = {}
+        clients2 = [{"ap_name": "Kitchen", "channel": 6, "rssi": -85}]
+
+        assert compute_coverage_score("Kitchen", twofour_only2, mobility_graph2, overlap2, clients2) == pytest.approx(0.0)
+
+        # Mixed — hand-calc: roam=1.0*0.5 + overlap=0.0*0.3 + rssi=0.0*0.2 = 0.5
+        twofour_only3 = {"Kitchen": [{"client_mac": "CC", "client_name": "c", "observation_count": 1, "last_seen": "t"}]}
+        mobility_graph3 = {"CC": {"Kitchen", "Office"}}  # roamed → 1.0
+        overlap3 = {}                                     # island → 0.0
+        clients3 = [{"ap_name": "Kitchen", "channel": 6, "rssi": -85}]  # edge → 0.0
+
+        expected = (
+            rfs.COVERAGE_WEIGHT_ROAM_HISTORY * 1.0
+            + rfs.COVERAGE_WEIGHT_AP_OVERLAP * 0.0
+            + rfs.COVERAGE_WEIGHT_RSSI_MARGIN * 0.0
+        )
+        assert compute_coverage_score("Kitchen", twofour_only3, mobility_graph3, overlap3, clients3) == pytest.approx(expected)
+
+    # ── classify_confidence ───────────────────────────────────────────────────
+
+    def test_classify_confidence_boundaries(self) -> None:
+        """Boundary-exact score values map to the expected bucket."""
+        from unifi_mapper.analysis.rf_strategy import (
+            CONFIDENCE_GREEN_THRESHOLD,
+            CONFIDENCE_YELLOW_THRESHOLD,
+            Confidence,
+            classify_confidence,
+        )
+
+        # GREEN: score >= green threshold (0.7)
+        assert classify_confidence(CONFIDENCE_GREEN_THRESHOLD) == Confidence.GREEN
+        assert classify_confidence(1.0) == Confidence.GREEN
+
+        # YELLOW: yellow_threshold <= score < green_threshold
+        assert classify_confidence(CONFIDENCE_GREEN_THRESHOLD - 0.0001) == Confidence.YELLOW
+        assert classify_confidence(CONFIDENCE_YELLOW_THRESHOLD) == Confidence.YELLOW
+
+        # RED: score < yellow threshold (0.4)
+        assert classify_confidence(CONFIDENCE_YELLOW_THRESHOLD - 0.0001) == Confidence.RED
+        assert classify_confidence(0.0) == Confidence.RED
