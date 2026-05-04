@@ -2301,10 +2301,12 @@ def radio_auto_channel(
     # Analyze current state
     channel_state = asyncio.run(analyze_channels())
     aps = channel_state["aps"]
+    nb = channel_state.get("neighbour_scores", {})
 
     # Generate recommendations
-    rec_5 = optimize_5ghz(aps) if band in ("5ghz", "both") else []
-    rec_24 = optimize_24ghz(aps) if band in ("2.4ghz", "both") else []
+    rec_5 = optimize_5ghz(aps, neighbour_data=nb.get("5ghz")) if band in ("5ghz", "both") else []
+    rec_24 = optimize_24ghz(aps, neighbour_data=nb.get("24ghz")) if band in ("2.4ghz", "both") else []
+    console.print(f"📡 Neighbour data: {len(nb.get('5ghz', {}))} 5GHz channels, {len(nb.get('24ghz', {}))} 2.4GHz channels scored")
     report = generate_report(channel_state, rec_5, rec_24)
 
     # Display table

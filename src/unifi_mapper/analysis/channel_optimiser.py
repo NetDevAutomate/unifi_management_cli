@@ -5,6 +5,10 @@ for both 5GHz and 2.4GHz bands. Generates before/after reports in table and mark
 """
 
 from datetime import datetime
+from unifi_mapper.analysis.neighbour_scan import (
+    MAX_ROGUE_AGE_SECONDS,
+    compute_channel_neighbour_score,
+)
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
@@ -44,6 +48,14 @@ CHANNELS_5GHZ_ALL = [
 
 # 2.4GHz non-overlapping channels
 CHANNELS_24GHZ = [1, 6, 11]  # Standard non-overlapping set (use 13 if region allows)
+CHANNELS_24GHZ_ALL = [1, 6, 11, 13]  # Superset used for neighbour-score pre-compute
+                                     # so `optimize_24ghz` can dynamically pick 1/6/13 too
+NEIGHBOUR_PENALTY_CAP = 35  # Cap on neighbour penalty per channel.
+                            # Rationale: with RSSI_WEIGHT_STRONG=3.0, saturates at ~12
+                            # strong neighbours — prevents neighbour data from overwhelming
+                            # measured utilization (0-100) while still steering away from
+                            # crowded channels. Slightly above DFS penalty (15) so dense
+                            # neighbour congestion outweighs radar-channel avoidance.
 
 
 async def analyze_channels() -> dict:
@@ -59,6 +71,20 @@ async def analyze_channels() -> dict:
                 message=f'Failed to fetch devices: {e}',
                 error_code=ErrorCodes.API_ERROR,
             )
+        try:
+            rogue_entries = await client.get_rogue_aps()
+        except (ToolError, KeyError, TypeError):
+            # stat/rogueap may not be available on very old controllers or when
+            # no AP has performed a background scan yet. Fall back to empty data
+            # so channel optimisation still works using own-AP utilization alone.
+            rogue_entries = []
+
+    # Filter rogue entries: exclude own-network (is_ubnt) and stale
+    all_neighbours = [
+        e
+        for e in rogue_entries
+        if not e.get('is_ubnt', False) and e.get('age', 0) <= MAX_ROGUE_AGE_SECONDS
+    ]
 
     aps = []
     for d in devices:
@@ -96,10 +122,27 @@ async def analyze_channels() -> dict:
 
         aps.append(ap_info)
 
-    return {'timestamp': datetime.now().isoformat(), 'aps': aps}
+    # Build per-band neighbour scores for all candidate channels
+    neighbour_scores_5ghz = {
+        ch: compute_channel_neighbour_score(all_neighbours, ch, band='na')
+        for ch in CHANNELS_5GHZ_ALL
+    }
+    neighbour_scores_24ghz = {
+        ch: compute_channel_neighbour_score(all_neighbours, ch, band='ng')
+        for ch in CHANNELS_24GHZ_ALL
+    }
+
+    return {
+        'timestamp': datetime.now().isoformat(),
+        'aps': aps,
+        'neighbour_scores': {
+            '5ghz': neighbour_scores_5ghz,
+            '24ghz': neighbour_scores_24ghz,
+        },
+    }
 
 
-def optimize_5ghz(aps: list[dict]) -> list[dict]:
+def optimize_5ghz(aps: list[dict], neighbour_data: dict | None = None) -> list[dict]:
     """Calculate optimal 5GHz channel assignments weighted by measured utilization.
 
     Strategy: APs with highest utilization get first pick of the cleanest channels.
@@ -150,7 +193,13 @@ def optimize_5ghz(aps: list[dict]) -> list[dict]:
                 continue
             measured_util = channel_utilization.get(ch, 0)
             dfs_penalty = 15 if 52 <= ch <= 144 else 0
-            score = measured_util + dfs_penalty
+            neighbour_penalty = 0.0
+            if neighbour_data:
+                neighbour_penalty = min(
+                    neighbour_data.get(ch, 0.0),
+                    NEIGHBOUR_PENALTY_CAP,
+                )
+            score = measured_util + dfs_penalty + neighbour_penalty
 
             if score < best_score:
                 best_score = score
@@ -171,7 +220,7 @@ def optimize_5ghz(aps: list[dict]) -> list[dict]:
     return recommendations
 
 
-def optimize_24ghz(aps: list[dict]) -> list[dict]:
+def optimize_24ghz(aps: list[dict], neighbour_data: dict | None = None) -> list[dict]:
     """Calculate optimal 2.4GHz channel assignments weighted by utilization.
 
     Strategy: distribute APs across channels 1, 6, 11/13 using measured utilization.
@@ -231,7 +280,13 @@ def optimize_24ghz(aps: list[dict]) -> list[dict]:
         for ch in channels:
             if channel_count[ch] >= max_per_channel:
                 continue
-            score = avg_util[ch]
+            neighbour_penalty = 0.0
+            if neighbour_data:
+                neighbour_penalty = min(
+                    neighbour_data.get(ch, 0.0),
+                    NEIGHBOUR_PENALTY_CAP,
+                )
+            score = avg_util[ch] + neighbour_penalty
             if score < best_score:
                 best_score = score
                 best_ch = ch
@@ -364,8 +419,13 @@ async def optimize_radio_channels_mcp(band: str = 'both') -> dict:
     """
     state = await analyze_channels()
     aps = state['aps']
-    rec_5 = optimize_5ghz(aps) if band in ('5ghz', 'both') else []
-    rec_24 = optimize_24ghz(aps) if band in ('2.4ghz', 'both') else []
+    nb = state.get('neighbour_scores', {})
+    rec_5 = optimize_5ghz(aps, neighbour_data=nb.get('5ghz')) if band in ('5ghz', 'both') else []
+    rec_24 = (
+        optimize_24ghz(aps, neighbour_data=nb.get('24ghz'))
+        if band in ('2.4ghz', 'both')
+        else []
+    )
     return generate_report(state, rec_5, rec_24)
 
 
@@ -382,7 +442,8 @@ async def get_radio_channel_report_mcp() -> str:
     """
     state = await analyze_channels()
     aps = state['aps']
-    rec_5 = optimize_5ghz(aps)
-    rec_24 = optimize_24ghz(aps)
+    nb = state.get('neighbour_scores', {})
+    rec_5 = optimize_5ghz(aps, neighbour_data=nb.get('5ghz'))
+    rec_24 = optimize_24ghz(aps, neighbour_data=nb.get('24ghz'))
     report = generate_report(state, rec_5, rec_24)
     return format_report_markdown(report)
