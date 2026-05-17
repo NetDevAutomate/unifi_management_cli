@@ -836,6 +836,108 @@ def render_impact_preview(plan: RFStrategyPlan) -> str:
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class _PlanInputs:
+    """Bundle of inputs shared by :func:`generate_plan` and the simulator.
+
+    All fields are snapshot data — gathered once, used for deterministic
+    per-AP computation. Frozen to prevent accidental mutation while the
+    plan (or a simulation) iterates across APs.
+    """
+
+    hours_available: float
+    devices: list[dict[str, Any]]
+    current_clients: list[dict[str, Any]]
+    uaps: list[dict[str, Any]]
+    twofour_only: dict[str, list[dict[str, Any]]]
+    mobility_graph: dict[str, set[str]]
+    overlap_matrix: dict[tuple[str, str], int]
+    ap_mac_to_name: dict[str, str]
+
+
+async def _collect_inputs(
+    history_path: str,
+    min_history_hours: float,
+) -> _PlanInputs:
+    """Gather all shared data needed by the scorecard, one controller pass.
+
+    Performs the history gate first (raises :class:`ToolError` with
+    ``CONFIG_INVALID`` on shortfall — the same error code the spec calls
+    INSUFFICIENT_DATA; that enum member doesn't exist so we use the
+    closest semantic fit), then fetches devices/clients/rogue_aps and
+    computes the AP-to-AP overlap matrix.
+
+    Split from :func:`generate_plan` so :mod:`rf_simulator` can reuse the
+    same inputs without double-fetching.
+    """
+    # Local imports — the roaming_analysis module depends on our
+    # CHANNELS_24GHZ, so keep the dep function-scoped.
+    from unifi_mapper.analysis.neighbour_scan import (
+        compute_ap_to_ap_overlap,
+        get_our_ap_bssids,
+    )
+    from unifi_mapper.analysis.roaming_analysis import (
+        build_mobility_graph,
+        compute_twofour_only_clients,
+        history_hours_available,
+    )
+
+    hours_available = history_hours_available(history_path)
+    if hours_available < min_history_hours:
+        shortfall = min_history_hours - hours_available
+        raise ToolError(
+            message=(
+                f"Insufficient roaming history for recommendations: have "
+                f"{hours_available:.1f}h, need {min_history_hours:.1f}h "
+                f"(short by {shortfall:.1f}h)."
+            ),
+            error_code=ErrorCodes.CONFIG_INVALID,
+            suggestion=(
+                "Wait for more snapshots (baseline cadence: every 5 min) or "
+                "pass --min-history-hours to override for experimentation."
+            ),
+        )
+
+    twofour_only = compute_twofour_only_clients(history_path)
+    mobility_graph = build_mobility_graph(history_path)
+
+    async with UniFiClient() as client:
+        devices = await client.get_devices()
+        current_clients = await client.get_clients()
+        rogue_entries = await client.get_rogue_aps()
+        our_bssids = await get_our_ap_bssids(client)
+
+    uaps = [d for d in devices if d.get("type") == "uap"]
+
+    ap_mac_to_name: dict[str, str] = {}
+    for d in uaps:
+        mac = d.get("mac", "")
+        name = d.get("name", mac)
+        if mac:
+            ap_mac_to_name[mac] = name
+        for vap in d.get("vap_table", []) or []:
+            bssid = vap.get("bssid")
+            if bssid:
+                ap_mac_to_name[bssid.lower()] = name
+
+    overlap_matrix = compute_ap_to_ap_overlap(
+        rogue_entries=rogue_entries,
+        our_ap_bssids=our_bssids,
+        ap_mac_to_name=ap_mac_to_name,
+    )
+
+    return _PlanInputs(
+        hours_available=hours_available,
+        devices=devices,
+        current_clients=current_clients,
+        uaps=uaps,
+        twofour_only=twofour_only,
+        mobility_graph=mobility_graph,
+        overlap_matrix=overlap_matrix,
+        ap_mac_to_name=ap_mac_to_name,
+    )
+
+
 async def generate_plan(
     site: str = "default",
     history_path: str = "reports/client-roaming-history.json",
@@ -861,65 +963,13 @@ async def generate_plan(
         ToolError: with ``ErrorCodes.CONFIG_INVALID`` when history is
             insufficient. Message names the shortfall and suggests remedies.
     """
-    # Local imports — these modules import from this one indirectly (via
-    # roaming_analysis.CHANNELS_24GHZ), so we keep them function-scoped.
-    from unifi_mapper.analysis.neighbour_scan import (
-        compute_ap_to_ap_overlap,
-        get_our_ap_bssids,
-    )
-    from unifi_mapper.analysis.roaming_analysis import (
-        build_mobility_graph,
-        compute_twofour_only_clients,
-        history_hours_available,
-    )
-
-    # 1. History gate — refuse to emit recommendations below threshold.
-    hours_available = history_hours_available(history_path)
-    if hours_available < min_history_hours:
-        shortfall = min_history_hours - hours_available
-        raise ToolError(
-            message=(
-                f"Insufficient roaming history for recommendations: have "
-                f"{hours_available:.1f}h, need {min_history_hours:.1f}h "
-                f"(short by {shortfall:.1f}h)."
-            ),
-            error_code=ErrorCodes.CONFIG_INVALID,
-            suggestion=(
-                "Wait for more snapshots (baseline cadence: every 5 min) or "
-                "pass --min-history-hours to override for experimentation."
-            ),
-        )
-
-    # 2. Pure file-based inputs (no controller round-trips).
-    twofour_only = compute_twofour_only_clients(history_path)
-    mobility_graph = build_mobility_graph(history_path)
-
-    # 3. Controller state.
-    async with UniFiClient() as client:
-        devices = await client.get_devices()
-        current_clients = await client.get_clients()
-        rogue_entries = await client.get_rogue_aps()
-        our_bssids = await get_our_ap_bssids(client)
-
-    # 4. Build the AP name lookup — used both by the overlap computation
-    # (BSSID → AP name for pair labelling) and by the recommendation loop.
-    ap_mac_to_name: dict[str, str] = {}
-    uaps = [d for d in devices if d.get("type") == "uap"]
-    for d in uaps:
-        mac = d.get("mac", "")
-        name = d.get("name", mac)
-        if mac:
-            ap_mac_to_name[mac] = name
-        for vap in d.get("vap_table", []) or []:
-            bssid = vap.get("bssid")
-            if bssid:
-                ap_mac_to_name[bssid.lower()] = name
-
-    overlap_matrix = compute_ap_to_ap_overlap(
-        rogue_entries=rogue_entries,
-        our_ap_bssids=our_bssids,
-        ap_mac_to_name=ap_mac_to_name,
-    )
+    inputs = await _collect_inputs(history_path, min_history_hours)
+    hours_available = inputs.hours_available
+    current_clients = inputs.current_clients
+    uaps = inputs.uaps
+    twofour_only = inputs.twofour_only
+    mobility_graph = inputs.mobility_graph
+    overlap_matrix = inputs.overlap_matrix
 
     # 5. Per-AP recommendations. One 2.4 GHz recommendation drives the
     # summary counts; the 5 GHz rec is width/channel/power only (Mode.NONE
