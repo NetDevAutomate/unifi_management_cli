@@ -1451,6 +1451,144 @@ class UnifiApiClient:
             log.error(f"Error updating port name: {e}")
             return False
 
+    def update_port_names(self, device_id: str, port_updates: Dict[int, str]) -> bool:
+        """Update port names through the writable port_overrides device config.
+
+        port_table is controller/device state. UniFi accepts writes to it on some
+        endpoints, but those writes are not the durable switch-port config the UI
+        reads. Port names must be persisted in port_overrides.
+        """
+        try:
+            device_id = self._validate_device_id(device_id)
+            validated_updates = {
+                port_idx: self._validate_port_name(name)
+                for port_idx, name in port_updates.items()
+                if isinstance(port_idx, int)
+            }
+        except ValueError as e:
+            log.error(f"Invalid input for port names update: {e}")
+            return False
+
+        if not validated_updates:
+            return True
+
+        if not self.is_authenticated and not self.login():
+            log.error("Not authenticated, cannot update port names")
+            return False
+
+        device_details = self.get_device_details(self.site, device_id)
+        if not device_details:
+            log.error(f"Failed to get current device details for {device_id}")
+            return False
+
+        return self._update_port_overrides_from_names(
+            device_id=device_id,
+            device_details=device_details,
+            port_updates=validated_updates,
+        )
+
+    def _update_port_overrides_from_names(
+        self,
+        device_id: str,
+        device_details: Dict[str, Any],
+        port_updates: Dict[int, str],
+    ) -> bool:
+        """Persist port names by merging updates into existing port_overrides."""
+        try:
+            endpoint = (
+                f"{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}"
+                if self.is_unifi_os
+                else f"{self.base_url}/api/s/{self.site}/rest/device/{device_id}"
+            )
+            self.session.headers.update(self.legacy_headers)
+
+            valid_speeds = {
+                10,
+                100,
+                1000,
+                2500,
+                5000,
+                10000,
+                20000,
+                25000,
+                40000,
+                50000,
+                100000,
+            }
+            existing_overrides = device_details.get("port_overrides", [])
+            existing_map = {
+                override.get("port_idx"): override
+                for override in existing_overrides
+                if isinstance(override, dict) and "port_idx" in override
+            }
+
+            merged_overrides = []
+            updated_port_idxs = set(port_updates)
+
+            for port_idx, name in port_updates.items():
+                override = existing_map.get(port_idx, {"port_idx": port_idx}).copy()
+                override["name"] = name
+                if "speed" in override and override["speed"] not in valid_speeds:
+                    del override["speed"]
+                merged_overrides.append(override)
+
+            for port_idx, existing in existing_map.items():
+                if port_idx in updated_port_idxs:
+                    continue
+                cleaned = {
+                    key: value
+                    for key, value in existing.items()
+                    if key != "speed" or value in valid_speeds
+                }
+                merged_overrides.append(cleaned)
+
+            update_data = {
+                "_id": device_details.get("_id"),
+                "mac": device_details.get("mac"),
+                "port_overrides": merged_overrides,
+            }
+            for field in ["config_version", "cfgversion", "config_revision"]:
+                if field in device_details:
+                    update_data[field] = device_details[field]
+
+            log.info(
+                f"Updating {len(merged_overrides)} port overrides for device {device_id}"
+            )
+            log.debug(f"Port name updates requested: {port_updates}")
+
+            response = self._retry_request(
+                lambda: self.session.put(
+                    endpoint,
+                    json=update_data,
+                    timeout=self.timeout,
+                )
+            )
+
+            try:
+                response_json = response.json()
+                meta = response_json.get("meta", {})
+                rc = meta.get("rc")
+                if rc and rc != "ok":
+                    log.warning(
+                        f"UniFi API returned rc='{rc}' with message: '{meta.get('msg', '')}'"
+                    )
+                    return False
+            except Exception as json_err:
+                log.debug(f"Could not parse port override response as JSON: {json_err}")
+
+            if response.status_code == 200:
+                log.info(f"port_overrides update successful for device {device_id}")
+                return True
+
+            log.warning(
+                f"port_overrides update failed: {response.status_code} - "
+                f"{_sanitize_response_for_logging(response.text, 200)}"
+            )
+            return False
+        except Exception as e:
+            log.warning(f"Error in port_overrides name update: {e}")
+            return False
+
     def update_device_port_table(
         self, device_id: str, port_table: List[Dict[str, Any]]
     ) -> bool:

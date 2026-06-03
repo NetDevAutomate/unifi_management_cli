@@ -320,9 +320,10 @@ C4Component
 
     Container_Boundary(intelligence, "Shared Library - Intelligence Layer") {
 
-        Component(port_mapper_c, "port_mapper.py / PortMapper", "Python", "Port mapping with LLDP/CDP discovery. Builds port-to-device connection maps.")
+        Component(port_mapper_c, "port_mapper.py / UnifiPortMapper", "Python", "Desired-state port naming with LLDP/CDP and client discovery. Applies durable switch-port names through port_overrides.")
         Component(smart_port_mapper_c, "smart_port_mapper.py / SmartPortMapper", "Python", "Device-aware port mapping. Uses device capability profiles to interpret port data correctly per model.")
         Component(device_caps, "device_capabilities.py", "Python", "Model-specific capability detection. Determines port count, SFP slots, PoE capabilities, and uplink ports by hardware model.")
+        Component(naming_rules, "run_methods.py / _choose_port_name", "Python", "Port-name decision rules: LLDP name, client name, useful active current name, or Port x default for disconnected ports.")
         Component(topology_c, "enhanced_network_topology.py / NetworkTopology", "Python / graphviz", "Topology graph generation. Outputs: PNG, SVG, HTML interactive, Mermaid. Wraps graphviz for static formats.")
 
         Component(analysis_pkg, "analysis/ (30 registered MCP tools)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality, MAC table, MTU, QoS, radio, SFP, STP, traffic matrix, VLAN, and 10G readiness analysis.")
@@ -341,7 +342,8 @@ C4Component
     Rel(discovery_pkg, api_ref, "Queries device and client tables")
     Rel(connectivity_pkg, api_ref, "Queries firewall rules and routing")
     Rel(network_pkg, api_ref, "Reads and writes network config")
-    Rel(port_mapper_c, api_ref, "Queries ports and LLDP data")
+    Rel(port_mapper_c, api_ref, "Queries ports, clients, LLDP data. Writes port_overrides")
+    Rel(naming_rules, port_mapper_c, "Feeds desired port names")
     Rel(smart_port_mapper_c, port_mapper_c, "Extends")
     Rel(smart_port_mapper_c, device_caps, "Uses capability profiles")
     Rel(topology_c, port_mapper_c, "Consumes port map")
@@ -354,9 +356,10 @@ C4Component
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
 Container_Boundary(intelligence, "Shared Library - Intelligence Layer") {
-    Component(port_mapper_c, "PortMapper", "Python", "LLDP/CDP port mapping")
+    Component(port_mapper_c, "UnifiPortMapper", "Python", "Desired-state port naming through port_overrides")
     Component(smart_port_mapper_c, "SmartPortMapper", "Python", "Device-aware port mapping")
     Component(device_caps, "DeviceCapabilities", "Python", "Model-specific capability profiles")
+    Component(naming_rules, "run_methods.py / _choose_port_name", "Python", "LLDP, client, current, or Port x naming rules")
     Component(topology_c, "NetworkTopology", "Python / graphviz", "Topology graph: PNG, SVG, HTML, Mermaid")
     Component(analysis_pkg, "analysis/ (30 registered MCP tools)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality, MAC, MTU, QoS, radio, SFP, STP, traffic, VLAN, 10G readiness")
     Component(diagnostics_pkg, "diagnostics/ (4 modules)", "Python", "Health, performance, security, connectivity")
@@ -374,6 +377,8 @@ Rel(diagnostics_pkg, api_ref, "Queries")
 Rel(discovery_pkg, api_ref, "Queries")
 Rel(connectivity_pkg, api_ref, "Queries")
 Rel(network_pkg, api_ref, "Reads and writes")
+Rel(port_mapper_c, api_ref, "Writes port_overrides")
+Rel(naming_rules, port_mapper_c, "Feeds desired names")
 Rel(smart_port_mapper_c, device_caps, "Uses")
 Rel(topology_c, port_mapper_c, "Consumes")
 @enduml
@@ -1152,32 +1157,41 @@ C4Container
 
 ## Dynamic Runtime Flows
 
-### Port discovery and verified port naming
+### Port discovery and desired-state port naming
+
+The `discover` workflow now treats switch-port labels as desired state. For every router/switch port it chooses exactly one durable name:
+
+1. LLDP/CDP device name when the controller provides a useful non-MAC neighbour name.
+2. Active wired client name when LLDP only exposes a MAC address or no useful neighbour name.
+3. Existing current name only when the port is active and the discovered client label is weak.
+4. `Port x` when no device is connected, where `x` is the UniFi port index.
+
+Writes are sent to `port_overrides`, not `port_table`. `port_table` is controller/device state; `port_overrides` is the writable configuration the UniFi UI persists.
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor Admin as Network administrator
-    participant CLI as unifi-mapper
-    participant Config as UnifiConfig / env loader
-    participant Mapper as SmartPortMapper / PortMapper
-    participant API as UnifiApiClient
-    participant Verify as GroundTruthVerifier
-    participant Controller as UniFi Network Controller
+C4Dynamic
+    title Dynamic Diagram - Discover Desired-State Port Naming
 
-    Admin->>CLI: unifi-mapper --connected-devices --verify-updates
-    CLI->>Config: resolve config path and load credentials
-    CLI->>Mapper: run discovery workflow
-    Mapper->>API: get devices, clients, LLDP/CDP port data
-    API->>Controller: GET site devices and stats
-    Controller-->>API: device, port, and neighbor data
-    Mapper-->>CLI: proposed port names and topology
-    CLI->>API: apply selected port overrides
-    API->>Controller: PUT device port overrides
-    CLI->>Verify: verify applied names
-    Verify->>API: repeat cache-busted reads
-    API->>Controller: GET latest device config
-    Verify-->>CLI: consistent / stale / failed result
+    Person(admin, "Network administrator", "Runs discovery and expects switch-port labels to match connected devices")
+    Container(cli, "unifi-mapper discover", "Typer CLI", "Loads config and starts the discovery workflow")
+    Container_Boundary(shared_library, "unifi_mapper shared library") {
+        Component(run_methods, "run_methods.py", "Python", "Builds desired names for every router and switch port")
+        Component(naming, "_choose_port_name", "Python", "Chooses LLDP name, client name, active current name, or Port x")
+        Component(mapper, "UnifiPortMapper", "Python", "Batches per-device port name updates and provisions devices")
+        Component(api, "UnifiApiClient", "requests", "Reads controller state and writes durable port_overrides")
+    }
+    System_Ext(controller, "UniFi Network Controller", "Stores device state and switch-port configuration")
+    ContainerDb(report, "Reports and diagrams", "Markdown / Graphviz / Mermaid", "Generated topology artefacts")
+
+    Rel(admin, cli, "1. Runs command", "shell")
+    Rel(cli, run_methods, "2. Delegates discovery", "Python call")
+    Rel(run_methods, api, "3. Reads devices, port_table, clients, LLDP", "HTTPS REST")
+    Rel(api, controller, "4. GET /stat/device and /stat/sta", "HTTPS")
+    Rel(run_methods, naming, "5. Selects desired name per port", "Python call")
+    Rel(run_methods, mapper, "6. Sends per-device desired updates", "Python call")
+    Rel(mapper, api, "7. Persists merged port_overrides", "PUT /rest/device by id")
+    Rel(api, controller, "8. Writes port_overrides and force-provision", "HTTPS REST")
+    Rel(run_methods, report, "9. Emits report and topology diagram", "file output")
 ```
 
 ### Protect event to Home Assistant MQTT

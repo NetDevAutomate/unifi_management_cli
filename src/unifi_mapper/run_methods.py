@@ -1,12 +1,64 @@
 import json
 import logging
 import os
+from .api_client import _is_mac_address
 from .models import DeviceInfo, PortInfo
 from .network_topology import NetworkTopology
 from .report_generator import generate_port_mapping_report
 
 
 log = logging.getLogger(__name__)
+
+
+def _default_port_name(port_idx):
+    return f"Port {port_idx}"
+
+
+def _is_useful_lldp_name(name):
+    return bool(name and len(name.strip()) > 3 and not _is_mac_address(name.strip()))
+
+
+def _is_default_port_name(name, port_idx):
+    cleaned = (name or "").strip().lower()
+    return cleaned in {"", "port", f"port {port_idx}"}
+
+
+def _is_weak_client_label(name):
+    cleaned = (name or "").replace("-", "").replace(":", "").strip()
+    return bool(cleaned) and len(cleaned) <= 12 and all(
+        char in "0123456789abcdefABCDEF" for char in cleaned
+    )
+
+
+def _choose_port_name(
+    port_idx,
+    port_lldp,
+    client_port_mapping,
+    port_mapper,
+    current_name="",
+    port_up=False,
+):
+    """Choose the desired durable port name for one switch/router port."""
+    lldp_device_name = (
+        port_lldp.get("remote_device_name")
+        or port_lldp.get("system_name")
+        or port_lldp.get("chassis_name")
+        or ""
+    )
+    if _is_useful_lldp_name(lldp_device_name):
+        return lldp_device_name.strip(), "lldp"
+
+    if port_idx in client_port_mapping:
+        client_names = port_mapper.format_client_names(client_port_mapping[port_idx])
+        if client_names and not _is_weak_client_label(client_names):
+            return client_names, "client"
+        if client_names and _is_default_port_name(current_name, port_idx):
+            return client_names, "client"
+
+    if port_up and not _is_default_port_name(current_name, port_idx):
+        return current_name.strip(), "current"
+
+    return _default_port_name(port_idx), "default"
 
 
 def infer_connections_from_clients(api_client, site_id, devices):
@@ -445,9 +497,8 @@ def run_port_mapper(
             ports = api_client.get_device_ports(site_id, device_id)
             # Get LLDP/CDP information for this device
             lldp_info = api_client.get_lldp_info(site_id, device_id)
-            # Get client-to-port mapping if we want to show connected devices
-            if show_connected_devices:
-                client_port_mapping = port_mapper.get_client_port_mapping(device_mac)
+            # Always collect client-to-port mapping for naming non-UniFi endpoints.
+            client_port_mapping = port_mapper.get_client_port_mapping(device_mac)
 
         # Create a DeviceInfo object
         device_info = DeviceInfo(
@@ -491,13 +542,6 @@ def run_port_mapper(
                 or "trunk" in port_name.lower()
             )
 
-            # Get LLDP/CDP connected device name - try multiple fields
-            lldp_device_name = (
-                port_lldp.get("remote_device_name")
-                or port_lldp.get("system_name")
-                or port_lldp.get("chassis_name")
-            )
-
             # Debug logging for LLDP processing
             if port_lldp:
                 log.debug(
@@ -506,80 +550,30 @@ def run_port_mapper(
                     f"chassis_id='{port_lldp.get('chassis_id', '')}'"
                 )
 
-            # CRITICAL FIX: Don't trust API port names - they can be stale/cached
-            # Always attempt LLDP-based updates when LLDP data is available
-            # The API verification will determine if update is actually needed
-
-            # Check if LLDP name is a useful name (not just a MAC address)
-            lldp_name_is_valid = (
-                lldp_device_name
-                and not lldp_device_name.replace(":", "").replace("-", "").isalnum()  # Not a pure MAC
-                or (lldp_device_name and len(lldp_device_name) > 17)  # Longer than MAC format
-                or (lldp_device_name and not all(c in "0123456789abcdefABCDEF:-" for c in lldp_device_name))  # Contains non-MAC chars
+            enhanced_port_name, name_source = _choose_port_name(
+                port_idx,
+                port_lldp,
+                client_port_mapping,
+                port_mapper,
+                current_name=port_name,
+                port_up=port_up,
             )
 
-            # Process LLDP-based updates (don't check is_default_name - API can lie)
-            if lldp_device_name and lldp_name_is_valid and not is_uplink:
-                # Use LLDP/CDP device name (highest priority)
-                enhanced_port_name = lldp_device_name
-                port_updates[port_idx] = {"name": enhanced_port_name, "source": "lldp"}
-                if not dry_run:
-                    log.info(
-                        f"Will update port {port_idx} name to '{enhanced_port_name}' (from LLDP) on device {device_name}"
-                    )
-                else:
-                    log.info(
-                        f"[DRY RUN] Would update port {port_idx} name to '{enhanced_port_name}' (from LLDP) on device {device_name}"
-                    )
-            elif lldp_device_name and not lldp_name_is_valid:
-                log.debug(
-                    f"Port {port_idx}: LLDP name '{lldp_device_name}' appears to be a MAC address, skipping"
-                )
-                # Still try client names as fallback
-                if show_connected_devices and port_idx in client_port_mapping:
-                    clients = client_port_mapping[port_idx]
-                    client_names = port_mapper.format_client_names(clients)
-                    if client_names:
-                        enhanced_port_name = client_names
-                        port_updates[port_idx] = {"name": enhanced_port_name, "source": "client"}
-                        if not dry_run:
-                            log.info(
-                                f"Will update port {port_idx} name to '{enhanced_port_name}' (from clients, LLDP was MAC) on device {device_name}"
-                            )
-                        else:
-                            log.info(
-                                f"[DRY RUN] Would update port {port_idx} name to '{enhanced_port_name}' (from clients, LLDP was MAC) on device {device_name}"
-                            )
-                elif show_connected_devices and port_idx in client_port_mapping:
-                    # Fall back to client names if no LLDP info
-                    clients = client_port_mapping[port_idx]
-                    client_names = port_mapper.format_client_names(clients)
-                    if client_names:
-                        enhanced_port_name = client_names
-                        port_updates[port_idx] = {"name": enhanced_port_name, "source": "client"}
-                        if not dry_run:
-                            log.info(
-                                f"Will update port {port_idx} name to '{enhanced_port_name}' (from clients) on device {device_name}"
-                            )
-                        else:
-                            log.info(
-                                f"[DRY RUN] Would update port {port_idx} name to '{enhanced_port_name}' (from clients) on device {device_name}"
-                            )
-                else:
-                    log.debug(
-                        f"Port {port_idx}: No LLDP name and no client mapping available"
-                    )
-            elif is_uplink:
-                log.debug(
-                    f"Skipping port {port_idx} - appears to be uplink/trunk port: {port_name}"
-                )
-            elif not lldp_device_name:
-                log.debug(
-                    f"Skipping port {port_idx} - no LLDP device detected"
-                )
+            # Build a full desired-state update. This clears stale names from
+            # disconnected ports and keeps connected ports aligned with discovery.
+            port_updates[port_idx] = {"name": enhanced_port_name, "source": name_source}
+            log_message = (
+                f"port {port_idx} name to '{enhanced_port_name}' "
+                f"(from {name_source}) on device {device_name}"
+            )
+            if not dry_run:
+                log.info(f"Will set {log_message}")
             else:
+                log.info(f"[DRY RUN] Would set {log_message}")
+
+            if is_uplink and name_source == "default":
                 log.debug(
-                    f"Port {port_idx}: LLDP device '{lldp_device_name}' not considered valid name (appears to be MAC or too short)"
+                    f"Port {port_idx} was marked uplink/trunk but has no connected device name: {port_name}"
                 )
 
             # Create a PortInfo object
@@ -598,11 +592,11 @@ def run_port_mapper(
 
         # Apply batch port name updates if any
         if port_updates and not dry_run:
-            # Separate LLDP-based updates (always apply) from client-based updates (need verification)
-            lldp_updates = {
+            # Separate discovery-backed updates from default resets.
+            trusted_updates = {
                 idx: info["name"]
                 for idx, info in port_updates.items()
-                if info["source"] == "lldp"
+                if info["source"] in {"lldp", "default"}
             }
             client_updates = {
                 idx: info["name"]
@@ -610,11 +604,12 @@ def run_port_mapper(
                 if info["source"] == "client"
             }
 
-            # LLDP updates don't need verification - the device is connected if LLDP info exists
-            verified_updates = dict(lldp_updates)
-            if lldp_updates:
+            # LLDP updates are backed by neighbor discovery; default resets clear
+            # disconnected ports to the canonical Port x label.
+            verified_updates = dict(trusted_updates)
+            if trusted_updates:
                 log.info(
-                    f"Will apply {len(lldp_updates)} LLDP-based port name updates (no verification needed)"
+                    f"Will apply {len(trusted_updates)} LLDP/default port name updates"
                 )
 
             # Client-based updates need verification to ensure clients are still connected

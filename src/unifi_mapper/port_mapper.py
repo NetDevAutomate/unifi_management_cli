@@ -184,8 +184,20 @@ class UnifiPortMapper:
                             port_clients[port_idx] = []
 
                         # Extract client information
+                        device_name = ""
+                        mac_cache = getattr(self.api_client, "_mac_to_device_cache", {})
+                        client_mac = client.get("mac", "")
+                        for mac_format in (
+                            client_mac.lower(),
+                            client_mac.lower().replace(":", ""),
+                        ):
+                            if mac_format in mac_cache:
+                                device_name = mac_cache[mac_format]
+                                break
+
                         client_info = {
-                            "mac": client.get("mac", ""),
+                            "mac": client_mac,
+                            "device_name": device_name,
                             "name": client.get("name", ""),
                             "hostname": client.get("hostname", ""),
                             "ip": client.get("ip", ""),
@@ -227,8 +239,10 @@ class UnifiPortMapper:
 
         names = []
         for client in clients[:max_names]:
-            # Priority: custom name > hostname > vendor+model > MAC
-            name = client.get("name", "").strip()
+            # Priority: known UniFi device > custom name > hostname > vendor+model > MAC
+            name = client.get("device_name", "").strip()
+            if not name:
+                name = client.get("name", "").strip()
             if not name:
                 name = client.get("hostname", "").strip()
             if not name:
@@ -309,8 +323,9 @@ class UnifiPortMapper:
         device_mac = device_details.get("mac", "Unknown")
         log.info(f"Updating device: {device_name} ({device_model}) - MAC: {device_mac}")
 
-        # Find and update all ports in the port_table
+        # Check the current port table for logging and to reject impossible ports.
         port_table = device_details.get("port_table", [])
+        existing_port_idxs = {port.get("port_idx") for port in port_table}
         updated_count = 0
 
         for port in port_table:
@@ -326,18 +341,30 @@ class UnifiPortMapper:
             log.warning(f"No matching ports found for updates on device {device_id}")
             return False
 
-        # Enhanced debug logging - log the modified port_table before API call
-        log.debug("=== SENDING PORT TABLE UPDATE ===")
+        missing_ports = set(port_updates) - existing_port_idxs
+        if missing_ports:
+            log.warning(
+                f"Skipping unknown ports on device {device_id}: {sorted(missing_ports)}"
+            )
+
+        # Enhanced debug logging - log the requested durable config update.
+        log.debug("=== SENDING PORT OVERRIDES UPDATE ===")
         log.debug(f"Total ports in table: {len(port_table)}")
         log.debug(f"Ports modified: {updated_count}")
         for port in port_table:
             if port.get("port_idx") in port_updates:
                 log.debug(f"  Modified port: idx={port.get('port_idx')}, name='{port.get('name')}'")
 
-        # Send the updated port_table in a single API call
-        log.debug(f"Calling update_device_port_table for device {device_id}...")
-        update_success = self.api_client.update_device_port_table(device_id, port_table)
-        log.debug(f"update_device_port_table returned: {update_success}")
+        valid_updates = {
+            port_idx: name
+            for port_idx, name in port_updates.items()
+            if port_idx in existing_port_idxs
+        }
+
+        # Send writable port_overrides in a single API call. port_table is read-only state.
+        log.debug(f"Calling update_port_names for device {device_id}...")
+        update_success = self.api_client.update_port_names(device_id, valid_updates)
+        log.debug(f"update_port_names returned: {update_success}")
 
         if not update_success:
             log.error(f"Failed to update port table for device {device_id}")

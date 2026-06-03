@@ -1,7 +1,7 @@
 # UniFi Management CLI - Architecture Overview
 
-**Document version**: 1.1
-**Last updated**: 2026-05-03
+**Document version**: 1.2
+**Last updated**: 2026-06-03
 **Codebase root**: `src/unifi_mapper/`
 
 > **See also**: [C4 Architecture](c4-architecture.md) | [Codebase Map](codemap.md) | [Use Cases](../guides/use-cases-and-howto.md) | [Troubleshooting](../operations/troubleshooting-and-runbook.md)
@@ -33,7 +33,7 @@
 
 The UniFi Management CLI is an enterprise-grade Python automation platform for managing UniFi networks. It solves three distinct operational problems:
 
-- **Topology discovery and port naming**: LLDP-driven automatic port labelling with device-aware capability detection.
+- **Topology discovery and port naming**: LLDP/client-driven desired-state port labelling. Connected ports reflect discovered devices; disconnected ports are reset to `Port x`.
 - **Network diagnostics**: 40+ analysis and diagnostic tools covering IP conflicts, STP, VLANs, QoS, performance, security, DHCP pools, PoE budgets, client density, uplink redundancy, latency, radio configuration, roaming, and configuration drift.
 - **AI-assisted troubleshooting**: An MCP server exposing the full tool surface to Claude and other AI agents for natural-language network operations.
 
@@ -67,7 +67,7 @@ graph TB
 
     subgraph INT["Layer 2 - Intelligence"]
         SPM["smart_port_mapper.py\nDevice-Aware Port Naming"]
-        PM["port_mapper.py\nTopology Building"]
+        PM["port_mapper.py\nDesired-State Port Naming"]
         DC["device_capabilities.py\nCapability Database"]
         GTV["ground_truth_verification.py\nCache-Bust Verification"]
         NT["enhanced_network_topology.py\nDiagram Generation"]
@@ -286,9 +286,15 @@ graph TD
     GTV -->|"multi-read check"| API_CLIENT
 ```
 
-### smart_port_mapper.py
+### Port naming components
 
-`SmartPortMapper` is the orchestration class for LLDP-driven port naming. It:
+Port naming is split across `run_methods.py`, `port_mapper.py`, and `api_client.py`:
+
+- `run_methods._choose_port_name()` selects a desired name for every physical router/switch port: useful LLDP name, client name, useful active current name, or `Port x` for disconnected/default ports.
+- `UnifiPortMapper.batch_update_port_names()` batches per-device changes and triggers force-provisioning after a successful write.
+- `UnifiApiClient.update_port_names()` persists changes by merging names into `port_overrides`, the writable UniFi configuration field.
+
+`SmartPortMapper` remains the device-aware orchestration class for capability-sensitive LLDP-driven naming. It:
 
 1. Calls `DeviceCapabilityDetector` to determine whether a device supports port naming at all.
 2. Constructs port name proposals from LLDP data.
@@ -1040,10 +1046,12 @@ This keeps the AI's tool list short and avoids overwhelming the model with schem
 
 ```mermaid
 sequenceDiagram
-    participant CLI as cli.py / typer_cli.py
-    participant SPM as SmartPortMapper
-    participant DC as DeviceCapabilityDetector
+    participant CLI as typer_cli.py
+    participant Run as run_methods.py
+    participant Naming as _choose_port_name()
+    participant Mapper as UnifiPortMapper
     participant API as UnifiApiClient
+    participant Controller as UniFi Network Controller
     participant GTV as GroundTruthVerifier
 
     CLI->>API: login()
@@ -1052,44 +1060,45 @@ sequenceDiagram
     CLI->>API: get_devices(site)
     API-->>CLI: devices_data[]
 
-    CLI->>API: get_lldp_data(site)
-    API-->>CLI: lldp_data{}
+    CLI->>Run: run_port_mapper(...)
 
-    CLI->>SPM: smart_update_ports(devices, lldp, verify=True)
+    loop per router/switch
+        Run->>API: get_device_ports(site, device_id)
+        API->>Controller: GET /stat/device/{id}
+        Controller-->>API: port_table and port_overrides
+        API-->>Run: port_table[]
 
-    loop per device
-        SPM->>DC: detect_capabilities(model, firmware)
-        DC-->>SPM: DeviceCapability
+        Run->>API: get_lldp_info(site, device_id)
+        API->>Controller: GET LLDP/CDP data
+        Controller-->>API: neighbor data
+        API-->>Run: lldp_data{}
 
-        SPM->>DC: should_attempt_port_naming(model, firmware)
-        DC-->>SPM: (bool, reason)
+        Run->>Mapper: get_client_port_mapping(device_mac)
+        Mapper->>API: get_clients(site)
+        API-->>Mapper: active wired clients by switch port
 
-        alt device not supported
-            SPM-->>CLI: skip device, record reason
-        else device supported
-            SPM->>API: get_device_details(site, device_id)
-            API-->>SPM: port_table, port_overrides
+        loop per physical port
+            Run->>Naming: choose name from LLDP, clients, current state, or default
+            Naming-->>Run: desired name and source
+        end
 
-            SPM->>SPM: build port name proposals from lldp_data
+        Run->>Mapper: batch_update_port_names(device_id, desired names)
+        Mapper->>API: update_port_names(device_id, names)
+        API->>Controller: PUT /rest/device/{id} with merged port_overrides
+        API->>Controller: POST /cmd/devmgr force-provision
 
-            alt dry_run=False
-                SPM->>API: put_port_overrides(device_id, overrides)
-                API-->>SPM: 200 OK
-
-                alt verify_updates=True
-                    SPM->>GTV: verify_port_updates_ground_truth(updates)
-                    loop 5 reads with delay
-                        GTV->>API: get_device_details(device_id)
-                        Note over GTV,API: Cache-busting headers on each read
-                        API-->>GTV: device details
-                    end
-                    GTV-->>SPM: {consistent, matches_expected, read_values}
-                end
+        opt verify_updates=True
+            CLI->>GTV: verify_port_updates_ground_truth(updates)
+            loop 5 reads with delay
+                GTV->>API: get_device_details(device_id)
+                Note over GTV,API: Cache-busting headers on each read
+                API-->>GTV: device details
             end
+            GTV-->>CLI: {consistent, matches_expected, read_values}
         end
     end
 
-    SPM-->>CLI: summary {attempted, successful, skipped, failed}
+    Run-->>CLI: topology, report, diagram, update summary
 ```
 
 ### 13.2 API Authentication Flow
@@ -1376,7 +1385,7 @@ Key endpoints consumed:
 
 **Critical API behaviour note**: The UniFi API caches device state. Reads of `port_table` after a write to `port_overrides` may return stale data for an indeterminate period. The `GroundTruthVerifier` exists specifically to work around this behaviour.
 
-**Write field distinction**: `port_table` is read-only (populated by the controller firmware). The writable field is `port_overrides` — a sparse array containing only ports with non-default configuration. This is a documented but non-obvious behaviour that affects all port configuration writes.
+**Write field distinction**: `port_table` is read-only (populated by the controller firmware). The writable field is `port_overrides` — a sparse array containing ports with configuration overrides. Port naming writes must merge desired names into `port_overrides` while preserving existing per-port settings such as PoE mode and valid speed overrides.
 
 ### 15.2 UniFi Protect WebSocket API
 
