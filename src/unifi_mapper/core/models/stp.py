@@ -122,18 +122,7 @@ class SwitchSTPConfig(BaseModel):
     connected_to_gateway: bool = Field(
         default=False, description='Whether directly connected to gateway/router'
     )
-    capability: SwitchCapabilityClass = Field(
-        default=SwitchCapabilityClass.UNKNOWN,
-        description='Hardware capability class derived from the device model',
-    )
-    root_eligible: bool = Field(
-        default=False,
-        description='Whether this switch may act as the STP root bridge',
-    )
-    tier_reason: str = Field(
-        default='',
-        description='Human-readable explanation for assigned hierarchy tier',
-    )
+
 
 
 class STPConnection(BaseModel):

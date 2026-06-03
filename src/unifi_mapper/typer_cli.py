@@ -122,12 +122,14 @@ find_app = typer.Typer(help="🔍 Device and resource discovery")
 analyze_app = typer.Typer(help="📊 Network analysis and diagnostics")
 diagnose_app = typer.Typer(help="🏥 Network health and troubleshooting")
 stp_app = typer.Typer(help="🌳 STP topology analysis and optimization")
+radio_app = typer.Typer(help="📶 Wi-Fi radio configuration management")
 
 app.add_typer(find_app, name="find")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(diagnose_app, name="diagnose")
 app.add_typer(inventory_app, name="inventory")
 app.add_typer(stp_app, name="stp")
+app.add_typer(radio_app, name="radio")
 
 
 @app.command()
@@ -700,6 +702,130 @@ def analyze_traffic_matrix_cmd(
         raise typer.Exit(1)
 
 
+@diagnose_app.command("all")
+def diagnose_all():
+    """🏥 Run ALL diagnostics and print a pass/warn/fail summary table."""
+    import asyncio
+    from typing import Callable, Coroutine
+
+    config = state.config_path
+    debug = state.debug
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🏥 [bold]Comprehensive Diagnostics Runner[/bold]\n")
+
+    try:
+        load_env_from_config(str(config))
+
+        from .analysis.capacity_planning import get_capacity_report
+        from .analysis.client_density import analyze_client_density
+        from .analysis.dhcp_pool import check_dhcp_pool_utilization
+        from .analysis.firmware_advisor import get_firmware_report
+        from .analysis.link_quality import analyze_link_quality
+        from .analysis.mtu_audit import audit_mtu_consistency
+        from .analysis.poe_budget import check_poe_budget
+        from .analysis.port_profile_validation import validate_port_profiles
+        from .analysis.radio_optimization import analyze_radio_optimization
+        from .analysis.sfp_diagnostics import audit_sfp_diagnostics
+        from .analysis.uplink_redundancy import check_uplink_redundancy
+
+        # Each check: (name, async callable, result → status extractor)
+        checks: list[tuple[str, Callable[[], Coroutine]]] = [
+            ('Link Quality', analyze_link_quality),
+            ('Capacity Planning', get_capacity_report),
+            ('Port Profiles', validate_port_profiles),
+            ('MTU Consistency', audit_mtu_consistency),
+            ('SFP Diagnostics', audit_sfp_diagnostics),
+            ('Radio Optimization', analyze_radio_optimization),
+            ('Firmware Skew', get_firmware_report),
+            ('DHCP Pool', check_dhcp_pool_utilization),
+            ('PoE Budget', check_poe_budget),
+            ('Client Density', analyze_client_density),
+            ('Uplink Redundancy', check_uplink_redundancy),
+        ]
+
+        results: list[tuple[str, str]] = []
+
+        for name, coro_fn in checks:
+            console.print(f"  ▶ {name}...", end=' ')
+            try:
+                report = asyncio.run(coro_fn())
+                status = _extract_status(report)
+                results.append((name, status))
+                style = {'PASS': 'green', 'WARN': 'yellow', 'FAIL': 'red'}.get(status, 'white')
+                console.print(f"[{style}]{status}[/]")
+            except Exception as exc:
+                results.append((name, 'FAIL'))
+                console.print(f"[red]FAIL[/] ({exc})")
+
+        # Summary table
+        console.print()
+        table = Table(title="Diagnostics Summary", show_header=True)
+        table.add_column("Check", style="cyan")
+        table.add_column("Result", style="bold")
+        for name, status in results:
+            style = {'PASS': 'green', 'WARN': 'yellow', 'FAIL': 'red'}.get(status, 'white')
+            table.add_row(name, f'[{style}]{status}[/]')
+        console.print(table)
+
+        pass_count = sum(1 for _, s in results if s == 'PASS')
+        warn_count = sum(1 for _, s in results if s == 'WARN')
+        fail_count = sum(1 for _, s in results if s == 'FAIL')
+        console.print(
+            f"\n✅ {pass_count} passed  ⚠️ {warn_count} warnings  ❌ {fail_count} failed"
+        )
+
+        if fail_count > 0:
+            raise typer.Exit(2)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+def _extract_status(report: object) -> str:
+    """Extract pass/warn/fail from a report object by inspecting common fields."""
+    # Check explicit validation_passed field
+    if hasattr(report, 'validation_passed'):
+        if not report.validation_passed:  # type: ignore[union-attr]
+            return 'FAIL'
+
+    # Check for warnings list
+    warnings = getattr(report, 'warnings', None)
+    if isinstance(warnings, list) and warnings:
+        return 'WARN'
+
+    # Check overall_health field
+    health = getattr(report, 'overall_health', None)
+    if health == 'CRITICAL':
+        return 'FAIL'
+    if health == 'DEGRADED':
+        return 'WARN'
+
+    # Check network_healthy field
+    healthy = getattr(report, 'network_healthy', None)
+    if healthy is False:
+        return 'FAIL'
+
+    # Check findings_count
+    findings = getattr(report, 'findings_count', None)
+    if isinstance(findings, int) and findings > 0:
+        return 'WARN'
+
+    # Check recommendations list as a soft signal
+    recs = getattr(report, 'recommendations', None)
+    if isinstance(recs, list) and recs:
+        return 'WARN'
+
+    return 'PASS'
+
+
 @diagnose_app.command("health")
 def diagnose_health(
     detailed: bool = typer.Option(False, "--detailed", help="🔬 Include detailed device analysis")
@@ -707,6 +833,77 @@ def diagnose_health(
     """🏥 Overall network health check."""
     console.print("🏥 [bold]Network Health Check[/bold]")
     console.print("💡 Full implementation available via: [cyan]unifi-network-toolkit diagnose network-health[/cyan]")
+
+
+@diagnose_app.command("latency-matrix")
+def diagnose_latency_matrix(
+    ping_count: int = typer.Option(3, "--count", "-c", help="Pings per target"),
+    timeout: int = typer.Option(2, "--timeout", "-t", help="Ping timeout seconds"),
+    devices_only: bool = typer.Option(False, "--devices-only", help="Skip clients, only ping infrastructure"),
+):
+    """📡 SSH to gateway and ping all devices to build a latency matrix."""
+    import asyncio
+    from rich.table import Table
+    from unifi_mapper.analysis.latency_matrix import run_latency_matrix
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    load_env_from_config(str(state.config_path))
+    console.print("📡 [bold]Gateway Latency Matrix[/bold]\n")
+
+    try:
+        report = asyncio.run(
+            run_latency_matrix(
+                ping_count=ping_count,
+                timeout=timeout,
+                include_clients=not devices_only,
+            )
+        )
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    # Summary
+    console.print(f"Gateway: [cyan]{report.gateway_host}[/cyan]")
+    console.print(f"Targets: {report.targets_reachable}/{report.targets_total} reachable\n")
+
+    # Results table
+    table = Table(title="Latency Results")
+    table.add_column("Name", style="cyan")
+    table.add_column("IP", style="dim")
+    table.add_column("Type")
+    table.add_column("RTT avg", justify="right")
+    table.add_column("RTT max", justify="right")
+    table.add_column("Loss", justify="right")
+    table.add_column("Status")
+
+    # Sort: unreachable first, then by avg RTT descending
+    sorted_results = sorted(
+        report.results,
+        key=lambda r: (r.reachable, -(r.rtt_avg or 0)),
+    )
+
+    for r in sorted_results:
+        if r.reachable:
+            status = "[green]✅[/green]"
+            rtt_avg = f"{r.rtt_avg:.1f}ms" if r.rtt_avg else "—"
+            rtt_max = f"{r.rtt_max:.1f}ms" if r.rtt_max else "—"
+            loss = f"{r.packet_loss:.0f}%" if r.packet_loss > 0 else "0%"
+        else:
+            status = "[red]❌[/red]"
+            rtt_avg = "—"
+            rtt_max = "—"
+            loss = "[red]100%[/red]"
+
+        table.add_row(r.name, r.ip, r.target_type, rtt_avg, rtt_max, loss, status)
+
+    console.print(table)
+
+    if report.unreachable_devices:
+        console.print(f"\n[red]Unreachable ({len(report.unreachable_devices)}):[/red]")
+        for name in report.unreachable_devices:
+            console.print(f"  ❌ {name}")
 
 
 @diagnose_app.command("inter-vlan")
@@ -1938,3 +2135,741 @@ def _parse_csv_ints(value: str) -> list[int]:
 
 if __name__ == "__main__":
     app()
+
+
+# ─── Radio Configuration Commands ────────────────────────────────────────────
+
+
+@radio_app.command("snapshot")
+def radio_snapshot(
+    output: str = typer.Option("reports/radio-snapshot.json", "--output", "-o", help="Output file path"),
+):
+    """📸 Snapshot current radio config for all APs (backup before changes)."""
+    import asyncio
+    from unifi_mapper.analysis.radio_config import snapshot_radio_config
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("📸 [bold]Radio Configuration Snapshot[/bold]\n")
+
+    snapshot = asyncio.run(snapshot_radio_config(output_path=output))
+    console.print(f"APs captured: [cyan]{len(snapshot['aps'])}[/cyan]")
+    console.print(f"Saved to: [green]{output}[/green]")
+    console.print(f"\n💡 Use [cyan]unifi-mapper radio restore --snapshot {output}[/cyan] to revert changes")
+
+
+@radio_app.command("optimize")
+def radio_optimize(
+    dry_run: bool = typer.Option(True, "--dry-run/--apply", help="Preview changes without applying"),
+    snapshot: str = typer.Option("reports/radio-snapshot.json", "--snapshot", "-s", help="Auto-snapshot before apply"),
+):
+    """⚡ Apply recommended radio optimisations (80MHz 5GHz, reduce 2.4GHz power, min RSSI)."""
+    import asyncio
+    from rich.table import Table
+    from unifi_mapper.analysis.radio_config import (
+        apply_radio_config,
+        build_optimisation_plan,
+        snapshot_radio_config,
+    )
+    from unifi_mapper.core.utils.client import UniFiClient
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("⚡ [bold]Radio Optimisation[/bold]\n")
+
+    async def run():
+        async with UniFiClient() as client:
+            devices = await client.get_devices()
+        return devices
+
+    devices = asyncio.run(run())
+    changes = build_optimisation_plan(devices)
+
+    if not changes:
+        console.print("[green]No optimisations needed — config already optimal.[/green]")
+        return
+
+    # Show plan
+    table = Table(title="Optimisation Plan")
+    table.add_column("AP", style="cyan")
+    table.add_column("Radio")
+    table.add_column("Changes")
+
+    device_names = {d["_id"]: d.get("name", "Unknown") for d in devices if "_id" in d}
+    for c in changes:
+        name = device_names.get(c["device_id"], "Unknown")
+        radio = "5GHz" if c["radio"] == "na" else "2.4GHz"
+        change_desc = ", ".join(f"{k}={v}" for k, v in c.items() if k not in ("device_id", "radio"))
+        table.add_row(name, radio, change_desc)
+
+    console.print(table)
+
+    if dry_run:
+        console.print(f"\n[yellow]DRY RUN[/yellow] — {len(changes)} changes planned")
+        console.print("Run with [cyan]--apply[/cyan] to execute")
+        console.print(f"A snapshot will be saved to [cyan]{snapshot}[/cyan] before applying")
+        return
+
+    # Take snapshot before applying
+    console.print(f"\n📸 Saving snapshot to [cyan]{snapshot}[/cyan]...")
+    asyncio.run(snapshot_radio_config(output_path=snapshot))
+
+    # Apply
+    console.print("⚡ Applying changes...")
+    results = asyncio.run(apply_radio_config(changes, dry_run=False))
+
+    for r in results:
+        status = r["status"]
+        icon = "✅" if status == "APPLIED" else "❌"
+        console.print(f"  {icon} {r['name']} ({r['radio']}): {status}")
+
+    console.print(f"\n💡 To revert: [cyan]unifi-mapper radio restore --snapshot {snapshot}[/cyan]")
+
+
+@radio_app.command("restore")
+def radio_restore(
+    snapshot_path: str = typer.Option("reports/radio-snapshot.json", "--snapshot", "-s", help="Snapshot file to restore from"),
+    dry_run: bool = typer.Option(True, "--dry-run/--apply", help="Preview restore without applying"),
+):
+    """🔄 Restore radio config from a snapshot file."""
+    import asyncio
+    from unifi_mapper.analysis.radio_config import restore_radio_config
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🔄 [bold]Radio Configuration Restore[/bold]\n")
+    console.print(f"Snapshot: [cyan]{snapshot_path}[/cyan]\n")
+
+    results = asyncio.run(restore_radio_config(snapshot_path, dry_run=dry_run))
+
+    for r in results:
+        status = r["status"]
+        if "DRY_RUN" in status:
+            icon = "🔍"
+        elif "RESTORED" in status:
+            icon = "✅"
+        else:
+            icon = "❌"
+        console.print(f"  {icon} {r['name']}: {status}")
+
+    if dry_run:
+        console.print("\n[yellow]DRY RUN[/yellow] — run with [cyan]--apply[/cyan] to restore")
+
+
+# ─── Radio Channel Optimiser Commands ────────────────────────────────────────
+
+
+@radio_app.command("auto-channel")
+def radio_auto_channel(
+    band: str = typer.Option("both", "--band", "-b", help="Band to optimise: 5ghz, 2.4ghz, or both"),
+    dry_run: bool = typer.Option(True, "--dry-run/--apply", help="Preview changes without applying"),
+    report_file: Optional[str] = typer.Option(None, "--report", "-r", help="Write markdown report to file"),
+):
+    """📶 Auto-optimise channel assignments based on utilization data."""
+    import asyncio
+    from pathlib import Path
+    from rich.table import Table
+    from unifi_mapper.analysis.channel_optimiser import (
+        analyze_channels,
+        format_report_markdown,
+        generate_report,
+        optimize_5ghz,
+        optimize_24ghz,
+    )
+    from unifi_mapper.analysis.radio_config import apply_radio_config, snapshot_radio_config
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("📶 [bold]Auto-Channel Optimiser[/bold]\n")
+
+    # Analyze current state
+    channel_state = asyncio.run(analyze_channels())
+    aps = channel_state["aps"]
+    nb = channel_state.get("neighbour_scores", {})
+
+    # Generate recommendations
+    rec_5 = optimize_5ghz(aps, neighbour_data=nb.get("5ghz")) if band in ("5ghz", "both") else []
+    rec_24 = optimize_24ghz(aps, neighbour_data=nb.get("24ghz")) if band in ("2.4ghz", "both") else []
+    console.print(f"📡 Neighbour data: {len(nb.get('5ghz', {}))} 5GHz channels, {len(nb.get('24ghz', {}))} 2.4GHz channels scored")
+    report = generate_report(channel_state, rec_5, rec_24)
+
+    # Display table
+    if rec_5:
+        table5 = Table(title="5GHz Channel Plan")
+        table5.add_column("AP", style="cyan")
+        table5.add_column("Current")
+        table5.add_column("Recommended")
+        table5.add_column("Util", justify="right")
+        table5.add_column("Action")
+        for r in rec_5:
+            action = "[yellow]CHANGE[/yellow]" if r["change_needed"] else "[green]keep[/green]"
+            table5.add_row(r["name"], f"Ch {r['current_channel']}", f"Ch {r['recommended_channel']}",
+                           f"{r['current_utilization']}%", action)
+        console.print(table5)
+        console.print()
+
+    if rec_24:
+        table24 = Table(title="2.4GHz Channel Plan")
+        table24.add_column("AP", style="cyan")
+        table24.add_column("Current")
+        table24.add_column("Recommended")
+        table24.add_column("Util", justify="right")
+        table24.add_column("Action")
+        for r in rec_24:
+            action = "[yellow]CHANGE[/yellow]" if r["change_needed"] else "[green]keep[/green]"
+            table24.add_row(r["name"], f"Ch {r['current_channel']}", f"Ch {r['recommended_channel']}",
+                           f"{r['current_utilization']}%", action)
+        console.print(table24)
+
+    # Summary
+    changes_5 = [r for r in rec_5 if r["change_needed"]]
+    changes_24 = [r for r in rec_24 if r["change_needed"]]
+    total = len(changes_5) + len(changes_24)
+    console.print(f"\n{'⚡' if total else '✅'} {total} changes needed "
+                  f"(5GHz: {len(changes_5)}, 2.4GHz: {len(changes_24)})")
+
+    # Write markdown report
+    if report_file:
+        md = format_report_markdown(report)
+        Path(report_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(report_file).write_text(md)
+        console.print(f"📄 Report saved to [green]{report_file}[/green]")
+
+    if dry_run or total == 0:
+        if total and dry_run:
+            console.print("\n[yellow]DRY RUN[/yellow] — run with [cyan]--apply[/cyan] to execute")
+        return
+
+    # Snapshot before applying
+    console.print("\n📸 Saving snapshot...")
+    asyncio.run(snapshot_radio_config(output_path="reports/radio-pre-autochannel.json"))
+
+    # Build change list
+    changes = []
+    for r in changes_5:
+        changes.append({"device_id": r["device_id"], "radio": "na", "channel": r["recommended_channel"]})
+    for r in changes_24:
+        changes.append({"device_id": r["device_id"], "radio": "ng", "channel": r["recommended_channel"]})
+
+    # Apply
+    console.print("⚡ Applying channel changes...")
+    results = asyncio.run(apply_radio_config(changes, dry_run=False))
+    for r in results:
+        icon = "✅" if r["status"] == "APPLIED" else "❌"
+        console.print(f"  {icon} {r['name']} ({r['radio']}): {r['status']}")
+
+    console.print("\n💡 To revert: [cyan]unifi-mapper radio restore -s reports/radio-pre-autochannel.json --apply[/cyan]")
+
+
+@radio_app.command("report")
+def radio_report(
+    output: str = typer.Option("reports/channel-report.md", "--output", "-o", help="Output markdown file"),
+):
+    """📄 Generate a channel utilization report (table + markdown)."""
+    import asyncio
+    from pathlib import Path
+    from rich.table import Table
+    from unifi_mapper.analysis.channel_optimiser import (
+        analyze_channels,
+        format_report_markdown,
+        generate_report,
+        optimize_5ghz,
+        optimize_24ghz,
+    )
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("📄 [bold]Channel Report[/bold]\n")
+
+    channel_state = asyncio.run(analyze_channels())
+    aps = channel_state["aps"]
+    rec_5 = optimize_5ghz(aps)
+    rec_24 = optimize_24ghz(aps)
+    report = generate_report(channel_state, rec_5, rec_24)
+
+    # Display current state table
+    table = Table(title="Current Channel Utilization")
+    table.add_column("AP", style="cyan")
+    table.add_column("2.4GHz Ch")
+    table.add_column("2.4GHz Util", justify="right")
+    table.add_column("5GHz Ch")
+    table.add_column("5GHz Util", justify="right")
+    table.add_column("5GHz Width")
+
+    for ap in sorted(aps, key=lambda a: a["name"]):
+        r24 = ap["radios"].get("2.4GHz", {})
+        r5 = ap["radios"].get("5GHz", {})
+        table.add_row(
+            ap["name"],
+            str(r24.get("channel", "—")),
+            f"{r24.get('utilization', 0)}%",
+            str(r5.get("channel", "—")),
+            f"{r5.get('utilization', 0)}%",
+            f"{r5.get('ht', '?')}MHz",
+        )
+
+    console.print(table)
+
+    # Write markdown
+    md = format_report_markdown(report)
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    Path(output).write_text(md)
+    console.print(f"\n📄 Markdown report saved to [green]{output}[/green]")
+    console.print(f"   Changes needed: 5GHz={report['summary']['changes_5ghz']}, "
+                  f"2.4GHz={report['summary']['changes_24ghz']}")
+
+
+# ─── Link Error Tracking Commands ────────────────────────────────────────────
+
+
+@analyze_app.command("link-errors")
+def analyze_link_errors(
+    snapshot: bool = typer.Option(False, "--snapshot", help="Take a baseline snapshot"),
+    baseline: str = typer.Option("reports/link-error-baseline.json", "--baseline", "-b", help="Baseline file path"),
+    threshold: float = typer.Option(10.0, "--threshold", "-t", help="Error rate threshold (errors/min)"),
+):
+    """📈 Track link error rates between snapshots to detect active degradation."""
+    import asyncio
+    from rich.table import Table
+    from unifi_mapper.analysis.link_error_tracking import compare_link_errors, snapshot_link_errors
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    if snapshot:
+        console.print("📸 [bold]Link Error Baseline Snapshot[/bold]\n")
+        result = asyncio.run(snapshot_link_errors(baseline))
+        dev_count = len(result["devices"])
+        port_count = sum(len(d["ports"]) for d in result["devices"])
+        console.print(f"Captured: {dev_count} devices, {port_count} ports")
+        console.print(f"Saved to: [green]{baseline}[/green]")
+        console.print("\n💡 Run again without --snapshot to compare against this baseline")
+        return
+
+    console.print("📈 [bold]Link Error Rate Analysis[/bold]\n")
+    try:
+        report = asyncio.run(compare_link_errors(baseline, threshold))
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print(f"Baseline: {report['baseline_timestamp']}")
+    console.print(f"Elapsed: {report['elapsed_minutes']} minutes")
+    console.print(f"Ports with new errors: {report['ports_with_new_errors']}")
+    console.print(f"Ports flagged (>{threshold}/min): [{'red' if report['ports_flagged'] else 'green'}]{report['ports_flagged']}[/{'red' if report['ports_flagged'] else 'green'}]\n")
+
+    # Surface devices that rebooted between snapshots — their counter deltas
+    # are suppressed from flagging because the reset to 0 makes rates meaningless.
+    rebooted = report.get("rebooted_devices", [])
+    if rebooted:
+        reboot_names = ", ".join(d["name"] for d in rebooted)
+        console.print(
+            f"[yellow]⚠️  {len(rebooted)} device(s) rebooted since baseline: {reboot_names}[/yellow]"
+        )
+        console.print("[dim]   Their port deltas are shown but excluded from flagging (counters reset on boot).[/dim]\n")
+
+    if report["all_deltas"]:
+        table = Table(title="Error Rate Deltas (top 20)")
+        table.add_column("Device", style="cyan")
+        table.add_column("Port")
+        table.add_column("Errors Δ", justify="right")
+        table.add_column("Drops Δ", justify="right")
+        table.add_column("Rate/min", justify="right")
+        table.add_column("Status")
+
+        for d in report["all_deltas"]:
+            rate = d["rate_per_min"]
+            if d.get("reboot_detected"):
+                status = "[yellow]🔄 REBOOT[/yellow]"
+            elif rate > 100:
+                status = "[red]🚨 CRITICAL[/red]"
+            elif rate >= threshold:
+                status = "[yellow]⚠️ WARNING[/yellow]"
+            else:
+                status = "[green]OK[/green]"
+            table.add_row(
+                d["device"], d["port_name"],
+                str(d["rx_errors_delta"] + d["tx_errors_delta"]),
+                str(d["rx_dropped_delta"] + d["tx_dropped_delta"]),
+                f"{rate:.1f}", status,
+            )
+        console.print(table)
+    else:
+        console.print("[green]✅ No new errors since baseline[/green]")
+
+
+# ─── Client Roaming Commands ─────────────────────────────────────────────────
+
+
+@analyze_app.command("roaming")
+def analyze_roaming_cmd(
+    snapshot: bool = typer.Option(False, "--snapshot", help="Record current client associations"),
+    history: str = typer.Option("reports/client-roaming-history.json", "--history", "-h", help="History file path"),
+):
+    """📡 Analyze client roaming patterns and detect sticky clients."""
+    import asyncio
+    from rich.table import Table
+    from unifi_mapper.analysis.roaming_analysis import (
+        analyze_roaming,
+        snapshot_client_associations,
+    )
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    if snapshot:
+        console.print("📸 [bold]Client Association Snapshot[/bold]\n")
+        result = asyncio.run(snapshot_client_associations(history))
+        console.print(f"Clients tracked: {result['clients_tracked']}")
+        console.print(f"Snapshots stored: {result['snapshots_stored']}")
+        console.print(f"History: [green]{history}[/green]")
+        console.print("\n💡 Run periodically (every 5 min) to build roaming history")
+        return
+
+    console.print("📡 [bold]Client Roaming Analysis[/bold]\n")
+    try:
+        report = asyncio.run(analyze_roaming(history))
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print(f"Snapshots analyzed: {report['snapshots_analyzed']}")
+    console.print(f"Time span: {report['time_span']}")
+    console.print(f"Clients tracked: {report['clients_tracked']}")
+    console.print(f"Roaming clients: {report['roaming_clients']}")
+    console.print(f"Sticky clients: {report['sticky_clients']}\n")
+
+    if report["roamers"]:
+        table = Table(title="Roaming Clients")
+        table.add_column("Client", style="cyan")
+        table.add_column("Transitions", justify="right")
+        table.add_column("APs Used")
+        table.add_column("Avg RSSI", justify="right")
+
+        for r in report["roamers"][:15]:
+            table.add_row(r["client"], str(r["transitions"]), ", ".join(r["aps_used"]), str(r["avg_rssi"]))
+        console.print(table)
+
+    if report["sticky"]:
+        console.print()
+        table = Table(title="Sticky Clients (low RSSI, not roaming)")
+        table.add_column("Client", style="cyan")
+        table.add_column("Stuck On")
+        table.add_column("Avg RSSI", justify="right")
+        table.add_column("Min RSSI", justify="right")
+
+        for s in report["sticky"]:
+            table.add_row(s["client"], s["stuck_on"], str(s["avg_rssi"]), f"[red]{s['min_rssi']}[/red]")
+        console.print(table)
+
+
+# ─── Configuration Drift Commands ────────────────────────────────────────────
+
+
+@analyze_app.command("config-drift")
+def analyze_config_drift(
+    snapshot: bool = typer.Option(False, "--snapshot", help="Take a config baseline snapshot"),
+    baseline: str = typer.Option("reports/config-baseline.json", "--baseline", "-b", help="Baseline file path"),
+):
+    """🔍 Detect configuration drift from baseline (catches manual UI changes)."""
+    import asyncio
+    from rich.table import Table
+    from unifi_mapper.analysis.config_drift import detect_drift, snapshot_config
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    if snapshot:
+        console.print("📸 [bold]Configuration Baseline Snapshot[/bold]\n")
+        result = asyncio.run(snapshot_config(baseline))
+        console.print(f"Devices captured: {len(result['devices'])}")
+        console.print(f"Saved to: [green]{baseline}[/green]")
+        console.print("\n💡 Run without --snapshot to detect drift from this baseline")
+        return
+
+    console.print("🔍 [bold]Configuration Drift Detection[/bold]\n")
+    try:
+        report = asyncio.run(detect_drift(baseline))
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print(f"Baseline: {report['baseline_timestamp']}")
+    console.print(f"Devices checked: {report['devices_checked']}")
+    console.print(f"Drifts detected: [{'red' if report['drifts_detected'] else 'green'}]{report['drifts_detected']}[/{'red' if report['drifts_detected'] else 'green'}]\n")
+
+    if report["drifts"]:
+        table = Table(title="Configuration Drifts")
+        table.add_column("Device", style="cyan")
+        table.add_column("Field")
+        table.add_column("Type")
+        table.add_column("Details")
+
+        for drift in report["drifts"]:
+            dtype = drift["type"]
+            style = "[red]" if dtype == "REMOVED" else "[yellow]"
+            if dtype == "CHANGED":
+                details = "changed"
+            elif dtype == "REMOVED":
+                details = "field removed"
+            else:
+                details = drift.get("details", "")
+            table.add_row(drift["device"], drift.get("field", "—"), f"{style}{dtype}[/]", details)
+        console.print(table)
+    else:
+        console.print("[green]✅ No configuration drift detected[/green]")
+
+
+# ─── Neighbour AP Scan Commands ──────────────────────────────────────────────
+
+
+@analyze_app.command("neighbours")
+def analyze_neighbours(
+    ap_name: Optional[str] = typer.Option(None, "--ap", "-a", help="Specific AP to scan (default: all)"),
+    cached: bool = typer.Option(False, "--cached", help="DEPRECATED: no-op, data is always fresh"),
+    snapshot: bool = typer.Option(False, "--snapshot", help="Capture current neighbour landscape as a baseline"),
+    diff: bool = typer.Option(False, "--diff", help="Compare current landscape against the baseline snapshot"),
+    baseline: str = typer.Option("reports/neighbour-baseline.json", "--baseline", "-b", help="Baseline snapshot file path"),
+    signal_delta: int = typer.Option(10, "--signal-delta", help="dB change threshold for signal-change flagging"),
+):
+    """📡 Scan for neighbouring APs and external interference sources."""
+    import asyncio
+    from rich.table import Table
+    from unifi_mapper.analysis.neighbour_scan import scan_neighbours
+    from unifi_mapper.analysis.neighbour_trend import (
+        detect_neighbour_trend,
+        snapshot_neighbours,
+    )
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    if cached:
+        console.print("[yellow]⚠️  --cached is deprecated (neighbour data is now always fresh). Flag will be removed in a future release.[/yellow]")
+
+    # ── Snapshot mode ────────────────────────────────────────────────────
+    if snapshot:
+        console.print("📸 [bold]Neighbour Baseline Snapshot[/bold]\n")
+        result = asyncio.run(snapshot_neighbours(baseline))
+        console.print(f"Captured: {result['entry_count']} neighbour entries")
+        console.print(f"Saved to: [green]{baseline}[/green]")
+        console.print("\n💡 Run again with --diff to compare future scans against this baseline")
+        return
+
+    # ── Diff mode ────────────────────────────────────────────────────────
+    if diff:
+        console.print("📊 [bold]Neighbour Landscape Trend[/bold]\n")
+        try:
+            report = asyncio.run(detect_neighbour_trend(baseline, signal_delta))
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+        console.print(f"Baseline: {report['baseline_timestamp']}")
+        console.print(f"Current:  {report['current_timestamp']}\n")
+
+        summary = (
+            f"[green]New: {report['new_count']}[/green]   "
+            f"[red]Disappeared: {report['disappeared_count']}[/red]   "
+            f"[yellow]Channel-moved: {report['moved_count']}[/yellow]   "
+            f"[cyan]Signal-changed (≥{signal_delta} dB): {report['signal_changed_count']}[/cyan]"
+        )
+        console.print(summary + "\n")
+
+        # New neighbours
+        if report["new"]:
+            table = Table(show_header=True, title="🆕 New Neighbours")
+            table.add_column("SSID")
+            table.add_column("Channel", justify="right")
+            table.add_column("Signal (dBm)", justify="right")
+            table.add_column("Detecting AP (MAC)", style="dim")
+            table.add_column("BSSID", style="dim")
+            for n in report["new"][:15]:
+                sig = n.get("signal", -100)
+                style = "red" if sig > -50 else "yellow" if sig > -70 else "green"
+                table.add_row(
+                    n.get("essid") or "<hidden>",
+                    str(n.get("channel", "?")),
+                    f"[{style}]{sig}[/{style}]",
+                    n.get("ap_mac", ""), n.get("bssid", ""),
+                )
+            console.print(table)
+
+        # Disappeared neighbours
+        if report["disappeared"]:
+            table = Table(show_header=True, title="👋 Disappeared Neighbours")
+            table.add_column("SSID")
+            table.add_column("Channel", justify="right")
+            table.add_column("Signal (dBm)", justify="right")
+            table.add_column("BSSID", style="dim")
+            for n in report["disappeared"][:15]:
+                table.add_row(
+                    n.get("essid") or "<hidden>",
+                    str(n.get("channel", "?")),
+                    str(n.get("signal", -100)),
+                    n.get("bssid", ""),
+                )
+            console.print(table)
+
+        # Channel moves
+        if report["moved"]:
+            table = Table(show_header=True, title="🔀 Channel Moves")
+            table.add_column("SSID")
+            table.add_column("From", justify="right")
+            table.add_column("To", justify="right")
+            table.add_column("Signal (dBm)", justify="right")
+            table.add_column("BSSID", style="dim")
+            for m in report["moved"][:15]:
+                table.add_row(
+                    m.get("essid") or "<hidden>",
+                    str(m.get("from_channel", "?")),
+                    str(m.get("to_channel", "?")),
+                    str(m.get("signal", -100)),
+                    m.get("bssid", ""),
+                )
+            console.print(table)
+
+        # Signal changes
+        if report["signal_changes"]:
+            table = Table(show_header=True, title=f"📶 Signal Changes (≥{signal_delta} dB)")
+            table.add_column("SSID")
+            table.add_column("Channel", justify="right")
+            table.add_column("Before", justify="right")
+            table.add_column("After", justify="right")
+            table.add_column("Δ dB", justify="right")
+            table.add_column("BSSID", style="dim")
+            for s in report["signal_changes"][:15]:
+                delta = s.get("delta_db", 0)
+                style = "green" if delta > 0 else "red"
+                table.add_row(
+                    s.get("essid") or "<hidden>",
+                    str(s.get("channel", "?")),
+                    str(s.get("signal_before", -100)),
+                    str(s.get("signal_after", -100)),
+                    f"[{style}]{delta:+d}[/{style}]",
+                    s.get("bssid", ""),
+                )
+            console.print(table)
+
+        if (
+            report["new_count"] == 0
+            and report["disappeared_count"] == 0
+            and report["moved_count"] == 0
+            and report["signal_changed_count"] == 0
+        ):
+            console.print("[green]✅ No significant neighbour landscape changes since baseline[/green]")
+        return
+
+    # ── Default: live scan ───────────────────────────────────────────────
+    console.print("📡 [bold]Neighbour AP Scan[/bold]\n")
+
+    report = asyncio.run(scan_neighbours(ap_name=ap_name))
+
+    if not report["aps"]:
+        console.print("[yellow]No neighbour data available.[/yellow]")
+        return
+
+    for ap_entry in report["aps"]:
+        ap_display = ap_entry["ap_name"]
+        total = ap_entry["total_neighbours"]
+        console.print(f"\n[bold]{ap_display}[/bold] — {total} neighbours")
+
+        # Channel summary
+        ch_summary = ap_entry.get("channel_summary", {})
+        if ch_summary:
+            ch_str = ", ".join(f"ch{ch}:{count}" for ch, count in sorted(ch_summary.items()))
+            console.print(f"  Channels: {ch_str}")
+
+        # Strongest neighbours (by signal dBm)
+        strongest = ap_entry.get("strongest", [])
+        if strongest:
+            table = Table(show_header=True, title=f"Strongest Neighbours ({ap_display})")
+            table.add_column("SSID")
+            table.add_column("Channel", justify="right")
+            table.add_column("Signal (dBm)", justify="right")
+            table.add_column("BSSID", style="dim")
+
+            for n in strongest[:10]:
+                signal = n.get("signal", -100)
+                style = "red" if signal > -50 else "yellow" if signal > -70 else "green"
+                table.add_row(
+                    n.get("essid", "<hidden>") or "<hidden>",
+                    str(n.get("channel", "?")),
+                    f"[{style}]{signal}[/{style}]",
+                    n.get("bssid", ""),
+                )
+            console.print(table)
+
+
+# ─── Bandwidth Test Commands ─────────────────────────────────────────────────
+
+
+@diagnose_app.command("bandwidth")
+def diagnose_bandwidth(
+    target: str = typer.Argument(..., help="Target IP running iperf3 -s"),
+    duration: int = typer.Option(10, "--duration", "-d", help="Test duration in seconds"),
+    reverse: bool = typer.Option(False, "--reverse", "-R", help="Test download (target→UDM) instead of upload"),
+    bidirectional: bool = typer.Option(False, "--bidir", help="Test both directions"),
+    parallel: int = typer.Option(1, "--parallel", "-P", help="Number of parallel streams"),
+):
+    """⚡ Run iperf3 bandwidth test from UDM to a target device."""
+    import asyncio
+    from unifi_mapper.analysis.bandwidth_test import run_bandwidth_test
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("⚡ [bold]Bandwidth Test (iperf3 via SSH)[/bold]\n")
+    console.print(f"Target: [cyan]{target}[/cyan]")
+    console.print(f"Duration: {duration}s | Streams: {parallel}\n")
+
+    if bidirectional:
+        # Upload
+        console.print("▶ Upload (UDM → target)...")
+        up = asyncio.run(run_bandwidth_test(target, duration, reverse=False, parallel=parallel))
+        if up["status"] == "OK":
+            console.print(f"  [green]{up['throughput_mbps']} Mbps[/green] ({up['throughput_gbps']} Gbps)")
+            if "retransmits" in up:
+                console.print(f"  Retransmits: {up['retransmits']}")
+        else:
+            console.print(f"  [red]FAILED: {up.get('error', 'unknown')}[/red]")
+
+        # Download
+        console.print("\n▼ Download (target → UDM)...")
+        down = asyncio.run(run_bandwidth_test(target, duration, reverse=True, parallel=parallel))
+        if down["status"] == "OK":
+            console.print(f"  [green]{down['throughput_mbps']} Mbps[/green] ({down['throughput_gbps']} Gbps)")
+            if "retransmits" in down:
+                console.print(f"  Retransmits: {down['retransmits']}")
+        else:
+            console.print(f"  [red]FAILED: {down.get('error', 'unknown')}[/red]")
+    else:
+        direction = "download" if reverse else "upload"
+        console.print(f"{'▼' if reverse else '▶'} Testing {direction}...")
+        result = asyncio.run(run_bandwidth_test(target, duration, reverse=reverse, parallel=parallel))
+
+        if result["status"] == "OK":
+            console.print(f"\n  [green]{result['throughput_mbps']} Mbps[/green] ({result['throughput_gbps']} Gbps)")
+            console.print(f"  Direction: {result['direction']}")
+            if "retransmits" in result:
+                console.print(f"  Retransmits: {result['retransmits']}")
+            if "bytes_transferred" in result:
+                gb = result["bytes_transferred"] / 1_073_741_824
+                console.print(f"  Transferred: {gb:.2f} GB")
+        else:
+            console.print(f"\n  [red]FAILED: {result.get('error', 'unknown')}[/red]")

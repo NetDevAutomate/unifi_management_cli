@@ -386,6 +386,20 @@ class UniFiClient:
         path = self.build_path('stat/sta')
         return await self.get(path)
 
+    async def get_rogue_aps(self) -> list[dict[str, Any]]:
+        """Get all rogue/neighbouring APs detected by UniFi access points.
+
+        Returns data from the passive ``stat/rogueap`` endpoint which is
+        always-fresh (no scan trigger required).
+
+        Returns:
+            List of rogue AP dictionaries.  Expected fields per entry:
+            bssid, essid, channel, rssi, signal, noise, security,
+            band, bw, freq, ap_mac, age, last_seen, is_ubnt.
+        """
+        path = self.build_path('stat/rogueap')
+        return await self.get(path)
+
     async def get_networks(self) -> list[dict[str, Any]]:
         """Get all network configurations from the UniFi controller.
 

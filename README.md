@@ -9,7 +9,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **50+ MCP Tools**: Network health, performance, security diagnostics, STP safety, VLAN checks, SFP/radio analysis, and Protect inventory
+- **61 MCP Tools**: Network health, performance, security diagnostics, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
 - **MCP Server**: AI-assisted network troubleshooting via Model Context Protocol
 
@@ -47,6 +47,10 @@ UNIFI_CONSOLE_API_TOKEN=your_api_token   # Recommended authentication
 
 UNIFI_VERIFY_SSL=false                   # false for self-signed certificates
 UNIFI_TIMEOUT=10                         # API timeout in seconds
+
+# SSH access (for latency matrix and bandwidth tests)
+UNIFI_SSH_USERNAME=root                  # SSH user on UDM (default: root)
+UNIFI_SSH_PASSWORD=your_ssh_password     # SSH password for gateway
 ```
 
 ## Usage
@@ -113,6 +117,94 @@ unifi-mapper inventory list --filter switch --show-upgrade
 unifi-mapper inventory check-updates
 ```
 
+### Diagnostics
+
+```bash
+# Run all 11 diagnostic checks with pass/warn/fail summary
+unifi-mapper diagnose all
+
+# Gateway latency matrix — SSH to UDM, ping all device/client IPs
+unifi-mapper diagnose latency-matrix
+unifi-mapper diagnose latency-matrix --devices-only --count 5 --timeout 2
+
+# Bandwidth test via iperf3 (requires iperf3 -s on target)
+unifi-mapper diagnose bandwidth 192.0.2.50 --bidir --duration 10
+unifi-mapper diagnose bandwidth 192.0.2.50 --reverse --parallel 4
+```
+
+The `diagnose all` runner checks: link quality, capacity, port profiles, MTU, SFP, radio, firmware skew, DHCP pool, PoE budget, client density, and uplink redundancy.
+
+Latency matrix and bandwidth tests require `UNIFI_SSH_USERNAME` and `UNIFI_SSH_PASSWORD` in your config.
+
+### Radio Management
+
+```bash
+# Snapshot current radio configuration (auto-saved before any changes)
+unifi-mapper radio snapshot
+
+# Preview optimised radio settings
+unifi-mapper radio optimize
+
+# Apply optimised radio settings (auto-snapshots first)
+unifi-mapper radio optimize --apply
+
+# Restore previous radio configuration
+unifi-mapper radio restore --apply
+
+# Auto-channel optimiser — utilization-weighted channel assignment
+unifi-mapper radio auto-channel --band both --apply
+unifi-mapper radio auto-channel --band 5ghz --report radio-report.md
+
+# Generate radio optimisation report
+unifi-mapper radio report -o radio-report.md
+```
+
+The auto-channel optimiser scores 5 GHz channels by measured utilization + DFS penalty + neighbour-AP congestion (RSSI-weighted, CCA-aligned), and distributes 2.4 GHz across channels 1/6/13 accounting for both own-AP utilization and adjacent-channel neighbour interference.
+
+### Analysis Tools
+
+```bash
+# Link error rate tracking — baseline snapshot then delta comparison
+unifi-mapper analyze link-errors --snapshot
+unifi-mapper analyze link-errors --threshold 100
+
+# Client roaming analysis — identify sticky clients and frequent roamers
+unifi-mapper analyze roaming --snapshot
+unifi-mapper analyze roaming
+
+# Configuration drift detection — snapshot + diff against baseline
+unifi-mapper analyze config-drift --snapshot
+unifi-mapper analyze config-drift
+
+# Neighbour AP scan — passive detection via stat/rogueap (always-fresh)
+unifi-mapper analyze neighbours
+unifi-mapper analyze neighbours --ap "Living Room"
+
+# Neighbour trend tracking — baseline snapshot + diff over time
+unifi-mapper analyze neighbours --snapshot
+unifi-mapper analyze neighbours --diff
+unifi-mapper analyze neighbours --diff --signal-delta 15
+```
+
+### Scheduled Audits
+
+```bash
+# Install scheduled audit jobs (macOS launchd or Linux crontab)
+./scripts/unifi-cron.sh install
+
+# Check schedule status
+./scripts/unifi-cron.sh status
+
+# Run all audits immediately
+./scripts/unifi-cron.sh run-all
+
+# Update or remove schedules
+./scripts/unifi-cron.sh update
+./scripts/unifi-cron.sh uninstall
+```
+
+Schedules: link errors + roaming every 5 min, config drift + health + radio hourly, port naming every 30 min.
+
 ### MCP Server (AI-Assisted Troubleshooting)
 
 The MCP Server enables AI assistants like Claude to directly query and troubleshoot your UniFi network infrastructure using the Model Context Protocol.
@@ -151,7 +243,7 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-**Available Tools (50+ total):**
+**Available Tools (61 total):**
 
 | Category | Tools | Description |
 |----------|-------|-------------|
@@ -161,6 +253,7 @@ Add to your `claude_desktop_config.json`:
 | network | 6 | Firewall zones/policies, ACLs, DNS, clients, VLANs |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells |
 | analysis | 30 | Capacity, link quality, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, drift and change plans |
+| radio | 5 | Channel optimization, snapshots, apply/restore radio config |
 
 **Usage Example:**
 
@@ -198,7 +291,7 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (50+ tools via FastMCP)
+└── MCP Server (61 tools via FastMCP)
 
 Analysis Toolkit
 ├── Analysis Tools (30 tools)
@@ -253,6 +346,10 @@ UniFi Network Application 10.0.162+ resolves most device-level rejection issues.
 ### Analysis Tools
 - Capacity Planning: Port utilization forecasting
 - Link Quality: Interface error and drop analysis
+- Link Error Rate Tracking: Baseline snapshot and delta comparison for active degradation detection
+- Client Roaming Analysis: Periodic association snapshots to identify sticky clients and frequent roamers
+- Configuration Drift Detection: Full device config snapshot and diff against baseline
+- Neighbour AP Scan: Passive neighbour AP detection (always-fresh, no scan trigger needed)
 - MAC Address Analysis: MAC table inspection and conflict detection
 - VLAN Diagnostics: VLAN configuration validation
 - Storm Detection: Broadcast storm identification
@@ -273,6 +370,13 @@ UniFi Network Application 10.0.162+ resolves most device-level rejection issues.
 - Performance Analysis: Bottleneck identification
 - Connectivity Analysis: Connection troubleshooting
 - Security Audit: Security configuration review
+- Comprehensive Runner: 11-check `diagnose all` with pass/warn/fail summary
+- Gateway Latency Matrix: SSH-based ping sweep across all device and client IPs
+- Bandwidth Test: iperf3-based throughput measurement via SSH to gateway
+- DHCP Pool Analysis: Pool utilization and exhaustion detection
+- PoE Budget Analysis: Per-switch PoE consumption vs capacity
+- Client Density Analysis: AP client load distribution
+- Uplink Redundancy: Multi-path and failover validation
 
 ### Discovery Tools
 - Find Device: Search by name/IP/MAC

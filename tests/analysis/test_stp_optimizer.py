@@ -15,6 +15,7 @@ from unifi_mapper.analysis.stp_optimizer import (
     format_10g_validation_report_markdown,
     format_stp_report_markdown,
 )
+from unifi_mapper.core.models.capability import SwitchCapabilityClass
 from unifi_mapper.core.models.stp import (
     STP_PRIORITY_ACCESS_BASE,
     STP_PRIORITY_CORE,

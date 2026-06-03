@@ -19,6 +19,7 @@ dependencies = [
     "uiprotect>=7.0.0",  # UniFi Protect async API client
     "mcp>=1.0.0",  # Model Context Protocol SDK (includes FastMCP)
     "pyyaml>=6.0",  # YAML manifest parsing for MCP tools
+    "asyncssh>=2.22.0",
 ]
 license = { text = "MIT" }
 authors = [{ name = "ataylor" }]
@@ -77,6 +78,9 @@ force-exclude = true
 exclude = ["__init__.py"]
 select = ["C", "D", "E", "F", "I", "W"]
 ignore = ["C901", "E501", "E741", "F402", "F823", "D100", "D104", "D106"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2

@@ -603,3 +603,168 @@ class FirmwareSecurityReport(BaseModel):
 
     # Overall health
     network_healthy: bool = Field(default=True, description='True if no critical issues')
+
+
+# =============================================================================
+# DHCP Pool Utilization Models
+# =============================================================================
+
+
+class DHCPPoolStatus(BaseModel):
+    """DHCP pool utilization for a single network."""
+
+    network_id: str = Field(description='Network ID')
+    network_name: str = Field(description='Network name')
+    vlan_id: int | None = Field(default=None, description='VLAN ID')
+    pool_start: str = Field(description='DHCP pool start IP')
+    pool_stop: str = Field(description='DHCP pool end IP')
+    pool_size: int = Field(description='Total addresses in pool')
+    active_clients: int = Field(description='Clients currently using pool addresses')
+    utilization_percent: float = Field(description='Pool utilization %')
+    status: str = Field(description='OK, WARNING, or CRITICAL')
+
+
+class DHCPPoolReport(BaseModel):
+    """DHCP pool utilization report across all networks."""
+
+    timestamp: str = Field(description='When analysis was performed')
+    networks_analyzed: int = Field(description='Networks with DHCP enabled')
+    total_pool_size: int = Field(description='Total addresses across all pools')
+    total_active_clients: int = Field(description='Total clients using DHCP')
+    pools: list[DHCPPoolStatus] = Field(description='Per-network pool status')
+    warnings: list[str] = Field(default_factory=list, description='Warning messages')
+    recommendations: list[str] = Field(default_factory=list, description='Recommendations')
+
+
+# =============================================================================
+# PoE Budget Validation Models
+# =============================================================================
+
+
+class PoEPortDetail(BaseModel):
+    """PoE details for a single port."""
+
+    port_idx: int = Field(description='Port index')
+    port_name: str = Field(description='Port name')
+    poe_power: float = Field(description='Current power draw in watts')
+    poe_class: str | None = Field(default=None, description='PoE class')
+
+
+class PoEDeviceStatus(BaseModel):
+    """PoE budget status for a single device."""
+
+    device_id: str = Field(description='Device ID')
+    device_name: str = Field(description='Device name')
+    model: str = Field(description='Device model')
+    poe_budget: float = Field(description='Total PoE budget in watts')
+    poe_consumption: float = Field(description='Current PoE consumption in watts')
+    poe_available: float = Field(description='Available PoE power in watts')
+    utilization_percent: float = Field(description='PoE utilization %')
+    status: str = Field(description='OK, WARNING, or CRITICAL')
+    high_draw_ports: list[PoEPortDetail] = Field(
+        default_factory=list, description='Ports drawing significant power'
+    )
+
+
+class PoEBudgetReport(BaseModel):
+    """PoE budget validation report."""
+
+    timestamp: str = Field(description='When analysis was performed')
+    devices_analyzed: int = Field(description='PoE devices analyzed')
+    total_budget: float = Field(description='Total PoE budget across all devices')
+    total_consumption: float = Field(description='Total PoE consumption')
+    devices: list[PoEDeviceStatus] = Field(description='Per-device PoE status')
+    warnings: list[str] = Field(default_factory=list, description='Warning messages')
+    recommendations: list[str] = Field(default_factory=list, description='Recommendations')
+
+
+# =============================================================================
+# Client Density Analysis Models
+# =============================================================================
+
+
+class APClientDensity(BaseModel):
+    """Client density metrics for a single AP."""
+
+    device_id: str = Field(description='AP device ID')
+    device_name: str = Field(description='AP name')
+    model: str = Field(description='AP model')
+    client_count: int = Field(description='Number of wireless clients')
+    avg_signal_dbm: float | None = Field(default=None, description='Average signal strength dBm')
+    status: str = Field(description='OK, WARNING, or CRITICAL')
+
+
+class ClientDensityReport(BaseModel):
+    """Client density analysis report."""
+
+    timestamp: str = Field(description='When analysis was performed')
+    aps_analyzed: int = Field(description='Number of APs analyzed')
+    total_wireless_clients: int = Field(description='Total wireless clients')
+    access_points: list[APClientDensity] = Field(description='Per-AP density')
+    warnings: list[str] = Field(default_factory=list, description='Warning messages')
+    recommendations: list[str] = Field(default_factory=list, description='Recommendations')
+
+
+# =============================================================================
+# Uplink Redundancy Models
+# =============================================================================
+
+
+class UplinkInfo(BaseModel):
+    """Information about a single uplink port."""
+
+    port_idx: int = Field(description='Port index')
+    speed_mbps: int = Field(description='Uplink speed in Mbps')
+    is_up: bool = Field(description='Whether the uplink is up')
+
+
+class DeviceUplinkStatus(BaseModel):
+    """Uplink redundancy status for a single device."""
+
+    device_id: str = Field(description='Device ID')
+    device_name: str = Field(description='Device name')
+    model: str = Field(description='Device model')
+    uplinks: list[UplinkInfo] = Field(description='Uplink ports')
+    uplink_count: int = Field(description='Number of uplink ports')
+    redundant: bool = Field(description='Whether device has redundant uplinks')
+    total_uplink_speed_mbps: int = Field(description='Total uplink bandwidth')
+    status: str = Field(description='OK or WARNING')
+
+
+class UplinkRedundancyReport(BaseModel):
+    """Uplink redundancy check report."""
+
+    timestamp: str = Field(description='When analysis was performed')
+    devices_analyzed: int = Field(description='Devices analyzed')
+    single_uplink_devices: int = Field(description='Devices with single uplink')
+    redundant_devices: int = Field(description='Devices with redundant uplinks')
+    devices: list[DeviceUplinkStatus] = Field(description='Per-device uplink status')
+    warnings: list[str] = Field(default_factory=list, description='Warning messages')
+    recommendations: list[str] = Field(default_factory=list, description='Recommendations')
+
+
+class LatencyResult(BaseModel):
+    """Ping result for a single target."""
+
+    ip: str = Field(description='Target IP address')
+    name: str = Field(description='Target device/client name')
+    target_type: str = Field(description='device or client')
+    reachable: bool = Field(description='Whether target responded to ping')
+    rtt_min: float | None = Field(default=None, description='Minimum RTT in ms')
+    rtt_avg: float | None = Field(default=None, description='Average RTT in ms')
+    rtt_max: float | None = Field(default=None, description='Maximum RTT in ms')
+    rtt_mdev: float | None = Field(default=None, description='RTT std deviation in ms')
+    packet_loss: float = Field(default=100.0, description='Packet loss percentage')
+
+
+class LatencyMatrixReport(BaseModel):
+    """Gateway-centric latency matrix report."""
+
+    timestamp: str = Field(description='When analysis was performed')
+    gateway_host: str = Field(description='Gateway IP used as ping source')
+    targets_total: int = Field(description='Total targets pinged')
+    targets_reachable: int = Field(description='Targets that responded')
+    targets_unreachable: int = Field(description='Targets that did not respond')
+    ping_count: int = Field(description='Pings sent per target')
+    results: list[LatencyResult] = Field(description='Per-target results')
+    unreachable_devices: list[str] = Field(description='Names of unreachable targets')

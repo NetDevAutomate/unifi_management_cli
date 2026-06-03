@@ -181,17 +181,6 @@ async def discover_stp_topology(
                 connected_to_gateway = _is_connected_to_gateway(device, gateway_mac, mac_to_device)
                 capability = classify_model(dev_model)
 
-                capability = classify_model(dev_model)
-                force_access = resolved_overrides.is_force_access(dev_mac)
-                override_root = resolved_overrides.is_root_eligible_override(dev_mac)
-
-                if force_access:
-                    eligible = False
-                elif override_root and is_root_eligible(capability):
-                    eligible = True
-                else:
-                    eligible = is_root_eligible(capability)
-
                 switch_config = SwitchSTPConfig(
                     device_id=dev_id,
                     name=dev_name,
@@ -423,8 +412,6 @@ def _calculate_hierarchy_tiers(
     which promoted small access switches (e.g. USW-Lite) to Core and
     triggered incorrect priority 4096 recommendations.
     """
-    resolved = overrides or STPOverrides()
-
     adjacency: dict[str, set[str]] = {s.device_id: set() for s in switches}
     for switch in switches:
         for port in switch.port_states:
@@ -668,6 +655,7 @@ async def calculate_optimal_priorities(
                 optimal_priority = base_priority
             switch.optimal_priority = optimal_priority
 
+            guard_reason = ''
             if switch.current_priority != optimal_priority:
                 reason = (
                     f'{tier_name} switch should have priority {optimal_priority}{guard_reason}'

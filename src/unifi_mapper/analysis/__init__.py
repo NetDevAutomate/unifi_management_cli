@@ -25,6 +25,8 @@ STP Optimization Tools:
 """
 
 from unifi_mapper.analysis.capacity_planning import get_capacity_report
+from unifi_mapper.analysis.client_density import analyze_client_density
+from unifi_mapper.analysis.dhcp_pool import check_dhcp_pool_utilization
 from unifi_mapper.analysis.firmware_advisor import get_firmware_report
 from unifi_mapper.analysis.ip_conflicts import detect_ip_conflicts
 from unifi_mapper.analysis.lag_monitoring import find_lag_candidates, monitor_lags
@@ -47,6 +49,7 @@ from unifi_mapper.analysis.port_profile_validation import (
     validate_port_profiles,
     validate_port_profiles_from_data,
 )
+from unifi_mapper.analysis.poe_budget import check_poe_budget
 from unifi_mapper.analysis.qos_validation import validate_qos
 from unifi_mapper.analysis.radio_optimization import analyze_radio_optimization
 from unifi_mapper.analysis.sfp_diagnostics import audit_sfp_diagnostics
@@ -77,6 +80,7 @@ from unifi_mapper.analysis.traffic_matrix import (
     analyze_traffic_matrix,
     analyze_traffic_matrix_from_payloads,
 )
+from unifi_mapper.analysis.uplink_redundancy import check_uplink_redundancy
 from unifi_mapper.analysis.vlan_diagnostics import diagnose_vlans
 from unifi_mapper.analysis.vlan_coverage import (
     VLANCoverageFinding,
@@ -96,10 +100,14 @@ __all__ = [
     'audit_vlan_coverage',
     'audit_vlan_coverage_from_data',
     # P2 tools
+    'analyze_client_density',
     'analyze_link_quality',
     'analyze_radio_optimization',
     'audit_mtu_consistency',
     'audit_sfp_diagnostics',
+    'check_dhcp_pool_utilization',
+    'check_poe_budget',
+    'check_uplink_redundancy',
     'find_lag_candidates',
     'get_capacity_report',
     'monitor_lags',

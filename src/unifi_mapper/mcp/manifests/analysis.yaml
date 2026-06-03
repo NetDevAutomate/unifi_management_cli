@@ -225,3 +225,38 @@ tools:
     description: Compare live STP topology against desired intent mapping
     priority: P2
     tags: [stp, drift, intent, gitops, validation]
+
+  optimize_radio_channels:
+    module: unifi_mapper.analysis.channel_optimiser
+    handler: optimize_radio_channels_mcp
+    description: Auto-optimise Wi-Fi channel assignments based on utilization data. Returns recommendations for both 5GHz and 2.4GHz bands with before/after comparison.
+    priority: P2
+    tags: [wifi, radio, channel, optimization, auto-channel]
+
+  get_radio_channel_report:
+    module: unifi_mapper.analysis.channel_optimiser
+    handler: get_radio_channel_report_mcp
+    description: Generate a channel utilization report showing current state and recommended changes for all APs.
+    priority: P2
+    tags: [wifi, radio, channel, report, utilization]
+
+  snapshot_radio_config:
+    module: unifi_mapper.analysis.radio_config
+    handler: snapshot_radio_config_mcp
+    description: Snapshot current radio configuration for all APs. Use before making changes to enable rollback.
+    priority: P2
+    tags: [wifi, radio, backup, snapshot, configuration]
+
+  apply_radio_optimization:
+    module: unifi_mapper.analysis.radio_config
+    handler: apply_radio_optimization_mcp
+    description: Apply recommended radio optimisations (80MHz 5GHz, reduced 2.4GHz power, min RSSI). Auto-snapshots before applying.
+    priority: P2
+    tags: [wifi, radio, optimization, apply, configuration]
+
+  restore_radio_config:
+    module: unifi_mapper.analysis.radio_config
+    handler: restore_radio_config_mcp
+    description: Restore radio configuration from a previously saved snapshot file.
+    priority: P2
+    tags: [wifi, radio, restore, rollback, configuration]
