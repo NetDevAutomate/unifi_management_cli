@@ -653,6 +653,157 @@ def analyze_vlan_coverage(
         raise typer.Exit(1)
 
 
+@analyze_app.command("uplink-transparency")
+def analyze_uplink_transparency(
+    mgmt_vlan: int = typer.Option(
+        None,
+        "--mgmt-vlan",
+        help="Management VLAN ID (inferred from device IPs when omitted)",
+    ),
+    stale_after: int = typer.Option(
+        1800,
+        "--stale-after",
+        help="Seconds after which a non-informing device's port data is treated as unverifiable",
+    ),
+):
+    """🚧 Check that each switch's elected uplink can actually carry tagged VLANs."""
+    import asyncio
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🚧 [bold]Uplink VLAN Transparency Audit[/bold]")
+
+    try:
+        load_env_from_config(str(state.config_path))
+        from .analysis.uplink_transparency import audit_uplink_transparency
+
+        report = asyncio.run(
+            audit_uplink_transparency(mgmt_vlan=mgmt_vlan, stale_after_seconds=stale_after)
+        )
+        console.print(f"Devices analyzed: [cyan]{report.devices_analyzed}[/cyan]")
+        console.print(f"Uplinks analyzed: [cyan]{report.uplinks_analyzed}[/cyan]")
+        console.print(
+            f"Tagged VLANs: [cyan]{', '.join(str(v) for v in report.tagged_vlans) or 'none'}[/cyan]"
+        )
+        console.print(f"Management VLAN: [cyan]{report.management_vlan or 'unknown'}[/cyan]")
+        console.print(f"Findings: [yellow]{report.findings_count}[/yellow]")
+
+        if report.findings:
+            table = Table(title="Uplink VLAN Transparency Findings", show_header=True)
+            table.add_column("Severity", style="bold")
+            table.add_column("Device", style="cyan")
+            table.add_column("Uplink", style="yellow")
+            table.add_column("Profile")
+            table.add_column("Severed VLANs", style="red")
+            table.add_column("Fresh")
+            for finding in report.findings:
+                if not finding.topology_verifiable:
+                    freshness = 'UNVERIFIABLE'
+                elif finding.device_informing:
+                    freshness = 'yes'
+                else:
+                    freshness = 'STALE'
+                table.add_row(
+                    finding.severity,
+                    finding.device,
+                    f'p{finding.uplink_port}',
+                    finding.profile_name or '—',
+                    ', '.join(str(vlan) for vlan in finding.severed_vlans) or '—',
+                    freshness,
+                )
+            console.print(table)
+            for finding in report.findings:
+                console.print(f"\n[bold]{finding.device} p{finding.uplink_port}[/bold]: {finding.message}")
+                console.print(f"  → {finding.recommendation}")
+        else:
+            console.print("✅ Every elected uplink carries the site's tagged VLANs.")
+
+        if not report.validation_passed:
+            raise typer.Exit(2)
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if state.debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
+@analyze_app.command("power-budget")
+def analyze_power_budget(
+    warn_pct: float = typer.Option(
+        80.0, "--warn-pct", help="Flag devices whose estimated load exceeds this % of supply ceiling"
+    ),
+    base_watts: float = typer.Option(
+        None, "--base-watts",
+        help="Override assumed base draw in watts (default: per-model published estimate)"
+    ),
+):
+    """🔌 Audit switch INPUT power headroom (distinct from PoE output budget)."""
+    import asyncio
+
+    if not state.debug:
+        setup_logging(debug=False)
+
+    console.print("🔌 [bold]Device Input Power Budget Audit[/bold]")
+
+    try:
+        load_env_from_config(str(state.config_path))
+        from .analysis.power_budget import audit_power_budget
+
+        report = asyncio.run(audit_power_budget(warn_pct=warn_pct, base_watts=base_watts))
+        console.print(f"Switches analyzed: [cyan]{report.devices_analyzed}[/cyan]")
+        if report.skipped_not_informing:
+            console.print(f"Skipped (not informing): [yellow]{report.skipped_not_informing}[/yellow]")
+        if report.unknown_models:
+            console.print(
+                f"Models without published power data: [dim]{', '.join(report.unknown_models)}[/dim]"
+            )
+        if report.models_without_supply_rating:
+            console.print(
+                "Models with no published SUPPLY rating (not judged): "
+                f"[dim]{', '.join(report.models_without_supply_rating)}[/dim]"
+            )
+        console.print(f"Findings: [yellow]{report.findings_count}[/yellow]")
+
+        if report.findings:
+            table = Table(title="Input Power Budget Findings", show_header=True)
+            table.add_column("Severity", style="bold")
+            table.add_column("Device", style="cyan")
+            table.add_column("Model")
+            table.add_column("Ports", style="yellow")
+            table.add_column("Est. load")
+            table.add_column("Ceiling")
+            table.add_column("% used", style="red")
+            for f in report.findings:
+                table.add_row(
+                    f.severity, f.device, f.model, str(f.active_ports),
+                    f"{f.estimated_load_watts:.1f}W",
+                    f"{f.dc_supply_watts:.1f}W" if f.dc_supply_watts else "—",
+                    f"{f.dc_utilisation_pct:.0f}%" if f.dc_utilisation_pct else "—",
+                )
+            console.print(table)
+            for f in report.findings:
+                console.print(f"\n[bold]{f.device}[/bold]: {f.message}")
+                console.print(f"  → {f.recommendation}")
+                console.print(f"  [dim]spec: {f.spec_source}[/dim]")
+                console.print(f"  [dim]ports: {', '.join(f.port_detail)}[/dim]")
+        else:
+            console.print("✅ No switch is near its published input power ceiling.")
+
+        console.print(f"\n[dim]{report.estimate_caveat}[/dim]")
+        if not report.validation_passed:
+            raise typer.Exit(2)
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"❌ [bold red]Error: {e}[/bold red]")
+        if state.debug:
+            console.print_exception(show_locals=True)
+        raise typer.Exit(1)
+
+
 @analyze_app.command("traffic-matrix")
 def analyze_traffic_matrix_cmd(
     top: int = typer.Option(10, "--top", help="Number of flows/talkers to show", min=1),
@@ -721,15 +872,19 @@ def diagnose_all():
 
         from .analysis.capacity_planning import get_capacity_report
         from .analysis.client_density import analyze_client_density
+        from .analysis.device_freshness import summarise_freshness
         from .analysis.dhcp_pool import check_dhcp_pool_utilization
         from .analysis.firmware_advisor import get_firmware_report
+        from .analysis.foreign_bridges import detect_foreign_bridges
         from .analysis.link_quality import analyze_link_quality
         from .analysis.mtu_audit import audit_mtu_consistency
         from .analysis.poe_budget import check_poe_budget
         from .analysis.port_profile_validation import validate_port_profiles
+        from .analysis.power_budget import audit_power_budget
         from .analysis.radio_optimization import analyze_radio_optimization
         from .analysis.sfp_diagnostics import audit_sfp_diagnostics
         from .analysis.uplink_redundancy import check_uplink_redundancy
+        from .analysis.uplink_transparency import audit_uplink_transparency
 
         # Each check: (name, async callable, result → status extractor)
         checks: list[tuple[str, Callable[[], Coroutine]]] = [
@@ -744,6 +899,10 @@ def diagnose_all():
             ('PoE Budget', check_poe_budget),
             ('Client Density', analyze_client_density),
             ('Uplink Redundancy', check_uplink_redundancy),
+            ('Uplink VLAN Transparency', audit_uplink_transparency),
+            ('Device Power Budget', audit_power_budget),
+            ('Foreign Bridges', detect_foreign_bridges),
+            ('Telemetry Freshness', summarise_freshness),
         ]
 
         results: list[tuple[str, str]] = []

@@ -79,6 +79,59 @@ tools:
     priority: P2
     tags: [vlan, trunk, uplink, flex-xg, validation]
 
+  detect_foreign_bridges:
+    module: unifi_mapper.analysis.foreign_bridges
+    handler: detect_foreign_bridges
+    description: >-
+      Detect wired third-party (foreign) bridges inside the UniFi L2 domain - consumer mesh
+      units and unmanaged switches that forward frames but do not participate in RSTP.
+      Flags CRITICAL when one bridge touches two switch ports (an L2 loop spanning tree
+      cannot break) or sits on a trunk profile (exports every VLAN to its fabric).
+    priority: P1
+    tags: [loop, l2, third-party, bridge, mesh, eero, rstp, bpdu, trunk, storm]
+
+  summarise_freshness:
+    module: unifi_mapper.analysis.device_freshness
+    handler: summarise_freshness
+    description: >-
+      Classify whether each device's reported telemetry is live or a stale snapshot, using
+      state plus last_seen age. The controller returns complete plausible port tables for
+      devices that stopped informing hours ago; call this before trusting any port state.
+    priority: P1
+    tags: [freshness, stale, telemetry, last-seen, snapshot, diagnosis-hygiene]
+
+  check_device_freshness:
+    module: unifi_mapper.analysis.device_freshness
+    handler: check_device_freshness
+    description: >-
+      Authoritative two-sample freshness check - verifies last_seen, uptime and cumulative
+      counters actually advance, using healthy peers as the control. SLOW: sleeps ~200s
+      between samples because devices only inform every 75-90s. Distinguishes reboots
+      (uptime reset) from staleness, and reports inconclusive if no peer advanced.
+    priority: P2
+    tags: [freshness, stale, telemetry, two-sample, counters, reboot-detection]
+
+  audit_power_budget:
+    module: unifi_mapper.analysis.power_budget
+    handler: audit_power_budget
+    description: >-
+      Audit switch INPUT power headroom - whether a switch's own power source (DC adapter or
+      PoE-in) can run its active PHYs. Distinct from PoE output budget. Catches the failure
+      where a compact multi-gig switch on an undersized adapter reboots as more ports go
+      active. Only reports against published vendor figures; unlisted models yield no ceiling.
+    priority: P1
+    tags: [power, psu, poe-input, watts, reboot-loop, brownout, phy, capacity]
+
+  audit_uplink_transparency:
+    module: unifi_mapper.analysis.uplink_transparency
+    handler: audit_uplink_transparency
+    description: >-
+      Detect switches whose elected uplink port cannot carry tagged VLANs (for example a
+      switch that re-homed onto an access port with tagged_vlan_mgmt=block_all), which
+      silently severs every tagged VLAN behind it while untagged traffic keeps working
+    priority: P1
+    tags: [vlan, uplink, trunk, access-port, management-vlan, loop, third-party-bridge]
+
   analyze_traffic_matrix:
     module: unifi_mapper.analysis.traffic_matrix
     handler: analyze_traffic_matrix

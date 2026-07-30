@@ -80,7 +80,33 @@ from unifi_mapper.analysis.traffic_matrix import (
     analyze_traffic_matrix,
     analyze_traffic_matrix_from_payloads,
 )
+from unifi_mapper.analysis.device_freshness import (
+    FreshnessReport,
+    FreshnessSummary,
+    check_device_freshness,
+    check_device_freshness_from_samples,
+    summarise_freshness,
+    summarise_freshness_from_data,
+)
+from unifi_mapper.analysis.foreign_bridges import (
+    ForeignBridge,
+    ForeignBridgeReport,
+    detect_foreign_bridges,
+    detect_foreign_bridges_from_data,
+)
+from unifi_mapper.analysis.power_budget import (
+    PowerBudgetFinding,
+    PowerBudgetReport,
+    audit_power_budget,
+    audit_power_budget_from_data,
+)
 from unifi_mapper.analysis.uplink_redundancy import check_uplink_redundancy
+from unifi_mapper.analysis.uplink_transparency import (
+    UplinkTransparencyFinding,
+    UplinkTransparencyReport,
+    audit_uplink_transparency,
+    audit_uplink_transparency_from_data,
+)
 from unifi_mapper.analysis.vlan_diagnostics import diagnose_vlans
 from unifi_mapper.analysis.vlan_coverage import (
     VLANCoverageFinding,
@@ -99,6 +125,24 @@ __all__ = [
     'VLANCoverageReport',
     'audit_vlan_coverage',
     'audit_vlan_coverage_from_data',
+    'ForeignBridge',
+    'ForeignBridgeReport',
+    'detect_foreign_bridges',
+    'detect_foreign_bridges_from_data',
+    'FreshnessReport',
+    'FreshnessSummary',
+    'check_device_freshness',
+    'check_device_freshness_from_samples',
+    'summarise_freshness',
+    'summarise_freshness_from_data',
+    'PowerBudgetFinding',
+    'PowerBudgetReport',
+    'audit_power_budget',
+    'audit_power_budget_from_data',
+    'UplinkTransparencyFinding',
+    'UplinkTransparencyReport',
+    'audit_uplink_transparency',
+    'audit_uplink_transparency_from_data',
     # P2 tools
     'analyze_client_density',
     'analyze_link_quality',
