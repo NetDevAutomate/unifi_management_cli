@@ -24,6 +24,10 @@ async def snapshot_link_errors(output_path: str = DEFAULT_BASELINE_PATH) -> dict
     for d in devices:
         if d.get("type") not in ("usw", "udm", "udmpro"):
             continue
+        # A factory-reset / pending-adoption device has no '_id'. There is no stable key
+        # to anchor a baseline to, so it is skipped rather than crashing the snapshot.
+        if not d.get("_id"):
+            continue
         dev_entry = {
             "device_id": d["_id"],
             "name": d.get("name", "Unknown"),
@@ -95,7 +99,9 @@ async def compare_link_errors(
     for d in devices:
         if d.get("type") not in ("usw", "udm", "udmpro"):
             continue
-        dev_id = d["_id"]
+        dev_id = d.get("_id")
+        if not dev_id:
+            continue
         prev_uptime = baseline_uptime.get(dev_id)
         curr_uptime = d.get("uptime", 0)
         if prev_uptime is not None and curr_uptime < prev_uptime:
@@ -111,7 +117,9 @@ async def compare_link_errors(
     for d in devices:
         if d.get("type") not in ("usw", "udm", "udmpro"):
             continue
-        dev_id = d["_id"]
+        dev_id = d.get("_id")
+        if not dev_id:
+            continue
         dev_name = d.get("name", "Unknown")
 
         for p in d.get("port_table", []):
