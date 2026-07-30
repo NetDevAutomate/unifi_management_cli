@@ -5,7 +5,7 @@ but the user picks a specific AP/band and mode/width and the simulator
 reports what WOULD happen if that change were applied, plus warnings
 when the request diverges from the scorecard's preference.
 
-Design reference: ``docs/plans/2026-05-04-phase-d-rf-strategy-design.md``
+Design reference: ``personal_docs/plans/2026-05-04-phase-d-rf-strategy-design.md``
 (D1 — γ-first simulation pattern).
 
 Unlike :func:`rf_strategy.generate_plan`, the simulator does not produce
@@ -147,7 +147,7 @@ async def simulate_width_change(
     2.4 GHz is hard-locked at 20 MHz (Q2 design decision): any other width
     raises ``ToolError(CONFIG_INVALID)`` referencing the design doc. Users
     who want to experiment with 40 MHz 2.4 GHz should read
-    ``docs/plans/2026-05-04-phase-d-rf-strategy-design.md`` for the
+    ``personal_docs/plans/2026-05-04-phase-d-rf-strategy-design.md`` for the
     rationale (airtime waste + adjacent-channel interference + modern
     deployments treat it as a footgun).
 

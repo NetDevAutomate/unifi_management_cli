@@ -17,7 +17,7 @@ DEFAULT_ROAMING_PATH = "reports/client-roaming-history.json"
 # Retention configuration — referenced by rf_strategy.py's 48h history gate.
 # Bumped from 288 (24h) to 576 (48h) during Phase D design to support the
 # scorecard's minimum-history requirement for disable recommendations.
-# See: docs/plans/2026-05-04-phase-d-rf-strategy-design.md
+# See: personal_docs/plans/2026-05-04-phase-d-rf-strategy-design.md
 SNAPSHOT_INTERVAL_SECONDS = 300  # 5 minutes baseline cadence
 RETENTION_HOURS = 48
 MAX_SNAPSHOTS_RETAINED = (RETENTION_HOURS * 3600) // SNAPSHOT_INTERVAL_SECONDS  # = 576

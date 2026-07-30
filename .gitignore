@@ -70,10 +70,15 @@ uv.lock
 logs/
 .unifi-mcp/
 
-# Generated outputs (keep .gitkeep files)
+# Generated outputs (keep .gitkeep files).
+# jpg/pdf included deliberately: camera snapshots and generated reports have ended up here.
 reports/*.md
 reports/*.html
 reports/*.json
+reports/*.pdf
+reports/*.jpg
+reports/*.jpeg
+reports/*.png
 !reports/.gitkeep
 diagrams/*.png
 diagrams/*.svg
@@ -81,8 +86,21 @@ diagrams/*.html
 diagrams/*.dot
 !diagrams/.gitkeep
 
-# Personal/environment-specific scripts (not for distribution)
+# Real-network test fixtures. These contain live MACs, IPs and physical topology from one
+# deployment. Contributors should generate their own from their own controller.
+tests/fixtures/topology_*.json
+
+# Personal / environment-specific scripts (not for distribution).
+# Site-specific one-off diagnostics with hardcoded MACs/IPs live here.
 personal_scripts/
+
+# Ad-hoc scripts dropped into reports/ are scratch by definition
+reports/*.py
+
+# Code-intelligence caches and generated graphs
+.codegraph/
+graphify-out/
+.kirograph/
 
 # bv (beads viewer) local config and caches
 .bv/
@@ -95,11 +113,13 @@ personal_scripts/
 # Perles config
 .perles/
 
-# Working documents (brainstorms, plans - not for distribution)
-docs/brainstorms/
-docs/plans/
+# Personal / site-specific working documents (NOT for distribution).
+# Single home for incident write-ups, handovers, plans, brainstorms, mentoring notes and
+# anything containing real MACs, IPs or topology. Sub-directories are fine.
+personal_docs/
 
-# Generated artefacts (audio/video overviews, large PDFs, infographics)
+# Generated artefacts now live under personal_docs/artefacts/ (whole dir ignored).
+# Kept as a guard in case the generation pipeline writes into docs/ again.
 docs/artefacts/*.mp3
 docs/artefacts/*.mp4
 docs/artefacts/*.pdf
@@ -115,3 +135,9 @@ docs/artefacts/unifi_management_cli_content.md
 
 # Sisyphus agent session scratch
 .yolo-sisyphus/
+
+# Specifications
+specs/
+
+# Graphify Ouitput
+graphify-out/

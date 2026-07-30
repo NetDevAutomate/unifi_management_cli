@@ -4,7 +4,7 @@ Pure-analysis module: computes per-AP RF recommendations (band disable,
 channel width, channel, power) from controller data + roaming history.
 No controller writes — see ``rf_applier.py`` for apply-side logic.
 
-Design reference: ``docs/plans/2026-05-04-phase-d-rf-strategy-design.md``
+Design reference: ``personal_docs/plans/2026-05-04-phase-d-rf-strategy-design.md``
 
 Task T4 adds the scaffolding only: constants, enums, and frozen dataclasses.
 The computation (scorecard, mode selection, plan generation) lands in
@@ -26,7 +26,7 @@ from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 # === Constants (locked design decisions) ===
 #
 # Changes to any value in this block require a matching update to
-# docs/plans/2026-05-04-phase-d-rf-strategy-design.md and, if the
+# personal_docs/plans/2026-05-04-phase-d-rf-strategy-design.md and, if the
 # plan-json schema changes, a bump to PLAN_SCHEMA_VERSION below.
 
 MIN_HISTORY_HOURS = 48.0             # Q1: refuse recommendations below this
