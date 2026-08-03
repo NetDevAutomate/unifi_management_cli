@@ -76,3 +76,11 @@ class ErrorCodes:
     # Configuration errors
     CONFIG_INVALID = 'CONFIG_INVALID'
     BACKUP_NOT_FOUND = 'BACKUP_NOT_FOUND'
+
+    # Data availability errors
+    # Referenced by config_drift, roaming_analysis, neighbour_trend,
+    # link_error_tracking and latency_matrix. It was never defined here, so every
+    # `ErrorCodes.NO_DATA` raised AttributeError instead of the intended ToolError —
+    # each of those modules crashed on its own error path (e.g. "no baseline snapshot
+    # found") rather than reporting the condition.
+    NO_DATA = 'NO_DATA'
