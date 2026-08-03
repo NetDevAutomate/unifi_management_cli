@@ -20,19 +20,21 @@ async def snapshot_radio_config(output_path: str | None = None) -> dict:
         devices = await client.get_devices()
 
     snapshot = {
-        "timestamp": datetime.now().isoformat(),
-        "aps": [],
+        'timestamp': datetime.now().isoformat(),
+        'aps': [],
     }
 
     for d in devices:
-        if d.get("type") != "uap":
+        if d.get('type') != 'uap':
             continue
-        snapshot["aps"].append({
-            "device_id": d["_id"],
-            "name": d.get("name", "Unknown"),
-            "mac": d.get("mac", ""),
-            "radio_table": d.get("radio_table", []),
-        })
+        snapshot['aps'].append(
+            {
+                'device_id': d['_id'],
+                'name': d.get('name', 'Unknown'),
+                'mac': d.get('mac', ''),
+                'radio_table': d.get('radio_table', []),
+            }
+        )
 
     if output_path:
         path = Path(output_path)
@@ -42,17 +44,116 @@ async def snapshot_radio_config(output_path: str | None = None) -> dict:
     return snapshot
 
 
+RADIO_WRITE_FIELDS = (
+    'channel',
+    'ht',
+    'tx_power_mode',
+    'tx_power',
+    'min_rssi_enabled',
+    'min_rssi',
+)
+
+
+def _coerce_radio_value(field: str, value):
+    """Match the type the controller stores for a radio field.
+
+    Fixed channels are stored as `int` (`Lounge na=60`, `Puzzle na=157`); only the
+    sentinel `'auto'` is a string. Writing `'149'` is accepted by the API and then
+    ignored — the silent-no-op failure mode this repo exists to detect.
+    """
+    if field == 'channel' and not (isinstance(value, str) and not str(value).isdigit()):
+        return int(value)
+    return value
+
+
+def build_radio_table_updates(
+    devices: list[dict],
+    changes: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Merge radio changes into ONE payload per device.
+
+    Previously each change was turned into its own PUT built from the same cached
+    device dict, so two changes to one AP (`ng` width plus `na` channel) meant the
+    second PUT carried the original radio_table and silently reverted the first.
+
+    Args:
+        devices: Devices as returned by `get_devices()`.
+        changes: Change dicts with `device_id`, `radio` ('ng'/'na'/'6e') and any of
+            RADIO_WRITE_FIELDS.
+
+    Returns:
+        (plans, missing) where each plan has `device_id`, `name`, `mac`, `radios`
+        (the radio ids touched), `radio_table` and a ready-to-PUT `payload`.
+        `missing` lists changes whose device_id was not found.
+    """
+    device_map = {d['_id']: d for d in devices if d.get('type') == 'uap'}
+
+    grouped: dict[str, list[dict]] = {}
+    missing: list[dict] = []
+    for change in changes:
+        device_id = change.get('device_id')
+        if not isinstance(device_id, str) or device_id not in device_map:
+            missing.append({'device_id': device_id, 'status': 'NOT_FOUND'})
+            continue
+        grouped.setdefault(device_id, []).append(change)
+
+    plans: list[dict] = []
+    for device_id, device_changes in grouped.items():
+        device = device_map[device_id]
+        patches: dict[str, dict] = {}
+        for change in device_changes:
+            target = change.get('radio')
+            if not isinstance(target, str):
+                continue
+            patch = patches.setdefault(target, {})
+            for field in RADIO_WRITE_FIELDS:
+                if field in change:
+                    patch[field] = _coerce_radio_value(field, change[field])
+
+        new_radio_table = []
+        for radio in device.get('radio_table', []):
+            radio_id = radio.get('radio') or radio.get('name')
+            if radio_id in patches:
+                updated = dict(radio)
+                updated.update(patches[radio_id])
+                new_radio_table.append(updated)
+            else:
+                new_radio_table.append(radio)
+
+        payload = {
+            '_id': device_id,
+            'mac': device['mac'],
+            'radio_table': new_radio_table,
+        }
+        for field in ('config_version', 'cfgversion', 'config_revision'):
+            if field in device:
+                payload[field] = device[field]
+
+        plans.append(
+            {
+                'device_id': device_id,
+                'name': device.get('name', 'Unknown'),
+                'mac': device['mac'],
+                'radios': list(patches),
+                'radio_table': new_radio_table,
+                'payload': payload,
+            }
+        )
+
+    return plans, missing
+
+
 async def apply_radio_config(
     changes: list[dict],
     dry_run: bool = True,
 ) -> list[dict]:
-    """Apply radio configuration changes to APs.
+    """Apply radio configuration changes to APs, one atomic write per device.
 
     Args:
         changes: List of dicts with keys:
             - device_id: AP device ID
-            - radio: 'ng' (2.4GHz) or 'na' (5GHz)
-            - channel: int (0 = auto)
+            - radio: 'ng' (2.4GHz), 'na' (5GHz) or '6e' (6GHz)
+            - channel: int (0 or 'auto' = auto)
             - ht: str channel width ('20', '40', '80', '160')
             - tx_power_mode: 'auto', 'high', 'medium', 'low', 'custom'
             - tx_power: int dBm (when mode='custom')
@@ -61,81 +162,45 @@ async def apply_radio_config(
         dry_run: If True, only report what would change
 
     Returns:
-        List of result dicts with status per device
+        List of result dicts, one per (device, radio) pair, for CLI compatibility.
     """
     async with UniFiClient() as client:
         devices = await client.get_devices()
 
-    device_map = {d["_id"]: d for d in devices if d.get("type") == "uap"}
-    results = []
+    plans, missing = build_radio_table_updates(devices, changes)
+    results: list[dict] = list(missing)
+
+    if dry_run:
+        for plan in plans:
+            for radio_id in plan['radios']:
+                results.append(
+                    {
+                        'device_id': plan['device_id'],
+                        'name': plan['name'],
+                        'radio': radio_id,
+                        'status': 'DRY_RUN',
+                    }
+                )
+        return results
 
     async with UniFiClient() as client:
-        for change in changes:
-            device_id = change["device_id"]
-            device = device_map.get(device_id)
-            if not device:
-                results.append({"device_id": device_id, "status": "NOT_FOUND"})
-                continue
-
-            name = device.get("name", "Unknown")
-            current_radio_table = device.get("radio_table", [])
-
-            # Build updated radio_table
-            new_radio_table = []
-            target_radio = change.get("radio")  # 'ng' or 'na'
-
-            for radio in current_radio_table:
-                radio_id = radio.get("radio") or radio.get("name")
-                if radio_id == target_radio:
-                    # Apply changes to this radio
-                    updated = dict(radio)
-                    for field in ("channel", "ht", "tx_power_mode", "tx_power",
-                                  "min_rssi_enabled", "min_rssi"):
-                        if field in change:
-                            updated[field] = change[field]
-                    new_radio_table.append(updated)
-                else:
-                    new_radio_table.append(radio)
-
-            if dry_run:
-                results.append({
-                    "device_id": device_id,
-                    "name": name,
-                    "radio": target_radio,
-                    "status": "DRY_RUN",
-                    "changes": {k: v for k, v in change.items()
-                                if k not in ("device_id", "radio")},
-                })
-                continue
-
-            # Build PUT payload
-            payload = {
-                "_id": device_id,
-                "mac": device["mac"],
-                "radio_table": new_radio_table,
-            }
-            # Include config version for persistence
-            for field in ("config_version", "cfgversion", "config_revision"):
-                if field in device:
-                    payload[field] = device[field]
-
+        for plan in plans:
             try:
-                path = client.build_path(f"rest/device/{device_id}")
-                resp = await client.put(path, payload)  # noqa: F841
-                await client.force_provision(device["mac"])
-                results.append({
-                    "device_id": device_id,
-                    "name": name,
-                    "radio": target_radio,
-                    "status": "APPLIED",
-                })
+                path = client.build_path(f'rest/device/{plan["device_id"]}')
+                await client.put(path, plan['payload'])
+                await client.force_provision(plan['mac'])
+                status = 'APPLIED'
             except Exception as e:
-                results.append({
-                    "device_id": device_id,
-                    "name": name,
-                    "radio": target_radio,
-                    "status": f"FAILED: {e}",
-                })
+                status = f'FAILED: {e}'
+            for radio_id in plan['radios']:
+                results.append(
+                    {
+                        'device_id': plan['device_id'],
+                        'name': plan['name'],
+                        'radio': radio_id,
+                        'status': status,
+                    }
+                )
 
     return results
 
@@ -150,8 +215,8 @@ async def restore_radio_config(snapshot_path: str, dry_run: bool = True) -> list
     path = Path(snapshot_path)
     if not path.exists():
         raise ToolError(
-            message=f"Snapshot file not found: {snapshot_path}",
-            error_code=ErrorCodes.NO_DATA,
+            message=f'Snapshot file not found: {snapshot_path}',
+            error_code=ErrorCodes.BACKUP_NOT_FOUND,
         )
 
     snapshot = json.loads(path.read_text())
@@ -160,52 +225,60 @@ async def restore_radio_config(snapshot_path: str, dry_run: bool = True) -> list
     async with UniFiClient() as client:
         devices = await client.get_devices()
 
-    device_map = {d["_id"]: d for d in devices if d.get("type") == "uap"}
+    device_map = {d['_id']: d for d in devices if d.get('type') == 'uap'}
 
     async with UniFiClient() as client:
-        for ap in snapshot["aps"]:
-            device_id = ap["device_id"]
+        for ap in snapshot['aps']:
+            device_id = ap['device_id']
             device = device_map.get(device_id)
             if not device:
-                results.append({
-                    "device_id": device_id,
-                    "name": ap["name"],
-                    "status": "NOT_FOUND",
-                })
+                results.append(
+                    {
+                        'device_id': device_id,
+                        'name': ap['name'],
+                        'status': 'NOT_FOUND',
+                    }
+                )
                 continue
 
             if dry_run:
-                results.append({
-                    "device_id": device_id,
-                    "name": ap["name"],
-                    "status": "DRY_RUN (would restore)",
-                })
+                results.append(
+                    {
+                        'device_id': device_id,
+                        'name': ap['name'],
+                        'status': 'DRY_RUN (would restore)',
+                    }
+                )
                 continue
 
             payload = {
-                "_id": device_id,
-                "mac": device["mac"],
-                "radio_table": ap["radio_table"],
+                '_id': device_id,
+                'mac': device['mac'],
+                'radio_table': ap['radio_table'],
             }
-            for field in ("config_version", "cfgversion", "config_revision"):
+            for field in ('config_version', 'cfgversion', 'config_revision'):
                 if field in device:
                     payload[field] = device[field]
 
             try:
-                path_url = client.build_path(f"rest/device/{device_id}")
+                path_url = client.build_path(f'rest/device/{device_id}')
                 await client.put(path_url, payload)
-                await client.force_provision(device["mac"])
-                results.append({
-                    "device_id": device_id,
-                    "name": ap["name"],
-                    "status": "RESTORED",
-                })
+                await client.force_provision(device['mac'])
+                results.append(
+                    {
+                        'device_id': device_id,
+                        'name': ap['name'],
+                        'status': 'RESTORED',
+                    }
+                )
             except Exception as e:
-                results.append({
-                    "device_id": device_id,
-                    "name": ap["name"],
-                    "status": f"FAILED: {e}",
-                })
+                results.append(
+                    {
+                        'device_id': device_id,
+                        'name': ap['name'],
+                        'status': f'FAILED: {e}',
+                    }
+                )
 
     return results
 
@@ -222,42 +295,44 @@ def build_optimisation_plan(devices: list[dict]) -> list[dict]:
     changes = []
 
     for d in devices:
-        if d.get("type") != "uap":
+        if d.get('type') != 'uap':
             continue
 
-        device_id = d["_id"]
-        name = d.get("name", "Unknown")
+        device_id = d['_id']
+        name = d.get('name', 'Unknown')
 
-        for radio in d.get("radio_table", []):
-            radio_id = radio.get("radio") or radio.get("name")
+        for radio in d.get('radio_table', []):
+            radio_id = radio.get('radio') or radio.get('name')
 
-            if radio_id == "na":  # 5GHz
-                current_ht = str(radio.get("ht", "20"))
+            if radio_id == 'na':  # 5GHz
+                current_ht = str(radio.get('ht', '20'))
                 if int(current_ht) < 80:
                     change = {
-                        "device_id": device_id,
-                        "radio": "na",
-                        "ht": "80",
-                        "min_rssi_enabled": True,
-                        "min_rssi": -75,
+                        'device_id': device_id,
+                        'radio': 'na',
+                        'ht': '80',
+                        'min_rssi_enabled': True,
+                        'min_rssi': -75,
                     }
                     # Move Kitchen off channel 36
-                    if "Kitchen" in name and radio.get("channel") == 36:
-                        change["channel"] = 44
+                    if 'Kitchen' in name and radio.get('channel') == 36:
+                        change['channel'] = 44
                     changes.append(change)
 
-            elif radio_id == "ng":  # 2.4GHz
+            elif radio_id == 'ng':  # 2.4GHz
                 # tx_power=None means auto (typically 16-23 dBm) — reduce to 12
-                current_power = radio.get("tx_power")
+                current_power = radio.get('tx_power')
                 if current_power is None or current_power > 12:
-                    changes.append({
-                        "device_id": device_id,
-                        "radio": "ng",
-                        "tx_power_mode": "custom",
-                        "tx_power": 12,
-                        "min_rssi_enabled": True,
-                        "min_rssi": -75,
-                    })
+                    changes.append(
+                        {
+                            'device_id': device_id,
+                            'radio': 'ng',
+                            'tx_power_mode': 'custom',
+                            'tx_power': 12,
+                            'min_rssi_enabled': True,
+                            'min_rssi': -75,
+                        }
+                    )
 
     return changes
 
@@ -276,12 +351,12 @@ async def snapshot_radio_config_mcp() -> dict:
     Returns:
         Snapshot data with AP count and file path
     """
-    snapshot = await snapshot_radio_config(output_path="reports/radio-snapshot.json")
+    snapshot = await snapshot_radio_config(output_path='reports/radio-snapshot.json')
     return {
-        "status": "saved",
-        "aps_captured": len(snapshot["aps"]),
-        "file": "reports/radio-snapshot.json",
-        "timestamp": snapshot["timestamp"],
+        'status': 'saved',
+        'aps_captured': len(snapshot['aps']),
+        'file': 'reports/radio-snapshot.json',
+        'timestamp': snapshot['timestamp'],
     }
 
 
@@ -302,7 +377,7 @@ async def apply_radio_optimization_mcp() -> list[dict]:
     from unifi_mapper.core.utils.client import UniFiClient
 
     # Snapshot first
-    await snapshot_radio_config(output_path="reports/radio-pre-optimization.json")
+    await snapshot_radio_config(output_path='reports/radio-pre-optimization.json')
 
     # Get devices and build plan
     async with UniFiClient() as client:
@@ -310,13 +385,13 @@ async def apply_radio_optimization_mcp() -> list[dict]:
 
     changes = build_optimisation_plan(devices)
     if not changes:
-        return [{"status": "NO_CHANGES", "message": "Config already optimal"}]
+        return [{'status': 'NO_CHANGES', 'message': 'Config already optimal'}]
 
     return await apply_radio_config(changes, dry_run=False)
 
 
 async def restore_radio_config_mcp(
-    snapshot_path: str = "reports/radio-snapshot.json",
+    snapshot_path: str = 'reports/radio-snapshot.json',
 ) -> list[dict]:
     """Restore radio configuration from a snapshot file.
 
