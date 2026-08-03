@@ -161,6 +161,31 @@ unifi-mapper radio report -o radio-report.md
 
 The auto-channel optimiser scores 5 GHz channels by measured utilization + DFS penalty + neighbour-AP congestion (RSSI-weighted, CCA-aligned), and distributes 2.4 GHz across channels 1/6/13 accounting for both own-AP utilization and adjacent-channel neighbour interference.
 
+5 GHz assignment works over whole 80 MHz blocks (36-48, 52-64, 100-112, 116-128, 132-144, 149-161) rather than primary channels, since two APs sharing a block occupy identical spectrum. Band is derived from the controller's radio id, so tri-band APs (U7 series) report 5 GHz and 6 GHz separately.
+
+### Port Labels
+
+```bash
+# Preview port label changes derived from LLDP + wired clients
+unifi-mapper ports refresh
+
+# Apply
+unifi-mapper ports refresh --apply
+```
+
+Resolves each connected switch port to either its LLDP peer or its wired client, and rewrites the label to match. LLDP peers are resolved via the adopted-device registry (`chassis_id`), so access points resolve correctly even though they do not send `system_name` — this is what recovers factory labels such as `PoE Out + Data` on PoE passthrough switches.
+
+Down ports are never touched: a disconnected port's label is often the only record of what used to be plugged into it. Four guards prevent bad rewrites:
+
+| Guard | Prevents |
+|-------|----------|
+| Weak-label protection | `Google Streamer 4K` → `02:00:fe:02:00:0f` when a client stops reporting a hostname |
+| Name ranking | A raw MAC representing a multi-client port instead of `Hotel3-Apple-TV +2` |
+| Cosmetic-change skip | Churn such as `AI-Port` → `AI Port` |
+| `+N` flap suppression | A device that comes and goes oscillating the multi-client counter every run |
+
+Labels are written through `port_overrides`, merged per port, so `poe_mode`, `port_profile` and speed overrides are preserved. Re-running after an apply reports no changes needed.
+
 ### Analysis Tools
 
 ```bash
