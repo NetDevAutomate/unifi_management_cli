@@ -14,6 +14,17 @@ from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
+def _as_text(value: object) -> str:
+    """Coerce asyncssh process output to str.
+
+    `SSHCompletedProcess.stdout/stderr` are typed `BytesOrStr` because the channel
+    encoding is configurable, so string operations on them fail type checking.
+    """
+    if isinstance(value, bytes):
+        return value.decode('utf-8', errors='replace')
+    return '' if value is None else str(value)
+
+
 async def run_latency_matrix(
     ping_count: int = 3,
     timeout: int = 2,
@@ -169,8 +180,7 @@ async def _ping_single(
 
     try:
         result = await asyncio.wait_for(conn.run(cmd, check=False), timeout=count * timeout + 5)
-        stdout = result.stdout or ''
-        return _parse_ping_output(target, stdout)
+        return _parse_ping_output(target, _as_text(result.stdout))
     except asyncio.TimeoutError:
         return LatencyResult(
             ip=ip,

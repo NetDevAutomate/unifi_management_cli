@@ -14,6 +14,17 @@ from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
+def _as_text(value: object) -> str:
+    """Coerce asyncssh process output to str.
+
+    `SSHCompletedProcess.stdout/stderr` are typed `BytesOrStr` because the channel
+    encoding is configurable, so string operations on them fail type checking.
+    """
+    if isinstance(value, bytes):
+        return value.decode('utf-8', errors='replace')
+    return '' if value is None else str(value)
+
+
 async def run_bandwidth_test(
     target_ip: str,
     duration: int = 10,
@@ -72,8 +83,8 @@ async def run_bandwidth_test(
                 suggestion=f'Ensure iperf3 server is running on {target_ip} (iperf3 -s)',
             )
 
-    stdout = result.stdout or ''
-    stderr = result.stderr or ''
+    stdout = _as_text(result.stdout)
+    stderr = _as_text(result.stderr)
 
     if result.exit_status != 0:
         # Try to parse common errors

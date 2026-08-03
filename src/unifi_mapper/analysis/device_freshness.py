@@ -127,14 +127,20 @@ def summarise_freshness_from_data(
         if not informing:
             reason = f'state={state} (not connected)'
             not_informing.append(name)
-        if old:
+        if old and age is not None:
             reason = (reason + '; ' if reason else '') + f'last_seen {age / 3600:.1f}h ago'
             stale.append(name)
 
-        records.append(DeviceFreshness(
-            device=name, mac=str(device.get('mac') or ''), state=_as_int(state) if state is not None else None,
-            data_age_seconds=age, trustworthy=informing and not old, reason=reason,
-        ))
+        records.append(
+            DeviceFreshness(
+                device=name,
+                mac=str(device.get('mac') or ''),
+                state=_as_int(state) if state is not None else None,
+                data_age_seconds=age,
+                trustworthy=informing and not old,
+                reason=reason,
+            )
+        )
 
     return FreshnessSummary(
         devices=records,
@@ -152,9 +158,7 @@ def check_device_freshness_from_samples(
     a = {str(d.get('mac') or '').lower(): d for d in first if d.get('mac')}
     b = {str(d.get('mac') or '').lower(): d for d in second if d.get('mac')}
 
-    disappeared = [
-        str(a[m].get('name') or m) for m in a if m not in b
-    ]
+    disappeared = [str(a[m].get('name') or m) for m in a if m not in b]
 
     deltas: dict[str, dict[str, int]] = {}
     rebooted: list[str] = []
@@ -180,27 +184,29 @@ def check_device_freshness_from_samples(
                 continue
             device = b[mac]
             name = str(device.get('name') or mac)
-            findings.append(FreshnessFinding(
-                severity='CRITICAL',
-                device=name,
-                mac=mac,
-                last_seen_delta=d['last_seen'],
-                uptime_delta=d['uptime'],
-                rx_bytes_delta=d['rx'],
-                peers_advancing=True,
-                message=(
-                    f'{name} telemetry is NOT advancing between samples '
-                    f'(Δlast_seen={d["last_seen"]}s, Δuptime={d["uptime"]}s, Δrx={d["rx"]}B) '
-                    f'while other devices are. Every field the controller reports for this '
-                    f'device — including its port table and STP states — is a stale snapshot '
-                    f'and must not be treated as current.'
-                ),
-                recommendation=(
-                    'Do not diagnose from this device\'s reported port state. Check physical '
-                    'connectivity and its management path; if its management VLAN is severed it '
-                    'cannot be repaired over the API and needs physical intervention.'
-                ),
-            ))
+            findings.append(
+                FreshnessFinding(
+                    severity='CRITICAL',
+                    device=name,
+                    mac=mac,
+                    last_seen_delta=d['last_seen'],
+                    uptime_delta=d['uptime'],
+                    rx_bytes_delta=d['rx'],
+                    peers_advancing=True,
+                    message=(
+                        f'{name} telemetry is NOT advancing between samples '
+                        f'(Δlast_seen={d["last_seen"]}s, Δuptime={d["uptime"]}s, Δrx={d["rx"]}B) '
+                        f'while other devices are. Every field the controller reports for this '
+                        f'device — including its port table and STP states — is a stale snapshot '
+                        f'and must not be treated as current.'
+                    ),
+                    recommendation=(
+                        "Do not diagnose from this device's reported port state. Check physical "
+                        'connectivity and its management path; if its management VLAN is severed it '
+                        'cannot be repaired over the API and needs physical intervention.'
+                    ),
+                )
+            )
 
     message = ''
     if no_peer_advanced:
