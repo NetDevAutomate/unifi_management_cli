@@ -49,13 +49,77 @@ CHANNELS_5GHZ_ALL = [
 # 2.4GHz non-overlapping channels
 CHANNELS_24GHZ = [1, 6, 11]  # Standard non-overlapping set (use 13 if region allows)
 CHANNELS_24GHZ_ALL = [1, 6, 11, 13]  # Superset used for neighbour-score pre-compute
-                                     # so `optimize_24ghz` can dynamically pick 1/6/13 too
+# so `optimize_24ghz` can dynamically pick 1/6/13 too
+# 5GHz 80MHz block primaries. At 80MHz the four channels in a block (e.g. 149/153/
+# 157/161) are the SAME spectrum, so only one AP can occupy a block without overlap.
+# Selecting by primary channel alone let three APs be assigned 149, 153 and 157.
+BLOCKS_5GHZ_80MHZ: dict[int, tuple[int, ...]] = {
+    36: (36, 40, 44, 48),
+    52: (52, 56, 60, 64),
+    100: (100, 104, 108, 112),
+    116: (116, 120, 124, 128),
+    132: (132, 136, 140, 144),
+    149: (149, 153, 157, 161),
+}
+
+# Radio identifiers the controller uses per band. Band MUST be derived from these
+# rather than from the channel number: a 6GHz radio commonly sits on a low channel
+# number (the U7 Pro XG Wall reports 6e on ch 37) which a `channel > 14` test
+# misreads as 5GHz, overwriting the real 5GHz radio entry.
+RADIO_ID_BANDS: dict[str, str] = {
+    'ng': '2.4GHz',
+    'na': '5GHz',
+    '6e': '6GHz',
+    '6g': '6GHz',
+    'wifi2': '6GHz',
+    'ax6': '6GHz',
+}
+
 NEIGHBOUR_PENALTY_CAP = 35  # Cap on neighbour penalty per channel.
-                            # Rationale: with RSSI_WEIGHT_STRONG=3.0, saturates at ~12
-                            # strong neighbours — prevents neighbour data from overwhelming
-                            # measured utilization (0-100) while still steering away from
-                            # crowded channels. Slightly above DFS penalty (15) so dense
-                            # neighbour congestion outweighs radar-channel avoidance.
+# Rationale: with RSSI_WEIGHT_STRONG=3.0, saturates at ~12
+# strong neighbours — prevents neighbour data from overwhelming
+# measured utilization (0-100) while still steering away from
+# crowded channels. Slightly above DFS penalty (15) so dense
+# neighbour congestion outweighs radar-channel avoidance.
+
+
+def band_for_radio(radio_id: str | None, channel: int | None) -> str:
+    """Classify a radio's band from its controller radio id, not its channel number.
+
+    Deriving the band from `channel > 14` misclassifies 6GHz radios, which report low
+    channel numbers (a U7 Pro XG Wall's `6e` radio sits on ch 37). When both radios are
+    keyed into the same per-AP dict under '5GHz', the 6GHz entry silently overwrites the
+    real 5GHz telemetry and any recommendation for `na` is computed from 6GHz data.
+
+    Args:
+        radio_id: Controller radio identifier ('ng', 'na', '6e', ...). May be None on
+            older controllers, in which case the channel heuristic is used.
+        channel: Radio channel, used only as a fallback.
+
+    Returns:
+        One of '2.4GHz', '5GHz' or '6GHz'.
+    """
+    if radio_id:
+        band = RADIO_ID_BANDS.get(str(radio_id).lower())
+        if band:
+            return band
+    return '5GHz' if (channel or 0) > 14 else '2.4GHz'
+
+
+def block_80mhz(channel: int) -> int | None:
+    """Return the primary channel identifying the 80MHz block `channel` belongs to.
+
+    Two APs sharing a block occupy identical spectrum regardless of which primary
+    channel each is configured with.
+
+    Returns:
+        The block's lowest channel (36/52/100/116/132/149), or None when `channel` is
+        not part of a known 80MHz block.
+    """
+    for primary, members in BLOCKS_5GHZ_80MHZ.items():
+        if channel in members:
+            return primary
+    return None
 
 
 async def analyze_channels() -> dict:
@@ -96,7 +160,7 @@ async def analyze_channels() -> dict:
 
         for radio in d.get('radio_table_stats', []):
             ch = radio.get('channel', 0)
-            band = '5GHz' if ch > 14 else '2.4GHz'
+            band = band_for_radio(radio.get('radio') or radio.get('name'), ch)
             ap_info['radios'][band] = {
                 'channel': ch,
                 'utilization': radio.get('cu_total', 0),
@@ -112,7 +176,7 @@ async def analyze_channels() -> dict:
         # Get configured ht from radio_table
         for rt in d.get('radio_table', []):
             rid = rt.get('radio') or rt.get('name')
-            band = '5GHz' if rid == 'na' else '2.4GHz'
+            band = band_for_radio(rid, rt.get('channel'))
             if band in ap_info['radios']:
                 ap_info['radios'][band]['ht'] = rt.get('ht', '20')
 
@@ -172,36 +236,45 @@ def optimize_5ghz(aps: list[dict], neighbour_data: dict | None = None) -> list[d
     # Sort APs by utilization (worst first — they get first pick)
     ap_5ghz.sort(key=lambda a: -a['utilization'])
 
-    # Available 80MHz-compatible primary channels
-    available = [36, 44, 52, 60, 100, 108, 112, 116, 120, 132, 140, 149, 153, 157, 161]
-    used_channels: set[int] = set()
+    # Score whole 80MHz BLOCKS, not individual primary channels. Reserving primaries
+    # only is what allowed 149 + 153 + 157 to be handed out to three APs — identical
+    # spectrum under an 80MHz width.
+    block_count: dict[int, int] = dict.fromkeys(BLOCKS_5GHZ_80MHZ, 0)
+    block_load: dict[int, float] = dict.fromkeys(BLOCKS_5GHZ_80MHZ, 0.0)
     recommendations = []
+
+    def score_block(primary: int, members: tuple[int, ...]) -> float:
+        measured = sum(channel_utilization.get(ch, 0) for ch in members)
+        dfs_penalty = 15 if primary in (52, 100, 116, 132) else 0
+        neighbour_penalty = 0.0
+        if neighbour_data:
+            per_member = [float(neighbour_data.get(ch, 0.0)) for ch in members]
+            neighbour_penalty = min(
+                sum(per_member) / len(per_member) if per_member else 0.0,
+                NEIGHBOUR_PENALTY_CAP,
+            )
+        return measured + dfs_penalty + neighbour_penalty
 
     for ap in ap_5ghz:
         current = ap['current_channel']
 
-        # Score each channel: measured utilization + DFS penalty
-        best_ch = current
-        best_score = float('inf')
+        # Fewest occupants first, then cheapest. Sorting on score alone made every AP
+        # past the sixth pile onto the single cleanest block (ten APs, six blocks, and
+        # ch116 was handed out five times).
+        best_primary, best_members = min(
+            BLOCKS_5GHZ_80MHZ.items(),
+            key=lambda item: (
+                block_count[item[0]],
+                score_block(item[0], item[1]) + block_load[item[0]],
+            ),
+        )
 
-        for ch in available:
-            if ch in used_channels:
-                continue
-            measured_util = channel_utilization.get(ch, 0)
-            dfs_penalty = 15 if 52 <= ch <= 144 else 0
-            neighbour_penalty = 0.0
-            if neighbour_data:
-                neighbour_penalty = min(
-                    neighbour_data.get(ch, 0.0),
-                    NEIGHBOUR_PENALTY_CAP,
-                )
-            score = measured_util + dfs_penalty + neighbour_penalty
+        # Don't churn a radio that is already in the winning block: 44 and 36 are the
+        # same spectrum, so moving 44 -> 36 buys nothing and drops clients.
+        best_ch = current if current in best_members else best_primary
 
-            if score < best_score:
-                best_score = score
-                best_ch = ch
-
-        used_channels.add(best_ch)
+        block_count[best_primary] += 1
+        block_load[best_primary] += float(ap['utilization'])
         recommendations.append(
             {
                 'device_id': ap['device_id'],
@@ -266,6 +339,11 @@ def optimize_24ghz(aps: list[dict], neighbour_data: dict | None = None) -> list[
     # Target: even distribution with max N APs per channel
     max_per_channel = -(-len(ap_24ghz) // len(channels))  # ceiling division
     channel_count: dict[int, int] = dict.fromkeys(channels, 0)
+    # Load already committed to each channel by THIS run. Without it the scores stay
+    # static and the two busiest APs both pick the same "cleanest" channel — which is
+    # how a 37-client and an 18-client AP ended up sharing one channel while a
+    # 3-client AP got one to itself.
+    assigned_load: dict[int, float] = dict.fromkeys(channels, 0.0)
     recommendations = []
 
     for ap in ap_24ghz:
@@ -282,12 +360,13 @@ def optimize_24ghz(aps: list[dict], neighbour_data: dict | None = None) -> list[
                     neighbour_data.get(ch, 0.0),
                     NEIGHBOUR_PENALTY_CAP,
                 )
-            score = avg_util[ch] + neighbour_penalty
+            score = avg_util[ch] + neighbour_penalty + assigned_load[ch]
             if score < best_score:
                 best_score = score
                 best_ch = ch
 
         channel_count[best_ch] += 1
+        assigned_load[best_ch] += float(ap['utilization'])
         recommendations.append(
             {
                 'device_id': ap['device_id'],
@@ -418,9 +497,7 @@ async def optimize_radio_channels_mcp(band: str = 'both') -> dict:
     nb = state.get('neighbour_scores', {})
     rec_5 = optimize_5ghz(aps, neighbour_data=nb.get('5ghz')) if band in ('5ghz', 'both') else []
     rec_24 = (
-        optimize_24ghz(aps, neighbour_data=nb.get('24ghz'))
-        if band in ('2.4ghz', 'both')
-        else []
+        optimize_24ghz(aps, neighbour_data=nb.get('24ghz')) if band in ('2.4ghz', 'both') else []
     )
     return generate_report(state, rec_5, rec_24)
 
