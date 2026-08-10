@@ -318,7 +318,7 @@ def test_connected_device_third_party_carries_fingerprint_confidence():
 def test_connected_device_recognises_adopted_unifi_gear():
     """A MAC in the adopted-device index is reported as UniFi gear with its model."""
     mac_to_dev = {'02:00:00:00:00:01': {'name': 'Office XG', 'model': 'USFXG', 'ip': '10.0.0.5'}}
-    rich = {'mac': '02:00:00:00:00:01', 'unifi_device': True}
+    rich = {'mac': '02:00:00:00:00:01'.upper(), 'unifi_device': True}
     got = _build_connected_device(rich, None, None, mac_to_dev)
     assert got.is_unifi_device is True
     assert got.name == 'Office XG'
