@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import logging
+import os
 import requests
 import time
 import warnings
@@ -610,20 +611,20 @@ Examples:
         '-u',
         '--url',
         type=str,
-        default='https://203.0.113.254',
-        help='UniFi controller URL (default: https://203.0.113.254)',
+        default=None,
+        help='Protect credential (default: $PROTECT_HOST)',
     )
     parser.add_argument(
         '--user',
         type=str,
-        default='Protect_Admin',
-        help='Protect username (default: Protect_Admin)',
+        default=None,
+        help='Protect credential (default: $PROTECT_USERNAME)',
     )
     parser.add_argument(
         '--password',
         type=str,
-        default='rjn3tpt4DFE9tje-fcg',
-        help='Protect password',
+        default=None,
+        help='Protect credential (default: $PROTECT_PASSWORD)',
     )
     parser.add_argument(
         '-i',
@@ -641,10 +642,33 @@ Examples:
     )
     args = parser.parse_args()
 
+    # Credentials come from the environment unless overridden on the command
+    # line, matching ProtectConfig.from_env's PROTECT_* convention. They are
+    # deliberately not defaulted in the parser: a default here is baked into
+    # the source and ends up committed.
+    base_url = args.url or os.environ.get('PROTECT_HOST')
+    username = args.user or os.environ.get('PROTECT_USERNAME')
+    password = args.password or os.environ.get('PROTECT_PASSWORD')
+
+    missing = [
+        name
+        for name, value in (
+            ('PROTECT_HOST (or --url)', base_url),
+            ('PROTECT_USERNAME (or --user)', username),
+            ('PROTECT_PASSWORD (or --password)', password),
+        )
+        if not value
+    ]
+    if missing:
+        parser.error('missing required credentials: ' + ', '.join(missing))
+
+    if base_url and not base_url.startswith(('http://', 'https://')):
+        base_url = f'https://{base_url}'
+
     monitor = ProtectMonitor(
-        base_url=args.url,
-        username=args.user,
-        password=args.password,
+        base_url=base_url,
+        username=username,
+        password=password,
         poll_interval=args.interval,
         log_file=args.log,
     )
