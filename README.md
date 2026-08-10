@@ -223,6 +223,7 @@ Labels are written through `port_overrides`, merged per port, so `poe_mode`, `po
 unifi-mapper analyze link-errors --snapshot
 unifi-mapper analyze link-errors --threshold 100
 
+
 # Client roaming analysis — identify sticky clients and frequent roamers
 unifi-mapper analyze roaming --snapshot
 unifi-mapper analyze roaming
@@ -240,6 +241,66 @@ unifi-mapper analyze neighbours --snapshot
 unifi-mapper analyze neighbours --diff
 unifi-mapper analyze neighbours --diff --signal-delta 15
 ```
+
+### Command Reference
+
+Every command on the `unifi-mapper` entry point. All are read-only unless noted.
+
+| Command | Purpose |
+|---------|---------|
+| `discover` | Discover topology and update port names with LLDP intelligence (writes) |
+| `diagram` | Generate a topology diagram only, no port renaming |
+| `verify` | Port name verification with ground truth checking |
+| `capabilities` | Analyze device capabilities for port naming support |
+| `version` | Show version information |
+| `install-completions` | Install shell completions |
+| `find device` | Find a device by name, IP or MAC |
+| `ports refresh` | Rewrite port labels from LLDP and wired clients (writes with `--apply`) |
+| `ports inspect` | Deep single-port inspection: VLAN, client, addressing, LLDP |
+| `analyze link-quality` | Port statistics and error rates |
+| `analyze link-errors` | Error-rate baseline and delta comparison |
+| `analyze port-profiles` | Validate STP Edge, BPDU Guard and uplink safety |
+| `analyze vlan-coverage` | VLAN coverage on trunk and planned uplink ports |
+| `analyze uplink-transparency` | Whether each elected uplink can carry tagged VLANs |
+| `analyze mtu` | MTU consistency across inter-switch links |
+| `analyze sfp` | SFP/SFP+ transceiver diagnostics |
+| `analyze radio` | Wi-Fi channel and transmit power optimisation |
+| `analyze lag-candidates` | Parallel links that may be LACP candidates |
+| `analyze power-budget` | Switch *input* power headroom, distinct from PoE output |
+| `analyze traffic-matrix` | Top flows and top talkers |
+| `analyze roaming` | Sticky clients and frequent roamers |
+| `analyze config-drift` | Full device config snapshot and diff |
+| `analyze neighbours` | Passive neighbour AP detection and trend |
+| `diagnose all` | Run every diagnostic with a pass/warn/fail summary |
+| `diagnose health` | Overall network health check |
+| `diagnose inter-vlan` | Inter-VLAN routing and firewall verdict between two endpoints |
+| `diagnose latency-matrix` | SSH to the gateway and ping every device |
+| `diagnose bandwidth` | iperf3 throughput test via the gateway |
+| `inventory list` | List devices with upgrade information |
+| `inventory check-updates` | Check for firmware updates |
+| `inventory firmware-skew` | Report firmware version skew by model |
+| `inventory update-firmware` | Update device firmware (writes) |
+| `stp analyze` | Current STP topology and root eligibility |
+| `stp optimize` | Preview or plan optimal priority changes |
+| `stp apply` | Apply an approved change plan (writes) |
+| `stp rollback` | Revert a previously applied plan (writes) |
+| `stp preflight` | Simulate adding planned switches and report expected root state |
+| `stp validate-10g` | Validate 10G readiness before adding switches |
+| `stp guard` | Guard placement checks |
+| `stp drift` | Compare live STP state against an intent file |
+| `stp snapshot` | Capture an STP baseline |
+| `stp diff` | Diff live state against a baseline |
+| `stp report` | Generate a markdown STP report |
+| `radio snapshot` | Snapshot radio configuration |
+| `radio optimize` | Preview or apply optimised radio settings (writes with `--apply`) |
+| `radio restore` | Restore a previous radio configuration (writes with `--apply`) |
+| `radio auto-channel` | Utilization-weighted channel assignment (writes with `--apply`) |
+| `radio report` | Generate a radio optimisation report |
+
+Run any command with `--help` for its options.
+
+> Invoke commands through the installed `unifi-mapper` script. `python -m unifi_mapper.typer_cli`
+> also works, and a test asserts both paths expose the same command set.
 
 ### Scheduled Audits
 

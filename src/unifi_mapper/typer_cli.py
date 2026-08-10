@@ -2381,10 +2381,6 @@ def ports_inspect(
         client.logout()
 
 
-if __name__ == '__main__':
-    app()
-
-
 # ─── Radio Configuration Commands ────────────────────────────────────────────
 
 
@@ -3212,3 +3208,7 @@ def diagnose_bandwidth(
                 console.print(f'  Transferred: {gb:.2f} GB')
         else:
             console.print(f'\n  [red]FAILED: {result.get("error", "unknown")}[/red]')
+
+
+if __name__ == '__main__':
+    app()
