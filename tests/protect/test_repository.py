@@ -105,12 +105,18 @@ class TestDeviceRepository:
         repo: DeviceRepository[ProtectCamera] = DeviceRepository(DeviceType.CAMERA)
 
         recording_cam = ProtectCamera(  # type: ignore[call-arg]
-            id='cam-1', name='Recording', type=DeviceType.CAMERA,
-            mac='AA:BB:CC:DD:EE:01', is_recording=True
+            id='cam-1',
+            name='Recording',
+            type=DeviceType.CAMERA,
+            mac='AA:BB:CC:DD:EE:01',
+            is_recording=True,
         )
         not_recording_cam = ProtectCamera(  # type: ignore[call-arg]
-            id='cam-2', name='Not Recording', type=DeviceType.CAMERA,
-            mac='AA:BB:CC:DD:EE:02', is_recording=False
+            id='cam-2',
+            name='Not Recording',
+            type=DeviceType.CAMERA,
+            mac='AA:BB:CC:DD:EE:02',
+            is_recording=False,
         )
         repo.add(recording_cam)
         repo.add(not_recording_cam)
@@ -124,12 +130,20 @@ class TestDeviceRepository:
         repo: DeviceRepository[ProtectCamera] = DeviceRepository(DeviceType.CAMERA)
 
         cam1 = ProtectCamera(  # type: ignore[call-arg]
-            id='cam-1', name='Cam 1', type=DeviceType.CAMERA,
-            mac='AA:BB:CC:DD:EE:01', is_recording=True, is_motion_detected=True
+            id='cam-1',
+            name='Cam 1',
+            type=DeviceType.CAMERA,
+            mac='AA:BB:CC:DD:EE:01',
+            is_recording=True,
+            is_motion_detected=True,
         )
         cam2 = ProtectCamera(  # type: ignore[call-arg]
-            id='cam-2', name='Cam 2', type=DeviceType.CAMERA,
-            mac='AA:BB:CC:DD:EE:02', is_recording=True, is_motion_detected=False
+            id='cam-2',
+            name='Cam 2',
+            type=DeviceType.CAMERA,
+            mac='AA:BB:CC:DD:EE:02',
+            is_recording=True,
+            is_motion_detected=False,
         )
         repo.add(cam1)
         repo.add(cam2)
@@ -394,9 +408,11 @@ class TestProtectDeviceCache:
         """Test clearing the cache."""
         cache = ProtectDeviceCache()
         # Manually add some data
-        cache._cameras.add(ProtectCamera(  # type: ignore[call-arg]
-            id='cam-1', name='Test', type=DeviceType.CAMERA, mac='AA:BB:CC:DD:EE:FF'
-        ))
+        cache._cameras.add(
+            ProtectCamera(  # type: ignore[call-arg]
+                id='cam-1', name='Test', type=DeviceType.CAMERA, mac='AA:BB:CC:DD:EE:FF'
+            )
+        )
         cache._nvr = ProtectNVR(  # type: ignore[call-arg]
             id='nvr-1', name='NVR', type=DeviceType.NVR, mac='11:22:33:44:55:66'
         )
@@ -535,12 +551,14 @@ class TestDeviceRepositoryTypeSafety:
         repo: DeviceRepository[ProtectSensor] = DeviceRepository(DeviceType.SENSOR)
 
         sensor1 = ProtectSensor(  # type: ignore[call-arg]
-            id='s1', name='Door', type=DeviceType.SENSOR,
-            mac='AA:BB:CC:DD:EE:01', is_opened=True
+            id='s1', name='Door', type=DeviceType.SENSOR, mac='AA:BB:CC:DD:EE:01', is_opened=True
         )
         sensor2 = ProtectSensor(  # type: ignore[call-arg]
-            id='s2', name='Window', type=DeviceType.SENSOR,
-            mac='AA:BB:CC:DD:EE:02', is_opened=False
+            id='s2',
+            name='Window',
+            type=DeviceType.SENSOR,
+            mac='AA:BB:CC:DD:EE:02',
+            is_opened=False,
         )
         repo.add(sensor1)
         repo.add(sensor2)

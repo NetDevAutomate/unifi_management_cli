@@ -19,8 +19,16 @@ ADOPTED = {
     'type': 'usw',
     'uptime': 5000,
     'port_table': [
-        {'port_idx': 1, 'name': 'uplink', 'rx_errors': 10, 'tx_errors': 0,
-         'rx_dropped': 0, 'tx_dropped': 0, 'rx_bytes': 100, 'tx_bytes': 100},
+        {
+            'port_idx': 1,
+            'name': 'uplink',
+            'rx_errors': 10,
+            'tx_errors': 0,
+            'rx_dropped': 0,
+            'tx_dropped': 0,
+            'rx_bytes': 100,
+            'tx_bytes': 100,
+        },
     ],
 }
 
@@ -33,8 +41,16 @@ UNADOPTED = {
     'adopted': False,
     'uptime': 60,
     'port_table': [
-        {'port_idx': 1, 'name': 'Port 1', 'rx_errors': 0, 'tx_errors': 0,
-         'rx_dropped': 0, 'tx_dropped': 0, 'rx_bytes': 0, 'tx_bytes': 0},
+        {
+            'port_idx': 1,
+            'name': 'Port 1',
+            'rx_errors': 0,
+            'tx_errors': 0,
+            'rx_dropped': 0,
+            'tx_dropped': 0,
+            'rx_bytes': 0,
+            'tx_bytes': 0,
+        },
     ],
 }
 
@@ -74,8 +90,16 @@ def test_compare_tolerates_unadopted_device(monkeypatch, tmp_path) -> None:
         **ADOPTED,
         'uptime': 5600,
         'port_table': [
-            {'port_idx': 1, 'name': 'uplink', 'rx_errors': 40, 'tx_errors': 0,
-             'rx_dropped': 0, 'tx_dropped': 0, 'rx_bytes': 900, 'tx_bytes': 900},
+            {
+                'port_idx': 1,
+                'name': 'uplink',
+                'rx_errors': 40,
+                'tx_errors': 0,
+                'rx_dropped': 0,
+                'tx_dropped': 0,
+                'rx_bytes': 900,
+                'tx_bytes': 900,
+            },
         ],
     }
     monkeypatch.setattr(link_error_tracking, 'UniFiClient', _mock_client([grown, UNADOPTED]))

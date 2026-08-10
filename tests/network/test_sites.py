@@ -246,10 +246,7 @@ class TestSiteManager:
         sites = await manager.get_sites_by_timezone('America/New_York')
 
         assert len(sites) == 2
-        assert all(
-            s.time_zone == 'America/New_York'
-            for s in sites
-        )
+        assert all(s.time_zone == 'America/New_York' for s in sites)
 
     @pytest.mark.asyncio
     async def test_get_sites_by_country(
@@ -335,9 +332,7 @@ class TestSiteManager:
         result = await manager.set_site_timezone('site-4', 'America/Chicago')
 
         assert result.time_zone == 'America/Chicago'
-        mock_client.update_site.assert_called_once_with(
-            'site-4', timeZone='America/Chicago'
-        )
+        mock_client.update_site.assert_called_once_with('site-4', timeZone='America/Chicago')
 
     @pytest.mark.asyncio
     async def test_set_site_country(

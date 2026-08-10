@@ -414,9 +414,7 @@ class TestEventFilter:
 
     def test_filter_multiple_values_in_criteria(self) -> None:
         """Test filtering with multiple values in a criterion."""
-        filter_obj = EventFilter(
-            event_types=[ProtectEventType.MOTION, ProtectEventType.RING]
-        )
+        filter_obj = EventFilter(event_types=[ProtectEventType.MOTION, ProtectEventType.RING])
         event = self._create_event(event_type=ProtectEventType.RING)
 
         assert filter_obj.matches(event) is True

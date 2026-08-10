@@ -115,9 +115,20 @@ class TestDeviceCategory:
     def test_all_categories_exist(self) -> None:
         """Test that expected categories exist."""
         expected = [
-            'computer', 'mobile', 'tablet', 'smart_tv', 'gaming',
-            'iot', 'network', 'printer', 'voip', 'camera',
-            'smart_home', 'media_player', 'wearable', 'unknown',
+            'computer',
+            'mobile',
+            'tablet',
+            'smart_tv',
+            'gaming',
+            'iot',
+            'network',
+            'printer',
+            'voip',
+            'camera',
+            'smart_home',
+            'media_player',
+            'wearable',
+            'unknown',
         ]
 
         for cat in expected:

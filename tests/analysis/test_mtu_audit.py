@@ -14,7 +14,9 @@ def test_flags_inter_switch_mtu_mismatch() -> None:
             'mac': 'aa:aa:aa:aa:aa:aa',
             'type': 'usw',
             'port_table': [{'port_idx': 1, 'up': True, 'speed': 10000, 'mtu': 9000}],
-            'lldp_table': [{'local_port_idx': 1, 'chassis_id': 'bb:bb:bb:bb:bb:bb', 'port_id': '2'}],
+            'lldp_table': [
+                {'local_port_idx': 1, 'chassis_id': 'bb:bb:bb:bb:bb:bb', 'port_id': '2'}
+            ],
         },
         {
             '_id': 'b',
@@ -41,7 +43,9 @@ def test_matching_mtu_passes() -> None:
             'mac': 'aa:aa:aa:aa:aa:aa',
             'type': 'usw',
             'port_table': [{'port_idx': 1, 'up': True, 'speed': 10000, 'mtu': 9000}],
-            'lldp_table': [{'local_port_idx': 1, 'chassis_id': 'bb:bb:bb:bb:bb:bb', 'port_id': '2'}],
+            'lldp_table': [
+                {'local_port_idx': 1, 'chassis_id': 'bb:bb:bb:bb:bb:bb', 'port_id': '2'}
+            ],
         },
         {
             '_id': 'b',

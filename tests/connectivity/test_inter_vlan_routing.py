@@ -109,4 +109,6 @@ def test_unresolved_endpoint_returns_unknown_verdict() -> None:
 
     assert report.verdict == 'unknown'
     assert report.validation_passed is False
-    assert any('source endpoint' in recommendation.lower() for recommendation in report.recommendations)
+    assert any(
+        'source endpoint' in recommendation.lower() for recommendation in report.recommendations
+    )

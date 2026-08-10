@@ -299,7 +299,7 @@ class TestDPIModels:
             id=100,
             name='Netflix',
             rxBytes=1073741824,  # 1 GB
-            txBytes=536870912,   # 512 MB
+            txBytes=536870912,  # 512 MB
         )
         assert stats.total_bytes == 1073741824 + 536870912
         assert 'GB' in stats.total_bytes_human

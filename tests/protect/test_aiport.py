@@ -149,8 +149,16 @@ class TestAICapabilityType:
 
     def test_all_capability_types_exist(self) -> None:
         """Verify all expected capability types exist."""
-        expected = ['person', 'vehicle', 'animal', 'package', 'face',
-                    'licensePlate', 'smoke', 'cmonx']
+        expected = [
+            'person',
+            'vehicle',
+            'animal',
+            'package',
+            'face',
+            'licensePlate',
+            'smoke',
+            'cmonx',
+        ]
         values = [t.value for t in AICapabilityType]
         for exp in expected:
             assert exp in values
@@ -415,10 +423,7 @@ class TestAIPortManager:
         ):
             caps = manager.get_capabilities('aiport-001')
             assert len(caps) == 4
-            person_cap = next(
-                c for c in caps
-                if c.capability_type == AICapabilityType.PERSON
-            )
+            person_cap = next(c for c in caps if c.capability_type == AICapabilityType.PERSON)
             assert person_cap.enabled is True
 
     def test_get_capabilities_not_found(self, manager: AIPortManager) -> None:

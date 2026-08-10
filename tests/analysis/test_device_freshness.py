@@ -18,8 +18,13 @@ from unifi_mapper.analysis.device_freshness import (
 
 def _dev(mac: str, name: str, last_seen: int, rx: int, uptime: int, state: int = 1) -> dict:
     return {
-        '_id': f'dev-{mac}', 'mac': mac, 'name': name, 'type': 'usw',
-        'state': state, 'last_seen': last_seen, 'uptime': uptime,
+        '_id': f'dev-{mac}',
+        'mac': mac,
+        'name': name,
+        'type': 'usw',
+        'state': state,
+        'last_seen': last_seen,
+        'uptime': uptime,
         'port_table': [{'port_idx': 1, 'up': True, 'rx_bytes': rx}],
     }
 

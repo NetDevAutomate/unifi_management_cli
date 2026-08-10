@@ -58,7 +58,13 @@ def _switch(
                 'is_uplink': True,
                 'portconf_id': portconf_id,
             },
-            {'port_idx': 1, 'name': 'camera', 'up': True, 'is_uplink': False, 'portconf_id': 'prof-access'},
+            {
+                'port_idx': 1,
+                'name': 'camera',
+                'up': True,
+                'is_uplink': False,
+                'portconf_id': 'prof-access',
+            },
         ],
     }
 
@@ -126,7 +132,9 @@ def test_management_vlan_severed_is_called_out() -> None:
 
     finding = report.findings[0]
     assert finding.management_vlan_severed is True
-    assert 'unreachable' in finding.recommendation.lower() or 'management' in finding.message.lower()
+    assert (
+        'unreachable' in finding.recommendation.lower() or 'management' in finding.message.lower()
+    )
 
 
 def test_foreign_bridge_uplink_is_flagged() -> None:
@@ -238,7 +246,13 @@ def test_access_point_is_not_treated_as_a_switch() -> None:
                 'state': 1,
                 'uplink': {'uplink_mac': '02:00:fe:02:00:0b'},
                 'port_table': [
-                    {'port_idx': 5, 'name': 'Data', 'up': True, 'is_uplink': True, 'portconf_id': 'prof-access'}
+                    {
+                        'port_idx': 5,
+                        'name': 'Data',
+                        'up': True,
+                        'is_uplink': True,
+                        'portconf_id': 'prof-access',
+                    }
                 ],
             },
             _aggregation(),
@@ -267,7 +281,13 @@ def test_forward_all_without_explicit_tagged_mgmt_is_a_full_trunk() -> None:
                 'state': 1,
                 'uplink': {'uplink_mac': '02:00:fe:02:00:0b'},
                 'port_table': [
-                    {'port_idx': 10, 'name': 'Port 10', 'up': True, 'is_uplink': True, 'forward': 'all'}
+                    {
+                        'port_idx': 10,
+                        'name': 'Port 10',
+                        'up': True,
+                        'is_uplink': True,
+                        'forward': 'all',
+                    }
                 ],
             },
             _aggregation(),
@@ -323,7 +343,9 @@ def test_long_stale_device_does_not_assert_topology() -> None:
     fall into that trap itself. An 8-hour-old snapshot naming a since-removed third-party
     bridge is not evidence of current topology.
     """
-    switch = _switch(uplink_port_idx=5, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05', state=0)
+    switch = _switch(
+        uplink_port_idx=5, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05', state=0
+    )
     switch['last_seen'] = 1_000_000  # 8 hours before `now` below
 
     report = audit_uplink_transparency_from_data(
@@ -348,7 +370,9 @@ def test_long_stale_device_does_not_assert_topology() -> None:
 
 def test_recently_offline_device_is_still_asserted() -> None:
     """Data only minutes old is still trustworthy, so a real fault must still be CRITICAL."""
-    switch = _switch(uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05', state=0)
+    switch = _switch(
+        uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05', state=0
+    )
     switch['last_seen'] = 1_000_000
 
     report = audit_uplink_transparency_from_data(
@@ -367,7 +391,9 @@ def test_recently_offline_device_is_still_asserted() -> None:
 
 def test_staleness_threshold_is_configurable() -> None:
     """The cutoff can be tuned per call."""
-    switch = _switch(uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05', state=0)
+    switch = _switch(
+        uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05', state=0
+    )
     switch['last_seen'] = 1_000_000
 
     strict = audit_uplink_transparency_from_data(

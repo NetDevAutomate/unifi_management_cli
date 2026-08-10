@@ -203,17 +203,13 @@ class TestUniFiProtectClientConnect:
             mock_api.get_bootstrap.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_connect_authentication_error(
-        self, protect_config: ProtectConfig
-    ) -> None:
+    async def test_connect_authentication_error(self, protect_config: ProtectConfig) -> None:
         """Test that authentication failures raise AuthenticationError."""
         client = UniFiProtectClient(protect_config)
 
         with patch('unifi_mapper.protect.client.ProtectApiClient') as mock_api_class:
             mock_api = AsyncMock()
-            mock_api.get_bootstrap = AsyncMock(
-                side_effect=Exception('Unauthorized access')
-            )
+            mock_api.get_bootstrap = AsyncMock(side_effect=Exception('Unauthorized access'))
             mock_api_class.return_value = mock_api
 
             with pytest.raises(AuthenticationError) as exc_info:
@@ -223,17 +219,13 @@ class TestUniFiProtectClientConnect:
             assert client.state == ConnectionState.ERROR
 
     @pytest.mark.asyncio
-    async def test_connect_connection_error(
-        self, protect_config: ProtectConfig
-    ) -> None:
+    async def test_connect_connection_error(self, protect_config: ProtectConfig) -> None:
         """Test that connection failures raise ConnectionError."""
         client = UniFiProtectClient(protect_config)
 
         with patch('unifi_mapper.protect.client.ProtectApiClient') as mock_api_class:
             mock_api = AsyncMock()
-            mock_api.get_bootstrap = AsyncMock(
-                side_effect=Exception('Connection refused')
-            )
+            mock_api.get_bootstrap = AsyncMock(side_effect=Exception('Connection refused'))
             mock_api_class.return_value = mock_api
 
             with pytest.raises(ConnectionError) as exc_info:
@@ -270,9 +262,7 @@ class TestUniFiProtectClientDisconnect:
             assert client.api is None
 
     @pytest.mark.asyncio
-    async def test_disconnect_when_not_connected(
-        self, protect_config: ProtectConfig
-    ) -> None:
+    async def test_disconnect_when_not_connected(self, protect_config: ProtectConfig) -> None:
         """Test that disconnect is safe when not connected."""
         client = UniFiProtectClient(protect_config)
 
@@ -326,9 +316,7 @@ class TestUniFiProtectClientRefresh:
 
         with patch('unifi_mapper.protect.client.ProtectApiClient') as mock_api_class:
             mock_api = AsyncMock()
-            mock_api.get_bootstrap = AsyncMock(
-                side_effect=[mock_bootstrap, new_bootstrap]
-            )
+            mock_api.get_bootstrap = AsyncMock(side_effect=[mock_bootstrap, new_bootstrap])
             mock_api.close_session = AsyncMock()
             mock_api_class.return_value = mock_api
 

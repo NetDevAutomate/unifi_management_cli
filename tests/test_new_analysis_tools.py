@@ -25,21 +25,49 @@ from unifi_mapper.analysis.uplink_redundancy import _analyze_uplink_redundancy
 @pytest.fixture
 def switch_device() -> dict:
     return {
-        "_id": "sw1",
-        "name": "Core Switch",
-        "mac": "aa:bb:cc:dd:ee:01",
-        "model": "USW-Pro-48-PoE",
-        "type": "usw",
-        "total_max_power": 600,
-        "port_table": [
-            {"port_idx": 1, "up": True, "speed": 1000, "is_uplink": False,
-             "poe_mode": "auto", "poe_power": "15.2", "name": "AP Office"},
-            {"port_idx": 2, "up": True, "speed": 1000, "is_uplink": False,
-             "poe_mode": "auto", "poe_power": "4.1", "name": "Phone"},
-            {"port_idx": 49, "up": True, "speed": 10000, "is_uplink": True,
-             "poe_mode": "off", "poe_power": "0", "name": "Uplink 1"},
-            {"port_idx": 50, "up": True, "speed": 10000, "is_uplink": True,
-             "poe_mode": "off", "poe_power": "0", "name": "Uplink 2"},
+        '_id': 'sw1',
+        'name': 'Core Switch',
+        'mac': 'aa:bb:cc:dd:ee:01',
+        'model': 'USW-Pro-48-PoE',
+        'type': 'usw',
+        'total_max_power': 600,
+        'port_table': [
+            {
+                'port_idx': 1,
+                'up': True,
+                'speed': 1000,
+                'is_uplink': False,
+                'poe_mode': 'auto',
+                'poe_power': '15.2',
+                'name': 'AP Office',
+            },
+            {
+                'port_idx': 2,
+                'up': True,
+                'speed': 1000,
+                'is_uplink': False,
+                'poe_mode': 'auto',
+                'poe_power': '4.1',
+                'name': 'Phone',
+            },
+            {
+                'port_idx': 49,
+                'up': True,
+                'speed': 10000,
+                'is_uplink': True,
+                'poe_mode': 'off',
+                'poe_power': '0',
+                'name': 'Uplink 1',
+            },
+            {
+                'port_idx': 50,
+                'up': True,
+                'speed': 10000,
+                'is_uplink': True,
+                'poe_mode': 'off',
+                'poe_power': '0',
+                'name': 'Uplink 2',
+            },
         ],
     }
 
@@ -47,22 +75,48 @@ def switch_device() -> dict:
 @pytest.fixture
 def ap_device() -> dict:
     return {
-        "_id": "ap1",
-        "name": "Living Room AP",
-        "mac": "aa:bb:cc:dd:ee:10",
-        "model": "U6-Pro",
-        "type": "uap",
-        "radio_table": [
-            {"radio": "na", "channel": 36, "ht": "40", "tx_power": 20,
-             "tx_power_mode": "auto", "min_rssi_enabled": False, "min_rssi": -80},
-            {"radio": "ng", "channel": 1, "ht": "20", "tx_power": 23,
-             "tx_power_mode": "auto", "min_rssi_enabled": False, "min_rssi": -80},
+        '_id': 'ap1',
+        'name': 'Living Room AP',
+        'mac': 'aa:bb:cc:dd:ee:10',
+        'model': 'U6-Pro',
+        'type': 'uap',
+        'radio_table': [
+            {
+                'radio': 'na',
+                'channel': 36,
+                'ht': '40',
+                'tx_power': 20,
+                'tx_power_mode': 'auto',
+                'min_rssi_enabled': False,
+                'min_rssi': -80,
+            },
+            {
+                'radio': 'ng',
+                'channel': 1,
+                'ht': '20',
+                'tx_power': 23,
+                'tx_power_mode': 'auto',
+                'min_rssi_enabled': False,
+                'min_rssi': -80,
+            },
         ],
-        "radio_table_stats": [
-            {"channel": 36, "cu_total": 45, "cu_self_rx": 10, "cu_self_tx": 15,
-             "num_sta": 8, "satisfaction": 85},
-            {"channel": 1, "cu_total": 30, "cu_self_rx": 5, "cu_self_tx": 10,
-             "num_sta": 4, "satisfaction": 90},
+        'radio_table_stats': [
+            {
+                'channel': 36,
+                'cu_total': 45,
+                'cu_self_rx': 10,
+                'cu_self_tx': 15,
+                'num_sta': 8,
+                'satisfaction': 85,
+            },
+            {
+                'channel': 1,
+                'cu_total': 30,
+                'cu_self_rx': 5,
+                'cu_self_tx': 10,
+                'num_sta': 4,
+                'satisfaction': 90,
+            },
         ],
     }
 
@@ -70,24 +124,54 @@ def ap_device() -> dict:
 @pytest.fixture
 def wireless_clients() -> list[dict]:
     return [
-        {"mac": "cc:01:00:00:00:01", "name": "Laptop", "ap_mac": "aa:bb:cc:dd:ee:10",
-         "is_wired": False, "rssi": -55, "signal": -55, "channel": 36,
-         "essid": "HomeNet", "ip": "192.0.2.100", "network_id": "net1"},
-        {"mac": "cc:01:00:00:00:02", "name": "Phone", "ap_mac": "aa:bb:cc:dd:ee:10",
-         "is_wired": False, "rssi": -70, "signal": -70, "channel": 1,
-         "essid": "HomeNet", "ip": "192.0.2.101", "network_id": "net1"},
+        {
+            'mac': 'cc:01:00:00:00:01',
+            'name': 'Laptop',
+            'ap_mac': 'aa:bb:cc:dd:ee:10',
+            'is_wired': False,
+            'rssi': -55,
+            'signal': -55,
+            'channel': 36,
+            'essid': 'HomeNet',
+            'ip': '192.0.2.100',
+            'network_id': 'net1',
+        },
+        {
+            'mac': 'cc:01:00:00:00:02',
+            'name': 'Phone',
+            'ap_mac': 'aa:bb:cc:dd:ee:10',
+            'is_wired': False,
+            'rssi': -70,
+            'signal': -70,
+            'channel': 1,
+            'essid': 'HomeNet',
+            'ip': '192.0.2.101',
+            'network_id': 'net1',
+        },
     ]
 
 
 @pytest.fixture
 def dhcp_networks() -> list[dict]:
     return [
-        {"_id": "net1", "name": "LAN", "dhcpd_enabled": True,
-         "dhcpd_start": "192.0.2.100", "dhcpd_stop": "192.0.2.199",
-         "subnet": "192.0.2.0/24", "vlan": None},
-        {"_id": "net2", "name": "IoT", "dhcpd_enabled": True,
-         "dhcpd_start": "198.51.100.10", "dhcpd_stop": "198.51.100.19",
-         "subnet": "198.51.100.0/24", "vlan": 10},
+        {
+            '_id': 'net1',
+            'name': 'LAN',
+            'dhcpd_enabled': True,
+            'dhcpd_start': '192.0.2.100',
+            'dhcpd_stop': '192.0.2.199',
+            'subnet': '192.0.2.0/24',
+            'vlan': None,
+        },
+        {
+            '_id': 'net2',
+            'name': 'IoT',
+            'dhcpd_enabled': True,
+            'dhcpd_start': '198.51.100.10',
+            'dhcpd_stop': '198.51.100.19',
+            'subnet': '198.51.100.0/24',
+            'vlan': 10,
+        },
     ]
 
 
@@ -97,30 +181,44 @@ def dhcp_networks() -> list[dict]:
 class TestDHCPPool:
     def test_pool_size_calculation(self, dhcp_networks: list[dict]) -> None:
         """Pool size = stop - start + 1."""
-        clients = [{"network_id": "net1"} for _ in range(50)]
+        clients = [{'network_id': 'net1'} for _ in range(50)]
         pools, _, _ = _analyze_dhcp_pools(dhcp_networks, clients)
 
-        lan = next(p for p in pools if p.network_name == "LAN")
+        lan = next(p for p in pools if p.network_name == 'LAN')
         assert lan.pool_size == 100
         assert lan.active_clients == 50
         assert lan.utilization_percent == 50.0
-        assert lan.status == "OK"
+        assert lan.status == 'OK'
 
     def test_critical_utilization(self) -> None:
         """>=90% utilization triggers CRITICAL."""
-        networks = [{"_id": "n1", "name": "Full", "dhcpd_enabled": True,
-                      "dhcpd_start": "10.0.0.1", "dhcpd_stop": "10.0.0.10"}]
-        clients = [{"network_id": "n1"} for _ in range(9)]
+        networks = [
+            {
+                '_id': 'n1',
+                'name': 'Full',
+                'dhcpd_enabled': True,
+                'dhcpd_start': '10.0.0.1',
+                'dhcpd_stop': '10.0.0.10',
+            }
+        ]
+        clients = [{'network_id': 'n1'} for _ in range(9)]
         pools, warnings, recommendations = _analyze_dhcp_pools(networks, clients)
 
-        assert pools[0].status == "CRITICAL"
+        assert pools[0].status == 'CRITICAL'
         assert len(warnings) == 1
         assert len(recommendations) == 1
 
     def test_disabled_network_skipped(self) -> None:
         """DHCP-disabled networks are excluded."""
-        networks = [{"_id": "n1", "name": "Static", "dhcpd_enabled": False,
-                      "dhcpd_start": "10.0.0.1", "dhcpd_stop": "10.0.0.254"}]
+        networks = [
+            {
+                '_id': 'n1',
+                'name': 'Static',
+                'dhcpd_enabled': False,
+                'dhcpd_start': '10.0.0.1',
+                'dhcpd_stop': '10.0.0.254',
+            }
+        ]
         pools, _, _ = _analyze_dhcp_pools(networks, [])
         assert pools == []
 
@@ -142,7 +240,7 @@ class TestPoEBudget:
         s = statuses[0]
         assert s.poe_budget == 600
         assert s.poe_consumption == pytest.approx(19.3, abs=0.1)
-        assert s.status == "OK"
+        assert s.status == 'OK'
 
     def test_high_draw_ports_detected(self, switch_device: dict) -> None:
         """Ports drawing >5W appear in high_draw_ports."""
@@ -154,20 +252,23 @@ class TestPoEBudget:
     def test_critical_poe(self) -> None:
         """>=90% utilization triggers CRITICAL."""
         device = {
-            "_id": "sw2", "name": "PoE Switch", "type": "usw",
-            "model": "USW-Lite-8-PoE", "total_max_power": 52,
-            "port_table": [
-                {"port_idx": 1, "poe_mode": "auto", "poe_power": "25.0"},
-                {"port_idx": 2, "poe_mode": "auto", "poe_power": "23.0"},
+            '_id': 'sw2',
+            'name': 'PoE Switch',
+            'type': 'usw',
+            'model': 'USW-Lite-8-PoE',
+            'total_max_power': 52,
+            'port_table': [
+                {'port_idx': 1, 'poe_mode': 'auto', 'poe_power': '25.0'},
+                {'port_idx': 2, 'poe_mode': 'auto', 'poe_power': '23.0'},
             ],
         }
         statuses, warnings, recommendations = _analyze_poe_budgets([device])
-        assert statuses[0].status == "CRITICAL"
+        assert statuses[0].status == 'CRITICAL'
         assert len(warnings) == 1
 
     def test_non_switch_skipped(self) -> None:
         """APs and other device types are ignored."""
-        statuses, _, _ = _analyze_poe_budgets([{"type": "uap", "total_max_power": 0}])
+        statuses, _, _ = _analyze_poe_budgets([{'type': 'uap', 'total_max_power': 0}])
         assert statuses == []
 
 
@@ -181,7 +282,7 @@ class TestClientDensity:
         assert total == 2
         assert len(aps) == 1
         assert aps[0].client_count == 2
-        assert aps[0].device_name == "Living Room AP"
+        assert aps[0].device_name == 'Living Room AP'
 
     def test_avg_signal(self, ap_device: dict, wireless_clients: list[dict]) -> None:
         aps, _, _, _ = _analyze_density(wireless_clients, [ap_device])
@@ -190,12 +291,17 @@ class TestClientDensity:
     def test_overloaded_ap_warning(self, ap_device: dict) -> None:
         """>30 clients triggers WARNING, >50 triggers CRITICAL."""
         clients = [
-            {"mac": f"cc:00:00:00:00:{i:02x}", "ap_mac": ap_device["mac"],
-             "is_wired": False, "rssi": -60, "signal": -60}
+            {
+                'mac': f'cc:00:00:00:00:{i:02x}',
+                'ap_mac': ap_device['mac'],
+                'is_wired': False,
+                'rssi': -60,
+                'signal': -60,
+            }
             for i in range(35)
         ]
         aps, _, warnings, _ = _analyze_density(clients, [ap_device])
-        assert aps[0].status == "WARNING"
+        assert aps[0].status == 'WARNING'
         assert len(warnings) == 1
 
     def test_empty_clients(self, ap_device: dict) -> None:
@@ -217,19 +323,22 @@ class TestUplinkRedundancy:
 
     def test_single_uplink_warning(self) -> None:
         device = {
-            "_id": "sw3", "name": "Edge Switch", "type": "usw", "model": "USW-Flex-Mini",
-            "port_table": [
-                {"port_idx": 1, "is_uplink": True, "up": True, "speed": 1000},
-                {"port_idx": 2, "is_uplink": False, "up": True, "speed": 100},
+            '_id': 'sw3',
+            'name': 'Edge Switch',
+            'type': 'usw',
+            'model': 'USW-Flex-Mini',
+            'port_table': [
+                {'port_idx': 1, 'is_uplink': True, 'up': True, 'speed': 1000},
+                {'port_idx': 2, 'is_uplink': False, 'up': True, 'speed': 100},
             ],
         }
         statuses, warnings, recommendations = _analyze_uplink_redundancy([device])
         assert statuses[0].redundant is False
-        assert statuses[0].status == "WARNING"
+        assert statuses[0].status == 'WARNING'
         assert len(warnings) == 1
 
     def test_ap_devices_skipped(self) -> None:
-        statuses, _, _ = _analyze_uplink_redundancy([{"type": "uap", "port_table": []}])
+        statuses, _, _ = _analyze_uplink_redundancy([{'type': 'uap', 'port_table': []}])
         assert statuses == []
 
 
@@ -238,12 +347,12 @@ class TestUplinkRedundancy:
 
 class TestLatencyMatrix:
     def test_parse_ping_success(self) -> None:
-        target = {"ip": "192.0.2.1", "name": "Gateway", "type": "device"}
+        target = {'ip': '192.0.2.1', 'name': 'Gateway', 'type': 'device'}
         output = (
-            "PING 192.0.2.1 (192.0.2.1): 56 data bytes\n"
-            "64 bytes from 192.0.2.1: seq=0 ttl=64 time=0.456 ms\n"
-            "3 packets transmitted, 3 received, 0% packet loss\n"
-            "rtt min/avg/max/mdev = 0.321/0.456/0.789/0.123 ms\n"
+            'PING 192.0.2.1 (192.0.2.1): 56 data bytes\n'
+            '64 bytes from 192.0.2.1: seq=0 ttl=64 time=0.456 ms\n'
+            '3 packets transmitted, 3 received, 0% packet loss\n'
+            'rtt min/avg/max/mdev = 0.321/0.456/0.789/0.123 ms\n'
         )
         result = _parse_ping_output(target, output)
         assert result.reachable is True
@@ -252,28 +361,28 @@ class TestLatencyMatrix:
         assert result.packet_loss == 0.0
 
     def test_parse_ping_unreachable(self) -> None:
-        target = {"ip": "10.0.0.99", "name": "Dead Host", "type": "client"}
-        output = "3 packets transmitted, 0 received, 100% packet loss\n"
+        target = {'ip': '10.0.0.99', 'name': 'Dead Host', 'type': 'client'}
+        output = '3 packets transmitted, 0 received, 100% packet loss\n'
         result = _parse_ping_output(target, output)
         assert result.reachable is False
         assert result.packet_loss == 100.0
 
     def test_parse_ping_empty_output(self) -> None:
-        target = {"ip": "10.0.0.1", "name": "Unknown", "type": "device"}
-        result = _parse_ping_output(target, "")
+        target = {'ip': '10.0.0.1', 'name': 'Unknown', 'type': 'device'}
+        result = _parse_ping_output(target, '')
         assert result.reachable is False
 
     def test_build_target_list_deduplicates(self) -> None:
-        devices = [{"ip": "192.0.2.1", "name": "GW", "mac": "aa:00", "model": "UDM"}]
-        clients = [{"ip": "192.0.2.1", "name": "dup"}, {"ip": "192.0.2.50", "name": "PC"}]
+        devices = [{'ip': '192.0.2.1', 'name': 'GW', 'mac': 'aa:00', 'model': 'UDM'}]
+        clients = [{'ip': '192.0.2.1', 'name': 'dup'}, {'ip': '192.0.2.50', 'name': 'PC'}]
         targets = _build_target_list(devices, clients, include_clients=True)
         assert len(targets) == 2
-        ips = {t["ip"] for t in targets}
-        assert ips == {"192.0.2.1", "192.0.2.50"}
+        ips = {t['ip'] for t in targets}
+        assert ips == {'192.0.2.1', '192.0.2.50'}
 
     def test_build_target_list_excludes_clients(self) -> None:
-        devices = [{"ip": "192.0.2.1", "name": "GW", "mac": "aa:00", "model": "UDM"}]
-        clients = [{"ip": "192.0.2.50", "name": "PC"}]
+        devices = [{'ip': '192.0.2.1', 'name': 'GW', 'mac': 'aa:00', 'model': 'UDM'}]
+        clients = [{'ip': '192.0.2.50', 'name': 'PC'}]
         targets = _build_target_list(devices, clients, include_clients=False)
         assert len(targets) == 1
 
@@ -285,29 +394,31 @@ class TestRadioConfig:
     def test_recommends_80mhz_for_5ghz(self, ap_device: dict) -> None:
         """5GHz radios below 80MHz width get upgrade recommendation."""
         changes = build_optimisation_plan([ap_device])
-        na_changes = [c for c in changes if c["radio"] == "na"]
+        na_changes = [c for c in changes if c['radio'] == 'na']
         assert len(na_changes) == 1
-        assert na_changes[0]["ht"] == "80"
-        assert na_changes[0]["min_rssi_enabled"] is True
+        assert na_changes[0]['ht'] == '80'
+        assert na_changes[0]['min_rssi_enabled'] is True
 
     def test_recommends_reduced_24ghz_power(self, ap_device: dict) -> None:
         """2.4GHz radios with high tx_power get reduced to 12."""
         changes = build_optimisation_plan([ap_device])
-        ng_changes = [c for c in changes if c["radio"] == "ng"]
+        ng_changes = [c for c in changes if c['radio'] == 'ng']
         assert len(ng_changes) == 1
-        assert ng_changes[0]["tx_power"] == 12
+        assert ng_changes[0]['tx_power'] == 12
 
     def test_kitchen_channel_move(self) -> None:
         """Kitchen AP on channel 36 gets moved to 44."""
         device = {
-            "_id": "ap_k", "name": "Kitchen AP", "type": "uap",
-            "radio_table": [{"radio": "na", "channel": 36, "ht": "40"}],
+            '_id': 'ap_k',
+            'name': 'Kitchen AP',
+            'type': 'uap',
+            'radio_table': [{'radio': 'na', 'channel': 36, 'ht': '40'}],
         }
         changes = build_optimisation_plan([device])
-        assert changes[0]["channel"] == 44
+        assert changes[0]['channel'] == 44
 
     def test_non_ap_skipped(self) -> None:
-        changes = build_optimisation_plan([{"_id": "sw1", "type": "usw"}])
+        changes = build_optimisation_plan([{'_id': 'sw1', 'type': 'usw'}])
         assert changes == []
 
 
@@ -318,23 +429,33 @@ class TestChannelOptimiser:
     def _make_aps(self, channels_5: list[int], channels_24: list[int]) -> list[dict]:
         aps = []
         for i, (ch5, ch24) in enumerate(zip(channels_5, channels_24)):
-            aps.append({
-                "device_id": f"ap{i}",
-                "name": f"AP-{i}",
-                "radios": {
-                    "5GHz": {"channel": ch5, "utilization": 20 + i * 10,
-                             "interference": 5, "num_sta": 3},
-                    "2.4GHz": {"channel": ch24, "utilization": 15 + i * 5,
-                               "interference": 3, "num_sta": 2},
-                },
-            })
+            aps.append(
+                {
+                    'device_id': f'ap{i}',
+                    'name': f'AP-{i}',
+                    'radios': {
+                        '5GHz': {
+                            'channel': ch5,
+                            'utilization': 20 + i * 10,
+                            'interference': 5,
+                            'num_sta': 3,
+                        },
+                        '2.4GHz': {
+                            'channel': ch24,
+                            'utilization': 15 + i * 5,
+                            'interference': 3,
+                            'num_sta': 2,
+                        },
+                    },
+                }
+            )
         return aps
 
     def test_5ghz_assigns_different_channels(self) -> None:
         """Two APs on same channel should get separated."""
         aps = self._make_aps([36, 36], [1, 6])
         recs = optimize_5ghz(aps)
-        assigned = {r["recommended_channel"] for r in recs}
+        assigned = {r['recommended_channel'] for r in recs}
         assert len(assigned) == 2  # different channels
 
     def test_5ghz_empty_input(self) -> None:
@@ -344,7 +465,7 @@ class TestChannelOptimiser:
         """Three APs should spread across 1, 6, 11."""
         aps = self._make_aps([36, 44, 149], [1, 1, 1])
         recs = optimize_24ghz(aps)
-        assigned = [r["recommended_channel"] for r in recs]
+        assigned = [r['recommended_channel'] for r in recs]
         assert set(assigned) == {1, 6, 11}
 
     def test_24ghz_empty_input(self) -> None:
@@ -360,9 +481,9 @@ class TestChannelOptimiser:
         recs = optimize_5ghz(aps, neighbour_data=neighbour_data)
         # With equal utilization, ch 149 (no neighbours) should be preferred
         # over ch 36 (heavy neighbour penalty)
-        ch36_rec = next((r for r in recs if r["current_channel"] == 36), None)
+        ch36_rec = next((r for r in recs if r['current_channel'] == 36), None)
         assert ch36_rec is not None
-        assert ch36_rec["recommended_channel"] != 36  # should move away
+        assert ch36_rec['recommended_channel'] != 36  # should move away
 
     def test_5ghz_neighbour_penalty_capped_at_35(self) -> None:
         """Raw penalty 60 (20 strong neighbours × 3.0) capped at 35."""
@@ -378,8 +499,7 @@ class TestChannelOptimiser:
         neighbour_data = {1: 0.0, 6: 10.0, 11: 0.0, 13: 0.0}
         recs = optimize_24ghz(aps, neighbour_data=neighbour_data)
         # At least one AP should move away from ch 6
-        moved = [r for r in recs if r["current_channel"] == 6
-                 and r["recommended_channel"] != 6]
+        moved = [r for r in recs if r['current_channel'] == 6 and r['recommended_channel'] != 6]
         assert len(moved) >= 1
 
     def test_24ghz_adjacent_channel_penalty(self) -> None:
@@ -418,32 +538,32 @@ class TestLinkErrorTracking:
     @staticmethod
     def _compute_delta(prev: dict, current: dict, elapsed_minutes: float) -> dict:
         """Replicate the core delta logic from compare_link_errors."""
-        rx_err = max(0, (current.get("rx_errors", 0) or 0) - prev.get("rx_errors", 0))
-        tx_err = max(0, (current.get("tx_errors", 0) or 0) - prev.get("tx_errors", 0))
-        rx_drop = max(0, (current.get("rx_dropped", 0) or 0) - prev.get("rx_dropped", 0))
-        tx_drop = max(0, (current.get("tx_dropped", 0) or 0) - prev.get("tx_dropped", 0))
+        rx_err = max(0, (current.get('rx_errors', 0) or 0) - prev.get('rx_errors', 0))
+        tx_err = max(0, (current.get('tx_errors', 0) or 0) - prev.get('tx_errors', 0))
+        rx_drop = max(0, (current.get('rx_dropped', 0) or 0) - prev.get('rx_dropped', 0))
+        tx_drop = max(0, (current.get('tx_dropped', 0) or 0) - prev.get('tx_dropped', 0))
         total = rx_err + tx_err + rx_drop + tx_drop
         rate = total / elapsed_minutes if elapsed_minutes > 0 else 0
-        return {"total_delta": total, "rate_per_min": round(rate, 1)}
+        return {'total_delta': total, 'rate_per_min': round(rate, 1)}
 
     def test_delta_with_new_errors(self) -> None:
-        prev = {"rx_errors": 100, "tx_errors": 50, "rx_dropped": 10, "tx_dropped": 5}
-        curr = {"rx_errors": 150, "tx_errors": 55, "rx_dropped": 12, "tx_dropped": 5}
+        prev = {'rx_errors': 100, 'tx_errors': 50, 'rx_dropped': 10, 'tx_dropped': 5}
+        curr = {'rx_errors': 150, 'tx_errors': 55, 'rx_dropped': 12, 'tx_dropped': 5}
         result = self._compute_delta(prev, curr, elapsed_minutes=5.0)
-        assert result["total_delta"] == 57
-        assert result["rate_per_min"] == pytest.approx(11.4)
+        assert result['total_delta'] == 57
+        assert result['rate_per_min'] == pytest.approx(11.4)
 
     def test_delta_no_change(self) -> None:
-        prev = {"rx_errors": 100, "tx_errors": 50, "rx_dropped": 10, "tx_dropped": 5}
+        prev = {'rx_errors': 100, 'tx_errors': 50, 'rx_dropped': 10, 'tx_dropped': 5}
         result = self._compute_delta(prev, prev, elapsed_minutes=5.0)
-        assert result["total_delta"] == 0
+        assert result['total_delta'] == 0
 
     def test_delta_counter_reset_clamped(self) -> None:
         """Counter reset (current < prev) should clamp to 0, not go negative."""
-        prev = {"rx_errors": 500, "tx_errors": 0, "rx_dropped": 0, "tx_dropped": 0}
-        curr = {"rx_errors": 10, "tx_errors": 0, "rx_dropped": 0, "tx_dropped": 0}
+        prev = {'rx_errors': 500, 'tx_errors': 0, 'rx_dropped': 0, 'tx_dropped': 0}
+        curr = {'rx_errors': 10, 'tx_errors': 0, 'rx_dropped': 0, 'tx_dropped': 0}
         result = self._compute_delta(prev, curr, elapsed_minutes=5.0)
-        assert result["total_delta"] == 0
+        assert result['total_delta'] == 0
 
     @staticmethod
     def _detect_reboot(prev_uptime: int, curr_uptime: int) -> bool:
@@ -488,52 +608,54 @@ class TestRoamingAnalysis:
     @staticmethod
     def _classify_client(observations: list[dict]) -> dict:
         """Replicate roaming classification from analyze_roaming."""
-        unique_aps = {o["ap_name"] for o in observations}
+        unique_aps = {o['ap_name'] for o in observations}
         roam_count = len(unique_aps) - 1
-        valid_rssi = [o["rssi"] for o in observations if o.get("rssi")]
+        valid_rssi = [o['rssi'] for o in observations if o.get('rssi')]
         avg_rssi = sum(valid_rssi) / len(valid_rssi) if valid_rssi else 0
         min_rssi = min(valid_rssi) if valid_rssi else 0
         transitions = sum(
-            1 for i in range(1, len(observations))
-            if observations[i]["ap_name"] != observations[i - 1]["ap_name"]
+            1
+            for i in range(1, len(observations))
+            if observations[i]['ap_name'] != observations[i - 1]['ap_name']
         )
         return {
-            "roam_count": roam_count,
-            "transitions": transitions,
-            "avg_rssi": round(avg_rssi),
-            "min_rssi": min_rssi,
-            "is_sticky": roam_count == 0 and min_rssi < 30 and len(observations) >= 3,
+            'roam_count': roam_count,
+            'transitions': transitions,
+            'avg_rssi': round(avg_rssi),
+            'min_rssi': min_rssi,
+            'is_sticky': roam_count == 0 and min_rssi < 30 and len(observations) >= 3,
         }
 
     def test_roaming_client_detected(self) -> None:
         obs = [
-            {"ap_name": "Living Room", "rssi": -55},
-            {"ap_name": "Kitchen", "rssi": -60},
-            {"ap_name": "Living Room", "rssi": -50},
+            {'ap_name': 'Living Room', 'rssi': -55},
+            {'ap_name': 'Kitchen', 'rssi': -60},
+            {'ap_name': 'Living Room', 'rssi': -50},
         ]
         result = self._classify_client(obs)
-        assert result["roam_count"] == 1
-        assert result["transitions"] == 2
+        assert result['roam_count'] == 1
+        assert result['transitions'] == 2
 
     def test_sticky_client_detected(self) -> None:
         obs = [
-            {"ap_name": "Garage", "rssi": 15},
-            {"ap_name": "Garage", "rssi": 12},
-            {"ap_name": "Garage", "rssi": 18},
+            {'ap_name': 'Garage', 'rssi': 15},
+            {'ap_name': 'Garage', 'rssi': 12},
+            {'ap_name': 'Garage', 'rssi': 18},
         ]
         result = self._classify_client(obs)
-        assert result["is_sticky"] is True
-        assert result["roam_count"] == 0
+        assert result['is_sticky'] is True
+        assert result['roam_count'] == 0
 
     def test_good_signal_not_sticky(self) -> None:
         """RSSI >= 30 means good signal — not sticky even if stationary."""
         obs = [
-            {"ap_name": "Office", "rssi": 55},
-            {"ap_name": "Office", "rssi": 60},
-            {"ap_name": "Office", "rssi": 58},
+            {'ap_name': 'Office', 'rssi': 55},
+            {'ap_name': 'Office', 'rssi': 60},
+            {'ap_name': 'Office', 'rssi': 58},
         ]
         result = self._classify_client(obs)
-        assert result["is_sticky"] is False
+        assert result['is_sticky'] is False
+
     # ── Phase D T1: 48h retention + history_hours_available helper ───────────
 
     def test_max_snapshots_retained_constant(self) -> None:
@@ -545,6 +667,7 @@ class TestRoamingAnalysis:
             RETENTION_HOURS,
             SNAPSHOT_INTERVAL_SECONDS,
         )
+
         assert SNAPSHOT_INTERVAL_SECONDS == 300
         assert RETENTION_HOURS == 48
         assert MAX_SNAPSHOTS_RETAINED == 576
@@ -557,13 +680,13 @@ class TestRoamingAnalysis:
         from unifi_mapper.analysis import roaming_analysis
 
         # Seed a history file with 600 synthetic snapshots (more than 576)
-        history_file = tmp_path / "history.json"
+        history_file = tmp_path / 'history.json'
         now = datetime(2026, 5, 4, 12, 0, 0)
         seeded = {
-            "snapshots": [
+            'snapshots': [
                 {
-                    "timestamp": (now - timedelta(minutes=5 * (599 - i))).isoformat(),
-                    "associations": [],
+                    'timestamp': (now - timedelta(minutes=5 * (599 - i))).isoformat(),
+                    'associations': [],
                 }
                 for i in range(600)
             ]
@@ -584,26 +707,28 @@ class TestRoamingAnalysis:
             async def get_clients(self):
                 return []
 
-        monkeypatch.setattr(roaming_analysis, "UniFiClient", _MockClient)
+        monkeypatch.setattr(roaming_analysis, 'UniFiClient', _MockClient)
 
         asyncio.run(roaming_analysis.snapshot_client_associations(str(history_file)))
 
         result = json.loads(history_file.read_text())
-        assert len(result["snapshots"]) == roaming_analysis.MAX_SNAPSHOTS_RETAINED
+        assert len(result['snapshots']) == roaming_analysis.MAX_SNAPSHOTS_RETAINED
 
     def test_history_hours_available_missing_file(self, tmp_path) -> None:
         """Missing history file → 0.0, no error raised."""
         from unifi_mapper.analysis.roaming_analysis import history_hours_available
 
-        assert history_hours_available(str(tmp_path / "nonexistent.json")) == 0.0
+        assert history_hours_available(str(tmp_path / 'nonexistent.json')) == 0.0
 
     def test_history_hours_available_single_snapshot(self, tmp_path) -> None:
         """Fewer than 2 snapshots → 0.0 (need a span to measure)."""
         import json
         from unifi_mapper.analysis.roaming_analysis import history_hours_available
 
-        f = tmp_path / "history.json"
-        f.write_text(json.dumps({"snapshots": [{"timestamp": "2026-05-04T12:00:00", "associations": []}]}))
+        f = tmp_path / 'history.json'
+        f.write_text(
+            json.dumps({'snapshots': [{'timestamp': '2026-05-04T12:00:00', 'associations': []}]})
+        )
         assert history_hours_available(str(f)) == 0.0
 
     def test_history_hours_available_spans_24h(self, tmp_path) -> None:
@@ -611,14 +736,14 @@ class TestRoamingAnalysis:
         import json
         from unifi_mapper.analysis.roaming_analysis import history_hours_available
 
-        f = tmp_path / "history.json"
+        f = tmp_path / 'history.json'
         f.write_text(
             json.dumps(
                 {
-                    "snapshots": [
-                        {"timestamp": "2026-05-04T00:00:00", "associations": []},
-                        {"timestamp": "2026-05-04T06:00:00", "associations": []},
-                        {"timestamp": "2026-05-05T00:00:00", "associations": []},
+                    'snapshots': [
+                        {'timestamp': '2026-05-04T00:00:00', 'associations': []},
+                        {'timestamp': '2026-05-04T06:00:00', 'associations': []},
+                        {'timestamp': '2026-05-05T00:00:00', 'associations': []},
                     ]
                 }
             )
@@ -630,8 +755,8 @@ class TestRoamingAnalysis:
         from unifi_mapper.analysis.roaming_analysis import history_hours_available
         from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
-        f = tmp_path / "history.json"
-        f.write_text("{not valid json")
+        f = tmp_path / 'history.json'
+        f.write_text('{not valid json')
 
         with pytest.raises(ToolError) as exc_info:
             history_hours_available(str(f))
@@ -644,12 +769,12 @@ class TestRoamingAnalysis:
         """Helper: seed a history file with pre-built snapshot dicts."""
         import json
 
-        path.write_text(json.dumps({"snapshots": snapshots}))
+        path.write_text(json.dumps({'snapshots': snapshots}))
 
     @staticmethod
     def _snapshot(timestamp: str, associations: list[dict]) -> dict:
         """Helper: build a single snapshot dict."""
-        return {"timestamp": timestamp, "associations": associations}
+        return {'timestamp': timestamp, 'associations': associations}
 
     @staticmethod
     def _assoc(
@@ -661,13 +786,13 @@ class TestRoamingAnalysis:
     ) -> dict:
         """Helper: build a single association dict matching snapshotter output."""
         return {
-            "client_mac": client_mac,
-            "client_name": client_name,
-            "ap_mac": f"aa:bb:cc:dd:ee:{hash(ap_name) & 0xff:02x}",
-            "ap_name": ap_name,
-            "rssi": rssi,
-            "channel": channel,
-            "ssid": "HomeWiFi",
+            'client_mac': client_mac,
+            'client_name': client_name,
+            'ap_mac': f'aa:bb:cc:dd:ee:{hash(ap_name) & 0xFF:02x}',
+            'ap_name': ap_name,
+            'rssi': rssi,
+            'channel': channel,
+            'ssid': 'HomeWiFi',
         }
 
     def test_twofour_only_client_simple(self, tmp_path) -> None:
@@ -677,26 +802,35 @@ class TestRoamingAnalysis:
         """
         from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
 
-        f = tmp_path / "history.json"
-        self._write_history(f, [
-            self._snapshot("2026-05-04T10:00:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
-                self._assoc("BB:B", "laptop-B", "Kitchen", channel=36),
-                self._assoc("CC:C", "tablet-C", "Kitchen", channel=1),
-            ]),
-            self._snapshot("2026-05-04T10:05:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=11),
-                self._assoc("BB:B", "laptop-B", "Kitchen", channel=44),
-                self._assoc("CC:C", "tablet-C", "Office", channel=149),
-            ]),
-        ])
+        f = tmp_path / 'history.json'
+        self._write_history(
+            f,
+            [
+                self._snapshot(
+                    '2026-05-04T10:00:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=6),
+                        self._assoc('BB:B', 'laptop-B', 'Kitchen', channel=36),
+                        self._assoc('CC:C', 'tablet-C', 'Kitchen', channel=1),
+                    ],
+                ),
+                self._snapshot(
+                    '2026-05-04T10:05:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=11),
+                        self._assoc('BB:B', 'laptop-B', 'Kitchen', channel=44),
+                        self._assoc('CC:C', 'tablet-C', 'Office', channel=149),
+                    ],
+                ),
+            ],
+        )
 
         result = compute_twofour_only_clients(str(f))
 
-        assert set(result.keys()) == {"Kitchen", "Office"}
-        kitchen_macs = {entry["client_mac"] for entry in result["Kitchen"]}
-        assert kitchen_macs == {"AA:A"}, "Only A should be 2.4-only on Kitchen"
-        assert result["Office"] == []
+        assert set(result.keys()) == {'Kitchen', 'Office'}
+        kitchen_macs = {entry['client_mac'] for entry in result['Kitchen']}
+        assert kitchen_macs == {'AA:A'}, 'Only A should be 2.4-only on Kitchen'
+        assert result['Office'] == []
 
     def test_twofour_only_client_mixed_bands_same_ap(self, tmp_path) -> None:
         """Client D on Kitchen ch 6 then Kitchen ch 36 → NOT 2.4-only
@@ -704,20 +838,29 @@ class TestRoamingAnalysis:
         """
         from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
 
-        f = tmp_path / "history.json"
-        self._write_history(f, [
-            self._snapshot("2026-05-04T10:00:00", [
-                self._assoc("DD:D", "dual-D", "Kitchen", channel=6),
-            ]),
-            self._snapshot("2026-05-04T10:05:00", [
-                self._assoc("DD:D", "dual-D", "Kitchen", channel=36),
-            ]),
-        ])
+        f = tmp_path / 'history.json'
+        self._write_history(
+            f,
+            [
+                self._snapshot(
+                    '2026-05-04T10:00:00',
+                    [
+                        self._assoc('DD:D', 'dual-D', 'Kitchen', channel=6),
+                    ],
+                ),
+                self._snapshot(
+                    '2026-05-04T10:05:00',
+                    [
+                        self._assoc('DD:D', 'dual-D', 'Kitchen', channel=36),
+                    ],
+                ),
+            ],
+        )
 
         result = compute_twofour_only_clients(str(f))
 
-        kitchen_macs = {entry["client_mac"] for entry in result.get("Kitchen", [])}
-        assert "DD:D" not in kitchen_macs
+        kitchen_macs = {entry['client_mac'] for entry in result.get('Kitchen', [])}
+        assert 'DD:D' not in kitchen_macs
 
     def test_window_filter(self, tmp_path) -> None:
         """100 snapshots spanning 72 hours, window_hours=24 →
@@ -727,7 +870,7 @@ class TestRoamingAnalysis:
         from datetime import datetime, timedelta
         from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
 
-        f = tmp_path / "history.json"
+        f = tmp_path / 'history.json'
         now = datetime(2026, 5, 4, 12, 0, 0)
         # 100 snapshots, one every ~43 minutes → spans roughly 72h (100 * 43min = 71.7h)
         snapshots = []
@@ -737,18 +880,18 @@ class TestRoamingAnalysis:
             # Client "NEW" appears in last half (hours 36–72 from snapshot[0],
             # i.e. hours 0–36 from now)
             if i < 50:
-                assocs = [self._assoc("OLD", "old-client", "Kitchen", channel=6)]
+                assocs = [self._assoc('OLD', 'old-client', 'Kitchen', channel=6)]
             else:
-                assocs = [self._assoc("NEW", "new-client", "Kitchen", channel=6)]
+                assocs = [self._assoc('NEW', 'new-client', 'Kitchen', channel=6)]
             snapshots.append(self._snapshot(ts, assocs))
 
         self._write_history(f, snapshots)
 
         result = compute_twofour_only_clients(str(f), window_hours=24.0)
 
-        kitchen_macs = {entry["client_mac"] for entry in result.get("Kitchen", [])}
-        assert "OLD" not in kitchen_macs, "Client outside 24h window must be excluded"
-        assert "NEW" in kitchen_macs, "Client inside 24h window must be included"
+        kitchen_macs = {entry['client_mac'] for entry in result.get('Kitchen', [])}
+        assert 'OLD' not in kitchen_macs, 'Client outside 24h window must be excluded'
+        assert 'NEW' in kitchen_macs, 'Client inside 24h window must be included'
 
     def test_missing_channel_data_skipped(self, tmp_path) -> None:
         """Client E with every observation having channel=None → excluded
@@ -756,20 +899,29 @@ class TestRoamingAnalysis:
         """
         from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
 
-        f = tmp_path / "history.json"
-        self._write_history(f, [
-            self._snapshot("2026-05-04T10:00:00", [
-                self._assoc("EE:E", "unknown-E", "Kitchen", channel=None),
-            ]),
-            self._snapshot("2026-05-04T10:05:00", [
-                self._assoc("EE:E", "unknown-E", "Kitchen", channel=None),
-            ]),
-        ])
+        f = tmp_path / 'history.json'
+        self._write_history(
+            f,
+            [
+                self._snapshot(
+                    '2026-05-04T10:00:00',
+                    [
+                        self._assoc('EE:E', 'unknown-E', 'Kitchen', channel=None),
+                    ],
+                ),
+                self._snapshot(
+                    '2026-05-04T10:05:00',
+                    [
+                        self._assoc('EE:E', 'unknown-E', 'Kitchen', channel=None),
+                    ],
+                ),
+            ],
+        )
 
         result = compute_twofour_only_clients(str(f))
 
-        kitchen_macs = {entry["client_mac"] for entry in result.get("Kitchen", [])}
-        assert "EE:E" not in kitchen_macs
+        kitchen_macs = {entry['client_mac'] for entry in result.get('Kitchen', [])}
+        assert 'EE:E' not in kitchen_macs
 
     def test_aps_with_zero_twofour_only_present(self, tmp_path) -> None:
         """Every AP seen in the history appears as a key in the result,
@@ -777,43 +929,58 @@ class TestRoamingAnalysis:
         """
         from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
 
-        f = tmp_path / "history.json"
-        self._write_history(f, [
-            self._snapshot("2026-05-04T10:00:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
-                self._assoc("BB:B", "laptop-B", "Office", channel=36),
-                self._assoc("CC:C", "tablet-C", "Living-Room", channel=44),
-            ]),
-            self._snapshot("2026-05-04T10:05:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
-                self._assoc("BB:B", "laptop-B", "Office", channel=36),
-                self._assoc("CC:C", "tablet-C", "Living-Room", channel=44),
-            ]),
-        ])
+        f = tmp_path / 'history.json'
+        self._write_history(
+            f,
+            [
+                self._snapshot(
+                    '2026-05-04T10:00:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=6),
+                        self._assoc('BB:B', 'laptop-B', 'Office', channel=36),
+                        self._assoc('CC:C', 'tablet-C', 'Living-Room', channel=44),
+                    ],
+                ),
+                self._snapshot(
+                    '2026-05-04T10:05:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=6),
+                        self._assoc('BB:B', 'laptop-B', 'Office', channel=36),
+                        self._assoc('CC:C', 'tablet-C', 'Living-Room', channel=44),
+                    ],
+                ),
+            ],
+        )
 
         result = compute_twofour_only_clients(str(f))
 
-        assert set(result.keys()) == {"Kitchen", "Office", "Living-Room"}
-        assert len(result["Kitchen"]) == 1
-        assert result["Office"] == []
-        assert result["Living-Room"] == []
+        assert set(result.keys()) == {'Kitchen', 'Office', 'Living-Room'}
+        assert len(result['Kitchen']) == 1
+        assert result['Office'] == []
+        assert result['Living-Room'] == []
 
     def test_observation_count_accurate(self, tmp_path) -> None:
         """Client A appears in 5 snapshots on Kitchen 2.4 → observation_count == 5."""
         from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
 
-        f = tmp_path / "history.json"
-        self._write_history(f, [
-            self._snapshot(f"2026-05-04T10:0{i}:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
-            ])
-            for i in range(5)
-        ])
+        f = tmp_path / 'history.json'
+        self._write_history(
+            f,
+            [
+                self._snapshot(
+                    f'2026-05-04T10:0{i}:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=6),
+                    ],
+                )
+                for i in range(5)
+            ],
+        )
 
         result = compute_twofour_only_clients(str(f))
 
-        entry = next(e for e in result["Kitchen"] if e["client_mac"] == "AA:A")
-        assert entry["observation_count"] == 5
+        entry = next(e for e in result['Kitchen'] if e['client_mac'] == 'AA:A')
+        assert entry['observation_count'] == 5
 
     def test_last_seen_is_iso_string(self, tmp_path) -> None:
         """last_seen on each entry is the ISO timestamp of the most recent
@@ -821,32 +988,45 @@ class TestRoamingAnalysis:
         """
         from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
 
-        f = tmp_path / "history.json"
-        self._write_history(f, [
-            self._snapshot("2026-05-04T10:00:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
-            ]),
-            self._snapshot("2026-05-04T10:05:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
-            ]),
-            self._snapshot("2026-05-04T10:15:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
-            ]),
-        ])
+        f = tmp_path / 'history.json'
+        self._write_history(
+            f,
+            [
+                self._snapshot(
+                    '2026-05-04T10:00:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=6),
+                    ],
+                ),
+                self._snapshot(
+                    '2026-05-04T10:05:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=6),
+                    ],
+                ),
+                self._snapshot(
+                    '2026-05-04T10:15:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=6),
+                    ],
+                ),
+            ],
+        )
 
         result = compute_twofour_only_clients(str(f))
 
-        entry = next(e for e in result["Kitchen"] if e["client_mac"] == "AA:A")
-        assert entry["last_seen"] == "2026-05-04T10:15:00"
+        entry = next(e for e in result['Kitchen'] if e['client_mac'] == 'AA:A')
+        assert entry['last_seen'] == '2026-05-04T10:15:00'
         # Round-trip parse confirms ISO format
         from datetime import datetime
-        datetime.fromisoformat(entry["last_seen"])
+
+        datetime.fromisoformat(entry['last_seen'])
 
     def test_empty_history_returns_empty_dict(self, tmp_path) -> None:
         """File with zero snapshots → empty dict, no error."""
         from unifi_mapper.analysis.roaming_analysis import compute_twofour_only_clients
 
-        f = tmp_path / "history.json"
+        f = tmp_path / 'history.json'
         self._write_history(f, [])
 
         result = compute_twofour_only_clients(str(f))
@@ -859,10 +1039,10 @@ class TestRoamingAnalysis:
         """Missing / empty history → empty graph, no error."""
         from unifi_mapper.analysis.roaming_analysis import build_mobility_graph
 
-        missing = tmp_path / "nonexistent.json"
+        missing = tmp_path / 'nonexistent.json'
         assert build_mobility_graph(str(missing)) == {}
 
-        empty = tmp_path / "empty.json"
+        empty = tmp_path / 'empty.json'
         self._write_history(empty, [])
         assert build_mobility_graph(str(empty)) == {}
 
@@ -870,44 +1050,65 @@ class TestRoamingAnalysis:
         """Client seen on a single AP → mobility_graph[mac] == {'Kitchen'}."""
         from unifi_mapper.analysis.roaming_analysis import build_mobility_graph
 
-        f = tmp_path / "history.json"
-        self._write_history(f, [
-            self._snapshot("2026-05-04T10:00:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
-            ]),
-            self._snapshot("2026-05-04T10:05:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=11),
-            ]),
-        ])
+        f = tmp_path / 'history.json'
+        self._write_history(
+            f,
+            [
+                self._snapshot(
+                    '2026-05-04T10:00:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=6),
+                    ],
+                ),
+                self._snapshot(
+                    '2026-05-04T10:05:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=11),
+                    ],
+                ),
+            ],
+        )
 
         graph = build_mobility_graph(str(f))
 
-        assert graph == {"AA:A": {"Kitchen"}}
+        assert graph == {'AA:A': {'Kitchen'}}
 
     def test_build_mobility_graph_multi_ap_clients(self, tmp_path) -> None:
         """Client seen on multiple APs → mobility_graph[mac] includes all APs."""
         from unifi_mapper.analysis.roaming_analysis import build_mobility_graph
 
-        f = tmp_path / "history.json"
-        self._write_history(f, [
-            self._snapshot("2026-05-04T10:00:00", [
-                self._assoc("AA:A", "phone-A", "Kitchen", channel=6),
-                self._assoc("BB:B", "laptop-B", "Office", channel=36),
-            ]),
-            self._snapshot("2026-05-04T10:05:00", [
-                self._assoc("AA:A", "phone-A", "Office", channel=36),
-                self._assoc("BB:B", "laptop-B", "Office", channel=36),
-            ]),
-            self._snapshot("2026-05-04T10:10:00", [
-                self._assoc("AA:A", "phone-A", "Living-Room", channel=44),
-            ]),
-        ])
+        f = tmp_path / 'history.json'
+        self._write_history(
+            f,
+            [
+                self._snapshot(
+                    '2026-05-04T10:00:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Kitchen', channel=6),
+                        self._assoc('BB:B', 'laptop-B', 'Office', channel=36),
+                    ],
+                ),
+                self._snapshot(
+                    '2026-05-04T10:05:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Office', channel=36),
+                        self._assoc('BB:B', 'laptop-B', 'Office', channel=36),
+                    ],
+                ),
+                self._snapshot(
+                    '2026-05-04T10:10:00',
+                    [
+                        self._assoc('AA:A', 'phone-A', 'Living-Room', channel=44),
+                    ],
+                ),
+            ],
+        )
 
         graph = build_mobility_graph(str(f))
 
         assert graph == {
-            "AA:A": {"Kitchen", "Office", "Living-Room"},
-            "BB:B": {"Office"},
+            'AA:A': {'Kitchen', 'Office', 'Living-Room'},
+            'BB:B': {'Office'},
         }
 
 
@@ -922,31 +1123,35 @@ class TestConfigDrift:
         drifts = []
         for key in baseline_config:
             if key not in current_config:
-                drifts.append({"field": key, "type": "REMOVED"})
+                drifts.append({'field': key, 'type': 'REMOVED'})
             elif baseline_config[key] != current_config[key]:
-                drifts.append({
-                    "field": key, "type": "CHANGED",
-                    "baseline": baseline_config[key], "current": current_config[key],
-                })
+                drifts.append(
+                    {
+                        'field': key,
+                        'type': 'CHANGED',
+                        'baseline': baseline_config[key],
+                        'current': current_config[key],
+                    }
+                )
         return drifts
 
     def test_detects_changed_field(self) -> None:
-        baseline = {"stp_priority": "32768", "port_overrides": []}
-        current = {"stp_priority": "4096", "port_overrides": []}
+        baseline = {'stp_priority': '32768', 'port_overrides': []}
+        current = {'stp_priority': '4096', 'port_overrides': []}
         drifts = self._compare_configs(baseline, current)
         assert len(drifts) == 1
-        assert drifts[0]["field"] == "stp_priority"
-        assert drifts[0]["type"] == "CHANGED"
+        assert drifts[0]['field'] == 'stp_priority'
+        assert drifts[0]['type'] == 'CHANGED'
 
     def test_detects_removed_field(self) -> None:
-        baseline = {"stp_priority": "32768", "snmp_contact": "admin@example.com"}
-        current = {"stp_priority": "32768"}
+        baseline = {'stp_priority': '32768', 'snmp_contact': 'admin@example.com'}
+        current = {'stp_priority': '32768'}
         drifts = self._compare_configs(baseline, current)
         assert len(drifts) == 1
-        assert drifts[0]["type"] == "REMOVED"
+        assert drifts[0]['type'] == 'REMOVED'
 
     def test_no_drift(self) -> None:
-        config = {"stp_priority": "32768", "port_overrides": [{"port_idx": 1, "name": "AP"}]}
+        config = {'stp_priority': '32768', 'port_overrides': [{'port_idx': 1, 'name': 'AP'}]}
         drifts = self._compare_configs(config, config)
         assert drifts == []
 
@@ -958,39 +1163,39 @@ class TestConfigDrift:
 
 def _make_rogue_entry(
     *,
-    bssid: str = "b0:5b:99:ea:5a:76",
-    essid: str = "Neighbour-Net",
+    bssid: str = 'b0:5b:99:ea:5a:76',
+    essid: str = 'Neighbour-Net',
     channel: int = 6,
     signal: int = -70,
     rssi: int = 12,
     noise: int = -96,
-    band: str = "ng",
+    band: str = 'ng',
     bw: int = 20,
     freq: int = 2437,
-    ap_mac: str = "02:00:fe:02:00:04",
+    ap_mac: str = '02:00:fe:02:00:04',
     age: int = 0,
     last_seen: int = 1777896779,
     is_ubnt: bool = False,
     is_adhoc: bool = False,
-    security: str = "WPA2-Personal (AES/CCMP)",
+    security: str = 'WPA2-Personal (AES/CCMP)',
 ) -> dict:
     """Build a realistic stat/rogueap entry."""
     return {
-        "bssid": bssid,
-        "essid": essid,
-        "channel": channel,
-        "signal": signal,
-        "rssi": rssi,
-        "noise": noise,
-        "band": band,
-        "bw": bw,
-        "freq": freq,
-        "ap_mac": ap_mac,
-        "age": age,
-        "last_seen": last_seen,
-        "is_ubnt": is_ubnt,
-        "is_adhoc": is_adhoc,
-        "security": security,
+        'bssid': bssid,
+        'essid': essid,
+        'channel': channel,
+        'signal': signal,
+        'rssi': rssi,
+        'noise': noise,
+        'band': band,
+        'bw': bw,
+        'freq': freq,
+        'ap_mac': ap_mac,
+        'age': age,
+        'last_seen': last_seen,
+        'is_ubnt': is_ubnt,
+        'is_adhoc': is_adhoc,
+        'security': security,
     }
 
 
@@ -1000,22 +1205,22 @@ class TestNeighbourScan:
     def test_parse_rogue_entries_groups_by_ap(self) -> None:
         """Raw entries with mixed ap_mac values produce correct per-AP grouping."""
         entries = [
-            _make_rogue_entry(ap_mac="aa:bb:cc:00:00:01", channel=6, signal=-70),
-            _make_rogue_entry(ap_mac="aa:bb:cc:00:00:01", channel=36, signal=-55),
-            _make_rogue_entry(ap_mac="aa:bb:cc:00:00:02", channel=1, signal=-80),
+            _make_rogue_entry(ap_mac='aa:bb:cc:00:00:01', channel=6, signal=-70),
+            _make_rogue_entry(ap_mac='aa:bb:cc:00:00:01', channel=36, signal=-55),
+            _make_rogue_entry(ap_mac='aa:bb:cc:00:00:02', channel=1, signal=-80),
         ]
         ap_mac_to_name = {
-            "aa:bb:cc:00:00:01": "Living Room",
-            "aa:bb:cc:00:00:02": "Kitchen",
+            'aa:bb:cc:00:00:01': 'Living Room',
+            'aa:bb:cc:00:00:02': 'Kitchen',
         }
         result = _group_rogue_entries(entries, ap_mac_to_name)
         assert len(result) == 2
-        names = {ap["ap_name"] for ap in result}
-        assert names == {"Living Room", "Kitchen"}
-        lr = next(ap for ap in result if ap["ap_name"] == "Living Room")
-        assert "channel_summary" in lr
-        assert "neighbours" in lr
-        assert len(lr["neighbours"]) == 2
+        names = {ap['ap_name'] for ap in result}
+        assert names == {'Living Room', 'Kitchen'}
+        lr = next(ap for ap in result if ap['ap_name'] == 'Living Room')
+        assert 'channel_summary' in lr
+        assert 'neighbours' in lr
+        assert len(lr['neighbours']) == 2
 
     def test_parse_rogue_entries_filters_own_network(self) -> None:
         """Entries with is_ubnt=True are excluded."""
@@ -1023,18 +1228,18 @@ class TestNeighbourScan:
             _make_rogue_entry(is_ubnt=True, signal=-60),
             _make_rogue_entry(is_ubnt=False, signal=-70),
         ]
-        result = _group_rogue_entries(entries, {"02:00:fe:02:00:04": "AP-1"})
-        total = sum(len(ap["neighbours"]) for ap in result)
+        result = _group_rogue_entries(entries, {'02:00:fe:02:00:04': 'AP-1'})
+        total = sum(len(ap['neighbours']) for ap in result)
         assert total == 1
 
     def test_parse_rogue_entries_filters_stale(self) -> None:
         """Entries with age > MAX_ROGUE_AGE_SECONDS are excluded."""
         entries = [
             _make_rogue_entry(age=0, signal=-60),
-            _make_rogue_entry(age=301, signal=-65, bssid="aa:bb:cc:dd:ee:ff"),
+            _make_rogue_entry(age=301, signal=-65, bssid='aa:bb:cc:dd:ee:ff'),
         ]
-        result = _group_rogue_entries(entries, {"02:00:fe:02:00:04": "AP-1"})
-        total = sum(len(ap["neighbours"]) for ap in result)
+        result = _group_rogue_entries(entries, {'02:00:fe:02:00:04': 'AP-1'})
+        total = sum(len(ap['neighbours']) for ap in result)
         assert total == 1
 
     def test_parse_rogue_entries_empty(self) -> None:
@@ -1043,14 +1248,14 @@ class TestNeighbourScan:
         assert result == []
 
     @pytest.mark.parametrize(
-        ("signal_dbm", "expected_weight"),
+        ('signal_dbm', 'expected_weight'),
         [
-            (-50, 3.0),   # strong: > -67
-            (-66, 3.0),   # strong: > -67
-            (-67, 1.0),   # boundary: exactly -67 → MEDIUM
-            (-75, 1.0),   # medium: -67 to -82
-            (-82, 0.5),   # boundary: exactly -82 → WEAK
-            (-90, 0.5),   # weak: < -82
+            (-50, 3.0),  # strong: > -67
+            (-66, 3.0),  # strong: > -67
+            (-67, 1.0),  # boundary: exactly -67 → MEDIUM
+            (-75, 1.0),  # medium: -67 to -82
+            (-82, 0.5),  # boundary: exactly -82 → WEAK
+            (-90, 0.5),  # weak: < -82
         ],
     )
     def test_rssi_weight_buckets(self, signal_dbm: int, expected_weight: float) -> None:
@@ -1060,46 +1265,48 @@ class TestNeighbourScan:
     def test_channel_neighbour_score_5ghz(self) -> None:
         """5 GHz: weighted sum of co-channel neighbours, no adjacent compensation."""
         neighbours = [
-            _make_rogue_entry(channel=36, signal=-60, band="na"),  # strong → 3.0
-            _make_rogue_entry(channel=36, signal=-75, band="na"),  # medium → 1.0
-            _make_rogue_entry(channel=36, signal=-90, band="na"),  # weak → 0.5
-            _make_rogue_entry(channel=44, signal=-55, band="na"),  # different ch → 0
+            _make_rogue_entry(channel=36, signal=-60, band='na'),  # strong → 3.0
+            _make_rogue_entry(channel=36, signal=-75, band='na'),  # medium → 1.0
+            _make_rogue_entry(channel=36, signal=-90, band='na'),  # weak → 0.5
+            _make_rogue_entry(channel=44, signal=-55, band='na'),  # different ch → 0
         ]
-        score = compute_channel_neighbour_score(neighbours, target_channel=36, band="na")
+        score = compute_channel_neighbour_score(neighbours, target_channel=36, band='na')
         assert score == pytest.approx(3.0 + 1.0 + 0.5)
 
     def test_channel_neighbour_score_24ghz_adjacent(self) -> None:
         """2.4 GHz: AP on ch 4 at -60 dBm contributes to ch 6 with -25 dB offset."""
         neighbours = [
-            _make_rogue_entry(channel=4, signal=-60, band="ng"),
+            _make_rogue_entry(channel=4, signal=-60, band='ng'),
         ]
-        score = compute_channel_neighbour_score(neighbours, target_channel=6, band="ng")
+        score = compute_channel_neighbour_score(neighbours, target_channel=6, band='ng')
         # effective RSSI = -60 + (-25) = -85 → below -82 → WEAK bucket → 0.5
         assert score == pytest.approx(0.5)
 
     def test_channel_neighbour_score_24ghz_far_channel(self) -> None:
         """2.4 GHz: AP on ch 1 does not contribute to ch 11 (distance > 2)."""
         neighbours = [
-            _make_rogue_entry(channel=1, signal=-55, band="ng"),
+            _make_rogue_entry(channel=1, signal=-55, band='ng'),
         ]
-        score = compute_channel_neighbour_score(neighbours, target_channel=11, band="ng")
+        score = compute_channel_neighbour_score(neighbours, target_channel=11, band='ng')
         assert score == 0.0
 
     def test_ap_name_filter(self) -> None:
         """When filter_ap_mac provided, only matching entries appear."""
         entries = [
-            _make_rogue_entry(ap_mac="aa:bb:cc:00:00:01", signal=-60),
-            _make_rogue_entry(ap_mac="aa:bb:cc:00:00:02", signal=-70),
+            _make_rogue_entry(ap_mac='aa:bb:cc:00:00:01', signal=-60),
+            _make_rogue_entry(ap_mac='aa:bb:cc:00:00:02', signal=-70),
         ]
         ap_mac_to_name = {
-            "aa:bb:cc:00:00:01": "Living Room",
-            "aa:bb:cc:00:00:02": "Kitchen",
+            'aa:bb:cc:00:00:01': 'Living Room',
+            'aa:bb:cc:00:00:02': 'Kitchen',
         }
         result = _group_rogue_entries(
-            entries, ap_mac_to_name, filter_ap_mac="aa:bb:cc:00:00:01",
+            entries,
+            ap_mac_to_name,
+            filter_ap_mac='aa:bb:cc:00:00:01',
         )
         assert len(result) == 1
-        assert result[0]["ap_name"] == "Living Room"
+        assert result[0]['ap_name'] == 'Living Room'
 
     # ── Phase D T3: AP-to-AP RF overlap ──────────────────────────────────────
 
@@ -1110,32 +1317,32 @@ class TestNeighbourScan:
         from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
 
         ap_mac_to_name = {
-            "aa:bb:cc:00:00:01": "Kitchen",
-            "aa:bb:cc:00:00:02": "Office",
+            'aa:bb:cc:00:00:01': 'Kitchen',
+            'aa:bb:cc:00:00:02': 'Office',
         }
         # Per-AP vAP BSSIDs (typically offset from the AP's own mac)
-        our_bssids = {"aa:bb:cc:00:00:01:24", "aa:bb:cc:00:00:02:24"}
+        our_bssids = {'aa:bb:cc:00:00:01:24', 'aa:bb:cc:00:00:02:24'}
         # Augment ap_mac_to_name so BSSIDs resolve to AP names too
-        ap_mac_to_name["aa:bb:cc:00:00:01:24"] = "Kitchen"
-        ap_mac_to_name["aa:bb:cc:00:00:02:24"] = "Office"
+        ap_mac_to_name['aa:bb:cc:00:00:01:24'] = 'Kitchen'
+        ap_mac_to_name['aa:bb:cc:00:00:02:24'] = 'Office'
 
         entries = [
             # Kitchen (ap_mac=01) observes Office BSSID at -55
             _make_rogue_entry(
-                ap_mac="aa:bb:cc:00:00:01",
-                bssid="aa:bb:cc:00:00:02:24",
+                ap_mac='aa:bb:cc:00:00:01',
+                bssid='aa:bb:cc:00:00:02:24',
                 signal=-55,
             ),
             # Office (ap_mac=02) observes Kitchen BSSID at -58
             _make_rogue_entry(
-                ap_mac="aa:bb:cc:00:00:02",
-                bssid="aa:bb:cc:00:00:01:24",
+                ap_mac='aa:bb:cc:00:00:02',
+                bssid='aa:bb:cc:00:00:01:24',
                 signal=-58,
             ),
             # Kitchen observes external neighbour at -70 (not in our_bssids)
             _make_rogue_entry(
-                ap_mac="aa:bb:cc:00:00:01",
-                bssid="99:99:99:99:99:99",
+                ap_mac='aa:bb:cc:00:00:01',
+                bssid='99:99:99:99:99:99',
                 signal=-70,
             ),
         ]
@@ -1143,8 +1350,8 @@ class TestNeighbourScan:
         result = compute_ap_to_ap_overlap(entries, our_bssids, ap_mac_to_name)
 
         assert result == {
-            ("Kitchen", "Office"): -55,
-            ("Office", "Kitchen"): -58,
+            ('Kitchen', 'Office'): -55,
+            ('Office', 'Kitchen'): -58,
         }
 
     def test_ap_to_ap_overlap_multiple_radios_keeps_strongest(self) -> None:
@@ -1154,44 +1361,44 @@ class TestNeighbourScan:
         from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
 
         ap_mac_to_name = {
-            "aa:bb:cc:00:00:01": "Kitchen",
-            "aa:bb:cc:00:00:02:24": "Office",
+            'aa:bb:cc:00:00:01': 'Kitchen',
+            'aa:bb:cc:00:00:02:24': 'Office',
         }
-        our_bssids = {"aa:bb:cc:00:00:02:24"}
+        our_bssids = {'aa:bb:cc:00:00:02:24'}
 
         entries = [
             _make_rogue_entry(
-                ap_mac="aa:bb:cc:00:00:01",
-                bssid="aa:bb:cc:00:00:02:24",
+                ap_mac='aa:bb:cc:00:00:01',
+                bssid='aa:bb:cc:00:00:02:24',
                 signal=-72,
-                band="ng",
+                band='ng',
             ),
             _make_rogue_entry(
-                ap_mac="aa:bb:cc:00:00:01",
-                bssid="aa:bb:cc:00:00:02:24",
+                ap_mac='aa:bb:cc:00:00:01',
+                bssid='aa:bb:cc:00:00:02:24',
                 signal=-58,
-                band="na",
+                band='na',
             ),
         ]
 
         result = compute_ap_to_ap_overlap(entries, our_bssids, ap_mac_to_name)
 
-        assert result == {("Kitchen", "Office"): -58}
+        assert result == {('Kitchen', 'Office'): -58}
 
     def test_ap_to_ap_overlap_stale_excluded(self) -> None:
         """Entry with age > MAX_ROGUE_AGE_SECONDS excluded even if BSSID matches."""
         from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
 
         ap_mac_to_name = {
-            "aa:bb:cc:00:00:01": "Kitchen",
-            "aa:bb:cc:00:00:02:24": "Office",
+            'aa:bb:cc:00:00:01': 'Kitchen',
+            'aa:bb:cc:00:00:02:24': 'Office',
         }
-        our_bssids = {"aa:bb:cc:00:00:02:24"}
+        our_bssids = {'aa:bb:cc:00:00:02:24'}
 
         entries = [
             _make_rogue_entry(
-                ap_mac="aa:bb:cc:00:00:01",
-                bssid="aa:bb:cc:00:00:02:24",
+                ap_mac='aa:bb:cc:00:00:01',
+                bssid='aa:bb:cc:00:00:02:24',
                 signal=-55,
                 age=400,  # > MAX_ROGUE_AGE_SECONDS=300 → stale
             ),
@@ -1208,15 +1415,15 @@ class TestNeighbourScan:
         from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
 
         ap_mac_to_name = {
-            "aa:bb:cc:00:00:01": "Kitchen",
-            "aa:bb:cc:00:00:02:24": "Office",
+            'aa:bb:cc:00:00:01': 'Kitchen',
+            'aa:bb:cc:00:00:02:24': 'Office',
         }
-        our_bssids = {"aa:bb:cc:00:00:02:24"}
+        our_bssids = {'aa:bb:cc:00:00:02:24'}
 
         entries = [
             _make_rogue_entry(
-                ap_mac="aa:bb:cc:00:00:01",
-                bssid="aa:bb:cc:00:00:02:24",
+                ap_mac='aa:bb:cc:00:00:01',
+                bssid='aa:bb:cc:00:00:02:24',
                 signal=-60,
                 is_ubnt=True,  # explicitly our own — must still be kept
             ),
@@ -1224,40 +1431,40 @@ class TestNeighbourScan:
 
         result = compute_ap_to_ap_overlap(entries, our_bssids, ap_mac_to_name)
 
-        assert result == {("Kitchen", "Office"): -60}
+        assert result == {('Kitchen', 'Office'): -60}
 
     def test_ap_to_ap_overlap_case_insensitive_bssid(self) -> None:
         """Rogue-entry BSSID compared lowercased against our_ap_bssids."""
         from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
 
         ap_mac_to_name = {
-            "aa:bb:cc:00:00:01": "Kitchen",
-            "aa:bb:cc:dd:ee:ff": "Office",
+            'aa:bb:cc:00:00:01': 'Kitchen',
+            'aa:bb:cc:dd:ee:ff': 'Office',
         }
-        our_bssids = {"aa:bb:cc:dd:ee:ff"}  # lowercase
+        our_bssids = {'aa:bb:cc:dd:ee:ff'}  # lowercase
 
         entries = [
             _make_rogue_entry(
-                ap_mac="aa:bb:cc:00:00:01",
-                bssid="AA:BB:CC:DD:EE:FF",  # uppercase — still must match
+                ap_mac='aa:bb:cc:00:00:01',
+                bssid='AA:BB:CC:DD:EE:FF',  # uppercase — still must match
                 signal=-60,
             ),
         ]
 
         result = compute_ap_to_ap_overlap(entries, our_bssids, ap_mac_to_name)
 
-        assert result == {("Kitchen", "Office"): -60}
+        assert result == {('Kitchen', 'Office'): -60}
 
     def test_ap_to_ap_overlap_empty_bssid_set(self) -> None:
         """Empty our_ap_bssids → empty result regardless of input entries."""
         from unifi_mapper.analysis.neighbour_scan import compute_ap_to_ap_overlap
 
-        ap_mac_to_name = {"aa:bb:cc:00:00:01": "Kitchen"}
+        ap_mac_to_name = {'aa:bb:cc:00:00:01': 'Kitchen'}
 
         entries = [
             _make_rogue_entry(
-                ap_mac="aa:bb:cc:00:00:01",
-                bssid="b0:5b:99:ea:5a:76",
+                ap_mac='aa:bb:cc:00:00:01',
+                bssid='b0:5b:99:ea:5a:76',
                 signal=-60,
             ),
         ]
@@ -1275,21 +1482,21 @@ class TestNeighbourScan:
             async def get_devices(self):
                 return [
                     {
-                        "type": "uap",
-                        "mac": "aa:bb:cc:00:00:01",
-                        "name": "Kitchen",
-                        "vap_table": [
-                            {"bssid": "AA:BB:CC:00:00:01:24"},
-                            {"bssid": "AA:BB:CC:00:00:01:5G"},
+                        'type': 'uap',
+                        'mac': 'aa:bb:cc:00:00:01',
+                        'name': 'Kitchen',
+                        'vap_table': [
+                            {'bssid': 'AA:BB:CC:00:00:01:24'},
+                            {'bssid': 'AA:BB:CC:00:00:01:5G'},
                         ],
                     },
                     {
-                        "type": "uap",
-                        "mac": "aa:bb:cc:00:00:02",
-                        "name": "Office",
-                        "vap_table": [
-                            {"bssid": "AA:BB:CC:00:00:02:24"},
-                            {"bssid": "AA:BB:CC:00:00:02:5G"},
+                        'type': 'uap',
+                        'mac': 'aa:bb:cc:00:00:02',
+                        'name': 'Office',
+                        'vap_table': [
+                            {'bssid': 'AA:BB:CC:00:00:02:24'},
+                            {'bssid': 'AA:BB:CC:00:00:02:5G'},
                         ],
                     },
                 ]
@@ -1297,10 +1504,10 @@ class TestNeighbourScan:
         result = asyncio.run(get_our_ap_bssids(_MockClient()))
 
         assert result == {
-            "aa:bb:cc:00:00:01:24",
-            "aa:bb:cc:00:00:01:5g",
-            "aa:bb:cc:00:00:02:24",
-            "aa:bb:cc:00:00:02:5g",
+            'aa:bb:cc:00:00:01:24',
+            'aa:bb:cc:00:00:01:5g',
+            'aa:bb:cc:00:00:02:24',
+            'aa:bb:cc:00:00:02:5g',
         }
 
     def test_get_our_ap_bssids_skips_non_uaps(self) -> None:
@@ -1312,23 +1519,23 @@ class TestNeighbourScan:
             async def get_devices(self):
                 return [
                     {
-                        "type": "uap",
-                        "mac": "aa:bb:cc:00:00:01",
-                        "vap_table": [{"bssid": "aa:bb:cc:00:00:01:24"}],
+                        'type': 'uap',
+                        'mac': 'aa:bb:cc:00:00:01',
+                        'vap_table': [{'bssid': 'aa:bb:cc:00:00:01:24'}],
                     },
                     {
                         # Switch — must be skipped entirely. Even if it somehow
                         # had a vap_table (it won't in practice), do not include.
-                        "type": "usw",
-                        "mac": "aa:bb:cc:00:00:99",
-                        "vap_table": [{"bssid": "zz:zz:zz:zz:zz:zz"}],
+                        'type': 'usw',
+                        'mac': 'aa:bb:cc:00:00:99',
+                        'vap_table': [{'bssid': 'zz:zz:zz:zz:zz:zz'}],
                     },
                 ]
 
         result = asyncio.run(get_our_ap_bssids(_MockClient()))
 
-        assert result == {"aa:bb:cc:00:00:01:24"}
-        assert "zz:zz:zz:zz:zz:zz" not in result
+        assert result == {'aa:bb:cc:00:00:01:24'}
+        assert 'zz:zz:zz:zz:zz:zz' not in result
 
 
 # ── 12. Bandwidth Test ───────────────────────────────────────────────────────
@@ -1337,47 +1544,53 @@ class TestNeighbourScan:
 class TestBandwidthTest:
     def test_parse_json_output(self) -> None:
         data = {
-            "start": {"test_start": {"num_streams": 1}},
-            "end": {
-                "sum_sent": {"bytes": 1_170_000_000, "bits_per_second": 936_000_000, "retransmits": 3},
-                "sum_received": {"bytes": 1_170_000_000, "bits_per_second": 935_000_000},
+            'start': {'test_start': {'num_streams': 1}},
+            'end': {
+                'sum_sent': {
+                    'bytes': 1_170_000_000,
+                    'bits_per_second': 936_000_000,
+                    'retransmits': 3,
+                },
+                'sum_received': {'bytes': 1_170_000_000, 'bits_per_second': 935_000_000},
             },
         }
-        result = _parse_json_output(data, "192.0.2.50", reverse=False, duration=10)
-        assert result["status"] == "OK"
-        assert result["throughput_mbps"] == 935.0
-        assert result["retransmits"] == 3
-        assert result["streams"] == 1
+        result = _parse_json_output(data, '192.0.2.50', reverse=False, duration=10)
+        assert result['status'] == 'OK'
+        assert result['throughput_mbps'] == 935.0
+        assert result['retransmits'] == 3
+        assert result['streams'] == 1
 
     def test_parse_json_reverse(self) -> None:
         data = {
-            "start": {"test_start": {"num_streams": 4}},
-            "end": {
-                "sum_sent": {"bytes": 500_000_000, "bits_per_second": 400_000_000, "retransmits": 0},
-                "sum_received": {"bytes": 500_000_000, "bits_per_second": 400_000_000},
+            'start': {'test_start': {'num_streams': 4}},
+            'end': {
+                'sum_sent': {
+                    'bytes': 500_000_000,
+                    'bits_per_second': 400_000_000,
+                    'retransmits': 0,
+                },
+                'sum_received': {'bytes': 500_000_000, 'bits_per_second': 400_000_000},
             },
         }
-        result = _parse_json_output(data, "10.0.0.1", reverse=True, duration=10)
-        assert "download" in result["direction"]
-        assert result["throughput_mbps"] == 400.0
+        result = _parse_json_output(data, '10.0.0.1', reverse=True, duration=10)
+        assert 'download' in result['direction']
+        assert result['throughput_mbps'] == 400.0
 
     def test_parse_text_output_gbps(self) -> None:
-        stdout = (
-            "[  5]   0.00-10.00  sec  1.09 GBytes   937 Mbits/sec  receiver\n"
-        )
-        result = _parse_text_output(stdout, "192.0.2.50", reverse=False, duration=10)
-        assert result["status"] == "OK"
-        assert result["throughput_mbps"] == 937.0
+        stdout = '[  5]   0.00-10.00  sec  1.09 GBytes   937 Mbits/sec  receiver\n'
+        result = _parse_text_output(stdout, '192.0.2.50', reverse=False, duration=10)
+        assert result['status'] == 'OK'
+        assert result['throughput_mbps'] == 937.0
 
     def test_parse_text_output_sum_line(self) -> None:
-        stdout = "[SUM]   0.00-10.00  sec  2.18 GBytes  1.87 Gbits/sec\n"
-        result = _parse_text_output(stdout, "10.0.0.1", reverse=False, duration=10)
-        assert result["throughput_mbps"] == 1870.0
+        stdout = '[SUM]   0.00-10.00  sec  2.18 GBytes  1.87 Gbits/sec\n'
+        result = _parse_text_output(stdout, '10.0.0.1', reverse=False, duration=10)
+        assert result['throughput_mbps'] == 1870.0
 
     def test_parse_text_output_no_match(self) -> None:
-        result = _parse_text_output("garbage output", "10.0.0.1", reverse=False, duration=10)
-        assert result["status"] == "PARSE_ERROR"
-        assert result["throughput_mbps"] == 0
+        result = _parse_text_output('garbage output', '10.0.0.1', reverse=False, duration=10)
+        assert result['status'] == 'PARSE_ERROR'
+        assert result['throughput_mbps'] == 0
 
 
 # ── 13. Neighbour Trend (baseline snapshot + diff) ───────────────────────────
@@ -1391,116 +1604,116 @@ class TestNeighbourTrend:
     @staticmethod
     def _entry(
         *,
-        ap_mac: str = "aa:00:00:00:00:01",
-        bssid: str = "ff:00:00:00:00:01",
-        essid: str = "Neighbour-1",
+        ap_mac: str = 'aa:00:00:00:00:01',
+        bssid: str = 'ff:00:00:00:00:01',
+        essid: str = 'Neighbour-1',
         channel: int = 6,
         signal: int = -70,
-        band: str = "ng",
+        band: str = 'ng',
     ) -> dict:
         return {
-            "ap_mac": ap_mac,
-            "bssid": bssid,
-            "essid": essid,
-            "channel": channel,
-            "signal": signal,
-            "band": band,
+            'ap_mac': ap_mac,
+            'bssid': bssid,
+            'essid': essid,
+            'channel': channel,
+            'signal': signal,
+            'band': band,
         }
 
     def test_empty_baseline_and_empty_current_is_no_change(self) -> None:
         result = _compare_snapshots(
-            {"timestamp": "t1", "entries": []},
-            {"timestamp": "t2", "entries": []},
+            {'timestamp': 't1', 'entries': []},
+            {'timestamp': 't2', 'entries': []},
             signal_delta_threshold=10,
         )
-        assert result["new_count"] == 0
-        assert result["disappeared_count"] == 0
-        assert result["moved_count"] == 0
-        assert result["signal_changed_count"] == 0
+        assert result['new_count'] == 0
+        assert result['disappeared_count'] == 0
+        assert result['moved_count'] == 0
+        assert result['signal_changed_count'] == 0
 
     def test_new_neighbour_detected(self) -> None:
-        baseline = {"timestamp": "t1", "entries": []}
-        current = {"timestamp": "t2", "entries": [self._entry(bssid="ff:11:22:33:44:55")]}
+        baseline = {'timestamp': 't1', 'entries': []}
+        current = {'timestamp': 't2', 'entries': [self._entry(bssid='ff:11:22:33:44:55')]}
         result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
-        assert result["new_count"] == 1
-        assert result["new"][0]["bssid"] == "ff:11:22:33:44:55"
-        assert result["disappeared_count"] == 0
+        assert result['new_count'] == 1
+        assert result['new'][0]['bssid'] == 'ff:11:22:33:44:55'
+        assert result['disappeared_count'] == 0
 
     def test_disappeared_neighbour_detected(self) -> None:
-        baseline = {"timestamp": "t1", "entries": [self._entry(bssid="ff:11:22:33:44:55")]}
-        current = {"timestamp": "t2", "entries": []}
+        baseline = {'timestamp': 't1', 'entries': [self._entry(bssid='ff:11:22:33:44:55')]}
+        current = {'timestamp': 't2', 'entries': []}
         result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
-        assert result["disappeared_count"] == 1
-        assert result["disappeared"][0]["bssid"] == "ff:11:22:33:44:55"
-        assert result["new_count"] == 0
+        assert result['disappeared_count'] == 1
+        assert result['disappeared'][0]['bssid'] == 'ff:11:22:33:44:55'
+        assert result['new_count'] == 0
 
     def test_channel_move_detected(self) -> None:
-        baseline = {"timestamp": "t1", "entries": [self._entry(channel=6, signal=-70)]}
-        current = {"timestamp": "t2", "entries": [self._entry(channel=11, signal=-70)]}
+        baseline = {'timestamp': 't1', 'entries': [self._entry(channel=6, signal=-70)]}
+        current = {'timestamp': 't2', 'entries': [self._entry(channel=11, signal=-70)]}
         result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
-        assert result["moved_count"] == 1
-        move = result["moved"][0]
-        assert move["from_channel"] == 6
-        assert move["to_channel"] == 11
-        assert result["new_count"] == 0
-        assert result["disappeared_count"] == 0
+        assert result['moved_count'] == 1
+        move = result['moved'][0]
+        assert move['from_channel'] == 6
+        assert move['to_channel'] == 11
+        assert result['new_count'] == 0
+        assert result['disappeared_count'] == 0
 
     def test_signal_change_above_threshold_flagged(self) -> None:
-        baseline = {"timestamp": "t1", "entries": [self._entry(signal=-80)]}
-        current = {"timestamp": "t2", "entries": [self._entry(signal=-65)]}  # +15 dB
+        baseline = {'timestamp': 't1', 'entries': [self._entry(signal=-80)]}
+        current = {'timestamp': 't2', 'entries': [self._entry(signal=-65)]}  # +15 dB
         result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
-        assert result["signal_changed_count"] == 1
-        change = result["signal_changes"][0]
-        assert change["signal_before"] == -80
-        assert change["signal_after"] == -65
-        assert change["delta_db"] == 15
+        assert result['signal_changed_count'] == 1
+        change = result['signal_changes'][0]
+        assert change['signal_before'] == -80
+        assert change['signal_after'] == -65
+        assert change['delta_db'] == 15
 
     def test_signal_change_below_threshold_ignored(self) -> None:
-        baseline = {"timestamp": "t1", "entries": [self._entry(signal=-70)]}
-        current = {"timestamp": "t2", "entries": [self._entry(signal=-65)]}  # +5 dB
+        baseline = {'timestamp': 't1', 'entries': [self._entry(signal=-70)]}
+        current = {'timestamp': 't2', 'entries': [self._entry(signal=-65)]}  # +5 dB
         result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
-        assert result["signal_changed_count"] == 0
+        assert result['signal_changed_count'] == 0
 
     def test_same_bssid_different_detecting_ap_treated_as_separate(self) -> None:
         """Same neighbour seen by two different own-APs = two independent observations."""
-        baseline = {"timestamp": "t1", "entries": []}
+        baseline = {'timestamp': 't1', 'entries': []}
         current = {
-            "timestamp": "t2",
-            "entries": [
-                self._entry(ap_mac="aa:00:00:00:00:01", bssid="ff:11:22:33:44:55"),
-                self._entry(ap_mac="aa:00:00:00:00:02", bssid="ff:11:22:33:44:55"),
+            'timestamp': 't2',
+            'entries': [
+                self._entry(ap_mac='aa:00:00:00:00:01', bssid='ff:11:22:33:44:55'),
+                self._entry(ap_mac='aa:00:00:00:00:02', bssid='ff:11:22:33:44:55'),
             ],
         }
         result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
         # Both count as new because keys are (ap_mac, bssid) pairs
-        assert result["new_count"] == 2
+        assert result['new_count'] == 2
 
     def test_mixed_changes_all_categories(self) -> None:
         """Realistic case: some new, some gone, some moved, some stable with signal change."""
         baseline = {
-            "timestamp": "t1",
-            "entries": [
-                self._entry(bssid="aa:01", channel=6, signal=-70),   # will be moved
-                self._entry(bssid="aa:02", channel=1, signal=-80),   # will signal-change
-                self._entry(bssid="aa:03", channel=11, signal=-75),  # will disappear
-                self._entry(bssid="aa:04", channel=6, signal=-65),   # will stay unchanged
+            'timestamp': 't1',
+            'entries': [
+                self._entry(bssid='aa:01', channel=6, signal=-70),  # will be moved
+                self._entry(bssid='aa:02', channel=1, signal=-80),  # will signal-change
+                self._entry(bssid='aa:03', channel=11, signal=-75),  # will disappear
+                self._entry(bssid='aa:04', channel=6, signal=-65),  # will stay unchanged
             ],
         }
         current = {
-            "timestamp": "t2",
-            "entries": [
-                self._entry(bssid="aa:01", channel=11, signal=-70),  # moved 6 -> 11
-                self._entry(bssid="aa:02", channel=1, signal=-60),   # +20 dB
+            'timestamp': 't2',
+            'entries': [
+                self._entry(bssid='aa:01', channel=11, signal=-70),  # moved 6 -> 11
+                self._entry(bssid='aa:02', channel=1, signal=-60),  # +20 dB
                 # aa:03 gone
-                self._entry(bssid="aa:04", channel=6, signal=-65),   # unchanged
-                self._entry(bssid="aa:05", channel=36, signal=-55),  # new
+                self._entry(bssid='aa:04', channel=6, signal=-65),  # unchanged
+                self._entry(bssid='aa:05', channel=36, signal=-55),  # new
             ],
         }
         result = _compare_snapshots(baseline, current, signal_delta_threshold=10)
-        assert result["new_count"] == 1
-        assert result["disappeared_count"] == 1
-        assert result["moved_count"] == 1
-        assert result["signal_changed_count"] == 1
+        assert result['new_count'] == 1
+        assert result['disappeared_count'] == 1
+        assert result['moved_count'] == 1
+        assert result['signal_changed_count'] == 1
 
 
 # ── 14. RF Strategy — dataclasses, enums, constants (Phase D T4) ─────────────
@@ -1516,27 +1729,27 @@ class TestRFStrategyDataclasses:
         """All three confidence levels stringify to their designed values."""
         from unifi_mapper.analysis.rf_strategy import Confidence
 
-        assert Confidence.GREEN == "green"
-        assert Confidence.YELLOW == "yellow"
-        assert Confidence.RED == "red"
+        assert Confidence.GREEN == 'green'
+        assert Confidence.YELLOW == 'yellow'
+        assert Confidence.RED == 'red'
         # StrEnum members ARE strings — supports direct equality and .value
-        assert Confidence.GREEN.value == "green"
+        assert Confidence.GREEN.value == 'green'
 
     def test_mode_enum_values(self) -> None:
         """Four modes with correct string values per D4 design."""
         from unifi_mapper.analysis.rf_strategy import Mode
 
-        assert Mode.HARD_DISABLE == "hard"
-        assert Mode.SOFT == "soft"
-        assert Mode.HYBRID == "hybrid"
-        assert Mode.NONE == "none"
+        assert Mode.HARD_DISABLE == 'hard'
+        assert Mode.SOFT == 'soft'
+        assert Mode.HYBRID == 'hybrid'
+        assert Mode.NONE == 'none'
 
     def test_band_enum_values(self) -> None:
         """Band values are the canonical 2.4ghz / 5ghz strings (literal dots)."""
         from unifi_mapper.analysis.rf_strategy import Band
 
-        assert Band.TWO_FOUR == "2.4ghz"
-        assert Band.FIVE == "5ghz"
+        assert Band.TWO_FOUR == '2.4ghz'
+        assert Band.FIVE == '5ghz'
 
     def test_ap_recommendation_is_frozen(self) -> None:
         """Dataclass is frozen — mutation raises FrozenInstanceError."""
@@ -1549,8 +1762,8 @@ class TestRFStrategyDataclasses:
         )
 
         rec = APRecommendation(
-            ap_name="Kitchen",
-            ap_mac="aa:bb:cc:00:00:01",
+            ap_name='Kitchen',
+            ap_mac='aa:bb:cc:00:00:01',
             band=Band.TWO_FOUR,
             mode=Mode.HARD_DISABLE,
             confidence=Confidence.GREEN,
@@ -1560,13 +1773,13 @@ class TestRFStrategyDataclasses:
             recommended_channel=6,
             current_tx_power=20,
             recommended_tx_power=20,
-            rationale=("neighbour crowd",),
+            rationale=('neighbour crowd',),
             displaced_clients=(),
             coverage_score=0.85,
         )
 
         with pytest.raises(dataclasses.FrozenInstanceError):
-            rec.ap_name = "Office"  # type: ignore[misc]
+            rec.ap_name = 'Office'  # type: ignore[misc]
 
     def test_rf_strategy_plan_schema_version_locked(self) -> None:
         """Static guard — schema version 1.0 must not drift silently.
@@ -1574,17 +1787,17 @@ class TestRFStrategyDataclasses:
         """
         from unifi_mapper.analysis.rf_strategy import PLAN_SCHEMA_VERSION
 
-        assert PLAN_SCHEMA_VERSION == "1.0"
+        assert PLAN_SCHEMA_VERSION == '1.0'
 
     def test_constants_match_design_doc(self) -> None:
         """Locked design-doc constants. Changes here demand a design-doc update."""
         from unifi_mapper.analysis import rf_strategy as rfs
 
-        assert rfs.MIN_HISTORY_HOURS == 48.0                # Q1
-        assert rfs.WIDTH_24GHZ_FORCED == 20                 # Q2
-        assert rfs.MAC_OVERHEAD_FACTOR == 0.55              # D3
-        assert rfs.DFS_PENALTY_FACTOR == 0.80               # D3
-        assert rfs.WIDTH_TIEBREAKER_MARGIN == 0.10          # D3
+        assert rfs.MIN_HISTORY_HOURS == 48.0  # Q1
+        assert rfs.WIDTH_24GHZ_FORCED == 20  # Q2
+        assert rfs.MAC_OVERHEAD_FACTOR == 0.55  # D3
+        assert rfs.DFS_PENALTY_FACTOR == 0.80  # D3
+        assert rfs.WIDTH_TIEBREAKER_MARGIN == 0.10  # D3
 
         # Scorecard weights must sum to 1.0 (convex combination)
         weight_sum = (
@@ -1604,16 +1817,16 @@ class TestRFStrategyDataclasses:
         from unifi_mapper.analysis.rf_strategy import ClientImpact, Risk
 
         impact = ClientImpact(
-            mac="11:22:33:44:55:66",
-            name="phone",
-            known_other_aps=("Kitchen", "Office"),
+            mac='11:22:33:44:55:66',
+            name='phone',
+            known_other_aps=('Kitchen', 'Office'),
             current_rssi=-60,
-            predicted_impact="roam to Office",
+            predicted_impact='roam to Office',
             risk=Risk.LOW,
         )
 
         assert isinstance(impact.known_other_aps, tuple)
-        assert impact.known_other_aps == ("Kitchen", "Office")
+        assert impact.known_other_aps == ('Kitchen', 'Office')
 
 
 # ── 15. RF Strategy — coverage scorecard (Phase D T5) ────────────────────────
@@ -1637,55 +1850,80 @@ class TestRFStrategyScorecard:
         from unifi_mapper.analysis.rf_strategy import compute_roam_history_score
 
         twofour_only = {
-            "Kitchen": [
-                {"client_mac": "AA", "client_name": "a", "observation_count": 5, "last_seen": "2026-05-04T10:00"},
-                {"client_mac": "BB", "client_name": "b", "observation_count": 4, "last_seen": "2026-05-04T10:00"},
-                {"client_mac": "CC", "client_name": "c", "observation_count": 3, "last_seen": "2026-05-04T10:00"},
+            'Kitchen': [
+                {
+                    'client_mac': 'AA',
+                    'client_name': 'a',
+                    'observation_count': 5,
+                    'last_seen': '2026-05-04T10:00',
+                },
+                {
+                    'client_mac': 'BB',
+                    'client_name': 'b',
+                    'observation_count': 4,
+                    'last_seen': '2026-05-04T10:00',
+                },
+                {
+                    'client_mac': 'CC',
+                    'client_name': 'c',
+                    'observation_count': 3,
+                    'last_seen': '2026-05-04T10:00',
+                },
             ],
         }
         mobility_graph = {
-            "AA": {"Kitchen", "Office"},
-            "BB": {"Kitchen", "Living-Room"},
-            "CC": {"Kitchen", "Office", "Living-Room"},
+            'AA': {'Kitchen', 'Office'},
+            'BB': {'Kitchen', 'Living-Room'},
+            'CC': {'Kitchen', 'Office', 'Living-Room'},
         }
 
-        assert compute_roam_history_score("Kitchen", twofour_only, mobility_graph) == 1.0
+        assert compute_roam_history_score('Kitchen', twofour_only, mobility_graph) == 1.0
 
     def test_roam_history_score_none_roamed(self) -> None:
         """No 2.4-only client has roamed (all single-AP in mobility graph) → 0.0."""
         from unifi_mapper.analysis.rf_strategy import compute_roam_history_score
 
         twofour_only = {
-            "Kitchen": [
-                {"client_mac": "AA", "client_name": "a", "observation_count": 5, "last_seen": "2026-05-04T10:00"},
-                {"client_mac": "BB", "client_name": "b", "observation_count": 4, "last_seen": "2026-05-04T10:00"},
+            'Kitchen': [
+                {
+                    'client_mac': 'AA',
+                    'client_name': 'a',
+                    'observation_count': 5,
+                    'last_seen': '2026-05-04T10:00',
+                },
+                {
+                    'client_mac': 'BB',
+                    'client_name': 'b',
+                    'observation_count': 4,
+                    'last_seen': '2026-05-04T10:00',
+                },
             ],
         }
         mobility_graph = {
-            "AA": {"Kitchen"},
-            "BB": {"Kitchen"},
+            'AA': {'Kitchen'},
+            'BB': {'Kitchen'},
         }
 
-        assert compute_roam_history_score("Kitchen", twofour_only, mobility_graph) == 0.0
+        assert compute_roam_history_score('Kitchen', twofour_only, mobility_graph) == 0.0
 
     def test_roam_history_score_mixed(self) -> None:
         """2 of 3 clients have roamed → 2/3 ≈ 0.667."""
         from unifi_mapper.analysis.rf_strategy import compute_roam_history_score
 
         twofour_only = {
-            "Kitchen": [
-                {"client_mac": "AA", "client_name": "a", "observation_count": 5, "last_seen": "t"},
-                {"client_mac": "BB", "client_name": "b", "observation_count": 4, "last_seen": "t"},
-                {"client_mac": "CC", "client_name": "c", "observation_count": 3, "last_seen": "t"},
+            'Kitchen': [
+                {'client_mac': 'AA', 'client_name': 'a', 'observation_count': 5, 'last_seen': 't'},
+                {'client_mac': 'BB', 'client_name': 'b', 'observation_count': 4, 'last_seen': 't'},
+                {'client_mac': 'CC', 'client_name': 'c', 'observation_count': 3, 'last_seen': 't'},
             ],
         }
         mobility_graph = {
-            "AA": {"Kitchen", "Office"},   # roamed
-            "BB": {"Kitchen", "Office"},   # roamed
-            "CC": {"Kitchen"},              # stayed put
+            'AA': {'Kitchen', 'Office'},  # roamed
+            'BB': {'Kitchen', 'Office'},  # roamed
+            'CC': {'Kitchen'},  # stayed put
         }
 
-        score = compute_roam_history_score("Kitchen", twofour_only, mobility_graph)
+        score = compute_roam_history_score('Kitchen', twofour_only, mobility_graph)
         assert score == pytest.approx(2 / 3, abs=0.001)
 
     def test_roam_history_score_no_twofour_only_clients(self) -> None:
@@ -1693,8 +1931,8 @@ class TestRFStrategyScorecard:
         from unifi_mapper.analysis.rf_strategy import compute_roam_history_score
 
         # Two valid shapes: AP absent from dict, or AP present with empty list.
-        assert compute_roam_history_score("Kitchen", {}, {}) == 1.0
-        assert compute_roam_history_score("Kitchen", {"Kitchen": []}, {}) == 1.0
+        assert compute_roam_history_score('Kitchen', {}, {}) == 1.0
+        assert compute_roam_history_score('Kitchen', {'Kitchen': []}, {}) == 1.0
 
     # ── compute_ap_overlap_score ──────────────────────────────────────────────
 
@@ -1703,35 +1941,35 @@ class TestRFStrategyScorecard:
         from unifi_mapper.analysis.rf_strategy import compute_ap_overlap_score
 
         overlap = {
-            ("Office", "Kitchen"): -55,       # Office hears Kitchen at -55 (strong)
-            ("Living-Room", "Kitchen"): -72,  # also heard, weaker
+            ('Office', 'Kitchen'): -55,  # Office hears Kitchen at -55 (strong)
+            ('Living-Room', 'Kitchen'): -72,  # also heard, weaker
         }
 
-        assert compute_ap_overlap_score("Kitchen", overlap) == 1.0
+        assert compute_ap_overlap_score('Kitchen', overlap) == 1.0
 
     def test_ap_overlap_score_weak(self) -> None:
         """Strongest observation at -80 dBm (below -75 floor) → 0.0 (island AP)."""
         from unifi_mapper.analysis.rf_strategy import compute_ap_overlap_score
 
-        overlap = {("Office", "Kitchen"): -80}
+        overlap = {('Office', 'Kitchen'): -80}
 
-        assert compute_ap_overlap_score("Kitchen", overlap) == 0.0
+        assert compute_ap_overlap_score('Kitchen', overlap) == 0.0
 
     def test_ap_overlap_score_linear_midrange(self) -> None:
         """RSSI -67.5 is midpoint of [-75, -60] → score ≈ 0.5."""
         from unifi_mapper.analysis.rf_strategy import compute_ap_overlap_score
 
         # Use -68 (integer RSSI, typical data shape) → expect (−68 − −75) / 15 ≈ 0.467
-        overlap = {("Office", "Kitchen"): -68}
-        assert compute_ap_overlap_score("Kitchen", overlap) == pytest.approx(7 / 15, abs=0.01)
+        overlap = {('Office', 'Kitchen'): -68}
+        assert compute_ap_overlap_score('Kitchen', overlap) == pytest.approx(7 / 15, abs=0.01)
 
     def test_ap_overlap_score_island_ap(self) -> None:
         """AP not present as observed in matrix → 0.0 (no neighbour hears it)."""
         from unifi_mapper.analysis.rf_strategy import compute_ap_overlap_score
 
-        overlap = {("Office", "Living-Room"): -60}  # Kitchen not in matrix at all
+        overlap = {('Office', 'Living-Room'): -60}  # Kitchen not in matrix at all
 
-        assert compute_ap_overlap_score("Kitchen", overlap) == 0.0
+        assert compute_ap_overlap_score('Kitchen', overlap) == 0.0
 
     # ── compute_rssi_margin_score ─────────────────────────────────────────────
 
@@ -1740,46 +1978,51 @@ class TestRFStrategyScorecard:
         from unifi_mapper.analysis.rf_strategy import compute_rssi_margin_score
 
         clients = [
-            {"ap_mac": "aa", "ap_name": "Kitchen", "channel": 6, "rssi": -50},
-            {"ap_mac": "aa", "ap_name": "Kitchen", "channel": 1, "rssi": -48},
-            {"ap_mac": "aa", "ap_name": "Kitchen", "channel": 11, "rssi": -52},
-            {"ap_mac": "bb", "ap_name": "Office", "channel": 6, "rssi": -90},  # different AP — ignored
+            {'ap_mac': 'aa', 'ap_name': 'Kitchen', 'channel': 6, 'rssi': -50},
+            {'ap_mac': 'aa', 'ap_name': 'Kitchen', 'channel': 1, 'rssi': -48},
+            {'ap_mac': 'aa', 'ap_name': 'Kitchen', 'channel': 11, 'rssi': -52},
+            {
+                'ap_mac': 'bb',
+                'ap_name': 'Office',
+                'channel': 6,
+                'rssi': -90,
+            },  # different AP — ignored
         ]
 
-        assert compute_rssi_margin_score("Kitchen", clients) == 1.0
+        assert compute_rssi_margin_score('Kitchen', clients) == 1.0
 
     def test_rssi_margin_score_edge(self) -> None:
         """Median RSSI -76 (below -75 floor) → 0.0."""
         from unifi_mapper.analysis.rf_strategy import compute_rssi_margin_score
 
         clients = [
-            {"ap_name": "Kitchen", "channel": 6, "rssi": -76},
-            {"ap_name": "Kitchen", "channel": 1, "rssi": -78},
-            {"ap_name": "Kitchen", "channel": 11, "rssi": -76},
+            {'ap_name': 'Kitchen', 'channel': 6, 'rssi': -76},
+            {'ap_name': 'Kitchen', 'channel': 1, 'rssi': -78},
+            {'ap_name': 'Kitchen', 'channel': 11, 'rssi': -76},
         ]
 
-        assert compute_rssi_margin_score("Kitchen", clients) == 0.0
+        assert compute_rssi_margin_score('Kitchen', clients) == 0.0
 
     def test_rssi_margin_score_empty(self) -> None:
         """Zero 2.4 GHz clients on the AP → 1.0 (nothing to worry about)."""
         from unifi_mapper.analysis.rf_strategy import compute_rssi_margin_score
 
         # Clients on 5 GHz (channel 36) must be excluded from 2.4 GHz score.
-        clients = [{"ap_name": "Kitchen", "channel": 36, "rssi": -60}]
+        clients = [{'ap_name': 'Kitchen', 'channel': 36, 'rssi': -60}]
 
-        assert compute_rssi_margin_score("Kitchen", clients) == 1.0
-        assert compute_rssi_margin_score("Kitchen", []) == 1.0
+        assert compute_rssi_margin_score('Kitchen', clients) == 1.0
+        assert compute_rssi_margin_score('Kitchen', []) == 1.0
 
     def test_rssi_margin_score_all_missing_rssi(self) -> None:
         """Clients present on 2.4 but every rssi is None → 0.0 (cautious)."""
         from unifi_mapper.analysis.rf_strategy import compute_rssi_margin_score
 
         clients = [
-            {"ap_name": "Kitchen", "channel": 6, "rssi": None},
-            {"ap_name": "Kitchen", "channel": 6, "rssi": None},
+            {'ap_name': 'Kitchen', 'channel': 6, 'rssi': None},
+            {'ap_name': 'Kitchen', 'channel': 6, 'rssi': None},
         ]
 
-        assert compute_rssi_margin_score("Kitchen", clients) == 0.0
+        assert compute_rssi_margin_score('Kitchen', clients) == 0.0
 
     # ── compute_coverage_score (weighted sum) ─────────────────────────────────
 
@@ -1789,33 +2032,51 @@ class TestRFStrategyScorecard:
         from unifi_mapper.analysis.rf_strategy import compute_coverage_score
 
         # Construct inputs that produce: roam=1.0, overlap=1.0, rssi=1.0 → score 1.0
-        twofour_only = {"Kitchen": [{"client_mac": "AA", "client_name": "a", "observation_count": 1, "last_seen": "t"}]}
-        mobility_graph = {"AA": {"Kitchen", "Office"}}
-        overlap = {("Office", "Kitchen"): -55}
-        clients = [{"ap_name": "Kitchen", "channel": 6, "rssi": -50}]
+        twofour_only = {
+            'Kitchen': [
+                {'client_mac': 'AA', 'client_name': 'a', 'observation_count': 1, 'last_seen': 't'}
+            ]
+        }
+        mobility_graph = {'AA': {'Kitchen', 'Office'}}
+        overlap = {('Office', 'Kitchen'): -55}
+        clients = [{'ap_name': 'Kitchen', 'channel': 6, 'rssi': -50}]
 
-        assert compute_coverage_score("Kitchen", twofour_only, mobility_graph, overlap, clients) == pytest.approx(1.0)
+        assert compute_coverage_score(
+            'Kitchen', twofour_only, mobility_graph, overlap, clients
+        ) == pytest.approx(1.0)
 
         # Construct: roam=0.0, overlap=0.0, rssi=0.0 → score 0.0
-        twofour_only2 = {"Kitchen": [{"client_mac": "BB", "client_name": "b", "observation_count": 1, "last_seen": "t"}]}
-        mobility_graph2 = {"BB": {"Kitchen"}}
+        twofour_only2 = {
+            'Kitchen': [
+                {'client_mac': 'BB', 'client_name': 'b', 'observation_count': 1, 'last_seen': 't'}
+            ]
+        }
+        mobility_graph2 = {'BB': {'Kitchen'}}
         overlap2 = {}
-        clients2 = [{"ap_name": "Kitchen", "channel": 6, "rssi": -85}]
+        clients2 = [{'ap_name': 'Kitchen', 'channel': 6, 'rssi': -85}]
 
-        assert compute_coverage_score("Kitchen", twofour_only2, mobility_graph2, overlap2, clients2) == pytest.approx(0.0)
+        assert compute_coverage_score(
+            'Kitchen', twofour_only2, mobility_graph2, overlap2, clients2
+        ) == pytest.approx(0.0)
 
         # Mixed — hand-calc: roam=1.0*0.5 + overlap=0.0*0.3 + rssi=0.0*0.2 = 0.5
-        twofour_only3 = {"Kitchen": [{"client_mac": "CC", "client_name": "c", "observation_count": 1, "last_seen": "t"}]}
-        mobility_graph3 = {"CC": {"Kitchen", "Office"}}  # roamed → 1.0
-        overlap3 = {}                                     # island → 0.0
-        clients3 = [{"ap_name": "Kitchen", "channel": 6, "rssi": -85}]  # edge → 0.0
+        twofour_only3 = {
+            'Kitchen': [
+                {'client_mac': 'CC', 'client_name': 'c', 'observation_count': 1, 'last_seen': 't'}
+            ]
+        }
+        mobility_graph3 = {'CC': {'Kitchen', 'Office'}}  # roamed → 1.0
+        overlap3 = {}  # island → 0.0
+        clients3 = [{'ap_name': 'Kitchen', 'channel': 6, 'rssi': -85}]  # edge → 0.0
 
         expected = (
             rfs.COVERAGE_WEIGHT_ROAM_HISTORY * 1.0
             + rfs.COVERAGE_WEIGHT_AP_OVERLAP * 0.0
             + rfs.COVERAGE_WEIGHT_RSSI_MARGIN * 0.0
         )
-        assert compute_coverage_score("Kitchen", twofour_only3, mobility_graph3, overlap3, clients3) == pytest.approx(expected)
+        assert compute_coverage_score(
+            'Kitchen', twofour_only3, mobility_graph3, overlap3, clients3
+        ) == pytest.approx(expected)
 
     # ── classify_confidence ───────────────────────────────────────────────────
 
@@ -1865,7 +2126,9 @@ class TestRFStrategyModeSelection:
         """GREEN + no IoT on 2.4-only → HARD_DISABLE (safe, clean break)."""
         from unifi_mapper.analysis.rf_strategy import Confidence, Mode, select_disable_mode
 
-        assert select_disable_mode(Confidence.GREEN, two_four_only_iot_count=0) == Mode.HARD_DISABLE
+        assert (
+            select_disable_mode(Confidence.GREEN, two_four_only_iot_count=0) == Mode.HARD_DISABLE
+        )
 
     def test_mode_select_green_with_iot_hybrid(self) -> None:
         """GREEN + ≥1 IoT client on 2.4-only → HYBRID (tx_power + min_rssi)."""
@@ -1879,19 +2142,19 @@ class TestRFStrategyModeSelection:
         from unifi_mapper.analysis.rf_strategy import classify_iot_client
 
         # Positive: known IoT OUI prefix (Shelly)
-        shelly_oui = {"oui": "Shelly", "hostname": "shellyplug-s-12AB34", "radio_proto": "n"}
+        shelly_oui = {'oui': 'Shelly', 'hostname': 'shellyplug-s-12AB34', 'radio_proto': 'n'}
         assert classify_iot_client(shelly_oui) is True
 
         # Positive: hostname substring (tasmota)
-        tasmota = {"oui": "Espressif Inc.", "hostname": "tasmota-kitchen-7AB2", "radio_proto": "n"}
+        tasmota = {'oui': 'Espressif Inc.', 'hostname': 'tasmota-kitchen-7AB2', 'radio_proto': 'n'}
         assert classify_iot_client(tasmota) is True
 
         # Negative: modern smartphone — no IoT indicators, modern radio_proto
-        iphone = {"oui": "Apple, Inc.", "hostname": "Hotel-iphone", "radio_proto": "ax"}
+        iphone = {'oui': 'Apple, Inc.', 'hostname': 'Hotel-iphone', 'radio_proto': 'ax'}
         assert classify_iot_client(iphone) is False
 
         # Negative: ambiguous laptop — no IoT keywords, radio_proto=ac (modern)
-        laptop = {"oui": "Intel Corporate", "hostname": "workstation-5", "radio_proto": "ac"}
+        laptop = {'oui': 'Intel Corporate', 'hostname': 'workstation-5', 'radio_proto': 'ac'}
         assert classify_iot_client(laptop) is False
 
 
@@ -1915,7 +2178,7 @@ class TestRFStrategyWidthScoring:
 
         # Even if every other input favours a wider width, 2.4 is locked at 20.
         result = compute_width_recommendation(
-            ap_name="Kitchen",
+            ap_name='Kitchen',
             band=Band.TWO_FOUR,
             current_clients=[],
             channel_scores={20: {1: 0.0}, 40: {1: 0.0}},
@@ -1988,10 +2251,12 @@ class TestRFStrategyWidthScoring:
         from unifi_mapper.analysis.rf_strategy import Band, compute_width_recommendation
 
         # Shared client fixture with capability for all three widths.
-        clients = [{"ap_name": "Kitchen", "channel": 36, "rssi": -50, "radio_proto": "ax", "nss": 2}]
+        clients = [
+            {'ap_name': 'Kitchen', 'channel': 36, 'rssi': -50, 'radio_proto': 'ax', 'nss': 2}
+        ]
 
         result = compute_width_recommendation(
-            ap_name="Kitchen",
+            ap_name='Kitchen',
             band=Band.FIVE,
             current_clients=clients,
             channel_scores={
@@ -2017,10 +2282,19 @@ class TestRFStrategyWidthScoring:
         from unifi_mapper.analysis.rf_strategy import Band, compute_width_recommendation
 
         # MCS 11, 2 SS: rate(80)=1200, rate(40)=600, rate(20)=300.
-        clients = [{"ap_name": "Kitchen", "channel": 36, "rssi": -50, "radio_proto": "ax", "nss": 2, "mcs": 11}]
+        clients = [
+            {
+                'ap_name': 'Kitchen',
+                'channel': 36,
+                'rssi': -50,
+                'radio_proto': 'ax',
+                'nss': 2,
+                'mcs': 11,
+            }
+        ]
 
         result = compute_width_recommendation(
-            ap_name="Kitchen",
+            ap_name='Kitchen',
             band=Band.FIVE,
             current_clients=clients,
             channel_scores={
@@ -2045,10 +2319,19 @@ class TestRFStrategyWidthScoring:
         """
         from unifi_mapper.analysis.rf_strategy import Band, compute_width_recommendation
 
-        clients = [{"ap_name": "Kitchen", "channel": 100, "rssi": -55, "radio_proto": "ax", "nss": 2, "mcs": 11}]
+        clients = [
+            {
+                'ap_name': 'Kitchen',
+                'channel': 100,
+                'rssi': -55,
+                'radio_proto': 'ax',
+                'nss': 2,
+                'mcs': 11,
+            }
+        ]
 
         result = compute_width_recommendation(
-            ap_name="Kitchen",
+            ap_name='Kitchen',
             band=Band.FIVE,
             current_clients=clients,
             channel_scores={
@@ -2085,20 +2368,22 @@ class TestRFStrategyPlanGeneration:
             _build_client_impacts,
         )
 
-        current_clients = [{
-            "mac": "aa:bb:cc:11:22:33",
-            "name": "phone-A",
-            "ap_name": "Kitchen",
-            "channel": 6,
-            "rssi": -62,
-        }]
-        mobility_graph = {"aa:bb:cc:11:22:33": {"Kitchen", "Office"}}
+        current_clients = [
+            {
+                'mac': 'aa:bb:cc:11:22:33',
+                'name': 'phone-A',
+                'ap_name': 'Kitchen',
+                'channel': 6,
+                'rssi': -62,
+            }
+        ]
+        mobility_graph = {'aa:bb:cc:11:22:33': {'Kitchen', 'Office'}}
         overlap_matrix = {
-            ("Office", "Kitchen"): -55,  # Office hears Kitchen strongly
+            ('Office', 'Kitchen'): -55,  # Office hears Kitchen strongly
         }
 
         impacts = _build_client_impacts(
-            ap_name="Kitchen",
+            ap_name='Kitchen',
             band=Band.TWO_FOUR,
             mode=Mode.HARD_DISABLE,
             current_clients=current_clients,
@@ -2108,11 +2393,11 @@ class TestRFStrategyPlanGeneration:
 
         assert len(impacts) == 1
         impact = impacts[0]
-        assert impact.mac == "aa:bb:cc:11:22:33"
+        assert impact.mac == 'aa:bb:cc:11:22:33'
         assert impact.risk == Risk.LOW
-        assert "Office" in impact.predicted_impact
-        assert "roam" in impact.predicted_impact.lower()
-        assert "Office" in impact.known_other_aps
+        assert 'Office' in impact.predicted_impact
+        assert 'roam' in impact.predicted_impact.lower()
+        assert 'Office' in impact.known_other_aps
 
     def test_build_client_impacts_disconnect_risk(self) -> None:
         """Client only ever on this AP → DISCONNECT warning, HIGH risk."""
@@ -2123,18 +2408,20 @@ class TestRFStrategyPlanGeneration:
             _build_client_impacts,
         )
 
-        current_clients = [{
-            "mac": "aa:bb:cc:44:55:66",
-            "name": "old-iot",
-            "ap_name": "Kitchen",
-            "channel": 6,
-            "rssi": -70,
-        }]
-        mobility_graph = {"aa:bb:cc:44:55:66": {"Kitchen"}}  # never roamed
+        current_clients = [
+            {
+                'mac': 'aa:bb:cc:44:55:66',
+                'name': 'old-iot',
+                'ap_name': 'Kitchen',
+                'channel': 6,
+                'rssi': -70,
+            }
+        ]
+        mobility_graph = {'aa:bb:cc:44:55:66': {'Kitchen'}}  # never roamed
         overlap_matrix: dict[tuple[str, str], int] = {}
 
         impacts = _build_client_impacts(
-            ap_name="Kitchen",
+            ap_name='Kitchen',
             band=Band.TWO_FOUR,
             mode=Mode.HARD_DISABLE,
             current_clients=current_clients,
@@ -2145,7 +2432,7 @@ class TestRFStrategyPlanGeneration:
         assert len(impacts) == 1
         impact = impacts[0]
         assert impact.risk == Risk.HIGH
-        assert "DISCONNECT" in impact.predicted_impact
+        assert 'DISCONNECT' in impact.predicted_impact
         assert impact.known_other_aps == ()
 
     def test_build_client_impacts_hybrid_mode(self) -> None:
@@ -2159,18 +2446,20 @@ class TestRFStrategyPlanGeneration:
 
         # Client with no roam history — in HARD_DISABLE this would be HIGH risk.
         # In HYBRID the radio stays up, so the risk drops to LOW.
-        current_clients = [{
-            "mac": "aa:bb:cc:77:88:99",
-            "name": "sticky-iot",
-            "ap_name": "Kitchen",
-            "channel": 6,
-            "rssi": -65,
-        }]
-        mobility_graph = {"aa:bb:cc:77:88:99": {"Kitchen"}}  # no roaming
+        current_clients = [
+            {
+                'mac': 'aa:bb:cc:77:88:99',
+                'name': 'sticky-iot',
+                'ap_name': 'Kitchen',
+                'channel': 6,
+                'rssi': -65,
+            }
+        ]
+        mobility_graph = {'aa:bb:cc:77:88:99': {'Kitchen'}}  # no roaming
         overlap_matrix: dict[tuple[str, str], int] = {}
 
         impacts = _build_client_impacts(
-            ap_name="Kitchen",
+            ap_name='Kitchen',
             band=Band.TWO_FOUR,
             mode=Mode.HYBRID,
             current_clients=current_clients,
@@ -2181,7 +2470,7 @@ class TestRFStrategyPlanGeneration:
         assert len(impacts) == 1
         impact = impacts[0]
         assert impact.risk == Risk.LOW
-        assert "reassociate" in impact.predicted_impact.lower()
+        assert 'reassociate' in impact.predicted_impact.lower()
 
     # ── render_impact_preview ─────────────────────────────────────────────────
 
@@ -2201,16 +2490,16 @@ class TestRFStrategyPlanGeneration:
         )
 
         impact = ClientImpact(
-            mac="aa:bb:cc:11:22:33",
-            name="phone-A",
-            known_other_aps=("Office",),
+            mac='aa:bb:cc:11:22:33',
+            name='phone-A',
+            known_other_aps=('Office',),
             current_rssi=-62,
-            predicted_impact="likely roam to Office",
+            predicted_impact='likely roam to Office',
             risk=Risk.LOW,
         )
         rec = APRecommendation(
-            ap_name="Kitchen",
-            ap_mac="aa:bb:cc:00:00:01",
+            ap_name='Kitchen',
+            ap_mac='aa:bb:cc:00:00:01',
             band=Band.TWO_FOUR,
             mode=Mode.HARD_DISABLE,
             confidence=Confidence.GREEN,
@@ -2220,7 +2509,7 @@ class TestRFStrategyPlanGeneration:
             recommended_channel=6,
             current_tx_power=20,
             recommended_tx_power=20,
-            rationale=("neighbour crowd on ch 1",),
+            rationale=('neighbour crowd on ch 1',),
             displaced_clients=(impact,),
             coverage_score=0.85,
         )
@@ -2236,9 +2525,9 @@ class TestRFStrategyPlanGeneration:
         )
         plan = RFStrategyPlan(
             schema_version=PLAN_SCHEMA_VERSION,
-            generated_at="2026-05-04T20:00:00",
-            tool_version="1.0.0",
-            site="default",
+            generated_at='2026-05-04T20:00:00',
+            tool_version='1.0.0',
+            site='default',
             history_hours_available=48.5,
             recommendations=(rec,),
             summary=summary,
@@ -2247,16 +2536,16 @@ class TestRFStrategyPlanGeneration:
         output = render_impact_preview(plan)
 
         # Per-AP section must contain the AP name + key labels.
-        assert "Kitchen" in output
-        assert "Confidence" in output
-        assert "Rationale" in output
+        assert 'Kitchen' in output
+        assert 'Confidence' in output
+        assert 'Rationale' in output
         # Delta table must reference width / channel / power (D5 example).
-        assert "Width" in output
-        assert "Channel" in output
-        assert "Power" in output
+        assert 'Width' in output
+        assert 'Channel' in output
+        assert 'Power' in output
         # Displaced-client block must mention the disassociate concept.
         # D5 uses "Disassociate" / "Displaced" — render includes one of these.
-        assert "Disassociate" in output or "Displaced" in output
+        assert 'Disassociate' in output or 'Displaced' in output
 
     def test_render_impact_preview_green_empty_plan(self) -> None:
         """Empty plan → human-readable 'no recommendations' message."""
@@ -2279,9 +2568,9 @@ class TestRFStrategyPlanGeneration:
         )
         plan = RFStrategyPlan(
             schema_version=PLAN_SCHEMA_VERSION,
-            generated_at="2026-05-04T20:00:00",
-            tool_version="1.0.0",
-            site="default",
+            generated_at='2026-05-04T20:00:00',
+            tool_version='1.0.0',
+            site='default',
             history_hours_available=48.0,
             recommendations=(),
             summary=summary,
@@ -2289,7 +2578,7 @@ class TestRFStrategyPlanGeneration:
 
         output = render_impact_preview(plan)
 
-        assert "No recommendations" in output
+        assert 'No recommendations' in output
 
     # ── generate_plan (async orchestrator) ────────────────────────────────────
 
@@ -2297,7 +2586,8 @@ class TestRFStrategyPlanGeneration:
     def _seed_history(path, snapshots: list[dict]) -> None:
         """Helper: write a history file with supplied snapshot dicts."""
         import json
-        path.write_text(json.dumps({"snapshots": snapshots}))
+
+        path.write_text(json.dumps({'snapshots': snapshots}))
 
     @staticmethod
     def _make_mock_client_factory(
@@ -2312,6 +2602,7 @@ class TestRFStrategyPlanGeneration:
         supports the async context-manager protocol and the three getters
         ``generate_plan`` calls.
         """
+
         class _MockClient:
             async def __aenter__(self):
                 return self
@@ -2339,22 +2630,25 @@ class TestRFStrategyPlanGeneration:
         from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
         # Seed a history file spanning only 24h (less than default 48h min).
-        history_file = tmp_path / "history.json"
+        history_file = tmp_path / 'history.json'
         t0 = datetime(2026, 5, 4, 0, 0, 0)
-        self._seed_history(history_file, [
-            {"timestamp": t0.isoformat(), "associations": []},
-            {"timestamp": (t0 + timedelta(hours=24)).isoformat(), "associations": []},
-        ])
+        self._seed_history(
+            history_file,
+            [
+                {'timestamp': t0.isoformat(), 'associations': []},
+                {'timestamp': (t0 + timedelta(hours=24)).isoformat(), 'associations': []},
+            ],
+        )
 
         mock = self._make_mock_client_factory(devices=[], clients=[], rogue_aps=[])
-        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+        monkeypatch.setattr(rf_strategy, 'UniFiClient', mock)
 
         with pytest.raises(ToolError) as exc_info:
             asyncio.run(generate_plan(history_path=str(history_file)))
 
         assert exc_info.value.error_code == ErrorCodes.CONFIG_INVALID
         # Message should name the shortfall so operators can act.
-        assert "48" in exc_info.value.message or "history" in exc_info.value.message.lower()
+        assert '48' in exc_info.value.message or 'history' in exc_info.value.message.lower()
 
     def test_generate_plan_min_history_override(self, tmp_path, monkeypatch) -> None:
         """Passing min_history_hours=24.0 lets a 24h history succeed."""
@@ -2363,20 +2657,25 @@ class TestRFStrategyPlanGeneration:
         from unifi_mapper.analysis import rf_strategy
         from unifi_mapper.analysis.rf_strategy import generate_plan
 
-        history_file = tmp_path / "history.json"
+        history_file = tmp_path / 'history.json'
         t0 = datetime(2026, 5, 4, 0, 0, 0)
-        self._seed_history(history_file, [
-            {"timestamp": t0.isoformat(), "associations": []},
-            {"timestamp": (t0 + timedelta(hours=24)).isoformat(), "associations": []},
-        ])
+        self._seed_history(
+            history_file,
+            [
+                {'timestamp': t0.isoformat(), 'associations': []},
+                {'timestamp': (t0 + timedelta(hours=24)).isoformat(), 'associations': []},
+            ],
+        )
 
         mock = self._make_mock_client_factory(devices=[], clients=[], rogue_aps=[])
-        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+        monkeypatch.setattr(rf_strategy, 'UniFiClient', mock)
 
-        plan = asyncio.run(generate_plan(
-            history_path=str(history_file),
-            min_history_hours=24.0,
-        ))
+        plan = asyncio.run(
+            generate_plan(
+                history_path=str(history_file),
+                min_history_hours=24.0,
+            )
+        )
 
         assert plan.history_hours_available >= 24.0
 
@@ -2387,17 +2686,20 @@ class TestRFStrategyPlanGeneration:
         from unifi_mapper.analysis import rf_strategy
         from unifi_mapper.analysis.rf_strategy import generate_plan
 
-        history_file = tmp_path / "history.json"
+        history_file = tmp_path / 'history.json'
         t0 = datetime(2026, 5, 4, 0, 0, 0)
-        self._seed_history(history_file, [
-            {"timestamp": t0.isoformat(), "associations": []},
-            {"timestamp": (t0 + timedelta(hours=48)).isoformat(), "associations": []},
-        ])
+        self._seed_history(
+            history_file,
+            [
+                {'timestamp': t0.isoformat(), 'associations': []},
+                {'timestamp': (t0 + timedelta(hours=48)).isoformat(), 'associations': []},
+            ],
+        )
 
         # Controller with only a switch — no UAPs.
-        devices = [{"type": "usw", "mac": "aa:bb:cc:99:99:99", "name": "Switch"}]
+        devices = [{'type': 'usw', 'mac': 'aa:bb:cc:99:99:99', 'name': 'Switch'}]
         mock = self._make_mock_client_factory(devices=devices, clients=[], rogue_aps=[])
-        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+        monkeypatch.setattr(rf_strategy, 'UniFiClient', mock)
 
         plan = asyncio.run(generate_plan(history_path=str(history_file)))
 
@@ -2415,20 +2717,23 @@ class TestRFStrategyPlanGeneration:
         from unifi_mapper.analysis import rf_strategy
         from unifi_mapper.analysis.rf_strategy import PLAN_SCHEMA_VERSION, generate_plan
 
-        history_file = tmp_path / "history.json"
+        history_file = tmp_path / 'history.json'
         t0 = datetime(2026, 5, 4, 0, 0, 0)
-        self._seed_history(history_file, [
-            {"timestamp": t0.isoformat(), "associations": []},
-            {"timestamp": (t0 + timedelta(hours=48)).isoformat(), "associations": []},
-        ])
+        self._seed_history(
+            history_file,
+            [
+                {'timestamp': t0.isoformat(), 'associations': []},
+                {'timestamp': (t0 + timedelta(hours=48)).isoformat(), 'associations': []},
+            ],
+        )
 
         mock = self._make_mock_client_factory(devices=[], clients=[], rogue_aps=[])
-        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+        monkeypatch.setattr(rf_strategy, 'UniFiClient', mock)
 
         plan = asyncio.run(generate_plan(history_path=str(history_file)))
 
         assert plan.schema_version == PLAN_SCHEMA_VERSION
-        assert plan.schema_version == "1.0"
+        assert plan.schema_version == '1.0'
 
     def test_generate_plan_tool_version_stamped(self, tmp_path, monkeypatch) -> None:
         """plan.tool_version matches the installed package version."""
@@ -2438,20 +2743,23 @@ class TestRFStrategyPlanGeneration:
         from unifi_mapper.analysis import rf_strategy
         from unifi_mapper.analysis.rf_strategy import generate_plan
 
-        history_file = tmp_path / "history.json"
+        history_file = tmp_path / 'history.json'
         t0 = datetime(2026, 5, 4, 0, 0, 0)
-        self._seed_history(history_file, [
-            {"timestamp": t0.isoformat(), "associations": []},
-            {"timestamp": (t0 + timedelta(hours=48)).isoformat(), "associations": []},
-        ])
+        self._seed_history(
+            history_file,
+            [
+                {'timestamp': t0.isoformat(), 'associations': []},
+                {'timestamp': (t0 + timedelta(hours=48)).isoformat(), 'associations': []},
+            ],
+        )
 
         mock = self._make_mock_client_factory(devices=[], clients=[], rogue_aps=[])
-        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+        monkeypatch.setattr(rf_strategy, 'UniFiClient', mock)
 
         plan = asyncio.run(generate_plan(history_path=str(history_file)))
 
         # Should match pyproject.toml version ("0.1.0" at time of writing).
-        assert plan.tool_version == pkg_version("unifi-management-cli")
+        assert plan.tool_version == pkg_version('unifi-management-cli')
 
     def test_generate_plan_counts_match_recommendations(self, tmp_path, monkeypatch) -> None:
         """Three APs producing 1 GREEN, 1 YELLOW, 1 RED → summary counts match."""
@@ -2464,36 +2772,78 @@ class TestRFStrategyPlanGeneration:
         # - Kitchen's 2.4-only clients have roamed (→ roam_history_score=1.0)
         # - Office's 2.4-only client stayed put (→ roam_history_score=0.0)
         # - Living-Room's 2.4-only client stayed put (→ roam_history_score=0.0)
-        history_file = tmp_path / "history.json"
+        history_file = tmp_path / 'history.json'
         t0 = datetime(2026, 5, 4, 0, 0, 0)
         t48 = t0 + timedelta(hours=48)
 
         snapshots = [
             # Hour 0 — seed each client on its "home" AP
             {
-                "timestamp": t0.isoformat(),
-                "associations": [
+                'timestamp': t0.isoformat(),
+                'associations': [
                     # Kitchen client: 2.4-only, starts on Kitchen
-                    {"client_mac": "AA", "client_name": "phone-A", "ap_mac": "aa:k",
-                     "ap_name": "Kitchen", "rssi": -50, "channel": 6, "ssid": "Home"},
+                    {
+                        'client_mac': 'AA',
+                        'client_name': 'phone-A',
+                        'ap_mac': 'aa:k',
+                        'ap_name': 'Kitchen',
+                        'rssi': -50,
+                        'channel': 6,
+                        'ssid': 'Home',
+                    },
                     # Office client: 2.4-only, stays on Office
-                    {"client_mac": "BB", "client_name": "phone-B", "ap_mac": "aa:o",
-                     "ap_name": "Office", "rssi": -50, "channel": 6, "ssid": "Home"},
+                    {
+                        'client_mac': 'BB',
+                        'client_name': 'phone-B',
+                        'ap_mac': 'aa:o',
+                        'ap_name': 'Office',
+                        'rssi': -50,
+                        'channel': 6,
+                        'ssid': 'Home',
+                    },
                     # Living-Room client: 2.4-only, stays on Living-Room
-                    {"client_mac": "CC", "client_name": "phone-C", "ap_mac": "aa:l",
-                     "ap_name": "Living-Room", "rssi": -85, "channel": 6, "ssid": "Home"},
+                    {
+                        'client_mac': 'CC',
+                        'client_name': 'phone-C',
+                        'ap_mac': 'aa:l',
+                        'ap_name': 'Living-Room',
+                        'rssi': -85,
+                        'channel': 6,
+                        'ssid': 'Home',
+                    },
                 ],
             },
             # Hour 48 — Kitchen client has moved to Office (proved roam capability)
             {
-                "timestamp": t48.isoformat(),
-                "associations": [
-                    {"client_mac": "AA", "client_name": "phone-A", "ap_mac": "aa:o",
-                     "ap_name": "Office", "rssi": -50, "channel": 6, "ssid": "Home"},
-                    {"client_mac": "BB", "client_name": "phone-B", "ap_mac": "aa:o",
-                     "ap_name": "Office", "rssi": -50, "channel": 6, "ssid": "Home"},
-                    {"client_mac": "CC", "client_name": "phone-C", "ap_mac": "aa:l",
-                     "ap_name": "Living-Room", "rssi": -85, "channel": 6, "ssid": "Home"},
+                'timestamp': t48.isoformat(),
+                'associations': [
+                    {
+                        'client_mac': 'AA',
+                        'client_name': 'phone-A',
+                        'ap_mac': 'aa:o',
+                        'ap_name': 'Office',
+                        'rssi': -50,
+                        'channel': 6,
+                        'ssid': 'Home',
+                    },
+                    {
+                        'client_mac': 'BB',
+                        'client_name': 'phone-B',
+                        'ap_mac': 'aa:o',
+                        'ap_name': 'Office',
+                        'rssi': -50,
+                        'channel': 6,
+                        'ssid': 'Home',
+                    },
+                    {
+                        'client_mac': 'CC',
+                        'client_name': 'phone-C',
+                        'ap_mac': 'aa:l',
+                        'ap_name': 'Living-Room',
+                        'rssi': -85,
+                        'channel': 6,
+                        'ssid': 'Home',
+                    },
                 ],
             },
         ]
@@ -2522,36 +2872,71 @@ class TestRFStrategyPlanGeneration:
         #                RSSI -85 (below -75 floor) → rssi=0.0 → total 0.0 → RED ✓
 
         devices = [
-            {"type": "uap", "mac": "aa:k", "name": "Kitchen",
-             "vap_table": [{"bssid": "aa:k:24"}]},
-            {"type": "uap", "mac": "aa:o", "name": "Office",
-             "vap_table": [{"bssid": "aa:o:24"}]},
-            {"type": "uap", "mac": "aa:l", "name": "Living-Room",
-             "vap_table": [{"bssid": "aa:l:24"}]},
+            {'type': 'uap', 'mac': 'aa:k', 'name': 'Kitchen', 'vap_table': [{'bssid': 'aa:k:24'}]},
+            {'type': 'uap', 'mac': 'aa:o', 'name': 'Office', 'vap_table': [{'bssid': 'aa:o:24'}]},
+            {
+                'type': 'uap',
+                'mac': 'aa:l',
+                'name': 'Living-Room',
+                'vap_table': [{'bssid': 'aa:l:24'}],
+            },
         ]
         current_clients = [
-            {"mac": "AA", "name": "phone-A", "ap_mac": "aa:o", "ap_name": "Office",
-             "channel": 6, "rssi": -50, "radio_proto": "ax", "nss": 2, "mcs": 11},
-            {"mac": "BB", "name": "phone-B", "ap_mac": "aa:o", "ap_name": "Office",
-             "channel": 6, "rssi": -50, "radio_proto": "ax", "nss": 2, "mcs": 11},
-            {"mac": "CC", "name": "phone-C", "ap_mac": "aa:l", "ap_name": "Living-Room",
-             "channel": 6, "rssi": -85, "radio_proto": "ax", "nss": 2, "mcs": 11},
+            {
+                'mac': 'AA',
+                'name': 'phone-A',
+                'ap_mac': 'aa:o',
+                'ap_name': 'Office',
+                'channel': 6,
+                'rssi': -50,
+                'radio_proto': 'ax',
+                'nss': 2,
+                'mcs': 11,
+            },
+            {
+                'mac': 'BB',
+                'name': 'phone-B',
+                'ap_mac': 'aa:o',
+                'ap_name': 'Office',
+                'channel': 6,
+                'rssi': -50,
+                'radio_proto': 'ax',
+                'nss': 2,
+                'mcs': 11,
+            },
+            {
+                'mac': 'CC',
+                'name': 'phone-C',
+                'ap_mac': 'aa:l',
+                'ap_name': 'Living-Room',
+                'channel': 6,
+                'rssi': -85,
+                'radio_proto': 'ax',
+                'nss': 2,
+                'mcs': 11,
+            },
         ]
         # Rogue entries: Kitchen is observed from Office at strong RSSI;
         # Office is NOT observed (island); Living-Room is NOT observed.
         rogue_aps = [
-            {"ap_mac": "aa:o", "bssid": "aa:k:24", "signal": -55, "age": 0,
-             "is_ubnt": True, "channel": 6},
+            {
+                'ap_mac': 'aa:o',
+                'bssid': 'aa:k:24',
+                'signal': -55,
+                'age': 0,
+                'is_ubnt': True,
+                'channel': 6,
+            },
         ]
 
         mock = self._make_mock_client_factory(devices, current_clients, rogue_aps)
-        monkeypatch.setattr(rf_strategy, "UniFiClient", mock)
+        monkeypatch.setattr(rf_strategy, 'UniFiClient', mock)
 
         plan = asyncio.run(generate_plan(history_path=str(history_file)))
 
         # Each AP emits ONE 2.4 GHz recommendation + ONE 5 GHz stub (Mode.NONE).
         # Summary counts 2.4 recommendations only (the scorecard gate).
         assert plan.summary.total_aps == 3
-        assert plan.summary.green_count == 1   # Kitchen
+        assert plan.summary.green_count == 1  # Kitchen
         assert plan.summary.yellow_count == 1  # Office
-        assert plan.summary.red_count == 1     # Living-Room
+        assert plan.summary.red_count == 1  # Living-Room

@@ -508,9 +508,7 @@ class TestNetworkManager:
         mock_client.update_network.return_value = updated_network
 
         manager = NetworkManager(mock_client)
-        result = await manager.update_dhcp_range(
-            'net-1', '192.0.2.50', '192.0.2.200'
-        )
+        result = await manager.update_dhcp_range('net-1', '192.0.2.50', '192.0.2.200')
 
         assert result.dhcp_config is not None
         mock_client.update_network.assert_called_once()
@@ -579,9 +577,7 @@ class TestNetworkManager:
         result = await manager.set_internet_access('net-2', False)
 
         assert result.internet_access_enabled is False
-        mock_client.update_network.assert_called_once_with(
-            'net-2', internetAccessEnabled=False
-        )
+        mock_client.update_network.assert_called_once_with('net-2', internetAccessEnabled=False)
 
     @pytest.mark.asyncio
     async def test_rename_network(
@@ -602,9 +598,7 @@ class TestNetworkManager:
         result = await manager.rename_network('net-2', 'Smart Home VLAN')
 
         assert result.name == 'Smart Home VLAN'
-        mock_client.update_network.assert_called_once_with(
-            'net-2', name='Smart Home VLAN'
-        )
+        mock_client.update_network.assert_called_once_with('net-2', name='Smart Home VLAN')
 
     @pytest.mark.asyncio
     async def test_delete_network(

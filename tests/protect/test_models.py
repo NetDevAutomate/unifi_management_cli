@@ -57,7 +57,14 @@ class TestDeviceState:
 
     def test_all_device_states_exist(self) -> None:
         """Verify all expected device states are defined."""
-        expected_states = ['connected', 'disconnected', 'connecting', 'updating', 'adopting', 'unknown']
+        expected_states = [
+            'connected',
+            'disconnected',
+            'connecting',
+            'updating',
+            'adopting',
+            'unknown',
+        ]
         actual_states = [s.value for s in DeviceState]
         assert set(actual_states) == set(expected_states)
 
@@ -689,7 +696,9 @@ class TestProtectDeviceTypeAlias:
             ProtectSensor(id='3', name='Sensor', type=DeviceType.SENSOR, mac='AA:BB:CC:DD:EE:FF'),  # type: ignore[call-arg]
             ProtectLight(id='4', name='Light', type=DeviceType.LIGHT, mac='AA:BB:CC:DD:EE:FF'),  # type: ignore[call-arg]
             ProtectChime(id='5', name='Chime', type=DeviceType.CHIME, mac='AA:BB:CC:DD:EE:FF'),  # type: ignore[call-arg]
-            ProtectDoorlock(id='6', name='Lock', type=DeviceType.DOORLOCK, mac='AA:BB:CC:DD:EE:FF'),  # type: ignore[call-arg]
+            ProtectDoorlock(
+                id='6', name='Lock', type=DeviceType.DOORLOCK, mac='AA:BB:CC:DD:EE:FF'
+            ),  # type: ignore[call-arg]
             ProtectAIPort(id='7', name='AI', type=DeviceType.AI_PORT, mac='AA:BB:CC:DD:EE:FF'),  # type: ignore[call-arg]
         ]
         assert len(devices) == 7

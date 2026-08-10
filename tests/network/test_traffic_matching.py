@@ -408,7 +408,9 @@ class TestTrafficMatchingListManager:
         result = await manager.rename_list('list-1', 'Renamed List')
 
         assert result.name == 'Renamed List'
-        mock_client.update_traffic_matching_list.assert_called_once_with('list-1', name='Renamed List')
+        mock_client.update_traffic_matching_list.assert_called_once_with(
+            'list-1', name='Renamed List'
+        )
 
     @pytest.mark.asyncio
     async def test_add_port_to_list(

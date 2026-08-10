@@ -16,9 +16,7 @@ def test_root_guard_recommended_on_core_downlink() -> None:
                 mac='aa',
                 current_priority=4096,
                 hierarchy_tier=0,
-                port_states=[
-                    STPPortConfig(port_idx=1, connected_device_id='access')
-                ],
+                port_states=[STPPortConfig(port_idx=1, connected_device_id='access')],
             ),
             SwitchSTPConfig(
                 device_id='access',
@@ -47,9 +45,7 @@ def test_root_guard_warning_when_downstream_priority_can_hijack_root() -> None:
                 mac='aa',
                 current_priority=8192,
                 hierarchy_tier=1,
-                port_states=[
-                    STPPortConfig(port_idx=4, connected_device_id='access')
-                ],
+                port_states=[STPPortConfig(port_idx=4, connected_device_id='access')],
             ),
             SwitchSTPConfig(
                 device_id='access',
@@ -75,9 +71,7 @@ def test_tcn_monitor_flags_high_topology_change_count() -> None:
                 name='Switch A',
                 mac='aa',
                 hierarchy_tier=0,
-                port_states=[
-                    STPPortConfig(port_idx=2, connected_device_id='b', stp_tc_count=12)
-                ],
+                port_states=[STPPortConfig(port_idx=2, connected_device_id='b', stp_tc_count=12)],
             ),
             SwitchSTPConfig(device_id='b', name='Switch B', mac='bb', hierarchy_tier=1),
         ]

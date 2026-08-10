@@ -808,8 +808,7 @@ class TestDeviceSummary:
 
         now = datetime.now(timezone.utc)
         history = [
-            HealthHistoryEntry(timestamp=now, status=DeviceHealthStatus.HEALTHY)
-            for _ in range(20)
+            HealthHistoryEntry(timestamp=now, status=DeviceHealthStatus.HEALTHY) for _ in range(20)
         ]
 
         trend = monitor._calculate_health_trend(history)  # type: ignore[reportPrivateUsage]
@@ -824,11 +823,9 @@ class TestDeviceSummary:
         now = datetime.now(timezone.utc)
         # First half healthy, second half warning
         history = [
-            HealthHistoryEntry(timestamp=now, status=DeviceHealthStatus.HEALTHY)
-            for _ in range(10)
+            HealthHistoryEntry(timestamp=now, status=DeviceHealthStatus.HEALTHY) for _ in range(10)
         ] + [
-            HealthHistoryEntry(timestamp=now, status=DeviceHealthStatus.WARNING)
-            for _ in range(10)
+            HealthHistoryEntry(timestamp=now, status=DeviceHealthStatus.WARNING) for _ in range(10)
         ]
 
         trend = monitor._calculate_health_trend(history)  # type: ignore[reportPrivateUsage]
@@ -843,11 +840,9 @@ class TestDeviceSummary:
         now = datetime.now(timezone.utc)
         # First half warning, second half healthy
         history = [
-            HealthHistoryEntry(timestamp=now, status=DeviceHealthStatus.WARNING)
-            for _ in range(10)
+            HealthHistoryEntry(timestamp=now, status=DeviceHealthStatus.WARNING) for _ in range(10)
         ] + [
-            HealthHistoryEntry(timestamp=now, status=DeviceHealthStatus.HEALTHY)
-            for _ in range(10)
+            HealthHistoryEntry(timestamp=now, status=DeviceHealthStatus.HEALTHY) for _ in range(10)
         ]
 
         trend = monitor._calculate_health_trend(history)  # type: ignore[reportPrivateUsage]

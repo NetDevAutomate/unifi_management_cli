@@ -243,7 +243,7 @@ class TestProtectConfig:
         repr_str = repr(config)
 
         assert 'supersecret' not in repr_str
-        assert '**********' in repr_str or "SecretStr" in repr_str
+        assert '**********' in repr_str or 'SecretStr' in repr_str
 
 
 class TestProtectConfigFromEnv:
@@ -295,9 +295,7 @@ class TestProtectConfigFromEnv:
         assert config.host == '10.0.0.1'
         assert config.username == 'user'
 
-    def test_from_env_missing_host_raises_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_from_env_missing_host_raises_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that missing HOST variable raises error."""
         monkeypatch.setenv('PROTECT_USERNAME', 'admin')
         monkeypatch.setenv('PROTECT_PASSWORD', 'password123')
@@ -308,9 +306,7 @@ class TestProtectConfigFromEnv:
 
         assert 'PROTECT_HOST' in str(exc_info.value)
 
-    def test_from_env_missing_username_raises_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_from_env_missing_username_raises_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that missing USERNAME variable raises error."""
         monkeypatch.setenv('PROTECT_HOST', '192.0.2.1')
         monkeypatch.setenv('PROTECT_PASSWORD', 'password123')
@@ -321,9 +317,7 @@ class TestProtectConfigFromEnv:
 
         assert 'PROTECT_USERNAME' in str(exc_info.value)
 
-    def test_from_env_missing_password_raises_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_from_env_missing_password_raises_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that missing PASSWORD variable raises error."""
         monkeypatch.setenv('PROTECT_HOST', '192.0.2.1')
         monkeypatch.setenv('PROTECT_USERNAME', 'admin')

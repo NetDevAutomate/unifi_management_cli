@@ -25,8 +25,7 @@ def _switch(model: str, ports: list[tuple[int, int, str]], name: str = 'Test Swi
         'type': 'usw',
         'state': 1,
         'port_table': [
-            {'port_idx': i, 'speed': spd, 'media': media, 'up': True}
-            for i, spd, media in ports
+            {'port_idx': i, 'speed': spd, 'media': media, 'up': True} for i, spd, media in ports
         ],
     }
 
@@ -39,9 +38,15 @@ def test_max_consumption_is_never_treated_as_a_supply_ceiling() -> None:
     Exceeding it means the load ESTIMATE is wrong, not that the switch is over budget.
     Only a published supply rating (`dc_supply_watts`) can be a ceiling.
     """
-    dev = _switch('USWED35', [
-        (1, 2500, '2P5GE'), (2, 1000, '2P5GE'), (5, 2500, '2P5GE'),
-    ], name='Office Window USW Flex 2.5G 5')
+    dev = _switch(
+        'USWED35',
+        [
+            (1, 2500, '2P5GE'),
+            (2, 1000, '2P5GE'),
+            (5, 2500, '2P5GE'),
+        ],
+        name='Office Window USW Flex 2.5G 5',
+    )
 
     report = audit_power_budget_from_data([dev])
 
@@ -61,10 +66,19 @@ def test_per_model_base_watts_is_used_when_published() -> None:
 def test_uswed36_at_incident_load_is_critical() -> None:
     """The exact failing configuration must be flagged against the 15W DC ceiling."""
     # p1 2500, p2 1000, p3 1000, p4 1000, p5 2500, p8 2500, p10 SFP+ -- the 7-port state
-    dev = _switch('USWED36', [
-        (1, 2500, '2P5GE'), (2, 1000, '2P5GE'), (3, 1000, '2P5GE'), (4, 1000, '2P5GE'),
-        (5, 2500, '2P5GE'), (8, 2500, '2P5GE'), (10, 10000, 'SFP+'),
-    ], name='Investigate  USW Flex 2.5G 8')
+    dev = _switch(
+        'USWED36',
+        [
+            (1, 2500, '2P5GE'),
+            (2, 1000, '2P5GE'),
+            (3, 1000, '2P5GE'),
+            (4, 1000, '2P5GE'),
+            (5, 2500, '2P5GE'),
+            (8, 2500, '2P5GE'),
+            (10, 10000, 'SFP+'),
+        ],
+        name='Investigate  USW Flex 2.5G 8',
+    )
 
     report = audit_power_budget_from_data([dev])
 
@@ -104,9 +118,14 @@ def test_unknown_model_reports_load_but_asserts_no_ceiling() -> None:
 
 def test_threshold_is_configurable() -> None:
     """A stricter threshold catches a moderate load."""
-    dev = _switch('USWED36', [
-        (1, 2500, '2P5GE'), (2, 2500, '2P5GE'), (10, 10000, 'SFP+'),
-    ])
+    dev = _switch(
+        'USWED36',
+        [
+            (1, 2500, '2P5GE'),
+            (2, 2500, '2P5GE'),
+            (10, 10000, 'SFP+'),
+        ],
+    )
 
     lax = audit_power_budget_from_data([dev], warn_pct=80.0)
     strict = audit_power_budget_from_data([dev], warn_pct=50.0)
@@ -126,7 +145,9 @@ def test_load_estimate_uses_documented_constants() -> None:
     ]
     load = estimate_port_load_watts(ports, base_watts=7.0)
 
-    expected = 7.0 + PHY_WATT_ESTIMATES[2500] + PHY_WATT_ESTIMATES[1000] + PHY_WATT_ESTIMATES['SFP+']
+    expected = (
+        7.0 + PHY_WATT_ESTIMATES[2500] + PHY_WATT_ESTIMATES[1000] + PHY_WATT_ESTIMATES['SFP+']
+    )
     assert abs(load - expected) < 0.001
 
 
@@ -137,10 +158,20 @@ def test_10gbase_t_costs_more_than_sfp_plus() -> None:
 
 def test_access_points_and_gateways_are_skipped() -> None:
     """Only switches have a port-count-driven PHY budget worth auditing."""
-    ap = {'name': 'AP', 'model': 'U6PRO', 'type': 'uap', 'state': 1,
-          'port_table': [{'port_idx': 1, 'speed': 1000, 'media': 'GE', 'up': True}]}
-    gw = {'name': 'GW', 'model': 'UDMPROMAX', 'type': 'udmpro', 'state': 1,
-          'port_table': [{'port_idx': 1, 'speed': 1000, 'media': 'GE', 'up': True}]}
+    ap = {
+        'name': 'AP',
+        'model': 'U6PRO',
+        'type': 'uap',
+        'state': 1,
+        'port_table': [{'port_idx': 1, 'speed': 1000, 'media': 'GE', 'up': True}],
+    }
+    gw = {
+        'name': 'GW',
+        'model': 'UDMPROMAX',
+        'type': 'udmpro',
+        'state': 1,
+        'port_table': [{'port_idx': 1, 'speed': 1000, 'media': 'GE', 'up': True}],
+    }
 
     report = audit_power_budget_from_data([ap, gw])
 

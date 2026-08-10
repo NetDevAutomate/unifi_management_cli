@@ -33,7 +33,10 @@ def test_aggregates_bidirectional_flows_by_endpoint_pair() -> None:
     assert report.flow_count == 1
     assert report.total_bytes == 1000
     assert report.top_flows[0].total_bytes == 1000
-    assert {report.top_flows[0].endpoint_a.identifier, report.top_flows[0].endpoint_b.identifier} == {
+    assert {
+        report.top_flows[0].endpoint_a.identifier,
+        report.top_flows[0].endpoint_b.identifier,
+    } == {
         '192.0.2.10',
         '192.0.2.20',
     }

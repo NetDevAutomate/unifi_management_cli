@@ -655,10 +655,12 @@ class TestEventAnalytics:
         now = datetime.now(timezone.utc)
 
         # Add mixed events
-        analytics._event_history.extend([  # type: ignore[reportPrivateUsage]
-            self._create_event(ProtectEventType.MOTION, timestamp=now),
-            self._create_event(ProtectEventType.RING, timestamp=now),
-        ])
+        analytics._event_history.extend(
+            [  # type: ignore[reportPrivateUsage]
+                self._create_event(ProtectEventType.MOTION, timestamp=now),
+                self._create_event(ProtectEventType.RING, timestamp=now),
+            ]
+        )
 
         motion_filter = EventFilter(event_types=[ProtectEventType.MOTION])
         history = analytics.get_event_history(event_filter=motion_filter)
