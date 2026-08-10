@@ -28,21 +28,24 @@ def create_main_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic port mapping and discovery
-  unifi-mapper discover --verify-updates
-
   # Network analysis
-  unifi-mapper analyze link-quality --device USW-Pro-24
-  unifi-mapper analyze capacity-planning
-
+  unifi-network-toolkit analyze link-quality --device USW-Pro-24
+  unifi-network-toolkit analyze capacity-planning
+  unifi-network-toolkit analyze vlan
+  unifi-network-toolkit analyze mac
 
   # Device discovery and troubleshooting
-  unifi-mapper find device "Office Switch"
-  unifi-mapper find ip 192.0.2.100
-  unifi-mapper diagnose network-health
+  unifi-network-toolkit find device "Office Switch"
+  unifi-network-toolkit find ip 192.0.2.100
+  unifi-network-toolkit find mac 00:11:22:33:44:55
+  unifi-network-toolkit diagnose network-health
+  unifi-network-toolkit diagnose performance
 
   # Shell completions
-  unifi-mapper install-completions bash
+  unifi-network-toolkit install-completions bash
+
+Port mapping and discovery live on the other entry point:
+  unifi-mapper discover --verify-updates
         """
     )
 

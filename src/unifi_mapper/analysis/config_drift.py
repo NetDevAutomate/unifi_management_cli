@@ -86,7 +86,7 @@ async def detect_drift(baseline_path: str = DEFAULT_CONFIG_PATH) -> dict:
         raise ToolError(
             message=f"No config baseline at {baseline_path}. Run snapshot first.",
             error_code=ErrorCodes.NO_DATA,
-            suggestion="Run: unifi-mapper config snapshot",
+            suggestion="Run: unifi-mapper analyze config-drift --snapshot",
         )
 
     baseline = json.loads(path.read_text())
