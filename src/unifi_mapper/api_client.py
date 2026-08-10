@@ -35,8 +35,8 @@ def _sanitize_for_logging(value: str, max_chars: int = 4) -> str:
         Sanitized string safe for logging
     """
     if not value or len(value) <= max_chars * 2:
-        return "*" * len(value) if value else ""
-    return f"{value[:max_chars]}...{value[-max_chars:]}"
+        return '*' * len(value) if value else ''
+    return f'{value[:max_chars]}...{value[-max_chars:]}'
 
 
 def _hash_for_verification(value: str) -> str:
@@ -49,7 +49,7 @@ def _hash_for_verification(value: str) -> str:
         SHA256 hash of the value
     """
     if not value:
-        return ""
+        return ''
     return hashlib.sha256(value.encode()).hexdigest()[:8]
 
 
@@ -84,7 +84,7 @@ def _sanitize_response_for_logging(response_text: str, max_length: int = 200) ->
         Sanitized response text safe for logging
     """
     if not response_text:
-        return ""
+        return ''
 
     # Remove common sensitive patterns
     import re
@@ -106,18 +106,14 @@ def _sanitize_response_for_logging(response_text: str, max_length: int = 200) ->
     )
 
     # Remove potential MAC addresses
-    sanitized = re.sub(
-        r"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", "XX:XX:XX:XX:XX:XX", sanitized
-    )
+    sanitized = re.sub(r'([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', 'XX:XX:XX:XX:XX:XX', sanitized)
 
     # Remove potential IP addresses (partially)
-    sanitized = re.sub(
-        r"\b(\d{1,3}\.)\d{1,3}(\.\d{1,3}\.\d{1,3})\b", r"\1***\2", sanitized
-    )
+    sanitized = re.sub(r'\b(\d{1,3}\.)\d{1,3}(\.\d{1,3}\.\d{1,3})\b', r'\1***\2', sanitized)
 
     # Truncate to max length
     if len(sanitized) > max_length:
-        sanitized = sanitized[:max_length] + "..."
+        sanitized = sanitized[:max_length] + '...'
 
     return sanitized
 
@@ -128,7 +124,7 @@ class UnifiApiClient:
     def __init__(
         self,
         base_url: str,
-        site: str = "default",
+        site: str = 'default',
         verify_ssl: bool = False,
         username: Optional[str] = None,
         password: Optional[str] = None,
@@ -152,76 +148,58 @@ class UnifiApiClient:
         """
         # Validate and sanitize inputs
         if not base_url:
-            raise ValueError("Base URL is required")
+            raise ValueError('Base URL is required')
 
-        self.base_url = base_url.rstrip("/").strip()
+        self.base_url = base_url.rstrip('/').strip()
 
         # Validate URL format
-        if not (
-            self.base_url.startswith("http://") or self.base_url.startswith("https://")
-        ):
-            raise ValueError("Base URL must start with http:// or https://")
+        if not (self.base_url.startswith('http://') or self.base_url.startswith('https://')):
+            raise ValueError('Base URL must start with http:// or https://')
 
         # Securely store credentials (avoid storing in plain text where possible)
         self._username = username.strip() if username else None
-        self._password = (
-            password if password else None
-        )  # Keep password as-is for hashing
+        self._password = password if password else None  # Keep password as-is for hashing
         self._api_token = api_token.strip() if api_token else None
 
         # Store credential hashes for logging/verification without exposing actual values
-        self._username_hash = (
-            _hash_for_verification(self._username) if self._username else None
-        )
-        self._password_hash = (
-            _hash_for_verification(self._password) if self._password else None
-        )
-        self._token_hash = (
-            _hash_for_verification(self._api_token) if self._api_token else None
-        )
+        self._username_hash = _hash_for_verification(self._username) if self._username else None
+        self._password_hash = _hash_for_verification(self._password) if self._password else None
+        self._token_hash = _hash_for_verification(self._api_token) if self._api_token else None
 
-        self.site = site.strip() if site else "default"
+        self.site = site.strip() if site else 'default'
         self.verify_ssl = verify_ssl
         self.timeout = max(1, min(timeout, 300))  # Clamp timeout between 1-300 seconds
         self.max_retries = max(1, min(max_retries, 10))  # Clamp retries between 1-10
-        self.retry_delay = max(
-            0.1, min(retry_delay, 10.0)
-        )  # Clamp delay between 0.1-10 seconds
+        self.retry_delay = max(0.1, min(retry_delay, 10.0))  # Clamp delay between 0.1-10 seconds
         self.session = requests.Session()
         self.session.verify = verify_ssl
         self.is_authenticated = False
-        self.auth_method = "token" if api_token else "username_password"
+        self.auth_method = 'token' if api_token else 'username_password'
         self.successful_endpoint = None  # Store the successful endpoint
-        self.is_unifi_os = (
-            False  # Whether this is a UniFi OS device (UDM, UDM Pro, etc.)
-        )
+        self.is_unifi_os = False  # Whether this is a UniFi OS device (UDM, UDM Pro, etc.)
         self._last_error = None  # Store last error for debugging
 
         # Log initialization with sanitized values
-        log.info(
-            f"Initializing UniFi API client for {_sanitize_for_logging(self.base_url, 8)}"
-        )
-        log.debug(
-            f"Site: {self.site}, SSL verify: {self.verify_ssl}, Timeout: {self.timeout}s"
-        )
+        log.info(f'Initializing UniFi API client for {_sanitize_for_logging(self.base_url, 8)}')
+        log.debug(f'Site: {self.site}, SSL verify: {self.verify_ssl}, Timeout: {self.timeout}s')
         if self._username_hash:
-            log.debug(f"Username hash: {self._username_hash}")
+            log.debug(f'Username hash: {self._username_hash}')
         if self._token_hash:
-            log.debug(f"Token hash: {self._token_hash}")
+            log.debug(f'Token hash: {self._token_hash}')
         if self._password_hash:
-            log.debug(f"Password hash: {self._password_hash}")
+            log.debug(f'Password hash: {self._password_hash}')
 
         # API headers
         self.legacy_headers = {
-            "User-Agent": "UnifiPortMapper/1.0",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
+            'User-Agent': 'UnifiPortMapper/1.0',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
         }
 
         self.integration_headers = {
-            "User-Agent": "UnifiPortMapper/1.0",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
+            'User-Agent': 'UnifiPortMapper/1.0',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
         }
 
     def _retry_request(self, func, *args, **kwargs):
@@ -249,12 +227,12 @@ class UnifiApiClient:
                 if attempt < self.max_retries - 1:
                     delay = self.retry_delay * (2**attempt)
                     log.warning(
-                        f"Request timed out (attempt {attempt + 1}/{self.max_retries}). Retrying in {delay:.1f}s..."
+                        f'Request timed out (attempt {attempt + 1}/{self.max_retries}). Retrying in {delay:.1f}s...'
                     )
                     time.sleep(delay)
                 else:
                     raise UniFiTimeoutError(
-                        f"Request timed out after {self.max_retries} attempts: {e}"
+                        f'Request timed out after {self.max_retries} attempts: {e}'
                     )
             except HTTPError as e:
                 last_exception = e
@@ -262,70 +240,72 @@ class UnifiApiClient:
                 # Don't retry on authentication errors
                 if e.response.status_code in [401, 403]:
                     raise UniFiAuthenticationError(
-                        f"Authentication failed: {e}",
+                        f'Authentication failed: {e}',
                         status_code=e.response.status_code,
                     )
 
                 # Don't retry on client errors (4xx except auth/timeout/rate-limit)
-                if (
-                    400 <= e.response.status_code < 500
-                    and e.response.status_code not in [401, 403, 408, 429]
-                ):
-                    raise UniFiPermissionError(f"Client error: {e}")
+                if 400 <= e.response.status_code < 500 and e.response.status_code not in [
+                    401,
+                    403,
+                    408,
+                    429,
+                ]:
+                    raise UniFiPermissionError(f'Client error: {e}')
 
                 # Retry on server errors and retryable client errors
                 if attempt < self.max_retries - 1:
                     delay = self.retry_delay * (2**attempt)
                     log.warning(
-                        f"Request failed (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {delay:.1f}s..."
+                        f'Request failed (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {delay:.1f}s...'
                     )
                     time.sleep(delay)
                 else:
-                    log.error(f"Request failed after {self.max_retries} attempts: {e}")
+                    log.error(f'Request failed after {self.max_retries} attempts: {e}')
             except ConnectionError as e:
                 last_exception = e
                 delay = self.retry_delay * (2**attempt)
 
                 if attempt < self.max_retries - 1:
                     log.warning(
-                        f"Request failed (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {delay:.1f}s..."
+                        f'Request failed (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {delay:.1f}s...'
                     )
                     time.sleep(delay)
                 else:
                     raise UniFiConnectionError(
-                        f"Connection failed after {self.max_retries} attempts: {e}"
+                        f'Connection failed after {self.max_retries} attempts: {e}'
                     )
             except RequestException as e:
                 # Handle other request exceptions
                 last_exception = e
-                if "timeout" in str(e).lower():
-                    raise UniFiTimeoutError(f"Request timed out: {e}")
-                elif "connection" in str(e).lower():
-                    raise UniFiConnectionError(f"Connection failed: {e}")
+                if 'timeout' in str(e).lower():
+                    raise UniFiTimeoutError(f'Request timed out: {e}')
+                elif 'connection' in str(e).lower():
+                    raise UniFiConnectionError(f'Connection failed: {e}')
                 else:
-                    raise UniFiApiError(f"Request failed: {e}")
+                    raise UniFiApiError(f'Request failed: {e}')
             except Exception as e:
                 # Handle unexpected errors
                 last_exception = e
-                log.error(f"Unexpected error during request: {e}")
-                raise UniFiApiError(f"Unexpected error: {e}")
+                log.error(f'Unexpected error during request: {e}')
+                raise UniFiApiError(f'Unexpected error: {e}')
 
         # If we get here, all retries failed
         if last_exception:
             if isinstance(last_exception, Timeout):
                 raise UniFiTimeoutError(
-                    f"Request timed out after {self.max_retries} attempts: {last_exception}"
+                    f'Request timed out after {self.max_retries} attempts: {last_exception}'
                 )
             elif isinstance(last_exception, ConnectionError):
                 raise UniFiConnectionError(
-                    f"Connection failed after {self.max_retries} attempts: {last_exception}"
+                    f'Connection failed after {self.max_retries} attempts: {last_exception}'
                 )
             else:
                 raise UniFiApiError(
-                    f"Request failed after {self.max_retries} attempts: {last_exception}"
+                    f'Request failed after {self.max_retries} attempts: {last_exception}'
                 )
         else:
-            raise UniFiApiError(f"Request failed after {self.max_retries} attempts")
+            raise UniFiApiError(f'Request failed after {self.max_retries} attempts')
 
     def login(self) -> bool:
         """Login to the UniFi Controller.
@@ -340,22 +320,20 @@ class UnifiApiClient:
         """
         # Check if we're already authenticated
         if self.is_authenticated:
-            log.debug("Already authenticated, skipping login")
+            log.debug('Already authenticated, skipping login')
             return True
 
         # Validate we have credentials
-        if self.auth_method == "token" and not self._api_token:
-            raise UniFiValidationError(
-                "API token authentication selected but no token provided"
-            )
-        elif self.auth_method == "username_password" and (
+        if self.auth_method == 'token' and not self._api_token:
+            raise UniFiValidationError('API token authentication selected but no token provided')
+        elif self.auth_method == 'username_password' and (
             not self._username or not self._password
         ):
             raise UniFiValidationError(
-                "Username/password authentication selected but credentials missing"
+                'Username/password authentication selected but credentials missing'
             )
 
-        log.info(f"Attempting authentication using {self.auth_method} method")
+        log.info(f'Attempting authentication using {self.auth_method} method')
 
         try:
             return self._perform_login()
@@ -364,8 +342,8 @@ class UnifiApiClient:
             raise
         except Exception as e:
             self._last_error = str(e)
-            log.error(f"Unexpected error during login: {e}")
-            raise UniFiApiError(f"Login failed: {e}")
+            log.error(f'Unexpected error during login: {e}')
+            raise UniFiApiError(f'Login failed: {e}')
 
     def _perform_login(self) -> bool:
         """Internal method to perform the actual login process.
@@ -378,20 +356,20 @@ class UnifiApiClient:
             # Try to access the /api/system endpoint which is only available on UniFi OS devices
             def _check_unifi_os():
                 return requests.get(
-                    f"{self.base_url}/api/system",
+                    f'{self.base_url}/api/system',
                     verify=self.verify_ssl,
                     timeout=self.timeout,
                 )
 
             response = self._retry_request(_check_unifi_os)
             self.is_unifi_os = response.status_code == 200
-            log.debug(f"UniFi OS detection: {self.is_unifi_os}")
+            log.debug(f'UniFi OS detection: {self.is_unifi_os}')
         except UniFiApiError as e:
             # If we can't detect UniFi OS, assume it's a legacy controller
-            log.debug(f"UniFi OS detection failed, assuming legacy controller: {e}")
+            log.debug(f'UniFi OS detection failed, assuming legacy controller: {e}')
             self.is_unifi_os = False
         except Exception as e:
-            log.debug(f"UniFi OS detection failed: {e}")
+            log.debug(f'UniFi OS detection failed: {e}')
             self.is_unifi_os = False
 
         # Set up the session with proper SSL handling for self-signed certificates
@@ -403,22 +381,22 @@ class UnifiApiClient:
             import urllib3
 
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            log.debug(
-                "SSL verification disabled - suitable for self-signed certificates"
-            )
+            log.debug('SSL verification disabled - suitable for self-signed certificates')
 
         # Set up headers
         self.session.headers.update(self.legacy_headers)
 
         # Try to authenticate
-        if self.auth_method == "token":
+        if self.auth_method == 'token':
             # Token-based authentication
-            log.debug(f"Attempting token authentication with hash: {self._token_hash}")
+            log.debug(f'Attempting token authentication with hash: {self._token_hash}')
 
             # Try X-API-KEY header first
             if not self._api_token:
-                raise UniFiValidationError("API token authentication selected but no token provided")
-            self.session.headers.update({"X-API-KEY": self._api_token})
+                raise UniFiValidationError(
+                    'API token authentication selected but no token provided'
+                )
+            self.session.headers.update({'X-API-KEY': self._api_token})
 
             try:
 
@@ -426,36 +404,36 @@ class UnifiApiClient:
                     if self.is_unifi_os:
                         # For UniFi OS devices, try the /proxy/network/api/s/{site}/self endpoint
                         return self.session.get(
-                            f"{self.base_url}/proxy/network/api/s/{self.site}/self",
+                            f'{self.base_url}/proxy/network/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
                     else:
                         # For legacy controllers, try the /api/s/{site}/self endpoint
                         return self.session.get(
-                            f"{self.base_url}/api/s/{self.site}/self",
+                            f'{self.base_url}/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
 
                 response = self._retry_request(_try_api_key_auth)
                 if response.status_code == 200:
                     self.is_authenticated = True
-                    self.successful_endpoint = "api_token"
+                    self.successful_endpoint = 'api_token'
                     log.info(
-                        f"Successfully authenticated with API token (X-API-KEY) - hash: {self._token_hash}"
+                        f'Successfully authenticated with API token (X-API-KEY) - hash: {self._token_hash}'
                     )
                     return True
             except UniFiApiError as e:
-                log.debug(f"API token authentication failed: {e}")
+                log.debug(f'API token authentication failed: {e}')
             except requests.exceptions.SSLError as e:
-                log.error(f"SSL error during token authentication: {e}")
+                log.error(f'SSL error during token authentication: {e}')
                 if not self.verify_ssl:
                     log.info(
-                        "Hint: This may be due to self-signed certificate. SSL verification is disabled."
+                        'Hint: This may be due to self-signed certificate. SSL verification is disabled.'
                     )
-                raise UniFiConnectionError(f"SSL error: {e}")
+                raise UniFiConnectionError(f'SSL error: {e}')
 
             # If X-API-KEY header didn't work, try Authorization header
-            self.session.headers.update({"Authorization": f"Bearer {self._api_token}"})
+            self.session.headers.update({'Authorization': f'Bearer {self._api_token}'})
 
             try:
 
@@ -463,90 +441,86 @@ class UnifiApiClient:
                     if self.is_unifi_os:
                         # For UniFi OS devices, try the /proxy/network/api/s/{site}/self endpoint
                         return self.session.get(
-                            f"{self.base_url}/proxy/network/api/s/{self.site}/self",
+                            f'{self.base_url}/proxy/network/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
                     else:
                         # For legacy controllers, try the /api/s/{site}/self endpoint
                         return self.session.get(
-                            f"{self.base_url}/api/s/{self.site}/self",
+                            f'{self.base_url}/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
 
                 response = self._retry_request(_try_bearer_auth)
                 if response.status_code == 200:
                     self.is_authenticated = True
-                    self.successful_endpoint = "bearer_token"
+                    self.successful_endpoint = 'bearer_token'
                     log.info(
-                        f"Successfully authenticated with Bearer token - hash: {self._token_hash}"
+                        f'Successfully authenticated with Bearer token - hash: {self._token_hash}'
                     )
                     return True
             except UniFiApiError as e:
-                log.debug(f"Bearer token authentication failed: {e}")
+                log.debug(f'Bearer token authentication failed: {e}')
             except requests.exceptions.SSLError as e:
-                log.error(f"SSL error during bearer token authentication: {e}")
-                raise UniFiConnectionError(f"SSL error: {e}")
+                log.error(f'SSL error during bearer token authentication: {e}')
+                raise UniFiConnectionError(f'SSL error: {e}')
         else:
             # Username/password authentication
             log.debug(
-                f"Attempting username/password authentication - username hash: {self._username_hash}"
+                f'Attempting username/password authentication - username hash: {self._username_hash}'
             )
 
             try:
                 if self.is_unifi_os:
                     # For UniFi OS devices, use the /api/auth/login endpoint
                     def _try_unifi_os_login():
-                        login_url = f"{self.base_url}/api/auth/login"
+                        login_url = f'{self.base_url}/api/auth/login'
                         login_data = {
-                            "username": self._username,
-                            "password": self._password,
+                            'username': self._username,
+                            'password': self._password,
                         }
-                        return self.session.post(
-                            login_url, json=login_data, timeout=self.timeout
-                        )
+                        return self.session.post(login_url, json=login_data, timeout=self.timeout)
 
                     response = self._retry_request(_try_unifi_os_login)
                     if response.status_code == 200:
                         self.is_authenticated = True
-                        self.successful_endpoint = "unifi_os_login"
+                        self.successful_endpoint = 'unifi_os_login'
                         log.info(
-                            f"Successfully authenticated with username/password (UniFi OS) - user hash: {self._username_hash}"
+                            f'Successfully authenticated with username/password (UniFi OS) - user hash: {self._username_hash}'
                         )
                         return True
                 else:
                     # For legacy controllers, use the /api/login endpoint
                     def _try_legacy_login():
-                        login_url = f"{self.base_url}/api/login"
+                        login_url = f'{self.base_url}/api/login'
                         login_data = {
-                            "username": self._username,
-                            "password": self._password,
+                            'username': self._username,
+                            'password': self._password,
                         }
-                        return self.session.post(
-                            login_url, json=login_data, timeout=self.timeout
-                        )
+                        return self.session.post(login_url, json=login_data, timeout=self.timeout)
 
                     response = self._retry_request(_try_legacy_login)
                     if response.status_code == 200:
                         self.is_authenticated = True
-                        self.successful_endpoint = "legacy_login"
+                        self.successful_endpoint = 'legacy_login'
                         log.info(
-                            f"Successfully authenticated with username/password (legacy) - user hash: {self._username_hash}"
+                            f'Successfully authenticated with username/password (legacy) - user hash: {self._username_hash}'
                         )
                         return True
             except UniFiApiError as e:
-                log.debug(f"Username/password authentication failed: {e}")
+                log.debug(f'Username/password authentication failed: {e}')
             except requests.exceptions.SSLError as e:
-                log.error(f"SSL error during username/password authentication: {e}")
+                log.error(f'SSL error during username/password authentication: {e}')
                 if not self.verify_ssl:
                     log.info(
-                        "Hint: This may be due to self-signed certificate. SSL verification is disabled."
+                        'Hint: This may be due to self-signed certificate. SSL verification is disabled.'
                     )
-                raise UniFiConnectionError(f"SSL error: {e}")
+                raise UniFiConnectionError(f'SSL error: {e}')
             except Exception as e:
-                log.debug(f"Username/password authentication failed: {e}")
+                log.debug(f'Username/password authentication failed: {e}')
 
         # If we got here, authentication failed
-        log.error("Authentication failed - all methods exhausted")
+        log.error('Authentication failed - all methods exhausted')
         return False
 
     def logout(self) -> bool:
@@ -556,36 +530,36 @@ class UnifiApiClient:
             bool: True if logout was successful, False otherwise
         """
         if not self.is_authenticated:
-            log.debug("Not authenticated, nothing to logout")
+            log.debug('Not authenticated, nothing to logout')
             return True
 
         try:
             # Attempt to logout if we have an active session
-            if self.successful_endpoint in ["legacy_login", "unifi_os_login"]:
+            if self.successful_endpoint in ['legacy_login', 'unifi_os_login']:
                 if self.is_unifi_os:
-                    logout_url = f"{self.base_url}/api/auth/logout"
+                    logout_url = f'{self.base_url}/api/auth/logout'
                 else:
-                    logout_url = f"{self.base_url}/api/logout"
+                    logout_url = f'{self.base_url}/api/logout'
 
                 try:
                     response = self.session.post(logout_url, timeout=self.timeout)
                     if response.status_code == 200:
-                        log.info("Successfully logged out from UniFi Controller")
+                        log.info('Successfully logged out from UniFi Controller')
                     else:
-                        log.debug(f"Logout response: {response.status_code}")
+                        log.debug(f'Logout response: {response.status_code}')
                 except Exception as e:
-                    log.debug(f"Logout request failed: {e}")
+                    log.debug(f'Logout request failed: {e}')
 
             # Clear session and authentication state
             self.session.close()
             self.is_authenticated = False
             self.successful_endpoint = None
 
-            log.debug("Session cleared and authentication state reset")
+            log.debug('Session cleared and authentication state reset')
             return True
 
         except Exception as e:
-            log.error(f"Error during logout: {e}")
+            log.error(f'Error during logout: {e}')
             return False
 
     def clear_credentials(self) -> None:
@@ -595,12 +569,12 @@ class UnifiApiClient:
         """
         if self._password:
             # Overwrite password in memory
-            self._password = "X" * len(self._password)
+            self._password = 'X' * len(self._password)
             self._password = None
 
         if self._api_token:
             # Overwrite token in memory
-            self._api_token = "X" * len(self._api_token)
+            self._api_token = 'X' * len(self._api_token)
             self._api_token = None
 
         # Clear username (less sensitive but good practice)
@@ -612,10 +586,10 @@ class UnifiApiClient:
         self._token_hash = None
 
         # Close session
-        if hasattr(self, "session"):
+        if hasattr(self, 'session'):
             self.session.close()
 
-        log.debug("Credentials securely cleared from memory")
+        log.debug('Credentials securely cleared from memory')
 
     def __del__(self):
         """Destructor to ensure credentials are cleared when object is destroyed."""
@@ -637,18 +611,18 @@ class UnifiApiClient:
             ValueError: If site_id is invalid
         """
         if not site_id or not isinstance(site_id, str):
-            raise ValueError("Site ID must be a non-empty string")
+            raise ValueError('Site ID must be a non-empty string')
 
         # Remove any potentially dangerous characters
         import re
 
-        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", site_id.strip())
+        sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', site_id.strip())
 
         if not sanitized:
-            raise ValueError("Site ID contains no valid characters")
+            raise ValueError('Site ID contains no valid characters')
 
         if len(sanitized) > 50:  # Reasonable limit for site IDs
-            raise ValueError("Site ID is too long")
+            raise ValueError('Site ID is too long')
 
         return sanitized
 
@@ -665,18 +639,18 @@ class UnifiApiClient:
             ValueError: If device_id is invalid
         """
         if not device_id or not isinstance(device_id, str):
-            raise ValueError("Device ID must be a non-empty string")
+            raise ValueError('Device ID must be a non-empty string')
 
         # Remove any potentially dangerous characters - UniFi device IDs are typically hex
         import re
 
-        sanitized = re.sub(r"[^a-fA-F0-9]", "", device_id.strip())
+        sanitized = re.sub(r'[^a-fA-F0-9]', '', device_id.strip())
 
         if not sanitized:
-            raise ValueError("Device ID contains no valid characters")
+            raise ValueError('Device ID contains no valid characters')
 
         if len(sanitized) not in [24, 32]:  # Typical UniFi device ID lengths
-            log.warning(f"Device ID length unusual: {len(sanitized)} characters")
+            log.warning(f'Device ID length unusual: {len(sanitized)} characters')
 
         return sanitized
 
@@ -693,42 +667,44 @@ class UnifiApiClient:
             ValueError: If port_name is invalid
         """
         if not port_name or not isinstance(port_name, str):
-            raise ValueError("Port name must be a non-empty string")
+            raise ValueError('Port name must be a non-empty string')
 
         # Remove dangerous characters but allow reasonable port name characters
         import re
 
-        sanitized = re.sub(r'[<>"\'\\\x00-\x1f\x7f]', "", port_name.strip())
+        sanitized = re.sub(r'[<>"\'\\\x00-\x1f\x7f]', '', port_name.strip())
 
         if not sanitized:
-            raise ValueError("Port name contains no valid characters")
+            raise ValueError('Port name contains no valid characters')
 
         if len(sanitized) > 100:  # Reasonable limit for port names
-            raise ValueError("Port name is too long")
+            raise ValueError('Port name is too long')
 
         return sanitized
 
     def get_sites(self) -> List[Dict[str, Any]]:
         """Get all sites from the UniFi Controller."""
         if not self.is_authenticated and not self.login():
-            log.error("Not authenticated, cannot get sites")
+            log.error('Not authenticated, cannot get sites')
             return []
 
         endpoint = (
-            f"{self.base_url}/proxy/network/api/self/sites"
+            f'{self.base_url}/proxy/network/api/self/sites'
             if self.is_unifi_os
-            else f"{self.base_url}/api/self/sites"
+            else f'{self.base_url}/api/self/sites'
         )
         try:
             self.session.headers.update(self.legacy_headers)
-            response = self._retry_request(lambda: self.session.get(endpoint, timeout=self.timeout))
+            response = self._retry_request(
+                lambda: self.session.get(endpoint, timeout=self.timeout)
+            )
             if response.status_code == 200:
                 payload = response.json()
-                data = payload.get("data", payload)
+                data = payload.get('data', payload)
                 return data if isinstance(data, list) else []
-            log.error(f"Failed to get sites: {response.status_code}")
+            log.error(f'Failed to get sites: {response.status_code}')
         except Exception as e:
-            log.error(f"Error getting sites: {e}")
+            log.error(f'Error getting sites: {e}')
         return []
 
     def get_devices(self, site_id: str) -> Dict[str, Any]:
@@ -744,21 +720,19 @@ class UnifiApiClient:
         try:
             site_id = self._validate_site_id(site_id)
         except ValueError as e:
-            log.error(f"Invalid site_id: {e}")
+            log.error(f'Invalid site_id: {e}')
             return {}
 
         if not self.is_authenticated and not self.login():
-            log.error("Not authenticated, cannot get devices")
+            log.error('Not authenticated, cannot get devices')
             return {}
 
         try:
             # Determine the correct endpoint based on UniFi OS detection
             if self.is_unifi_os:
-                devices_endpoint = (
-                    f"{self.base_url}/proxy/network/api/s/{site_id}/stat/device"
-                )
+                devices_endpoint = f'{self.base_url}/proxy/network/api/s/{site_id}/stat/device'
             else:
-                devices_endpoint = f"{self.base_url}/api/s/{site_id}/stat/device"
+                devices_endpoint = f'{self.base_url}/api/s/{site_id}/stat/device'
 
             # Use legacy headers for this request
             self.session.headers.update(self.legacy_headers)
@@ -772,26 +746,26 @@ class UnifiApiClient:
                 return response.json()
             elif response.status_code == 401 or response.status_code == 403:
                 log.warning(
-                    "Authentication issue with devices endpoint. Attempting to re-authenticate..."
+                    'Authentication issue with devices endpoint. Attempting to re-authenticate...'
                 )
                 if self.login():
-                    log.info("Re-authentication successful, retrying devices retrieval")
+                    log.info('Re-authentication successful, retrying devices retrieval')
                     response = self._retry_request(_try_get_devices)
                     if response.status_code == 200:
                         return response.json()
             else:
-                log.error(f"Failed to get devices: {response.status_code}")
+                log.error(f'Failed to get devices: {response.status_code}')
         except UniFiApiError as e:
-            log.error(f"API error getting devices: {e}")
+            log.error(f'API error getting devices: {e}')
         except requests.exceptions.SSLError as e:
-            log.error(f"SSL error getting devices: {e}")
+            log.error(f'SSL error getting devices: {e}')
             if not self.verify_ssl:
                 log.info(
-                    "Hint: This may be due to self-signed certificate. SSL verification is disabled."
+                    'Hint: This may be due to self-signed certificate. SSL verification is disabled.'
                 )
-            raise UniFiConnectionError(f"SSL error: {e}")
+            raise UniFiConnectionError(f'SSL error: {e}')
         except Exception as e:
-            log.error(f"Error getting devices: {e}")
+            log.error(f'Error getting devices: {e}')
 
         return {}
 
@@ -808,21 +782,19 @@ class UnifiApiClient:
         try:
             site_id = self._validate_site_id(site_id)
         except ValueError as e:
-            log.error(f"Invalid site_id: {e}")
+            log.error(f'Invalid site_id: {e}')
             return {}
 
         if not self.is_authenticated and not self.login():
-            log.error("Not authenticated, cannot get clients")
+            log.error('Not authenticated, cannot get clients')
             return {}
 
         try:
             # Determine the correct endpoint based on UniFi OS detection
             if self.is_unifi_os:
-                clients_endpoint = (
-                    f"{self.base_url}/proxy/network/api/s/{site_id}/stat/sta"
-                )
+                clients_endpoint = f'{self.base_url}/proxy/network/api/s/{site_id}/stat/sta'
             else:
-                clients_endpoint = f"{self.base_url}/api/s/{site_id}/stat/sta"
+                clients_endpoint = f'{self.base_url}/api/s/{site_id}/stat/sta'
 
             # Use legacy headers for this request
             self.session.headers.update(self.legacy_headers)
@@ -836,26 +808,26 @@ class UnifiApiClient:
                 return response.json()
             elif response.status_code == 401 or response.status_code == 403:
                 log.warning(
-                    "Authentication issue with clients endpoint. Attempting to re-authenticate..."
+                    'Authentication issue with clients endpoint. Attempting to re-authenticate...'
                 )
                 if self.login():
-                    log.info("Re-authentication successful, retrying clients retrieval")
+                    log.info('Re-authentication successful, retrying clients retrieval')
                     response = self._retry_request(_try_get_clients)
                     if response.status_code == 200:
                         return response.json()
             else:
-                log.error(f"Failed to get clients: {response.status_code}")
+                log.error(f'Failed to get clients: {response.status_code}')
         except UniFiApiError as e:
-            log.error(f"API error getting clients: {e}")
+            log.error(f'API error getting clients: {e}')
         except requests.exceptions.SSLError as e:
-            log.error(f"SSL error getting clients: {e}")
+            log.error(f'SSL error getting clients: {e}')
             if not self.verify_ssl:
                 log.info(
-                    "Hint: This may be due to self-signed certificate. SSL verification is disabled."
+                    'Hint: This may be due to self-signed certificate. SSL verification is disabled.'
                 )
-            raise UniFiConnectionError(f"SSL error: {e}")
+            raise UniFiConnectionError(f'SSL error: {e}')
         except Exception as e:
-            log.error(f"Error getting clients: {e}")
+            log.error(f'Error getting clients: {e}')
 
         return {}
 
@@ -874,11 +846,11 @@ class UnifiApiClient:
             site_id = self._validate_site_id(site_id)
             device_id = self._validate_device_id(device_id)
         except ValueError as e:
-            log.error(f"Invalid input for device details: {e}")
+            log.error(f'Invalid input for device details: {e}')
             return {}
 
         if not self.is_authenticated and not self.login():
-            log.error("Not authenticated, cannot get device details")
+            log.error('Not authenticated, cannot get device details')
             return {}
 
         device_details = {}
@@ -890,18 +862,14 @@ class UnifiApiClient:
             # Standard device endpoints
             if self.is_unifi_os:
                 endpoints_to_try.append(
-                    f"{self.base_url}/proxy/network/api/s/{site_id}/stat/device/{device_id}"
+                    f'{self.base_url}/proxy/network/api/s/{site_id}/stat/device/{device_id}'
                 )
                 endpoints_to_try.append(
-                    f"{self.base_url}/proxy/network/api/s/{site_id}/rest/device/{device_id}"
+                    f'{self.base_url}/proxy/network/api/s/{site_id}/rest/device/{device_id}'
                 )
             else:
-                endpoints_to_try.append(
-                    f"{self.base_url}/api/s/{site_id}/stat/device/{device_id}"
-                )
-                endpoints_to_try.append(
-                    f"{self.base_url}/api/s/{site_id}/rest/device/{device_id}"
-                )
+                endpoints_to_try.append(f'{self.base_url}/api/s/{site_id}/stat/device/{device_id}')
+                endpoints_to_try.append(f'{self.base_url}/api/s/{site_id}/rest/device/{device_id}')
 
             # Try each endpoint until we get a successful response
             for endpoint in endpoints_to_try:
@@ -909,7 +877,7 @@ class UnifiApiClient:
                     # Use legacy headers for this request
                     self.session.headers.update(self.legacy_headers)
 
-                    log.debug(f"Getting device details from endpoint: {endpoint}")
+                    log.debug(f'Getting device details from endpoint: {endpoint}')
 
                     def _try_get_device_details():
                         return self.session.get(endpoint, timeout=self.timeout)
@@ -919,51 +887,47 @@ class UnifiApiClient:
                     if response.status_code == 200:
                         data = response.json()
 
-                        if "data" in data and len(data["data"]) > 0:
-                            device_details = data["data"][0]
-                            log.debug(
-                                f"Successfully got device details from {endpoint}"
-                            )
+                        if 'data' in data and len(data['data']) > 0:
+                            device_details = data['data'][0]
+                            log.debug(f'Successfully got device details from {endpoint}')
                             return device_details
                     elif response.status_code == 401 or response.status_code == 403:
                         log.warning(
-                            "Authentication issue with device endpoint. Attempting to re-authenticate..."
+                            'Authentication issue with device endpoint. Attempting to re-authenticate...'
                         )
                         if self.login():
                             log.info(
-                                "Re-authentication successful, retrying device details retrieval"
+                                'Re-authentication successful, retrying device details retrieval'
                             )
                             # Try again with the same endpoint after re-authentication
                             response = self._retry_request(_try_get_device_details)
                             if response.status_code == 200:
                                 data = response.json()
-                                if "data" in data and len(data["data"]) > 0:
-                                    device_details = data["data"][0]
+                                if 'data' in data and len(data['data']) > 0:
+                                    device_details = data['data'][0]
                                     log.debug(
-                                        f"Successfully got device details after re-auth from {endpoint}"
+                                        f'Successfully got device details after re-auth from {endpoint}'
                                     )
                                     return device_details
                     else:
                         # Use debug level for 400 errors as they're expected for some device types
                         if response.status_code == 400:
                             log.debug(
-                                f"Device endpoint not supported: {endpoint} (status code 400)"
+                                f'Device endpoint not supported: {endpoint} (status code 400)'
                             )
                         else:
                             log.debug(
-                                f"Failed to get device details from {endpoint}: {response.status_code}"
+                                f'Failed to get device details from {endpoint}: {response.status_code}'
                             )
                 except requests.exceptions.RequestException as e:
-                    log.debug(
-                        f"Request error getting device details from {endpoint}: {e}"
-                    )
+                    log.debug(f'Request error getting device details from {endpoint}: {e}')
 
             # If we couldn't get device details from any endpoint, try to get it from the devices list
             try:
                 devices_endpoint = (
-                    f"{self.base_url}/proxy/network/api/s/{site_id}/stat/device"
+                    f'{self.base_url}/proxy/network/api/s/{site_id}/stat/device'
                     if self.is_unifi_os
-                    else f"{self.base_url}/api/s/{site_id}/stat/device"
+                    else f'{self.base_url}/api/s/{site_id}/stat/device'
                 )
 
                 def _try_get_devices_fallback():
@@ -973,44 +937,37 @@ class UnifiApiClient:
                 if response.status_code == 200:
                     data = response.json()
 
-                    if "data" in data:
+                    if 'data' in data:
                         # Find the device in the list
-                        for device in data["data"]:
-                            if (
-                                device.get("_id") == device_id
-                                or device.get("mac") == device_id
-                            ):
+                        for device in data['data']:
+                            if device.get('_id') == device_id or device.get('mac') == device_id:
                                 device_details = device
-                                log.debug("Found device details in devices list")
+                                log.debug('Found device details in devices list')
                                 return device_details
             except Exception as e:
-                log.debug(f"Error getting device from devices list: {e}")
+                log.debug(f'Error getting device from devices list: {e}')
 
             # If we still couldn't get device details, try to create a minimal device details object
             if not device_details:
-                log.debug(f"Creating minimal device details for device {device_id}")
+                log.debug(f'Creating minimal device details for device {device_id}')
                 # Try to extract MAC address from device_id if it looks like a MAC
                 mac = device_id
-                if (
-                    len(device_id) == 24 and ":" in device_id
-                ):  # Standard MAC format with colons
+                if len(device_id) == 24 and ':' in device_id:  # Standard MAC format with colons
                     mac = device_id
-                elif (
-                    len(device_id) == 12 and ":" not in device_id
-                ):  # MAC without colons
-                    mac = ":".join([device_id[i : i + 2] for i in range(0, 12, 2)])
+                elif len(device_id) == 12 and ':' not in device_id:  # MAC without colons
+                    mac = ':'.join([device_id[i : i + 2] for i in range(0, 12, 2)])
 
                 # Create minimal device details
                 device_details = {
-                    "_id": device_id,
-                    "mac": mac,
-                    "name": f"Device {device_id[-6:]}",  # Use last 6 chars of ID as name
-                    "model": "Unknown",
-                    "type": "unknown",
+                    '_id': device_id,
+                    'mac': mac,
+                    'name': f'Device {device_id[-6:]}',  # Use last 6 chars of ID as name
+                    'model': 'Unknown',
+                    'type': 'unknown',
                 }
                 return device_details
         except Exception as e:
-            log.error(f"Error getting device details: {e}")
+            log.error(f'Error getting device details: {e}')
 
         return device_details
 
@@ -1029,28 +986,28 @@ class UnifiApiClient:
             site_id = self._validate_site_id(site_id)
             device_id = self._validate_device_id(device_id)
         except ValueError as e:
-            log.error(f"Invalid input for device ports: {e}")
+            log.error(f'Invalid input for device ports: {e}')
             return []
 
         if not self.is_authenticated and not self.login():
-            log.error("Not authenticated, cannot get device ports")
+            log.error('Not authenticated, cannot get device ports')
             return []
 
         # First, try to get device details which should include port information
         device_data = self.get_device_details(site_id, device_id)
 
         # Check if we got device details and if it has a port_table
-        if device_data and "port_table" in device_data:
+        if device_data and 'port_table' in device_data:
             # Process port status information
-            port_table = device_data["port_table"]
+            port_table = device_data['port_table']
 
             # Try to enhance port status information
             try:
                 # Get client information to determine port status
                 clients_endpoint = (
-                    f"{self.base_url}/proxy/network/api/s/{site_id}/stat/sta"
+                    f'{self.base_url}/proxy/network/api/s/{site_id}/stat/sta'
                     if self.is_unifi_os
-                    else f"{self.base_url}/api/s/{site_id}/stat/sta"
+                    else f'{self.base_url}/api/s/{site_id}/stat/sta'
                 )
 
                 def _try_get_clients_for_ports():
@@ -1060,52 +1017,52 @@ class UnifiApiClient:
 
                 if clients_response.status_code == 200:
                     clients_data = clients_response.json()
-                    if "data" in clients_data:
+                    if 'data' in clients_data:
                         # Create a map of port_idx to client info
                         port_client_map = {}
-                        for client in clients_data["data"]:
-                            if client.get("sw_mac") == device_data.get("mac"):
-                                port_idx = client.get("sw_port")
+                        for client in clients_data['data']:
+                            if client.get('sw_mac') == device_data.get('mac'):
+                                port_idx = client.get('sw_port')
                                 if port_idx is not None:
                                     port_client_map[port_idx] = client
 
                         # Update port status based on client information
                         for port in port_table:
-                            port_idx = port.get("port_idx")
+                            port_idx = port.get('port_idx')
                             if port_idx in port_client_map:
                                 # Port has a client connected
-                                port["up"] = True
+                                port['up'] = True
                                 client = port_client_map[port_idx]
-                                port["client_name"] = client.get(
-                                    "name", client.get("hostname", "Unknown Client")
+                                port['client_name'] = client.get(
+                                    'name', client.get('hostname', 'Unknown Client')
                                 )
-                                port["client_mac"] = client.get("mac", "")
+                                port['client_mac'] = client.get('mac', '')
             except Exception as e:
-                log.debug(f"Error enhancing port status: {e}")
+                log.debug(f'Error enhancing port status: {e}')
 
             return port_table
 
         # If we couldn't get port_table from device details, try to create a default one based on device model
-        model = device_data.get("model", "")
+        model = device_data.get('model', '')
         if model:
             # Create default ports based on model
             if (
-                "usw" in model.lower()
-                or "switch" in model.lower()
-                or "us-" in model.lower()
-                or "usl" in model.lower()
+                'usw' in model.lower()
+                or 'switch' in model.lower()
+                or 'us-' in model.lower()
+                or 'usl' in model.lower()
             ):
                 # For switches, create default ports
                 port_count = 8  # Default port count
 
                 # Adjust port count based on model
-                if "24" in model:
+                if '24' in model:
                     port_count = 24
-                elif "16" in model:
+                elif '16' in model:
                     port_count = 16
-                elif "8" in model:
+                elif '8' in model:
                     port_count = 8
-                elif "48" in model:
+                elif '48' in model:
                     port_count = 48
 
                 # Create default port table
@@ -1118,29 +1075,29 @@ class UnifiApiClient:
 
                     default_ports.append(
                         {
-                            "port_idx": i,
-                            "name": f"Port {i}",
-                            "media": "SFP" if is_sfp else "RJ45",
-                            "up": False,
-                            "enable": True,
-                            "speed": 1000,
-                            "poe_enable": not is_sfp,  # SFP ports don't have PoE
+                            'port_idx': i,
+                            'name': f'Port {i}',
+                            'media': 'SFP' if is_sfp else 'RJ45',
+                            'up': False,
+                            'enable': True,
+                            'speed': 1000,
+                            'poe_enable': not is_sfp,  # SFP ports don't have PoE
                         }
                     )
                 return default_ports
             elif (
-                "udm" in model.lower()
-                or "usg" in model.lower()
-                or "gateway" in model.lower()
-                or "ugw" in model.lower()
+                'udm' in model.lower()
+                or 'usg' in model.lower()
+                or 'gateway' in model.lower()
+                or 'ugw' in model.lower()
             ):
                 # For routers/gateways, create default ports
                 port_count = 4  # Default port count
 
                 # Adjust port count based on model
-                if "pro" in model.lower():
+                if 'pro' in model.lower():
                     port_count = 8
-                elif "max" in model.lower():
+                elif 'max' in model.lower():
                     port_count = 10
 
                 # Create default port table
@@ -1153,13 +1110,13 @@ class UnifiApiClient:
 
                     default_ports.append(
                         {
-                            "port_idx": i,
-                            "name": f"Port {i}",
-                            "media": "SFP" if is_sfp else "RJ45",
-                            "up": False,
-                            "enable": True,
-                            "speed": 1000,
-                            "poe_enable": False,  # Routers typically don't have PoE
+                            'port_idx': i,
+                            'name': f'Port {i}',
+                            'media': 'SFP' if is_sfp else 'RJ45',
+                            'up': False,
+                            'enable': True,
+                            'speed': 1000,
+                            'poe_enable': False,  # Routers typically don't have PoE
                         }
                     )
                 return default_ports
@@ -1170,13 +1127,13 @@ class UnifiApiClient:
         for i in range(1, 9):  # Default to 8 ports
             default_ports.append(
                 {
-                    "port_idx": i,
-                    "name": f"Port {i}",
-                    "media": "RJ45",
-                    "up": False,
-                    "enable": True,
-                    "speed": 1000,
-                    "poe_enable": False,
+                    'port_idx': i,
+                    'name': f'Port {i}',
+                    'media': 'RJ45',
+                    'up': False,
+                    'enable': True,
+                    'speed': 1000,
+                    'poe_enable': False,
                 }
             )
         return default_ports
@@ -1196,49 +1153,48 @@ class UnifiApiClient:
             site_id = self._validate_site_id(site_id)
             device_id = self._validate_device_id(device_id)
         except ValueError as e:
-            log.error(f"Invalid input for LLDP info: {e}")
+            log.error(f'Invalid input for LLDP info: {e}')
             return {}
 
         if not self.is_authenticated and not self.login():
-            log.error("Not authenticated, cannot get LLDP info")
+            log.error('Not authenticated, cannot get LLDP info')
             return {}
 
         port_lldp_info = {}
 
         try:
             # Build MAC to device name cache if needed
-            if not hasattr(self, "_mac_to_device_cache"):
+            if not hasattr(self, '_mac_to_device_cache'):
                 self._mac_to_device_cache = {}
                 self._build_mac_to_device_cache(site_id)
 
             # FIX: LLDP data is already available in device details under 'lldp_table'
             device_details = self.get_device_details(site_id, device_id)
 
-            if device_details and "lldp_table" in device_details:
-                lldp_table = device_details["lldp_table"]
+            if device_details and 'lldp_table' in device_details:
+                lldp_table = device_details['lldp_table']
                 log.debug(
-                    f"Found lldp_table with {len(lldp_table)} entries for device {device_id}"
+                    f'Found lldp_table with {len(lldp_table)} entries for device {device_id}'
                 )
 
                 # Process each LLDP entry with MAC resolution
                 for entry in lldp_table:
                     # Try multiple field names for port index (UniFi versions may differ)
                     local_port_idx = (
-                        entry.get("local_port_idx")
-                        or entry.get("port_idx")
-                        or entry.get("lldp_local_port_idx")
+                        entry.get('local_port_idx')
+                        or entry.get('port_idx')
+                        or entry.get('lldp_local_port_idx')
                     )
                     if local_port_idx is not None:
-                        chassis_id = entry.get("chassis_id", "")
+                        chassis_id = entry.get('chassis_id', '')
                         # Try multiple field names for system/device name
                         system_name = (
-                            entry.get("system_name", "")
-                            or entry.get("lldp_system_name", "")
-                            or entry.get("remote_system_name", "")
+                            entry.get('system_name', '')
+                            or entry.get('lldp_system_name', '')
+                            or entry.get('remote_system_name', '')
                         )
-                        chassis_name = (
-                            entry.get("chassis_name", "")
-                            or entry.get("lldp_chassis_name", "")
+                        chassis_name = entry.get('chassis_name', '') or entry.get(
+                            'lldp_chassis_name', ''
                         )
 
                         # Resolve MAC to device name - filter out MAC-like values from LLDP data
@@ -1251,16 +1207,14 @@ class UnifiApiClient:
 
                         # If no valid device name from LLDP, try to resolve via MAC cache
                         if not remote_device_name and chassis_id:
-                            remote_device_name = self._resolve_mac_to_device_name(
-                                chassis_id
-                            )
+                            remote_device_name = self._resolve_mac_to_device_name(chassis_id)
                             if remote_device_name:
                                 log.debug(
                                     f"LLDP port {local_port_idx}: Resolved MAC {chassis_id} to '{remote_device_name}'"
                                 )
                             else:
                                 log.debug(
-                                    f"LLDP port {local_port_idx}: No name found for MAC {chassis_id}"
+                                    f'LLDP port {local_port_idx}: No name found for MAC {chassis_id}'
                                 )
                         elif remote_device_name:
                             log.debug(
@@ -1268,59 +1222,55 @@ class UnifiApiClient:
                             )
 
                         port_lldp_info[str(local_port_idx)] = {
-                            "port_idx": local_port_idx,
-                            "chassis_id": chassis_id,
-                            "port_id": entry.get("port_id", ""),
-                            "system_name": system_name,
-                            "chassis_name": chassis_name,
-                            "remote_device_name": remote_device_name,
-                            "remote_port_name": entry.get("port_id", ""),
-                            "remote_chassis_id": chassis_id,
-                            "is_wired": entry.get("is_wired", True),
-                            "local_port_name": entry.get("local_port_name", ""),
+                            'port_idx': local_port_idx,
+                            'chassis_id': chassis_id,
+                            'port_id': entry.get('port_id', ''),
+                            'system_name': system_name,
+                            'chassis_name': chassis_name,
+                            'remote_device_name': remote_device_name,
+                            'remote_port_name': entry.get('port_id', ''),
+                            'remote_chassis_id': chassis_id,
+                            'is_wired': entry.get('is_wired', True),
+                            'local_port_name': entry.get('local_port_name', ''),
                         }
                         log.info(
                             f"LLDP: Port {local_port_idx} -> '{remote_device_name or chassis_id}'"
                         )
                     else:
-                        log.debug(f"LLDP entry missing port index: {entry.keys()}")
+                        log.debug(f'LLDP entry missing port index: {entry.keys()}')
             else:
-                log.debug(
-                    f"No lldp_table found in device details for device {device_id}"
-                )
+                log.debug(f'No lldp_table found in device details for device {device_id}')
 
         except Exception as e:
-            log.error(f"Error getting LLDP/CDP information: {e}")
+            log.error(f'Error getting LLDP/CDP information: {e}')
 
-        log.info(
-            f"Retrieved LLDP info for {len(port_lldp_info)} ports on device {device_id}"
-        )
+        log.info(f'Retrieved LLDP info for {len(port_lldp_info)} ports on device {device_id}')
         return port_lldp_info
 
     def _build_mac_to_device_cache(self, site_id: str) -> None:
         """Build cache mapping MAC addresses to device names."""
         try:
             devices_response = self.get_devices(site_id)
-            if not devices_response or "data" not in devices_response:
-                log.warning("No device data available for MAC cache")
+            if not devices_response or 'data' not in devices_response:
+                log.warning('No device data available for MAC cache')
                 return
 
             device_count = 0
-            for device in devices_response["data"]:
-                mac = device.get("mac", "")
-                name = device.get("name", "")
+            for device in devices_response['data']:
+                mac = device.get('mac', '')
+                name = device.get('name', '')
 
                 # Skip if no MAC or no useful name
                 if not mac:
                     continue
-                if not name or name == "Unknown":
-                    name = device.get("model", "Unknown Device")
+                if not name or name == 'Unknown':
+                    name = device.get('model', 'Unknown Device')
 
                 # Normalize and store multiple MAC formats for matching
                 mac_lower = mac.lower()
                 mac_upper = mac.upper()
-                mac_no_colons_lower = mac_lower.replace(":", "")
-                mac_no_colons_upper = mac_upper.replace(":", "")
+                mac_no_colons_lower = mac_lower.replace(':', '')
+                mac_no_colons_upper = mac_upper.replace(':', '')
 
                 # Store all variations
                 self._mac_to_device_cache[mac_lower] = name
@@ -1331,14 +1281,14 @@ class UnifiApiClient:
                 device_count += 1
                 log.debug(f"Cached device: MAC {mac} -> '{name}'")
 
-            log.info(f"Built MAC cache with {device_count} devices")
+            log.info(f'Built MAC cache with {device_count} devices')
         except Exception as e:
-            log.error(f"Error building MAC cache: {e}")
+            log.error(f'Error building MAC cache: {e}')
 
     def _resolve_mac_to_device_name(self, chassis_id: str) -> str:
         """Resolve MAC address to device name."""
         if not chassis_id:
-            return ""
+            return ''
 
         # Normalize chassis_id - remove common prefixes and normalize format
         normalized = chassis_id.strip()
@@ -1347,12 +1297,12 @@ class UnifiApiClient:
         mac_formats = [
             normalized.lower(),
             normalized.upper(),
-            normalized.lower().replace(":", ""),
-            normalized.upper().replace(":", ""),
-            normalized.lower().replace("-", ""),
-            normalized.upper().replace("-", ""),
-            normalized.lower().replace(":", "").replace("-", ""),
-            normalized.upper().replace(":", "").replace("-", ""),
+            normalized.lower().replace(':', ''),
+            normalized.upper().replace(':', ''),
+            normalized.lower().replace('-', ''),
+            normalized.upper().replace('-', ''),
+            normalized.lower().replace(':', '').replace('-', ''),
+            normalized.upper().replace(':', '').replace('-', ''),
         ]
 
         for mac_format in mac_formats:
@@ -1361,12 +1311,12 @@ class UnifiApiClient:
                 log.debug(f"Resolved MAC {chassis_id} -> '{resolved_name}'")
                 return resolved_name
 
-        log.debug(f"Could not resolve MAC {chassis_id} to device name (cache has {len(self._mac_to_device_cache)} entries)")
-        return ""  # Return empty string instead of the MAC to indicate unresolved
+        log.debug(
+            f'Could not resolve MAC {chassis_id} to device name (cache has {len(self._mac_to_device_cache)} entries)'
+        )
+        return ''  # Return empty string instead of the MAC to indicate unresolved
 
-    def update_port_name(
-        self, site_id: str, device_id: str, port_idx: int, name: str
-    ) -> bool:
+    def update_port_name(self, site_id: str, device_id: str, port_idx: int, name: str) -> bool:
         """Update the name of a port.
 
         Args:
@@ -1384,26 +1334,26 @@ class UnifiApiClient:
             device_id = self._validate_device_id(device_id)
             name = self._validate_port_name(name)
         except ValueError as e:
-            log.error(f"Invalid input for port name update: {e}")
+            log.error(f'Invalid input for port name update: {e}')
             return False
 
         # Validate port index
         if not isinstance(port_idx, int) or port_idx < 1 or port_idx > 100:
-            log.error(f"Invalid port index: {port_idx}")
+            log.error(f'Invalid port index: {port_idx}')
             return False
 
         if not self.is_authenticated and not self.login():
-            log.error("Not authenticated, cannot update port name")
+            log.error('Not authenticated, cannot update port name')
             return False
 
         try:
             # Determine the correct endpoint based on UniFi OS detection
             if self.is_unifi_os:
-                port_endpoint = f"{self.base_url}/proxy/network/api/s/{site_id}/rest/device/{device_id}"
-            else:
                 port_endpoint = (
-                    f"{self.base_url}/api/s/{site_id}/rest/device/{device_id}"
+                    f'{self.base_url}/proxy/network/api/s/{site_id}/rest/device/{device_id}'
                 )
+            else:
+                port_endpoint = f'{self.base_url}/api/s/{site_id}/rest/device/{device_id}'
 
             # Use legacy headers for this request
             self.session.headers.update(self.legacy_headers)
@@ -1412,30 +1362,28 @@ class UnifiApiClient:
             device_details = self.get_device_details(site_id, device_id)
 
             if not device_details:
-                log.error(f"Failed to get device details for device {device_id}")
+                log.error(f'Failed to get device details for device {device_id}')
                 return False
 
             # Find the port in the port_table
-            port_table = device_details.get("port_table", [])
+            port_table = device_details.get('port_table', [])
             port_found = False
 
             for port in port_table:
-                if port.get("port_idx") == port_idx:
+                if port.get('port_idx') == port_idx:
                     port_found = True
-                    port["name"] = name
+                    port['name'] = name
                     break
 
             if not port_found:
-                log.error(f"Port {port_idx} not found in device {device_id}")
+                log.error(f'Port {port_idx} not found in device {device_id}')
                 return False
 
             # Update the device with the new port_table
-            update_data = {"port_table": port_table}
+            update_data = {'port_table': port_table}
 
             def _try_update_port():
-                return self.session.put(
-                    port_endpoint, json=update_data, timeout=self.timeout
-                )
+                return self.session.put(port_endpoint, json=update_data, timeout=self.timeout)
 
             response = self._retry_request(_try_update_port)
 
@@ -1445,10 +1393,10 @@ class UnifiApiClient:
                 )
                 return True
             else:
-                log.error(f"Failed to update port name: {response.status_code}")
+                log.error(f'Failed to update port name: {response.status_code}')
                 return False
         except Exception as e:
-            log.error(f"Error updating port name: {e}")
+            log.error(f'Error updating port name: {e}')
             return False
 
     def update_port_names(self, device_id: str, port_updates: Dict[int, str]) -> bool:
@@ -1466,19 +1414,19 @@ class UnifiApiClient:
                 if isinstance(port_idx, int)
             }
         except ValueError as e:
-            log.error(f"Invalid input for port names update: {e}")
+            log.error(f'Invalid input for port names update: {e}')
             return False
 
         if not validated_updates:
             return True
 
         if not self.is_authenticated and not self.login():
-            log.error("Not authenticated, cannot update port names")
+            log.error('Not authenticated, cannot update port names')
             return False
 
         device_details = self.get_device_details(self.site, device_id)
         if not device_details:
-            log.error(f"Failed to get current device details for {device_id}")
+            log.error(f'Failed to get current device details for {device_id}')
             return False
 
         return self._update_port_overrides_from_names(
@@ -1496,9 +1444,9 @@ class UnifiApiClient:
         """Persist port names by merging updates into existing port_overrides."""
         try:
             endpoint = (
-                f"{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}"
+                f'{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}'
                 if self.is_unifi_os
-                else f"{self.base_url}/api/s/{self.site}/rest/device/{device_id}"
+                else f'{self.base_url}/api/s/{self.site}/rest/device/{device_id}'
             )
             self.session.headers.update(self.legacy_headers)
 
@@ -1515,21 +1463,21 @@ class UnifiApiClient:
                 50000,
                 100000,
             }
-            existing_overrides = device_details.get("port_overrides", [])
+            existing_overrides = device_details.get('port_overrides', [])
             existing_map = {
-                override.get("port_idx"): override
+                override.get('port_idx'): override
                 for override in existing_overrides
-                if isinstance(override, dict) and "port_idx" in override
+                if isinstance(override, dict) and 'port_idx' in override
             }
 
             merged_overrides = []
             updated_port_idxs = set(port_updates)
 
             for port_idx, name in port_updates.items():
-                override = existing_map.get(port_idx, {"port_idx": port_idx}).copy()
-                override["name"] = name
-                if "speed" in override and override["speed"] not in valid_speeds:
-                    del override["speed"]
+                override = existing_map.get(port_idx, {'port_idx': port_idx}).copy()
+                override['name'] = name
+                if 'speed' in override and override['speed'] not in valid_speeds:
+                    del override['speed']
                 merged_overrides.append(override)
 
             for port_idx, existing in existing_map.items():
@@ -1538,23 +1486,21 @@ class UnifiApiClient:
                 cleaned = {
                     key: value
                     for key, value in existing.items()
-                    if key != "speed" or value in valid_speeds
+                    if key != 'speed' or value in valid_speeds
                 }
                 merged_overrides.append(cleaned)
 
             update_data = {
-                "_id": device_details.get("_id"),
-                "mac": device_details.get("mac"),
-                "port_overrides": merged_overrides,
+                '_id': device_details.get('_id'),
+                'mac': device_details.get('mac'),
+                'port_overrides': merged_overrides,
             }
-            for field in ["config_version", "cfgversion", "config_revision"]:
+            for field in ['config_version', 'cfgversion', 'config_revision']:
                 if field in device_details:
                     update_data[field] = device_details[field]
 
-            log.info(
-                f"Updating {len(merged_overrides)} port overrides for device {device_id}"
-            )
-            log.debug(f"Port name updates requested: {port_updates}")
+            log.info(f'Updating {len(merged_overrides)} port overrides for device {device_id}')
+            log.debug(f'Port name updates requested: {port_updates}')
 
             response = self._retry_request(
                 lambda: self.session.put(
@@ -1566,32 +1512,30 @@ class UnifiApiClient:
 
             try:
                 response_json = response.json()
-                meta = response_json.get("meta", {})
-                rc = meta.get("rc")
-                if rc and rc != "ok":
+                meta = response_json.get('meta', {})
+                rc = meta.get('rc')
+                if rc and rc != 'ok':
                     log.warning(
                         f"UniFi API returned rc='{rc}' with message: '{meta.get('msg', '')}'"
                     )
                     return False
             except Exception as json_err:
-                log.debug(f"Could not parse port override response as JSON: {json_err}")
+                log.debug(f'Could not parse port override response as JSON: {json_err}')
 
             if response.status_code == 200:
-                log.info(f"port_overrides update successful for device {device_id}")
+                log.info(f'port_overrides update successful for device {device_id}')
                 return True
 
             log.warning(
-                f"port_overrides update failed: {response.status_code} - "
-                f"{_sanitize_response_for_logging(response.text, 200)}"
+                f'port_overrides update failed: {response.status_code} - '
+                f'{_sanitize_response_for_logging(response.text, 200)}'
             )
             return False
         except Exception as e:
-            log.warning(f"Error in port_overrides name update: {e}")
+            log.warning(f'Error in port_overrides name update: {e}')
             return False
 
-    def update_device_port_table(
-        self, device_id: str, port_table: List[Dict[str, Any]]
-    ) -> bool:
+    def update_device_port_table(self, device_id: str, port_table: List[Dict[str, Any]]) -> bool:
         """Update port names for a device using port_overrides (the correct writeable field).
 
         IMPORTANT: port_table is READ-ONLY - it reflects current state but changes don't persist.
@@ -1608,36 +1552,36 @@ class UnifiApiClient:
         try:
             device_id = self._validate_device_id(device_id)
         except ValueError as e:
-            log.error(f"Invalid device_id for port table update: {e}")
+            log.error(f'Invalid device_id for port table update: {e}')
             return False
 
         if not isinstance(port_table, list):
-            log.error("Port table must be a list")
+            log.error('Port table must be a list')
             return False
 
         # Validate port table entries
         for i, port in enumerate(port_table):
             if not isinstance(port, dict):
-                log.error(f"Port table entry {i} must be a dictionary")
+                log.error(f'Port table entry {i} must be a dictionary')
                 return False
 
             # Validate port name if present
-            if "name" in port:
+            if 'name' in port:
                 try:
-                    port["name"] = self._validate_port_name(port["name"])
+                    port['name'] = self._validate_port_name(port['name'])
                 except ValueError as e:
-                    log.error(f"Invalid port name in port table entry {i}: {e}")
+                    log.error(f'Invalid port name in port table entry {i}: {e}')
                     return False
 
         if not self.is_authenticated and not self.login():
-            log.error("Not authenticated, cannot update device port table")
+            log.error('Not authenticated, cannot update device port table')
             return False
 
         try:
             # Get current device configuration first
             device_details = self.get_device_details(self.site, device_id)
             if not device_details:
-                log.error(f"Failed to get current device details for {device_id}")
+                log.error(f'Failed to get current device details for {device_id}')
                 return False
 
             # PRIMARY APPROACH: Use port_overrides (the correct writeable field)
@@ -1646,7 +1590,7 @@ class UnifiApiClient:
 
             if not success:
                 # Fallback: Try legacy approaches (less reliable)
-                log.warning("port_overrides method failed, trying legacy approaches...")
+                log.warning('port_overrides method failed, trying legacy approaches...')
                 success = self._update_device_config_with_ports(
                     device_id, device_details, port_table
                 )
@@ -1655,23 +1599,21 @@ class UnifiApiClient:
                 success = self._update_ports_via_port_endpoint(device_id, port_table)
 
             if not success:
-                success = self._update_device_legacy_method(
-                    device_id, device_details, port_table
-                )
+                success = self._update_device_legacy_method(device_id, device_details, port_table)
 
             if success:
-                log.info(f"Successfully updated port configuration for device {device_id}")
+                log.info(f'Successfully updated port configuration for device {device_id}')
                 # Wait for UniFi to process the change
                 import time
 
                 time.sleep(3)  # Shorter wait since port_overrides is more reliable
                 return True
             else:
-                log.error(f"All update methods failed for device {device_id}")
+                log.error(f'All update methods failed for device {device_id}')
                 return False
 
         except Exception as e:
-            log.error(f"Error updating port configuration: {e}")
+            log.error(f'Error updating port configuration: {e}')
             return False
 
     def _update_port_overrides(
@@ -1702,24 +1644,26 @@ class UnifiApiClient:
         try:
             # Determine the correct endpoint
             if self.is_unifi_os:
-                endpoint = f"{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}"
+                endpoint = (
+                    f'{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}'
+                )
             else:
-                endpoint = f"{self.base_url}/api/s/{self.site}/rest/device/{device_id}"
+                endpoint = f'{self.base_url}/api/s/{self.site}/rest/device/{device_id}'
 
             # Use legacy headers
             self.session.headers.update(self.legacy_headers)
 
             # Get existing port_overrides (preserve existing settings)
-            existing_overrides = device_details.get("port_overrides", [])
+            existing_overrides = device_details.get('port_overrides', [])
             existing_overrides_map = {
-                po.get("port_idx"): po for po in existing_overrides if "port_idx" in po
+                po.get('port_idx'): po for po in existing_overrides if 'port_idx' in po
             }
 
             # Build new port_overrides from the updated port_table
             # Only include ports that have been modified
             new_overrides = []
             for port in port_table:
-                port_idx = port.get("port_idx")
+                port_idx = port.get('port_idx')
                 if port_idx is None:
                     continue
 
@@ -1727,138 +1671,150 @@ class UnifiApiClient:
                 if port_idx in existing_overrides_map:
                     override = existing_overrides_map[port_idx].copy()
                 else:
-                    override = {"port_idx": port_idx}
+                    override = {'port_idx': port_idx}
 
                 # Update with new values from port_table
-                if "name" in port:
-                    override["name"] = port["name"]
+                if 'name' in port:
+                    override['name'] = port['name']
 
                 # Preserve other important fields from port_table
                 # IMPORTANT: Only include speed if it's a valid non-zero value
                 # Valid speeds: 10|100|1000|2500|5000|10000|20000|25000|40000|50000|100000
-                valid_speeds = {10, 100, 1000, 2500, 5000, 10000, 20000, 25000, 40000, 50000, 100000}
+                valid_speeds = {
+                    10,
+                    100,
+                    1000,
+                    2500,
+                    5000,
+                    10000,
+                    20000,
+                    25000,
+                    40000,
+                    50000,
+                    100000,
+                }
 
-                for field in ["poe_mode", "full_duplex", "autoneg"]:
+                for field in ['poe_mode', 'full_duplex', 'autoneg']:
                     if field in port and field not in override:
                         override[field] = port[field]
 
                 # Handle speed separately - only include if valid
-                if "speed" in port and port["speed"] in valid_speeds:
-                    if "speed" not in override:
-                        override["speed"] = port["speed"]
+                if 'speed' in port and port['speed'] in valid_speeds:
+                    if 'speed' not in override:
+                        override['speed'] = port['speed']
                 # If autoneg is enabled, don't set speed (let it auto-negotiate)
-                elif port.get("autoneg", False) and "speed" in override:
+                elif port.get('autoneg', False) and 'speed' in override:
                     # Remove speed from override if autoneg is enabled
-                    del override["speed"]
+                    del override['speed']
 
                 new_overrides.append(override)
 
             # Add any existing overrides for ports not in our update
             # Also validate existing overrides to remove invalid speed values
-            updated_port_idxs = {po["port_idx"] for po in new_overrides}
+            updated_port_idxs = {po['port_idx'] for po in new_overrides}
             for port_idx, existing in existing_overrides_map.items():
                 if port_idx not in updated_port_idxs:
                     # Validate and clean existing override
                     cleaned = existing.copy()
-                    if "speed" in cleaned and cleaned["speed"] not in valid_speeds:
-                        del cleaned["speed"]
+                    if 'speed' in cleaned and cleaned['speed'] not in valid_speeds:
+                        del cleaned['speed']
                     new_overrides.append(cleaned)
 
             # Final validation pass - ensure all port_overrides are clean
             validated_overrides = []
             for override in new_overrides:
-                cleaned = {k: v for k, v in override.items()
-                           if k != "speed" or v in valid_speeds}
+                cleaned = {k: v for k, v in override.items() if k != 'speed' or v in valid_speeds}
                 # Only include override if it has port_idx
-                if "port_idx" in cleaned:
+                if 'port_idx' in cleaned:
                     validated_overrides.append(cleaned)
 
             # Build update payload with required device identifiers and config versions
             update_data = {
-                "_id": device_details.get("_id"),
-                "mac": device_details.get("mac"),
-                "port_overrides": validated_overrides,
+                '_id': device_details.get('_id'),
+                'mac': device_details.get('mac'),
+                'port_overrides': validated_overrides,
             }
 
             # Include config version fields for proper persistence (critical!)
-            if "config_version" in device_details:
-                update_data["config_version"] = device_details["config_version"]
-            if "cfgversion" in device_details:
-                update_data["cfgversion"] = device_details["cfgversion"]
-            if "config_revision" in device_details:
-                update_data["config_revision"] = device_details["config_revision"]
+            if 'config_version' in device_details:
+                update_data['config_version'] = device_details['config_version']
+            if 'cfgversion' in device_details:
+                update_data['cfgversion'] = device_details['cfgversion']
+            if 'config_revision' in device_details:
+                update_data['config_revision'] = device_details['config_revision']
 
-            log.info(
-                f"Updating {len(validated_overrides)} port overrides for device {device_id}"
-            )
+            log.info(f'Updating {len(validated_overrides)} port overrides for device {device_id}')
 
             # Enhanced debug logging for troubleshooting persistence issues
-            log.debug("=== PORT OVERRIDE UPDATE DEBUG ===")
-            log.debug(f"Endpoint: {endpoint}")
-            log.debug(f"Device ID: {device_id}")
-            log.debug(f"Device MAC: {device_details.get('mac')}")
-            log.debug(f"Device Name: {device_details.get('name', 'Unknown')}")
+            log.debug('=== PORT OVERRIDE UPDATE DEBUG ===')
+            log.debug(f'Endpoint: {endpoint}')
+            log.debug(f'Device ID: {device_id}')
+            log.debug(f'Device MAC: {device_details.get("mac")}')
+            log.debug(f'Device Name: {device_details.get("name", "Unknown")}')
 
             # Log existing vs new port_overrides for comparison
-            log.debug(f"Existing port_overrides count: {len(existing_overrides)}")
+            log.debug(f'Existing port_overrides count: {len(existing_overrides)}')
             for po in existing_overrides:
-                log.debug(f"  Existing: port_idx={po.get('port_idx')}, name='{po.get('name', 'N/A')}'")
+                log.debug(
+                    f"  Existing: port_idx={po.get('port_idx')}, name='{po.get('name', 'N/A')}'"
+                )
 
-            log.debug(f"New port_overrides count: {len(validated_overrides)}")
+            log.debug(f'New port_overrides count: {len(validated_overrides)}')
             for po in validated_overrides:
                 log.debug(f"  New: port_idx={po.get('port_idx')}, name='{po.get('name', 'N/A')}'")
 
             # Log the complete update payload
             import json as json_module
-            log.debug("Full update payload:")
+
+            log.debug('Full update payload:')
             log.debug(json_module.dumps(update_data, indent=2, default=str))
 
             # Log config version fields
-            log.debug(f"Config versions - config_version: {update_data.get('config_version')}, "
-                     f"cfgversion: {update_data.get('cfgversion')}, "
-                     f"config_revision: {update_data.get('config_revision')}")
+            log.debug(
+                f'Config versions - config_version: {update_data.get("config_version")}, '
+                f'cfgversion: {update_data.get("cfgversion")}, '
+                f'config_revision: {update_data.get("config_revision")}'
+            )
 
             def _try_update_port_overrides():
-                return self.session.put(
-                    endpoint, json=update_data, timeout=self.timeout
-                )
+                return self.session.put(endpoint, json=update_data, timeout=self.timeout)
 
             response = self._retry_request(_try_update_port_overrides)
 
             # Enhanced response logging
-            log.debug("=== API RESPONSE DEBUG ===")
-            log.debug(f"Status code: {response.status_code}")
-            log.debug(f"Response headers: {dict(response.headers)}")
+            log.debug('=== API RESPONSE DEBUG ===')
+            log.debug(f'Status code: {response.status_code}')
+            log.debug(f'Response headers: {dict(response.headers)}')
 
             try:
                 response_json = response.json()
-                log.debug(f"Response JSON: {json_module.dumps(response_json, indent=2, default=str)[:2000]}")
+                log.debug(
+                    f'Response JSON: {json_module.dumps(response_json, indent=2, default=str)[:2000]}'
+                )
 
                 # Check for meta.rc field which indicates actual success/failure
-                meta = response_json.get("meta", {})
-                rc = meta.get("rc", "unknown")
-                msg = meta.get("msg", "")
-                log.debug(f"Response meta.rc: {rc}, meta.msg: {msg}")
+                meta = response_json.get('meta', {})
+                rc = meta.get('rc', 'unknown')
+                msg = meta.get('msg', '')
+                log.debug(f'Response meta.rc: {rc}, meta.msg: {msg}')
 
-                if rc != "ok":
+                if rc != 'ok':
                     log.warning(f"UniFi API returned rc='{rc}' with message: '{msg}'")
             except Exception as json_err:
-                log.debug(f"Could not parse response as JSON: {json_err}")
-                log.debug(f"Raw response text: {response.text[:500]}")
+                log.debug(f'Could not parse response as JSON: {json_err}')
+                log.debug(f'Raw response text: {response.text[:500]}')
 
             if response.status_code == 200:
-                log.info(
-                    f"port_overrides update successful for device {device_id}"
-                )
+                log.info(f'port_overrides update successful for device {device_id}')
                 return True
             else:
                 log.warning(
-                    f"port_overrides update failed: {response.status_code} - {_sanitize_response_for_logging(response.text, 200)}"
+                    f'port_overrides update failed: {response.status_code} - {_sanitize_response_for_logging(response.text, 200)}'
                 )
                 return False
 
         except Exception as e:
-            log.warning(f"Error in port_overrides update: {e}")
+            log.warning(f'Error in port_overrides update: {e}')
             return False
 
     def _update_device_config_with_ports(
@@ -1880,9 +1836,11 @@ class UnifiApiClient:
         try:
             # Determine the correct endpoint
             if self.is_unifi_os:
-                endpoint = f"{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}"
+                endpoint = (
+                    f'{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}'
+                )
             else:
-                endpoint = f"{self.base_url}/api/s/{self.site}/rest/device/{device_id}"
+                endpoint = f'{self.base_url}/api/s/{self.site}/rest/device/{device_id}'
 
             # Use legacy headers
             self.session.headers.update(self.legacy_headers)
@@ -1891,47 +1849,43 @@ class UnifiApiClient:
             update_data = device_details.copy()  # Start with current config
 
             # Update the port table
-            update_data["port_table"] = port_table
+            update_data['port_table'] = port_table
 
             # Ensure required fields are present
-            required_fields = ["_id", "mac", "model", "version", "type"]
+            required_fields = ['_id', 'mac', 'model', 'version', 'type']
             for field in required_fields:
                 if field not in update_data and field in device_details:
                     update_data[field] = device_details[field]
 
             # Include configuration revision if available (critical for persistence)
-            if "config_version" in device_details:
-                update_data["config_version"] = device_details["config_version"]
-            if "cfgversion" in device_details:
-                update_data["cfgversion"] = device_details["cfgversion"]
-            if "config_revision" in device_details:
-                update_data["config_revision"] = device_details["config_revision"]
+            if 'config_version' in device_details:
+                update_data['config_version'] = device_details['config_version']
+            if 'cfgversion' in device_details:
+                update_data['cfgversion'] = device_details['cfgversion']
+            if 'config_revision' in device_details:
+                update_data['config_revision'] = device_details['config_revision']
 
-            log.debug(
-                f"Updating device config with comprehensive payload for {device_id}"
-            )
-            log.debug(f"Payload keys: {list(update_data.keys())}")
+            log.debug(f'Updating device config with comprehensive payload for {device_id}')
+            log.debug(f'Payload keys: {list(update_data.keys())}')
 
             def _try_update_device_config():
-                return self.session.put(
-                    endpoint, json=update_data, timeout=self.timeout
-                )
+                return self.session.put(endpoint, json=update_data, timeout=self.timeout)
 
             response = self._retry_request(_try_update_device_config)
 
             if response.status_code == 200:
                 log.info(
-                    f"Device config update successful via comprehensive method for {device_id}"
+                    f'Device config update successful via comprehensive method for {device_id}'
                 )
                 return True
             else:
                 log.warning(
-                    f"Device config update failed: {response.status_code} - {_sanitize_response_for_logging(response.text, 200)}"
+                    f'Device config update failed: {response.status_code} - {_sanitize_response_for_logging(response.text, 200)}'
                 )
                 return False
 
         except Exception as e:
-            log.warning(f"Error in comprehensive device config update: {e}")
+            log.warning(f'Error in comprehensive device config update: {e}')
             return False
 
     def _update_ports_via_port_endpoint(
@@ -1952,13 +1906,13 @@ class UnifiApiClient:
 
             if self.is_unifi_os:
                 port_endpoints = [
-                    f"{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}/port",
-                    f"{self.base_url}/proxy/network/api/s/{self.site}/cmd/devmgr",
+                    f'{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}/port',
+                    f'{self.base_url}/proxy/network/api/s/{self.site}/cmd/devmgr',
                 ]
             else:
                 port_endpoints = [
-                    f"{self.base_url}/api/s/{self.site}/rest/device/{device_id}/port",
-                    f"{self.base_url}/api/s/{self.site}/cmd/devmgr",
+                    f'{self.base_url}/api/s/{self.site}/rest/device/{device_id}/port',
+                    f'{self.base_url}/api/s/{self.site}/cmd/devmgr',
                 ]
 
             # Use legacy headers
@@ -1966,48 +1920,46 @@ class UnifiApiClient:
 
             for endpoint in port_endpoints:
                 try:
-                    if "cmd/devmgr" in endpoint:
+                    if 'cmd/devmgr' in endpoint:
                         # Use device manager command format
                         update_data = {
-                            "cmd": "set-port-config",
-                            "mac": device_id,  # Some endpoints expect MAC instead of ID
-                            "port_table": port_table,
+                            'cmd': 'set-port-config',
+                            'mac': device_id,  # Some endpoints expect MAC instead of ID
+                            'port_table': port_table,
                         }
                     else:
                         # Use direct port update format
-                        update_data = {"port_table": port_table}
+                        update_data = {'port_table': port_table}
 
-                    log.debug(f"Trying port-specific endpoint: {endpoint}")
+                    log.debug(f'Trying port-specific endpoint: {endpoint}')
 
                     def _try_port_endpoint():
-                        return self.session.put(
-                            endpoint, json=update_data, timeout=self.timeout
-                        )
+                        return self.session.put(endpoint, json=update_data, timeout=self.timeout)
 
                     response = self._retry_request(_try_port_endpoint)
 
                     if response.status_code == 200:
                         log.info(
-                            f"Port update successful via port endpoint {endpoint} for {device_id}"
+                            f'Port update successful via port endpoint {endpoint} for {device_id}'
                         )
                         return True
                     elif response.status_code == 404:
-                        log.debug(f"Port endpoint not available: {endpoint}")
+                        log.debug(f'Port endpoint not available: {endpoint}')
                         continue
                     else:
                         log.debug(
-                            f"Port endpoint failed: {response.status_code} - {_sanitize_response_for_logging(response.text, 100)}"
+                            f'Port endpoint failed: {response.status_code} - {_sanitize_response_for_logging(response.text, 100)}'
                         )
                         continue
 
                 except Exception as e:
-                    log.debug(f"Error with port endpoint {endpoint}: {e}")
+                    log.debug(f'Error with port endpoint {endpoint}: {e}')
                     continue
 
             return False
 
         except Exception as e:
-            log.warning(f"Error in port-specific update: {e}")
+            log.warning(f'Error in port-specific update: {e}')
             return False
 
     def _update_device_legacy_method(
@@ -2029,42 +1981,42 @@ class UnifiApiClient:
         try:
             # Determine the correct endpoint
             if self.is_unifi_os:
-                endpoint = f"{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}"
+                endpoint = (
+                    f'{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}'
+                )
             else:
-                endpoint = f"{self.base_url}/api/s/{self.site}/rest/device/{device_id}"
+                endpoint = f'{self.base_url}/api/s/{self.site}/rest/device/{device_id}'
 
             # Use legacy headers
             self.session.headers.update(self.legacy_headers)
 
             # Create minimal update payload (original method)
-            update_data = {"port_table": port_table}
+            update_data = {'port_table': port_table}
 
             # Add minimal required fields
-            if "_id" in device_details:
-                update_data["_id"] = device_details["_id"]
-            if "mac" in device_details:
-                update_data["mac"] = device_details["mac"]
+            if '_id' in device_details:
+                update_data['_id'] = device_details['_id']
+            if 'mac' in device_details:
+                update_data['mac'] = device_details['mac']
 
-            log.debug(f"Trying legacy update method for {device_id}")
+            log.debug(f'Trying legacy update method for {device_id}')
 
             def _try_legacy_update():
-                return self.session.put(
-                    endpoint, json=update_data, timeout=self.timeout
-                )
+                return self.session.put(endpoint, json=update_data, timeout=self.timeout)
 
             response = self._retry_request(_try_legacy_update)
 
             if response.status_code == 200:
-                log.info(f"Legacy update method successful for {device_id}")
+                log.info(f'Legacy update method successful for {device_id}')
                 return True
             else:
                 log.warning(
-                    f"Legacy update method failed: {response.status_code} - {_sanitize_response_for_logging(response.text, 200)}"
+                    f'Legacy update method failed: {response.status_code} - {_sanitize_response_for_logging(response.text, 200)}'
                 )
                 return False
 
         except Exception as e:
-            log.warning(f"Error in legacy update method: {e}")
+            log.warning(f'Error in legacy update method: {e}')
             return False
 
     def verify_port_update(
@@ -2095,15 +2047,15 @@ class UnifiApiClient:
                 device_details = self.get_device_details(self.site, device_id)
                 if not device_details:
                     log.warning(
-                        f"Could not retrieve device details for verification attempt {attempt + 1}"
+                        f'Could not retrieve device details for verification attempt {attempt + 1}'
                     )
                     continue
 
                 # Check port_table for the updated name
-                port_table = device_details.get("port_table", [])
+                port_table = device_details.get('port_table', [])
                 for port in port_table:
-                    if port.get("port_idx") == port_idx:
-                        current_name = port.get("name", f"Port {port_idx}")
+                    if port.get('port_idx') == port_idx:
+                        current_name = port.get('name', f'Port {port_idx}')
                         if current_name == expected_name:
                             log.info(
                                 f"Port {port_idx} name verification successful: '{current_name}'"
@@ -2116,17 +2068,13 @@ class UnifiApiClient:
                             break
                 else:
                     log.warning(
-                        f"Port {port_idx} not found in port_table during verification (attempt {attempt + 1})"
+                        f'Port {port_idx} not found in port_table during verification (attempt {attempt + 1})'
                     )
 
             except Exception as e:
-                log.warning(
-                    f"Error during port update verification (attempt {attempt + 1}): {e}"
-                )
+                log.warning(f'Error during port update verification (attempt {attempt + 1}): {e}')
 
-        log.error(
-            f"Port {port_idx} name verification failed after {max_retries} attempts"
-        )
+        log.error(f'Port {port_idx} name verification failed after {max_retries} attempts')
         return False
 
     def get_device_mac_from_id(self, device_id: str) -> Optional[str]:
@@ -2141,9 +2089,9 @@ class UnifiApiClient:
         try:
             device_details = self.get_device_details(self.site, device_id)
             if device_details:
-                return device_details.get("mac")
+                return device_details.get('mac')
         except Exception as e:
-            log.debug(f"Error getting MAC for device {device_id}: {e}")
+            log.debug(f'Error getting MAC for device {device_id}: {e}')
         return None
 
     def debug_device_config(self, device_id: str) -> Dict[str, Any]:
@@ -2156,62 +2104,62 @@ class UnifiApiClient:
             Dict[str, Any]: Device configuration with debug information
         """
         debug_info = {
-            "device_id": device_id,
-            "timestamp": datetime.datetime.now().isoformat(),
-            "api_endpoints_tried": [],
-            "device_details": {},
-            "port_table": [],
-            "config_fields": {},
-            "errors": [],
+            'device_id': device_id,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'api_endpoints_tried': [],
+            'device_details': {},
+            'port_table': [],
+            'config_fields': {},
+            'errors': [],
         }
 
         try:
             # Get device details
             device_details = self.get_device_details(self.site, device_id)
             if device_details:
-                debug_info["device_details"] = device_details
-                debug_info["port_table"] = device_details.get("port_table", [])
+                debug_info['device_details'] = device_details
+                debug_info['port_table'] = device_details.get('port_table', [])
 
                 # Extract configuration-related fields
                 config_fields = [
-                    "config_version",
-                    "cfgversion",
-                    "config_revision",
-                    "version",
-                    "_id",
-                    "mac",
-                    "model",
-                    "type",
+                    'config_version',
+                    'cfgversion',
+                    'config_revision',
+                    'version',
+                    '_id',
+                    'mac',
+                    'model',
+                    'type',
                 ]
                 for field in config_fields:
                     if field in device_details:
-                        debug_info["config_fields"][field] = device_details[field]
+                        debug_info['config_fields'][field] = device_details[field]
             else:
-                debug_info["errors"].append("Failed to get device details")
+                debug_info['errors'].append('Failed to get device details')
 
             # Test API endpoints availability
             test_endpoints = []
             if self.is_unifi_os:
                 test_endpoints = [
-                    f"{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}",
-                    f"{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}/port",
-                    f"{self.base_url}/proxy/network/api/s/{self.site}/cmd/devmgr",
+                    f'{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}',
+                    f'{self.base_url}/proxy/network/api/s/{self.site}/rest/device/{device_id}/port',
+                    f'{self.base_url}/proxy/network/api/s/{self.site}/cmd/devmgr',
                 ]
             else:
                 test_endpoints = [
-                    f"{self.base_url}/api/s/{self.site}/rest/device/{device_id}",
-                    f"{self.base_url}/api/s/{self.site}/rest/device/{device_id}/port",
-                    f"{self.base_url}/api/s/{self.site}/cmd/devmgr",
+                    f'{self.base_url}/api/s/{self.site}/rest/device/{device_id}',
+                    f'{self.base_url}/api/s/{self.site}/rest/device/{device_id}/port',
+                    f'{self.base_url}/api/s/{self.site}/cmd/devmgr',
                 ]
 
             for endpoint in test_endpoints:
                 try:
                     response = self.session.get(endpoint, timeout=5)
-                    debug_info["api_endpoints_tried"].append(
+                    debug_info['api_endpoints_tried'].append(
                         {
-                            "endpoint": endpoint,
-                            "status_code": response.status_code,
-                            "available": response.status_code
+                            'endpoint': endpoint,
+                            'status_code': response.status_code,
+                            'available': response.status_code
                             in [
                                 200,
                                 400,
@@ -2219,17 +2167,17 @@ class UnifiApiClient:
                         }
                     )
                 except Exception as e:
-                    debug_info["api_endpoints_tried"].append(
+                    debug_info['api_endpoints_tried'].append(
                         {
-                            "endpoint": endpoint,
-                            "status_code": "error",
-                            "error": str(e),
-                            "available": False,
+                            'endpoint': endpoint,
+                            'status_code': 'error',
+                            'error': str(e),
+                            'available': False,
                         }
                     )
 
         except Exception as e:
-            debug_info["errors"].append(f"Debug info collection error: {e}")
+            debug_info['errors'].append(f'Debug info collection error: {e}')
 
         return debug_info
 
@@ -2244,12 +2192,12 @@ class UnifiApiClient:
 
         # Handle the response structure - could be dict with 'data' key or list
         devices_data = []
-        if isinstance(devices_response, dict) and "data" in devices_response:
-            devices_data = devices_response["data"]
+        if isinstance(devices_response, dict) and 'data' in devices_response:
+            devices_data = devices_response['data']
         elif isinstance(devices_response, list):
             devices_data = devices_response
         else:
-            log.warning(f"Unexpected devices response format: {type(devices_response)}")
+            log.warning(f'Unexpected devices response format: {type(devices_response)}')
             return device_list
 
         for device in devices_data:
@@ -2257,14 +2205,14 @@ class UnifiApiClient:
                 continue
 
             device_info = {
-                "id": device.get("_id", "Unknown"),
-                "name": device.get("name", "Unnamed Device"),
-                "model": device.get("model", "Unknown Model"),
-                "mac": device.get("mac", "Unknown MAC"),
-                "ip": device.get("ip", "Unknown IP"),
-                "type": device.get("type", "unknown"),
-                "adopted": device.get("adopted", False),
-                "state": device.get("state", "unknown"),
+                'id': device.get('_id', 'Unknown'),
+                'name': device.get('name', 'Unnamed Device'),
+                'model': device.get('model', 'Unknown Model'),
+                'mac': device.get('mac', 'Unknown MAC'),
+                'ip': device.get('ip', 'Unknown IP'),
+                'type': device.get('type', 'unknown'),
+                'adopted': device.get('adopted', False),
+                'state': device.get('state', 'unknown'),
             }
             device_list.append(device_info)
 

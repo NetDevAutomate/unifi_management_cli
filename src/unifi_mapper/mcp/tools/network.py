@@ -37,8 +37,8 @@ async def get_firewall_zones(refresh: bool = False) -> list[dict[str, Any]]:
             zones = await manager.get_zones(refresh=refresh)
             return [z.model_dump() for z in zones]
     except Exception as e:
-        logger.error(f"Failed to get firewall zones: {e}")
-        return [{"error": str(e)}]
+        logger.error(f'Failed to get firewall zones: {e}')
+        return [{'error': str(e)}]
 
 
 async def get_firewall_policies(refresh: bool = False) -> list[dict[str, Any]]:
@@ -56,8 +56,8 @@ async def get_firewall_policies(refresh: bool = False) -> list[dict[str, Any]]:
             policies = await manager.get_policies(refresh=refresh)
             return [p.model_dump() for p in policies]
     except Exception as e:
-        logger.error(f"Failed to get firewall policies: {e}")
-        return [{"error": str(e)}]
+        logger.error(f'Failed to get firewall policies: {e}')
+        return [{'error': str(e)}]
 
 
 async def get_acl_rules(refresh: bool = False) -> list[dict[str, Any]]:
@@ -75,8 +75,8 @@ async def get_acl_rules(refresh: bool = False) -> list[dict[str, Any]]:
             rules = await manager.get_all_rules(refresh=refresh)
             return [r.model_dump() for r in rules]
     except Exception as e:
-        logger.error(f"Failed to get ACL rules: {e}")
-        return [{"error": str(e)}]
+        logger.error(f'Failed to get ACL rules: {e}')
+        return [{'error': str(e)}]
 
 
 async def get_dns_policies() -> list[dict[str, Any]]:
@@ -91,8 +91,8 @@ async def get_dns_policies() -> list[dict[str, Any]]:
             policies = await manager.get_all_policies()
             return [p.model_dump() for p in policies]
     except Exception as e:
-        logger.error(f"Failed to get DNS policies: {e}")
-        return [{"error": str(e)}]
+        logger.error(f'Failed to get DNS policies: {e}')
+        return [{'error': str(e)}]
 
 
 async def get_clients(active_only: bool = True) -> list[dict[str, Any]]:
@@ -112,8 +112,8 @@ async def get_clients(active_only: bool = True) -> list[dict[str, Any]]:
                 clients = [client for client in clients if client.connected_at is not None]
             return [c.model_dump() for c in clients]
     except Exception as e:
-        logger.error(f"Failed to get clients: {e}")
-        return [{"error": str(e)}]
+        logger.error(f'Failed to get clients: {e}')
+        return [{'error': str(e)}]
 
 
 async def get_networks() -> list[dict[str, Any]]:
@@ -128,5 +128,5 @@ async def get_networks() -> list[dict[str, Any]]:
             networks = await manager.get_all_networks()
             return [n.model_dump() for n in networks]
     except Exception as e:
-        logger.error(f"Failed to get networks: {e}")
-        return [{"error": str(e)}]
+        logger.error(f'Failed to get networks: {e}')
+        return [{'error': str(e)}]

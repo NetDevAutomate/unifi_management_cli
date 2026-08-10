@@ -19,7 +19,7 @@ Example:
     >>> config = NetworkConfig.from_env()
     >>> async with UniFiNetworkClient(config) as client:
     ...     stats = await client.get_device_statistics(device_id)
-    ...     print(f"Uptime: {stats.uptime_seconds}s")
+    ...     print(f'Uptime: {stats.uptime_seconds}s')
 """
 
 from unifi_mapper.network.config import NetworkConfig

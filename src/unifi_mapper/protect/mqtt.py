@@ -426,15 +426,10 @@ class MQTTBridge:
             import aiomqtt  # type: ignore[import-untyped]
         except ImportError as e:
             raise ImportError(
-                'aiomqtt is required for MQTT support. '
-                'Install with: pip install aiomqtt'
+                'aiomqtt is required for MQTT support. Install with: pip install aiomqtt'
             ) from e
 
-        password = (
-            self._config.password.get_secret_value()
-            if self._config.password
-            else None
-        )
+        password = self._config.password.get_secret_value() if self._config.password else None
 
         self._mqtt_client = aiomqtt.Client(  # type: ignore[reportUnknownMemberType]
             hostname=self._config.host,
@@ -528,12 +523,14 @@ class MQTTBridge:
             'timestamp': event.timestamp.isoformat(),
             'changed_data': event.changed_data,
         }
-        messages.append(MQTTMessage(
-            topic=event_topic,
-            payload=event_payload,
-            retain=False,
-            qos=self._config.qos,
-        ))
+        messages.append(
+            MQTTMessage(
+                topic=event_topic,
+                payload=event_payload,
+                retain=False,
+                qos=self._config.qos,
+            )
+        )
 
         # Update device state for relevant events
         if category in {
@@ -566,23 +563,27 @@ class MQTTBridge:
         # Motion state
         if category == ProtectEventCategory.MOTION:
             state = 'ON' if event.event_type == ProtectEventType.MOTION else 'OFF'
-            messages.append(MQTTMessage(
-                topic=f'{prefix}/state/{event.device_id}/motion',
-                payload=state,
-                retain=self._config.retain_state,
-                qos=self._config.qos,
-            ))
+            messages.append(
+                MQTTMessage(
+                    topic=f'{prefix}/state/{event.device_id}/motion',
+                    payload=state,
+                    retain=self._config.retain_state,
+                    qos=self._config.qos,
+                )
+            )
 
         # Smart detection state
         elif category == ProtectEventCategory.SMART_DETECT:
             smart_types: list[str] = event.changed_data.get('smart_detect_types', [])
             for smart_type in smart_types:
-                messages.append(MQTTMessage(
-                    topic=f'{prefix}/state/{event.device_id}/smart_detect/{smart_type}',
-                    payload='ON',
-                    retain=False,  # Smart detects are momentary
-                    qos=self._config.qos,
-                ))
+                messages.append(
+                    MQTTMessage(
+                        topic=f'{prefix}/state/{event.device_id}/smart_detect/{smart_type}',
+                        payload='ON',
+                        retain=False,  # Smart detects are momentary
+                        qos=self._config.qos,
+                    )
+                )
 
         # Sensor state
         elif category == ProtectEventCategory.SENSOR:
@@ -593,12 +594,14 @@ class MQTTBridge:
             else:
                 state = 'ON'  # Alarms, water leak, etc.
 
-            messages.append(MQTTMessage(
-                topic=f'{prefix}/state/{event.device_id}/sensor',
-                payload=state,
-                retain=self._config.retain_state,
-                qos=self._config.qos,
-            ))
+            messages.append(
+                MQTTMessage(
+                    topic=f'{prefix}/state/{event.device_id}/sensor',
+                    payload=state,
+                    retain=self._config.retain_state,
+                    qos=self._config.qos,
+                )
+            )
 
         # Device connectivity state
         elif category == ProtectEventCategory.DEVICE_STATE:
@@ -616,12 +619,14 @@ class MQTTBridge:
             else:
                 return messages
 
-            messages.append(MQTTMessage(
-                topic=f'{prefix}/state/{event.device_id}/connectivity',
-                payload=state,
-                retain=self._config.retain_state,
-                qos=self._config.qos,
-            ))
+            messages.append(
+                MQTTMessage(
+                    topic=f'{prefix}/state/{event.device_id}/connectivity',
+                    payload=state,
+                    retain=self._config.retain_state,
+                    qos=self._config.qos,
+                )
+            )
 
         return messages
 

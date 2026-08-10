@@ -441,10 +441,7 @@ def _existing_lag_ports(device: dict[str, Any]) -> set[int]:
 
 
 def _ports_by_idx(device: dict[str, Any]) -> dict[int, dict[str, Any]]:
-    return {
-        _as_int(port.get('port_idx')): port
-        for port in _dict_list(device.get('port_table'))
-    }
+    return {_as_int(port.get('port_idx')): port for port in _dict_list(device.get('port_table'))}
 
 
 def _port_is_candidate_member(port: dict[str, Any]) -> bool:

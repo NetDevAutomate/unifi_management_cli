@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 def create_verification_parser():
     """Create argument parser for verification command."""
     parser = argparse.ArgumentParser(
-        description="Verify UniFi port name configurations using multiple techniques",
+        description='Verify UniFi port name configurations using multiple techniques',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -33,47 +33,47 @@ Examples:
 
   # Multi-read consistency check
   python -m unifi_mapper.verify_cli --consistency-check --reads 10
-        """
+        """,
     )
 
     parser.add_argument(
-        "--config", "-c",
-        help="Path to .env configuration file",
-        default="~/.dotfiles/.config/unifi_management_cli/prod.env"
+        '--config',
+        '-c',
+        help='Path to .env configuration file',
+        default='~/.dotfiles/.config/unifi_management_cli/prod.env',
     )
 
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
 
     # Specific verification
-    parser.add_argument("--device", help="Specific device name to verify")
-    parser.add_argument("--port", type=int, help="Specific port to verify")
-    parser.add_argument("--expected", help="Expected port name")
+    parser.add_argument('--device', help='Specific device name to verify')
+    parser.add_argument('--port', type=int, help='Specific port to verify')
+    parser.add_argument('--expected', help='Expected port name')
 
     # Batch verification
     parser.add_argument(
-        "--verify-all",
-        action="store_true",
-        help="Verify all ports that should have LLDP-based names"
+        '--verify-all',
+        action='store_true',
+        help='Verify all ports that should have LLDP-based names',
     )
 
     # Browser verification
     parser.add_argument(
-        "--browser",
-        action="store_true",
-        help="Use browser automation for verification (most reliable)"
+        '--browser',
+        action='store_true',
+        help='Use browser automation for verification (most reliable)',
     )
-    parser.add_argument("--username", help="UniFi username for browser verification")
-    parser.add_argument("--password", help="UniFi password for browser verification")
+    parser.add_argument('--username', help='UniFi username for browser verification')
+    parser.add_argument('--password', help='UniFi password for browser verification')
 
     # Consistency checking
     parser.add_argument(
-        "--consistency-check",
-        action="store_true",
-        help="Perform multi-read consistency checks to detect API lying"
+        '--consistency-check',
+        action='store_true',
+        help='Perform multi-read consistency checks to detect API lying',
     )
     parser.add_argument(
-        "--reads", type=int, default=5,
-        help="Number of reads for consistency check (default: 5)"
+        '--reads', type=int, default=5, help='Number of reads for consistency check (default: 5)'
     )
 
     return parser
@@ -93,12 +93,13 @@ def main():
     # Load configuration
     try:
         from .cli import load_env_from_config
+
         load_env_from_config(args.config)
 
         config = UnifiConfig.from_env()
     except Exception as e:
-        log.error(f"Configuration error: {e}")
-        log.error(f"Check your config file: {args.config}")
+        log.error(f'Configuration error: {e}')
+        log.error(f'Check your config file: {args.config}')
         sys.exit(1)
 
     # Create API client
@@ -114,11 +115,11 @@ def main():
         )
 
         if not api_client.login():
-            log.error("Failed to authenticate with UniFi Controller")
+            log.error('Failed to authenticate with UniFi Controller')
             sys.exit(1)
 
     except Exception as e:
-        log.error(f"Failed to create API client: {e}")
+        log.error(f'Failed to create API client: {e}')
         sys.exit(1)
 
     # Execute verification based on arguments
@@ -136,12 +137,13 @@ def main():
             analyze_current_state(api_client, args)
 
     except KeyboardInterrupt:
-        log.info("Verification cancelled by user")
+        log.info('Verification cancelled by user')
         sys.exit(1)
     except Exception as e:
-        log.error(f"Verification error: {e}")
+        log.error(f'Verification error: {e}')
         if args.debug:
             import traceback
+
             traceback.print_exc()
         sys.exit(1)
 
@@ -154,9 +156,9 @@ def verify_single_port(api_client, args):
     devices_response = api_client.get_devices(api_client.site)
     target_device = None
 
-    if devices_response and "data" in devices_response:
-        for device in devices_response["data"]:
-            if args.device.lower() in device.get("name", "").lower():
+    if devices_response and 'data' in devices_response:
+        for device in devices_response['data']:
+            if args.device.lower() in device.get('name', '').lower():
                 target_device = device
                 break
 
@@ -164,21 +166,18 @@ def verify_single_port(api_client, args):
         log.error(f"Device '{args.device}' not found")
         sys.exit(1)
 
-    device_id = target_device.get("_id")
-    device_name = target_device.get("name")
-    device_ip = target_device.get("ip")
+    device_id = target_device.get('_id')
+    device_name = target_device.get('name')
+    device_ip = target_device.get('ip')
 
-    log.info(f"Found device: {device_name} (ID: {device_id}, IP: {device_ip})")
+    log.info(f'Found device: {device_name} (ID: {device_id}, IP: {device_ip})')
 
     # Prepare verification request
     device_updates = {device_id: {args.port: args.expected}}
     browser_credentials = None
 
     if args.browser and args.username and args.password:
-        browser_credentials = {
-            "username": args.username,
-            "password": args.password
-        }
+        browser_credentials = {'username': args.username, 'password': args.password}
 
     # Perform verification
     verification_results, report = verify_with_ground_truth(
@@ -195,28 +194,27 @@ def verify_single_port(api_client, args):
 
 def verify_all_lldp_ports(api_client, args):
     """Verify all ports that should have LLDP-based names."""
-    log.info("Discovering all ports with LLDP data for verification...")
+    log.info('Discovering all ports with LLDP data for verification...')
 
     # Get all devices
     devices_response = api_client.get_devices(api_client.site)
-    if not devices_response or "data" not in devices_response:
-        log.error("Failed to get devices")
+    if not devices_response or 'data' not in devices_response:
+        log.error('Failed to get devices')
         sys.exit(1)
 
     # Find all switch/router devices
     network_devices = [
-        d for d in devices_response["data"]
-        if d.get("type") in ["ugw", "usg", "udm", "usw"]
+        d for d in devices_response['data'] if d.get('type') in ['ugw', 'usg', 'udm', 'usw']
     ]
 
-    log.info(f"Found {len(network_devices)} network devices to check")
+    log.info(f'Found {len(network_devices)} network devices to check')
 
     device_updates = {}
 
     # Build list of expected port names based on LLDP
     for device in network_devices:
-        device_id = device.get("_id")
-        device_name = device.get("name", "Unknown")
+        device_id = device.get('_id')
+        device_name = device.get('name', 'Unknown')
 
         # Get LLDP info for this device
         lldp_info = api_client.get_lldp_info(api_client.site, device_id)
@@ -225,29 +223,26 @@ def verify_all_lldp_ports(api_client, args):
             port_updates = {}
             for port_idx_str, lldp_data in lldp_info.items():
                 port_idx = int(port_idx_str)
-                remote_device_name = lldp_data.get("remote_device_name")
+                remote_device_name = lldp_data.get('remote_device_name')
 
                 if remote_device_name and len(remote_device_name) > 3:  # Valid device name
                     port_updates[port_idx] = remote_device_name
 
             if port_updates:
                 device_updates[device_id] = port_updates
-                log.info(f"{device_name}: {len(port_updates)} ports to verify")
+                log.info(f'{device_name}: {len(port_updates)} ports to verify')
 
     if not device_updates:
-        log.info("No LLDP-based port names found to verify")
+        log.info('No LLDP-based port names found to verify')
         return
 
     # Browser credentials if provided
     browser_credentials = None
     if args.browser and args.username and args.password:
-        browser_credentials = {
-            "username": args.username,
-            "password": args.password
-        }
+        browser_credentials = {'username': args.username, 'password': args.password}
 
     # Perform verification
-    log.info(f"Verifying {sum(len(ports) for ports in device_updates.values())} total ports...")
+    log.info(f'Verifying {sum(len(ports) for ports in device_updates.values())} total ports...')
 
     verification_results, report = verify_with_ground_truth(
         api_client, device_updates, browser_credentials
@@ -263,40 +258,39 @@ def verify_all_lldp_ports(api_client, args):
     )
 
     if total_failures > 0:
-        print(f"\n🚨 CRITICAL: {total_failures} port name verifications FAILED!")
-        print("The UniFi API is returning stale/cached data.")
-        print("Consider using --browser verification for ground truth.")
+        print(f'\n🚨 CRITICAL: {total_failures} port name verifications FAILED!')
+        print('The UniFi API is returning stale/cached data.')
+        print('Consider using --browser verification for ground truth.')
         sys.exit(1)
     else:
-        print("\n✅ All port name verifications passed!")
+        print('\n✅ All port name verifications passed!')
         sys.exit(0)
 
 
 def analyze_current_state(api_client, args):
     """Analyze current port state and detect potential issues."""
-    print("🔍 UniFi Port State Analysis")
-    print("=" * 50)
+    print('🔍 UniFi Port State Analysis')
+    print('=' * 50)
 
     # Get all devices
     devices_response = api_client.get_devices(api_client.site)
-    if not devices_response or "data" not in devices_response:
-        log.error("Failed to get devices")
+    if not devices_response or 'data' not in devices_response:
+        log.error('Failed to get devices')
         sys.exit(1)
 
     network_devices = [
-        d for d in devices_response["data"]
-        if d.get("type") in ["ugw", "usg", "udm", "usw"]
+        d for d in devices_response['data'] if d.get('type') in ['ugw', 'usg', 'udm', 'usw']
     ]
 
     api_cache_issues = 0
     total_lldp_ports = 0
 
     for device in network_devices:
-        device_id = device.get("_id")
-        device_name = device.get("name", "Unknown")
-        device_ip = device.get("ip", "Unknown")
+        device_id = device.get('_id')
+        device_name = device.get('name', 'Unknown')
+        device_ip = device.get('ip', 'Unknown')
 
-        print(f"\n📍 {device_name} (IP: {device_ip})")
+        print(f'\n📍 {device_name} (IP: {device_ip})')
 
         # Get LLDP info
         lldp_info = api_client.get_lldp_info(api_client.site, device_id)
@@ -305,34 +299,36 @@ def analyze_current_state(api_client, args):
         if not lldp_info or not device_details:
             continue
 
-        port_table = device_details.get("port_table", [])
-        port_name_map = {p.get("port_idx"): p.get("name") for p in port_table}
+        port_table = device_details.get('port_table', [])
+        port_name_map = {p.get('port_idx'): p.get('name') for p in port_table}
 
         for port_idx_str, lldp_data in lldp_info.items():
             port_idx = int(port_idx_str)
             total_lldp_ports += 1
 
-            current_name = port_name_map.get(port_idx, f"Port {port_idx}")
-            remote_device = lldp_data.get("remote_device_name", "Unknown")
+            current_name = port_name_map.get(port_idx, f'Port {port_idx}')
+            remote_device = lldp_data.get('remote_device_name', 'Unknown')
 
             # Check if name suggests it should be different
-            if remote_device != "Unknown" and len(remote_device) > 3:
+            if remote_device != 'Unknown' and len(remote_device) > 3:
                 expected_name = remote_device
                 name_matches = current_name == expected_name
 
-                print(f"  Port {port_idx}: '{current_name}' -> LLDP: '{expected_name}' {'✅' if name_matches else '❌'}")
+                print(
+                    f"  Port {port_idx}: '{current_name}' -> LLDP: '{expected_name}' {'✅' if name_matches else '❌'}"
+                )
 
                 if not name_matches:
                     api_cache_issues += 1
 
-    print("\n📊 Analysis Summary:")
-    print(f"Total LLDP ports: {total_lldp_ports}")
-    print(f"Potential API cache issues: {api_cache_issues}")
+    print('\n📊 Analysis Summary:')
+    print(f'Total LLDP ports: {total_lldp_ports}')
+    print(f'Potential API cache issues: {api_cache_issues}')
 
     if api_cache_issues > 0:
-        print(f"\n⚠️  Detected {api_cache_issues} ports where LLDP suggests different names")
-        print("Run with --verify-all to perform comprehensive verification")
+        print(f'\n⚠️  Detected {api_cache_issues} ports where LLDP suggests different names')
+        print('Run with --verify-all to perform comprehensive verification')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

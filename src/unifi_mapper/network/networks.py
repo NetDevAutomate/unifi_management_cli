@@ -78,7 +78,7 @@ class NetworkManager:
         """Refresh the networks cache."""
         networks = await self._client.list_networks()
         self._networks_cache = {n.id: n for n in networks}
-        log.debug(f"Cached {len(self._networks_cache)} networks")
+        log.debug(f'Cached {len(self._networks_cache)} networks')
 
     async def get_all_networks(self, refresh: bool = False) -> list[NetworkInfo]:
         """Get all networks.
@@ -166,9 +166,7 @@ class NetworkManager:
         networks = await self.get_all_networks()
         return [n for n in networks if n.vlan_id is not None]
 
-    async def get_networks_by_purpose(
-        self, purpose: NetworkPurpose
-    ) -> list[NetworkInfo]:
+    async def get_networks_by_purpose(self, purpose: NetworkPurpose) -> list[NetworkInfo]:
         """Get networks by purpose.
 
         Args:
@@ -233,9 +231,7 @@ class NetworkManager:
                 results.append(network)
         return results
 
-    async def get_available_vlan_ids(
-        self, start: int = 2, end: int = 4094
-    ) -> list[int]:
+    async def get_available_vlan_ids(self, start: int = 2, end: int = 4094) -> list[int]:
         """Get available VLAN IDs.
 
         Args:
@@ -402,9 +398,7 @@ class NetworkManager:
         self._networks_cache.clear()
         return result
 
-    async def set_internet_access(
-        self, network_id: str, enabled: bool
-    ) -> NetworkInfo:
+    async def set_internet_access(self, network_id: str, enabled: bool) -> NetworkInfo:
         """Set internet access for a network.
 
         Args:
@@ -414,9 +408,7 @@ class NetworkManager:
         Returns:
             Updated network.
         """
-        result = await self._client.update_network(
-            network_id, internetAccessEnabled=enabled
-        )
+        result = await self._client.update_network(network_id, internetAccessEnabled=enabled)
         self._networks_cache.clear()
         return result
 
@@ -547,7 +539,7 @@ class NetworkManager:
         # Check for networks without DHCP
         non_dhcp = [n for n in networks if not n.has_dhcp and n.enabled]
         if non_dhcp:
-            issues.append(f"{len(non_dhcp)} enabled networks without DHCP")
+            issues.append(f'{len(non_dhcp)} enabled networks without DHCP')
 
         # Check for duplicate VLAN IDs (should not happen, but validate)
         vlan_counts: dict[int, int] = {}
@@ -557,25 +549,24 @@ class NetworkManager:
 
         duplicate_vlans = [v for v, c in vlan_counts.items() if c > 1]
         if duplicate_vlans:
-            issues.append(f"Duplicate VLAN IDs found: {duplicate_vlans}")
+            issues.append(f'Duplicate VLAN IDs found: {duplicate_vlans}')
 
         # Check for networks with internet access that might need isolation
         guest_with_internet = [
-            n for n in networks
-            if n.is_guest_network and n.internet_access_enabled
+            n for n in networks if n.is_guest_network and n.internet_access_enabled
         ]
         if guest_with_internet:
             recommendations.append(
-                f"{len(guest_with_internet)} guest networks have internet access - "
-                "ensure proper firewall rules are in place"
+                f'{len(guest_with_internet)} guest networks have internet access - '
+                'ensure proper firewall rules are in place'
             )
 
         # Check IPv6 adoption
         ipv6_ratio = summary.ipv6_enabled_networks / max(summary.total_networks, 1)
         if ipv6_ratio < 0.5:
             recommendations.append(
-                f"Only {summary.ipv6_enabled_networks}/{summary.total_networks} "
-                "networks have IPv6 enabled - consider enabling for dual-stack support"
+                f'Only {summary.ipv6_enabled_networks}/{summary.total_networks} '
+                'networks have IPv6 enabled - consider enabling for dual-stack support'
             )
 
         return {

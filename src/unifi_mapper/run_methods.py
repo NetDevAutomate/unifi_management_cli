@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 
 
 def _default_port_name(port_idx):
-    return f"Port {port_idx}"
+    return f'Port {port_idx}'
 
 
 def _is_useful_lldp_name(name):
@@ -19,14 +19,16 @@ def _is_useful_lldp_name(name):
 
 
 def _is_default_port_name(name, port_idx):
-    cleaned = (name or "").strip().lower()
-    return cleaned in {"", "port", f"port {port_idx}"}
+    cleaned = (name or '').strip().lower()
+    return cleaned in {'', 'port', f'port {port_idx}'}
 
 
 def _is_weak_client_label(name):
-    cleaned = (name or "").replace("-", "").replace(":", "").strip()
-    return bool(cleaned) and len(cleaned) <= 12 and all(
-        char in "0123456789abcdefABCDEF" for char in cleaned
+    cleaned = (name or '').replace('-', '').replace(':', '').strip()
+    return (
+        bool(cleaned)
+        and len(cleaned) <= 12
+        and all(char in '0123456789abcdefABCDEF' for char in cleaned)
     )
 
 
@@ -35,30 +37,30 @@ def _choose_port_name(
     port_lldp,
     client_port_mapping,
     port_mapper,
-    current_name="",
+    current_name='',
     port_up=False,
 ):
     """Choose the desired durable port name for one switch/router port."""
     lldp_device_name = (
-        port_lldp.get("remote_device_name")
-        or port_lldp.get("system_name")
-        or port_lldp.get("chassis_name")
-        or ""
+        port_lldp.get('remote_device_name')
+        or port_lldp.get('system_name')
+        or port_lldp.get('chassis_name')
+        or ''
     )
     if _is_useful_lldp_name(lldp_device_name):
-        return lldp_device_name.strip(), "lldp"
+        return lldp_device_name.strip(), 'lldp'
 
     if port_idx in client_port_mapping:
         client_names = port_mapper.format_client_names(client_port_mapping[port_idx])
         if client_names and not _is_weak_client_label(client_names):
-            return client_names, "client"
+            return client_names, 'client'
         if client_names and _is_default_port_name(current_name, port_idx):
-            return client_names, "client"
+            return client_names, 'client'
 
     if port_up and not _is_default_port_name(current_name, port_idx):
-        return current_name.strip(), "current"
+        return current_name.strip(), 'current'
 
-    return _default_port_name(port_idx), "default"
+    return _default_port_name(port_idx), 'default'
 
 
 def infer_connections_from_clients(api_client, site_id, devices):
@@ -77,36 +79,34 @@ def infer_connections_from_clients(api_client, site_id, devices):
     try:
         # Get all clients
         clients_endpoint = (
-            f"{api_client.base_url}/proxy/network/api/s/{site_id}/stat/sta"
+            f'{api_client.base_url}/proxy/network/api/s/{site_id}/stat/sta'
             if api_client.is_unifi_os
-            else f"{api_client.base_url}/api/s/{site_id}/stat/sta"
+            else f'{api_client.base_url}/api/s/{site_id}/stat/sta'
         )
-        clients_response = api_client.session.get(
-            clients_endpoint, timeout=api_client.timeout
-        )
+        clients_response = api_client.session.get(clients_endpoint, timeout=api_client.timeout)
 
         if clients_response.status_code == 200:
             clients_data = clients_response.json()
-            if "data" in clients_data:
-                clients = clients_data["data"]
+            if 'data' in clients_data:
+                clients = clients_data['data']
 
                 # Create a map of MAC addresses to device IDs
                 mac_to_device_id = {}
                 for device_id, device in devices.items():
                     mac_to_device_id[device.mac.lower()] = device_id
                     # Also add without colons
-                    mac_to_device_id[device.mac.lower().replace(":", "")] = device_id
+                    mac_to_device_id[device.mac.lower().replace(':', '')] = device_id
 
                 # Process each client
                 for client in clients:
                     # Check if this client is a device we know about
-                    client_mac = client.get("mac", "").lower()
+                    client_mac = client.get('mac', '').lower()
                     if client_mac in mac_to_device_id:
                         target_device_id = mac_to_device_id[client_mac]
 
                         # Check if this client is connected to a switch
-                        sw_mac = client.get("sw_mac", "").lower()
-                        sw_port = client.get("sw_port")
+                        sw_mac = client.get('sw_mac', '').lower()
+                        sw_port = client.get('sw_port')
 
                         if sw_mac and sw_port and sw_mac in mac_to_device_id:
                             source_device_id = mac_to_device_id[sw_mac]
@@ -114,17 +114,17 @@ def infer_connections_from_clients(api_client, site_id, devices):
                             # Create an inferred connection
                             inferred_connections.append(
                                 {
-                                    "source_device_id": source_device_id,
-                                    "target_device_id": target_device_id,
-                                    "source_port_idx": sw_port,
-                                    "source_port_name": f"Port {sw_port}",
-                                    "target_port_idx": 1,  # Assume port 1 for the target device
-                                    "target_port_name": "Port 1",
-                                    "inferred": True,
+                                    'source_device_id': source_device_id,
+                                    'target_device_id': target_device_id,
+                                    'source_port_idx': sw_port,
+                                    'source_port_name': f'Port {sw_port}',
+                                    'target_port_idx': 1,  # Assume port 1 for the target device
+                                    'target_port_name': 'Port 1',
+                                    'inferred': True,
                                 }
                             )
     except Exception as e:
-        log.error(f"Error inferring connections from clients: {e}")
+        log.error(f'Error inferring connections from clients: {e}')
 
     return inferred_connections
 
@@ -177,9 +177,9 @@ def infer_connections_from_subnets(devices):
                 continue
 
             # Extract the subnet (first 3 octets)
-            ip_parts = device.ip.split(".")
+            ip_parts = device.ip.split('.')
             if len(ip_parts) == 4:
-                subnet = ".".join(ip_parts[:3])
+                subnet = '.'.join(ip_parts[:3])
                 if subnet not in subnet_devices:
                     subnet_devices[subnet] = []
                 subnet_devices[subnet].append(device_id)
@@ -195,10 +195,10 @@ def infer_connections_from_subnets(devices):
             for device_id in device_ids:
                 device = devices[device_id]
                 if (
-                    "udm" in device.model.lower()
-                    or "usg" in device.model.lower()
-                    or "gateway" in device.model.lower()
-                    or "router" in device.model.lower()
+                    'udm' in device.model.lower()
+                    or 'usg' in device.model.lower()
+                    or 'gateway' in device.model.lower()
+                    or 'router' in device.model.lower()
                 ):
                     routers.append(device_id)
 
@@ -206,10 +206,7 @@ def infer_connections_from_subnets(devices):
             if not routers:
                 for device_id in device_ids:
                     device = devices[device_id]
-                    if (
-                        "usw" in device.model.lower()
-                        or "switch" in device.model.lower()
-                    ):
+                    if 'usw' in device.model.lower() or 'switch' in device.model.lower():
                         routers.append(device_id)
 
             # If still no routers found, use the first device
@@ -224,17 +221,17 @@ def infer_connections_from_subnets(devices):
                         # Create an inferred connection
                         inferred_connections.append(
                             {
-                                "source_device_id": router_id,
-                                "target_device_id": device_id,
-                                "source_port_idx": 1,  # Assume port 1 for the router
-                                "source_port_name": "Port 1",
-                                "target_port_idx": 1,  # Assume port 1 for the target device
-                                "target_port_name": "Port 1",
-                                "inferred": True,
+                                'source_device_id': router_id,
+                                'target_device_id': device_id,
+                                'source_port_idx': 1,  # Assume port 1 for the router
+                                'source_port_name': 'Port 1',
+                                'target_port_idx': 1,  # Assume port 1 for the target device
+                                'target_port_name': 'Port 1',
+                                'inferred': True,
                             }
                         )
     except Exception as e:
-        log.error(f"Error inferring connections from subnets: {e}")
+        log.error(f'Error inferring connections from subnets: {e}')
 
     return inferred_connections
 
@@ -259,25 +256,25 @@ def infer_connections_from_device_types(devices):
 
         for device_id, device in devices.items():
             if (
-                "udm" in device.model.lower()
-                or "usg" in device.model.lower()
-                or "gateway" in device.model.lower()
-                or "router" in device.model.lower()
+                'udm' in device.model.lower()
+                or 'usg' in device.model.lower()
+                or 'gateway' in device.model.lower()
+                or 'router' in device.model.lower()
             ):
                 routers.append(device_id)
             elif (
-                "usw" in device.model.lower()
-                or "switch" in device.model.lower()
-                or "us-" in device.model.lower()
-                or "usl" in device.model.lower()
+                'usw' in device.model.lower()
+                or 'switch' in device.model.lower()
+                or 'us-' in device.model.lower()
+                or 'usl' in device.model.lower()
             ):
                 switches.append(device_id)
             elif (
-                "uap" in device.model.lower()
-                or "ap" in device.model.lower()
-                or "u6" in device.model.lower()
-                or "u7" in device.model.lower()
-                or "ac" in device.model.lower()
+                'uap' in device.model.lower()
+                or 'ap' in device.model.lower()
+                or 'u6' in device.model.lower()
+                or 'u7' in device.model.lower()
+                or 'ac' in device.model.lower()
             ):
                 aps.append(device_id)
             else:
@@ -290,13 +287,13 @@ def infer_connections_from_device_types(devices):
                 # Create an inferred connection
                 inferred_connections.append(
                     {
-                        "source_device_id": router_id,
-                        "target_device_id": switch_id,
-                        "source_port_idx": 1,  # Assume port 1 for the router
-                        "source_port_name": "Port 1",
-                        "target_port_idx": 1,  # Assume port 1 for the switch
-                        "target_port_name": "Port 1",
-                        "inferred": True,
+                        'source_device_id': router_id,
+                        'target_device_id': switch_id,
+                        'source_port_idx': 1,  # Assume port 1 for the router
+                        'source_port_name': 'Port 1',
+                        'target_port_idx': 1,  # Assume port 1 for the switch
+                        'target_port_name': 'Port 1',
+                        'inferred': True,
                     }
                 )
 
@@ -309,13 +306,13 @@ def infer_connections_from_device_types(devices):
                     # Create an inferred connection
                     inferred_connections.append(
                         {
-                            "source_device_id": switch_id,
-                            "target_device_id": ap_id,
-                            "source_port_idx": 1,  # Assume port 1 for the switch
-                            "source_port_name": "Port 1",
-                            "target_port_idx": 1,  # Assume port 1 for the AP
-                            "target_port_name": "Port 1",
-                            "inferred": True,
+                            'source_device_id': switch_id,
+                            'target_device_id': ap_id,
+                            'source_port_idx': 1,  # Assume port 1 for the switch
+                            'source_port_name': 'Port 1',
+                            'target_port_idx': 1,  # Assume port 1 for the AP
+                            'target_port_name': 'Port 1',
+                            'inferred': True,
                         }
                     )
             elif routers:
@@ -325,13 +322,13 @@ def infer_connections_from_device_types(devices):
                     # Create an inferred connection
                     inferred_connections.append(
                         {
-                            "source_device_id": router_id,
-                            "target_device_id": ap_id,
-                            "source_port_idx": 1,  # Assume port 1 for the router
-                            "source_port_name": "Port 1",
-                            "target_port_idx": 1,  # Assume port 1 for the AP
-                            "target_port_name": "Port 1",
-                            "inferred": True,
+                            'source_device_id': router_id,
+                            'target_device_id': ap_id,
+                            'source_port_idx': 1,  # Assume port 1 for the router
+                            'source_port_name': 'Port 1',
+                            'target_port_idx': 1,  # Assume port 1 for the AP
+                            'target_port_name': 'Port 1',
+                            'inferred': True,
                         }
                     )
 
@@ -344,13 +341,13 @@ def infer_connections_from_device_types(devices):
                     # Create an inferred connection
                     inferred_connections.append(
                         {
-                            "source_device_id": switch_id,
-                            "target_device_id": other_id,
-                            "source_port_idx": 1,  # Assume port 1 for the switch
-                            "source_port_name": "Port 1",
-                            "target_port_idx": 1,  # Assume port 1 for the other device
-                            "target_port_name": "Port 1",
-                            "inferred": True,
+                            'source_device_id': switch_id,
+                            'target_device_id': other_id,
+                            'source_port_idx': 1,  # Assume port 1 for the switch
+                            'source_port_name': 'Port 1',
+                            'target_port_idx': 1,  # Assume port 1 for the other device
+                            'target_port_name': 'Port 1',
+                            'inferred': True,
                         }
                     )
             elif routers:
@@ -360,17 +357,17 @@ def infer_connections_from_device_types(devices):
                     # Create an inferred connection
                     inferred_connections.append(
                         {
-                            "source_device_id": router_id,
-                            "target_device_id": other_id,
-                            "source_port_idx": 1,  # Assume port 1 for the router
-                            "source_port_name": "Port 1",
-                            "target_port_idx": 1,  # Assume port 1 for the other device
-                            "target_port_name": "Port 1",
-                            "inferred": True,
+                            'source_device_id': router_id,
+                            'target_device_id': other_id,
+                            'source_port_idx': 1,  # Assume port 1 for the router
+                            'source_port_name': 'Port 1',
+                            'target_port_idx': 1,  # Assume port 1 for the other device
+                            'target_port_name': 'Port 1',
+                            'inferred': True,
                         }
                     )
     except Exception as e:
-        log.error(f"Error inferring connections from device types: {e}")
+        log.error(f'Error inferring connections from device types: {e}')
 
     return inferred_connections
 
@@ -389,23 +386,21 @@ def get_devices_and_lldp_data(port_mapper, site_id):
 
     # Get all devices
     devices_response = api_client.get_devices(site_id)
-    if not devices_response or "data" not in devices_response:
-        log.error("Failed to get devices from the UniFi Controller")
+    if not devices_response or 'data' not in devices_response:
+        log.error('Failed to get devices from the UniFi Controller')
         return [], {}
 
-    all_devices = devices_response["data"]
+    all_devices = devices_response['data']
 
     # Filter for network devices
-    network_devices = [
-        d for d in all_devices if d.get("type") in ["ugw", "usg", "udm", "usw"]
-    ]
+    network_devices = [d for d in all_devices if d.get('type') in ['ugw', 'usg', 'udm', 'usw']]
 
-    log.info(f"Found {len(network_devices)} network devices for smart analysis")
+    log.info(f'Found {len(network_devices)} network devices for smart analysis')
 
     # Get LLDP data for all devices
     lldp_data = {}
     for device in network_devices:
-        device_id = device.get("_id")
+        device_id = device.get('_id')
         if device_id:
             device_lldp = api_client.get_lldp_info(site_id, device_id)
             if device_lldp:
@@ -420,7 +415,7 @@ def run_port_mapper(
     dry_run=False,
     output_path=None,
     diagram_path=None,
-    diagram_format="png",
+    diagram_format='png',
     debug=False,
     show_connected_devices=False,
     verify_updates=False,
@@ -446,54 +441,54 @@ def run_port_mapper(
 
     # Ensure we're authenticated
     if not api_client.is_authenticated and not api_client.login():
-        log.error("Failed to authenticate with the UniFi Controller")
+        log.error('Failed to authenticate with the UniFi Controller')
         return {}, []
 
-    log.info("Successfully authenticated with the UniFi Controller")
+    log.info('Successfully authenticated with the UniFi Controller')
 
     # Get all devices
-    log.info("Fetching devices from the UniFi Controller...")
+    log.info('Fetching devices from the UniFi Controller...')
     devices_response = api_client.get_devices(site_id)
 
-    if not devices_response or "data" not in devices_response:
-        log.error("Failed to get devices from the UniFi Controller")
+    if not devices_response or 'data' not in devices_response:
+        log.error('Failed to get devices from the UniFi Controller')
         return {}, []
 
-    all_devices = devices_response["data"]
-    log.info(f"Found {len(all_devices)} devices")
+    all_devices = devices_response['data']
+    log.info(f'Found {len(all_devices)} devices')
 
     # Filter for routers, switches, and APs
     network_devices = [
-        d for d in all_devices if d.get("type") in ["ugw", "usg", "udm", "usw", "uap"]
+        d for d in all_devices if d.get('type') in ['ugw', 'usg', 'udm', 'usw', 'uap']
     ]
     routers_and_switches = [
-        d for d in all_devices if d.get("type") in ["ugw", "usg", "udm", "usw"]
+        d for d in all_devices if d.get('type') in ['ugw', 'usg', 'udm', 'usw']
     ]
-    adopted_access_points = [d for d in all_devices if d.get("type") == "uap"]
-    log.info(f"Found {len(routers_and_switches)} routers and switches")
-    log.info(f"Found {len(adopted_access_points)} adopted access points")
+    adopted_access_points = [d for d in all_devices if d.get('type') == 'uap']
+    log.info(f'Found {len(routers_and_switches)} routers and switches')
+    log.info(f'Found {len(adopted_access_points)} adopted access points')
 
     # Create device objects
     devices = {}
     for device in network_devices:
-        device_id = device.get("_id")
+        device_id = device.get('_id')
         if not device_id:
             log.warning(
-                f"Device has None ID, skipping: {device.get('name')} ({device.get('model')})"
+                f'Device has None ID, skipping: {device.get("name")} ({device.get("model")})'
             )
             continue
 
-        device_name = device.get("name", "Unknown")
-        device_model = device.get("model", "Unknown")
-        device_mac = device.get("mac", "")
-        device_ip = device.get("ip", "")
-        device_type = device.get("type", "")
+        device_name = device.get('name', 'Unknown')
+        device_model = device.get('model', 'Unknown')
+        device_mac = device.get('mac', '')
+        device_ip = device.get('ip', '')
+        device_type = device.get('type', '')
 
         # Get ports for this device (only for routers and switches)
         ports = []
         lldp_info = {}
         client_port_mapping = {}
-        if device_type in ["ugw", "usg", "udm", "usw"]:
+        if device_type in ['ugw', 'usg', 'udm', 'usw']:
             ports = api_client.get_device_ports(site_id, device_id)
             # Get LLDP/CDP information for this device
             lldp_info = api_client.get_lldp_info(site_id, device_id)
@@ -517,16 +512,16 @@ def run_port_mapper(
 
         # Add ports to the device
         for port in ports:
-            port_idx = port.get("port_idx")
+            port_idx = port.get('port_idx')
             if port_idx is None:
                 continue
 
-            port_name = port.get("name", f"Port {port_idx}")
-            port_up = port.get("up", False)
-            port_enabled = port.get("enable", True)
-            port_poe = port.get("poe_enable", False)
-            port_media = port.get("media", "RJ45")
-            port_speed = port.get("speed", 0)
+            port_name = port.get('name', f'Port {port_idx}')
+            port_up = port.get('up', False)
+            port_enabled = port.get('enable', True)
+            port_poe = port.get('poe_enable', False)
+            port_media = port.get('media', 'RJ45')
+            port_speed = port.get('speed', 0)
 
             # Get LLDP/CDP information for this port
             port_lldp = lldp_info.get(str(port_idx), {})
@@ -537,9 +532,9 @@ def run_port_mapper(
 
             # Check current port state
             is_uplink = (
-                port.get("is_uplink", False)
-                or "uplink" in port_name.lower()
-                or "trunk" in port_name.lower()
+                port.get('is_uplink', False)
+                or 'uplink' in port_name.lower()
+                or 'trunk' in port_name.lower()
             )
 
             # Debug logging for LLDP processing
@@ -561,19 +556,19 @@ def run_port_mapper(
 
             # Build a full desired-state update. This clears stale names from
             # disconnected ports and keeps connected ports aligned with discovery.
-            port_updates[port_idx] = {"name": enhanced_port_name, "source": name_source}
+            port_updates[port_idx] = {'name': enhanced_port_name, 'source': name_source}
             log_message = (
                 f"port {port_idx} name to '{enhanced_port_name}' "
-                f"(from {name_source}) on device {device_name}"
+                f'(from {name_source}) on device {device_name}'
             )
             if not dry_run:
-                log.info(f"Will set {log_message}")
+                log.info(f'Will set {log_message}')
             else:
-                log.info(f"[DRY RUN] Would set {log_message}")
+                log.info(f'[DRY RUN] Would set {log_message}')
 
-            if is_uplink and name_source == "default":
+            if is_uplink and name_source == 'default':
                 log.debug(
-                    f"Port {port_idx} was marked uplink/trunk but has no connected device name: {port_name}"
+                    f'Port {port_idx} was marked uplink/trunk but has no connected device name: {port_name}'
                 )
 
             # Create a PortInfo object
@@ -594,40 +589,35 @@ def run_port_mapper(
         if port_updates and not dry_run:
             # Separate discovery-backed updates from default resets.
             trusted_updates = {
-                idx: info["name"]
+                idx: info['name']
                 for idx, info in port_updates.items()
-                if info["source"] in {"lldp", "default"}
+                if info['source'] in {'lldp', 'default'}
             }
             client_updates = {
-                idx: info["name"]
+                idx: info['name']
                 for idx, info in port_updates.items()
-                if info["source"] == "client"
+                if info['source'] == 'client'
             }
 
             # LLDP updates are backed by neighbor discovery; default resets clear
             # disconnected ports to the canonical Port x label.
             verified_updates = dict(trusted_updates)
             if trusted_updates:
-                log.info(
-                    f"Will apply {len(trusted_updates)} LLDP/default port name updates"
-                )
+                log.info(f'Will apply {len(trusted_updates)} LLDP/default port name updates')
 
             # Client-based updates need verification to ensure clients are still connected
             if client_updates:
                 log.info(
-                    f"Re-verifying connectivity for {len(client_updates)} client-based ports..."
+                    f'Re-verifying connectivity for {len(client_updates)} client-based ports...'
                 )
                 current_client_mapping = port_mapper.get_client_port_mapping(device_mac)
 
                 disconnected_ports = []
                 for port_idx, port_name in client_updates.items():
-                    if (
-                        port_idx in current_client_mapping
-                        and current_client_mapping[port_idx]
-                    ):
+                    if port_idx in current_client_mapping and current_client_mapping[port_idx]:
                         verified_updates[port_idx] = port_name
                         log.info(
-                            f"Port {port_idx} still has {len(current_client_mapping[port_idx])} connected client(s)"
+                            f'Port {port_idx} still has {len(current_client_mapping[port_idx])} connected client(s)'
                         )
                     else:
                         disconnected_ports.append((port_idx, port_name))
@@ -637,53 +627,47 @@ def run_port_mapper(
 
                 if disconnected_ports:
                     log.info(
-                        f"Skipped {len(disconnected_ports)} client-based ports due to disconnection"
+                        f'Skipped {len(disconnected_ports)} client-based ports due to disconnection'
                     )
 
             if verified_updates:
-                log.info(
-                    f"Proceeding with {len(verified_updates)} port name updates"
-                )
+                log.info(f'Proceeding with {len(verified_updates)} port name updates')
                 # Use verification setting from command line (default is False due to UniFi controller behavior)
                 success = port_mapper.batch_update_port_names(
                     device_id, verified_updates, verify_updates=verify_updates
                 )
                 if success:
                     if verify_updates:
-                        log.info("Port updates applied and verified successfully")
+                        log.info('Port updates applied and verified successfully')
                     else:
                         log.info(
-                            "Port updates applied successfully (verification disabled due to UniFi controller behavior)"
+                            'Port updates applied successfully (verification disabled due to UniFi controller behavior)'
                         )
             else:
-                log.info("No ports to update")
+                log.info('No ports to update')
                 success = True  # Consider it successful if there's nothing to update
             if success:
                 if verified_updates:
                     log.info(
-                        f"Successfully batch updated {len(verified_updates)} port names for device {device_name}"
+                        f'Successfully batch updated {len(verified_updates)} port names for device {device_name}'
                     )
                 else:
-                    log.info(
-                        f"No port updates needed for device {device_name}"
-                    )
+                    log.info(f'No port updates needed for device {device_name}')
             else:
-                log.error(
-                    f"Failed to batch update or verify port names for device {device_name}"
-                )
+                log.error(f'Failed to batch update or verify port names for device {device_name}')
                 # Log detailed information about the failure
                 log.error(
-                    f"Failed updates for device {device_name} ({device_model}) - MAC: {device_mac}"
+                    f'Failed updates for device {device_name} ({device_model}) - MAC: {device_mac}'
                 )
                 for port_idx, port_name in verified_updates.items():
                     log.error(f"  Port {port_idx}: '{port_name}'")
 
                 # Suggest using the fix script (extract just port_idx: name for JSON)
-                simple_updates = {idx: info["name"] for idx, info in port_updates.items()}
+                simple_updates = {idx: info['name'] for idx, info in port_updates.items()}
                 port_updates_json = json.dumps(simple_updates)
-                log.error("To debug this issue, run:")
-                log.error(f"  ./tools/debug_port_updates --env --device-id {device_id}")
-                log.error("To force fix this issue, run:")
+                log.error('To debug this issue, run:')
+                log.error(f'  ./tools/debug_port_updates --env --device-id {device_id}')
+                log.error('To force fix this issue, run:')
                 log.error(
                     f"  ./tools/fix_port_persistence --env --device-id {device_id} --port-updates '{port_updates_json}'"
                 )
@@ -691,15 +675,15 @@ def run_port_mapper(
         devices[device_id] = device_info
 
     # Get all clients
-    log.info("Fetching clients from the UniFi Controller...")
+    log.info('Fetching clients from the UniFi Controller...')
     clients_response = api_client.get_clients(site_id)
 
-    if not clients_response or "data" not in clients_response:
-        log.error("Failed to get clients from the UniFi Controller")
+    if not clients_response or 'data' not in clients_response:
+        log.error('Failed to get clients from the UniFi Controller')
         clients = []
     else:
-        clients = clients_response["data"]
-        log.info(f"Found {len(clients)} clients")
+        clients = clients_response['data']
+        log.info(f'Found {len(clients)} clients')
 
     # Process each client to find unadopted APs and wired endpoint devices
     # Note: Adopted APs are already counted above in 'adopted_access_points'
@@ -708,17 +692,17 @@ def run_port_mapper(
 
     for client in clients:
         # Check if this is a wired client
-        is_wired = client.get("is_wired", False)
+        is_wired = client.get('is_wired', False)
 
         # Get device information
-        client_name = client.get("name", client.get("hostname", "Unknown Client"))
-        client.get("mac", "Unknown MAC")
-        client.get("ip", "Unknown IP")
-        client_device_type = client.get("dev_cat_name", "Unknown")
+        client_name = client.get('name', client.get('hostname', 'Unknown Client'))
+        client.get('mac', 'Unknown MAC')
+        client.get('ip', 'Unknown IP')
+        client_device_type = client.get('dev_cat_name', 'Unknown')
 
         # Handle potential type issues with dev_vendor and dev_id
-        dev_vendor = client.get("dev_vendor", "Unknown")
-        dev_id = client.get("dev_id", "")
+        dev_vendor = client.get('dev_vendor', 'Unknown')
+        dev_id = client.get('dev_id', '')
 
         # Convert to string if needed
         if not isinstance(dev_vendor, str):
@@ -729,47 +713,45 @@ def run_port_mapper(
         # Check if this is an unadopted access point appearing as a client
         # (based on device category or name patterns)
         if (
-            client_device_type == "AP"
-            or "AP" in client_name
-            or "UAP" in client_name
-            or "U6" in client_name
-            or "U7" in client_name
-            or "AC" in client_name
-            or "IW" in client_name
+            client_device_type == 'AP'
+            or 'AP' in client_name
+            or 'UAP' in client_name
+            or 'U6' in client_name
+            or 'U7' in client_name
+            or 'AC' in client_name
+            or 'IW' in client_name
         ):
             unadopted_aps.append(client)
         elif is_wired:
             wired_devices.append(client)
 
     if unadopted_aps:
-        log.info(
-            f"Found {len(unadopted_aps)} unadopted/rogue APs in client list"
-        )
-    log.info(f"Found {len(wired_devices)} wired endpoint devices")
+        log.info(f'Found {len(unadopted_aps)} unadopted/rogue APs in client list')
+    log.info(f'Found {len(wired_devices)} wired endpoint devices')
 
     # Create a network topology
     topology = NetworkTopology(devices)
 
     # Add unadopted/rogue APs (from client list) to the topology
     for ap in unadopted_aps:
-        ap_name = ap.get("name", ap.get("hostname", "Unknown AP"))
-        ap_mac = ap.get("mac", "Unknown MAC")
-        ap_ip = ap.get("ip", "Unknown IP")
-        ap_model = ap.get("dev_cat_name", "Unadopted AP")
+        ap_name = ap.get('name', ap.get('hostname', 'Unknown AP'))
+        ap_mac = ap.get('mac', 'Unknown MAC')
+        ap_ip = ap.get('ip', 'Unknown IP')
+        ap_model = ap.get('dev_cat_name', 'Unadopted AP')
 
         # Check if this AP is connected to a switch
-        sw_mac = ap.get("sw_mac")
-        sw_port = ap.get("sw_port")
+        sw_mac = ap.get('sw_mac')
+        sw_port = ap.get('sw_port')
 
         if sw_mac and sw_port:
             # Find the switch in our devices
             for device_id, device in devices.items():
                 if (
                     device.mac.lower() == sw_mac.lower()
-                    or device.mac.lower().replace(":", "") == sw_mac.lower()
+                    or device.mac.lower().replace(':', '') == sw_mac.lower()
                 ):
                     # Add the AP to the topology
-                    ap_id = ap_mac.replace(":", "")
+                    ap_id = ap_mac.replace(':', '')
                     topology.add_device(ap_id, ap_name, ap_model, ap_mac, ap_ip)
 
                     # Add the connection
@@ -778,27 +760,25 @@ def run_port_mapper(
 
     # Add wired devices to the topology if they're connected to a switch
     for device in wired_devices:
-        device_name = device.get("name", device.get("hostname", "Unknown Device"))
-        device_mac = device.get("mac", "Unknown MAC")
-        device_ip = device.get("ip", "Unknown IP")
-        device_model = device.get("dev_cat_name", "Wired Device")
+        device_name = device.get('name', device.get('hostname', 'Unknown Device'))
+        device_mac = device.get('mac', 'Unknown MAC')
+        device_ip = device.get('ip', 'Unknown IP')
+        device_model = device.get('dev_cat_name', 'Wired Device')
 
         # Check if this device is connected to a switch
-        sw_mac = device.get("sw_mac")
-        sw_port = device.get("sw_port")
+        sw_mac = device.get('sw_mac')
+        sw_port = device.get('sw_port')
 
         if sw_mac and sw_port:
             # Find the switch in our devices
             for device_id, d in devices.items():
                 if (
                     d.mac.lower() == sw_mac.lower()
-                    or d.mac.lower().replace(":", "") == sw_mac.lower()
+                    or d.mac.lower().replace(':', '') == sw_mac.lower()
                 ):
                     # Add the device to the topology
-                    wired_id = device_mac.replace(":", "")
-                    topology.add_device(
-                        wired_id, device_name, device_model, device_mac, device_ip
-                    )
+                    wired_id = device_mac.replace(':', '')
+                    topology.add_device(wired_id, device_name, device_model, device_mac, device_ip)
 
                     # Add the connection
                     topology.add_connection(device_id, wired_id, sw_port, 1)
@@ -807,20 +787,17 @@ def run_port_mapper(
     # Infer connections between devices
     inferred_connections = infer_device_connections(api_client, site_id, devices)
     for connection in inferred_connections:
-        source_id = connection.get("source_device_id")
-        target_id = connection.get("target_device_id")
-        source_port = connection.get("source_port_idx")
-        target_port = connection.get("target_port_idx")
+        source_id = connection.get('source_device_id')
+        target_id = connection.get('target_device_id')
+        source_port = connection.get('source_port_idx')
+        target_port = connection.get('target_port_idx')
 
         # Add the connection if both devices exist and the connection doesn't already exist
         if source_id in devices and target_id in devices:
             # Check if this connection already exists
             exists = False
             for conn in topology.connections:
-                if (
-                    conn["source_device_id"] == source_id
-                    and conn["target_device_id"] == target_id
-                ):
+                if conn['source_device_id'] == source_id and conn['target_device_id'] == target_id:
                     exists = True
                     break
 
@@ -833,18 +810,18 @@ def run_port_mapper(
         os.makedirs(os.path.dirname(diagram_path), exist_ok=True)
 
         # Generate the diagram based on the format
-        if diagram_format.lower() == "png":
+        if diagram_format.lower() == 'png':
             topology.generate_png_diagram(diagram_path)
-        elif diagram_format.lower() == "svg":
+        elif diagram_format.lower() == 'svg':
             topology.generate_svg_diagram(diagram_path)
-        elif diagram_format.lower() == "dot":
+        elif diagram_format.lower() == 'dot':
             topology.generate_dot_diagram(diagram_path)
-        elif diagram_format.lower() == "mermaid":
+        elif diagram_format.lower() == 'mermaid':
             topology.generate_mermaid_diagram(diagram_path)
-        elif diagram_format.lower() == "html":
+        elif diagram_format.lower() == 'html':
             topology.generate_html_diagram(diagram_path, show_connected_devices)
         else:
-            log.warning(f"Unsupported diagram format: {diagram_format}")
+            log.warning(f'Unsupported diagram format: {diagram_format}')
 
     # Generate the port mapping report
     if output_path:

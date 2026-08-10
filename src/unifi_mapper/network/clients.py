@@ -65,8 +65,8 @@ class FingerprintResult:
         if self.device_family:
             parts.append(self.device_family)
         if self.os_name:
-            parts.append(f"({self.os_name})")
-        return ' '.join(parts) if parts else f"Unknown {self.category.value}"
+            parts.append(f'({self.os_name})')
+        return ' '.join(parts) if parts else f'Unknown {self.category.value}'
 
 
 @dataclass
@@ -311,16 +311,47 @@ _VENDOR_OUI_MAP = {
 
 # Device category patterns based on fingerprint data
 _CATEGORY_PATTERNS = {
-    DeviceCategory.COMPUTER: ['Windows', 'macOS', 'Linux', 'Chrome OS', 'Ubuntu', 'Fedora', 'Debian'],
+    DeviceCategory.COMPUTER: [
+        'Windows',
+        'macOS',
+        'Linux',
+        'Chrome OS',
+        'Ubuntu',
+        'Fedora',
+        'Debian',
+    ],
     DeviceCategory.MOBILE: ['iOS', 'Android', 'iPhone', 'iPad', 'Galaxy'],
     DeviceCategory.TABLET: ['iPad', 'Android Tablet', 'Surface', 'Fire Tablet'],
-    DeviceCategory.SMART_TV: ['Smart TV', 'Roku', 'Fire TV', 'Chromecast', 'Apple TV', 'LG TV', 'Samsung TV'],
+    DeviceCategory.SMART_TV: [
+        'Smart TV',
+        'Roku',
+        'Fire TV',
+        'Chromecast',
+        'Apple TV',
+        'LG TV',
+        'Samsung TV',
+    ],
     DeviceCategory.GAMING: ['PlayStation', 'Xbox', 'Nintendo', 'Steam Deck'],
     DeviceCategory.IOT: ['IoT', 'Sensor', 'Smart', 'ESP32', 'ESP8266', 'Arduino'],
     DeviceCategory.PRINTER: ['Printer', 'Print', 'HP Printer', 'Canon', 'Epson', 'Brother'],
     DeviceCategory.VOIP: ['VoIP', 'Phone', 'Cisco Phone', 'Polycom', 'Yealink'],
-    DeviceCategory.CAMERA: ['Camera', 'IP Cam', 'Security Camera', 'Ring', 'Nest Cam', 'UniFi Protect'],
-    DeviceCategory.SMART_HOME: ['Nest', 'Ring', 'Hue', 'SmartThings', 'Home Assistant', 'Echo', 'HomePod'],
+    DeviceCategory.CAMERA: [
+        'Camera',
+        'IP Cam',
+        'Security Camera',
+        'Ring',
+        'Nest Cam',
+        'UniFi Protect',
+    ],
+    DeviceCategory.SMART_HOME: [
+        'Nest',
+        'Ring',
+        'Hue',
+        'SmartThings',
+        'Home Assistant',
+        'Echo',
+        'HomePod',
+    ],
     DeviceCategory.MEDIA_PLAYER: ['Sonos', 'Roku', 'Apple TV', 'Shield', 'Plex'],
     DeviceCategory.WEARABLE: ['Watch', 'Fitbit', 'Garmin'],
     DeviceCategory.NETWORK: ['Router', 'Switch', 'Access Point', 'Gateway', 'UniFi'],
@@ -352,7 +383,7 @@ class ClientManager:
         """Refresh the clients cache."""
         clients = await self._client.list_clients()
         self._clients_cache = {c.id: c for c in clients}
-        log.debug(f"Cached {len(self._clients_cache)} clients")
+        log.debug(f'Cached {len(self._clients_cache)} clients')
 
     async def get_all_clients(self, refresh: bool = False) -> list[ClientInfo]:
         """Get all connected clients.

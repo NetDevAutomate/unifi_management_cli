@@ -15,7 +15,7 @@ Example:
     >>> config = ProtectConfig.from_env()
     >>> async with UniFiProtectClient(config) as client:
     ...     for camera in client.cameras.values():
-    ...         print(f"{camera.name}: {camera.state}")
+    ...         print(f'{camera.name}: {camera.state}')
 """
 
 from unifi_mapper.protect.client import (

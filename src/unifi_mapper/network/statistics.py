@@ -110,10 +110,7 @@ class MetricsSnapshot:
 
     def get_error_ports(self, threshold_percent: float = 0.1) -> list[PortMetrics]:
         """Get ports with error rate above threshold."""
-        return [
-            p for p in self.port_metrics.values()
-            if p.error_rate_percent > threshold_percent
-        ]
+        return [p for p in self.port_metrics.values() if p.error_rate_percent > threshold_percent]
 
 
 MetricsCallback = Callable[[MetricsSnapshot], None]
@@ -127,7 +124,7 @@ class DeviceMetricsCollector:
 
     Example:
         >>> collector = DeviceMetricsCollector(client)
-        >>> collector.on_snapshot(lambda s: print(f"CPU: {s.cpu_percent}%"))
+        >>> collector.on_snapshot(lambda s: print(f'CPU: {s.cpu_percent}%'))
         >>> await collector.start_collection(['device-uuid-1', 'device-uuid-2'])
         >>> # Later...
         >>> snapshot = collector.get_snapshot('device-uuid-1')
@@ -173,13 +170,13 @@ class DeviceMetricsCollector:
             device_ids: List of device UUIDs to monitor.
         """
         if self._running:
-            log.warning("Collection already running")
+            log.warning('Collection already running')
             return
 
         self._device_ids = device_ids
         self._running = True
         self._task = asyncio.create_task(self._collection_loop())
-        log.info(f"Started metrics collection for {len(device_ids)} devices")
+        log.info(f'Started metrics collection for {len(device_ids)} devices')
 
     async def stop_collection(self) -> None:
         """Stop collecting metrics."""
@@ -191,7 +188,7 @@ class DeviceMetricsCollector:
             except asyncio.CancelledError:
                 pass
             self._task = None
-        log.info("Stopped metrics collection")
+        log.info('Stopped metrics collection')
 
     async def _collection_loop(self) -> None:
         """Main collection loop."""
@@ -199,7 +196,7 @@ class DeviceMetricsCollector:
             try:
                 await self._collect_all()
             except Exception as e:
-                log.error(f"Collection error: {e}")
+                log.error(f'Collection error: {e}')
 
             await asyncio.sleep(self._interval)
 
@@ -220,10 +217,10 @@ class DeviceMetricsCollector:
                 try:
                     callback(snapshot)
                 except Exception as e:
-                    log.error(f"Callback error: {e}")
+                    log.error(f'Callback error: {e}')
 
         except Exception as e:
-            log.error(f"Failed to collect metrics for {device_id}: {e}")
+            log.error(f'Failed to collect metrics for {device_id}: {e}')
 
     def _process_statistics(
         self,
@@ -246,7 +243,9 @@ class DeviceMetricsCollector:
             device_id=device_id,
             uptime_seconds=stats.uptime_seconds,
             cpu_percent=stats.cpu_memory.cpu_utilization_percent if stats.cpu_memory else 0.0,
-            memory_percent=stats.cpu_memory.memory_utilization_percent if stats.cpu_memory else 0.0,
+            memory_percent=stats.cpu_memory.memory_utilization_percent
+            if stats.cpu_memory
+            else 0.0,
             temperature_celsius=stats.temperature_celsius,
             port_metrics=self._port_metrics[device_id].copy(),
         )
@@ -272,13 +271,11 @@ class DeviceMetricsCollector:
 
         # Update throughput (rolling average)
         metrics.avg_tx_rate_bps = (
-            (metrics.avg_tx_rate_bps * (metrics.samples - 1) + port.tx_rate_bps)
-            / metrics.samples
-        )
+            metrics.avg_tx_rate_bps * (metrics.samples - 1) + port.tx_rate_bps
+        ) / metrics.samples
         metrics.avg_rx_rate_bps = (
-            (metrics.avg_rx_rate_bps * (metrics.samples - 1) + port.rx_rate_bps)
-            / metrics.samples
-        )
+            metrics.avg_rx_rate_bps * (metrics.samples - 1) + port.rx_rate_bps
+        ) / metrics.samples
 
         # Update max rates
         metrics.max_tx_rate_bps = max(metrics.max_tx_rate_bps, port.tx_rate_bps)
@@ -306,9 +303,8 @@ class DeviceMetricsCollector:
         metrics.poe_enabled = port.poe_enabled
         if port.poe_enabled:
             metrics.avg_poe_power_watts = (
-                (metrics.avg_poe_power_watts * (metrics.samples - 1) + port.poe_power_watts)
-                / metrics.samples
-            )
+                metrics.avg_poe_power_watts * (metrics.samples - 1) + port.poe_power_watts
+            ) / metrics.samples
             metrics.max_poe_power_watts = max(metrics.max_poe_power_watts, port.poe_power_watts)
 
     def get_snapshot(self, device_id: str) -> MetricsSnapshot | None:

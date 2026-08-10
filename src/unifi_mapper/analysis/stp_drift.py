@@ -76,10 +76,7 @@ def detect_stp_config_drift(
             findings.append(_missing_device_finding(identifier, expected))
             continue
 
-        if (
-            expected.priority is not None
-            and switch.current_priority != expected.priority
-        ):
+        if expected.priority is not None and switch.current_priority != expected.priority:
             findings.append(_priority_mismatch_finding(identifier, switch, expected.priority))
 
         if expected.root_expected is not None:

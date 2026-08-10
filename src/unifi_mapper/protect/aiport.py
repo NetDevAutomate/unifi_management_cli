@@ -11,9 +11,9 @@ Example:
     >>> async with UniFiProtectClient(config) as client:
     ...     manager = AIPortManager(client)
     ...     for aiport in manager.get_all_aiports():
-    ...         print(f"{aiport.name}: {len(aiport.paired_cameras)} cameras")
+    ...         print(f'{aiport.name}: {len(aiport.paired_cameras)} cameras')
     ...         for cap in manager.get_capabilities(aiport.id):
-    ...             print(f"  - {cap.name}: {cap.enabled}")
+    ...             print(f'  - {cap.name}: {cap.enabled}')
 """
 
 from __future__ import annotations
@@ -206,13 +206,13 @@ class AIPortManager:
         >>>
         >>> # Get all AI Ports with extended info
         >>> for info in manager.get_all_aiport_info():
-        ...     print(f"{info.name}: {info.camera_count} cameras")
+        ...     print(f'{info.name}: {info.camera_count} cameras')
         ...     for cap in info.enabled_capabilities:
-        ...         print(f"  - {cap.name}")
+        ...         print(f'  - {cap.name}')
         >>>
         >>> # Subscribe to AI detections from specific AI Port
         >>> def on_detection(event: AIDetectionEvent) -> None:
-        ...     print(f"Detected {event.detection_type.value} on {event.camera_id}")
+        ...     print(f'Detected {event.detection_type.value} on {event.camera_id}')
         >>>
         >>> unsub = manager.subscribe_detections(on_detection, aiport_id='aiport-1')
     """
@@ -301,10 +301,7 @@ class AIPortManager:
         Returns:
             List of AIPortInfo objects.
         """
-        return [
-            self._build_aiport_info(aiport)
-            for aiport in self.get_all_aiports()
-        ]
+        return [self._build_aiport_info(aiport) for aiport in self.get_all_aiports()]
 
     def _build_aiport_info(self, aiport: ProtectAIPort) -> AIPortInfo:
         """Build extended AIPortInfo from a ProtectAIPort.
@@ -400,14 +397,16 @@ class AIPortManager:
                 smart_settings = getattr(camera, 'smart_detect_settings', None)
                 smart_zones = getattr(camera, 'smart_detect_zones', [])
 
-                paired.append(PairedCamera(
-                    camera_id=camera_id,
-                    camera_name=camera.name or 'Unknown',
-                    aiport_id=aiport.id,
-                    smart_detect_enabled=smart_settings is not None,
-                    detection_zones=len(smart_zones) if smart_zones else 0,
-                    last_detection=getattr(camera, 'last_smart_detect', None),
-                ))
+                paired.append(
+                    PairedCamera(
+                        camera_id=camera_id,
+                        camera_name=camera.name or 'Unknown',
+                        aiport_id=aiport.id,
+                        smart_detect_enabled=smart_settings is not None,
+                        detection_zones=len(smart_zones) if smart_zones else 0,
+                        last_detection=getattr(camera, 'last_smart_detect', None),
+                    )
+                )
 
         return paired
 
@@ -556,9 +555,7 @@ class AIPortManager:
             )
 
             # Update tracking
-            self._detection_counts[aiport_id] = (
-                self._detection_counts.get(aiport_id, 0) + 1
-            )
+            self._detection_counts[aiport_id] = self._detection_counts.get(aiport_id, 0) + 1
             self._last_detections[aiport_id] = event.timestamp
 
             # Store recent detection
@@ -676,15 +673,18 @@ class AIPortManager:
 
         for ai_id in self._detection_counts:
             aiport = self.get_aiport(ai_id)
-            aiport_stats.append({
-                'aiport_id': ai_id,
-                'aiport_name': aiport.name if aiport else 'Unknown',
-                'detections': self._detection_counts[ai_id],
-                'last_detection': (
-                    self._last_detections.get(ai_id, datetime.min).isoformat()
-                    if ai_id in self._last_detections else None
-                ),
-            })
+            aiport_stats.append(
+                {
+                    'aiport_id': ai_id,
+                    'aiport_name': aiport.name if aiport else 'Unknown',
+                    'detections': self._detection_counts[ai_id],
+                    'last_detection': (
+                        self._last_detections.get(ai_id, datetime.min).isoformat()
+                        if ai_id in self._last_detections
+                        else None
+                    ),
+                }
+            )
 
         return {
             'total_detections': total_detections,

@@ -88,7 +88,7 @@ class UniFiProtectClient:
         >>> async with UniFiProtectClient(config) as client:
         ...     cameras = client.cameras
         ...     for cam_id, camera in cameras.items():
-        ...         print(f"{camera.name}: {camera.state}")
+        ...         print(f'{camera.name}: {camera.state}')
     """
 
     def __init__(self, config: ProtectConfig) -> None:
@@ -337,8 +337,7 @@ class UniFiProtectClient:
         try:
             self._bootstrap = await self._client.get_bootstrap()
             logger.debug(
-                f'Bootstrap refreshed: {len(self.cameras)} cameras, '
-                f'{len(self.ai_ports)} AI ports'
+                f'Bootstrap refreshed: {len(self.cameras)} cameras, {len(self.ai_ports)} AI ports'
             )
         except Exception as e:
             logger.error(f'Failed to refresh bootstrap: {e}')
@@ -411,9 +410,7 @@ class UniFiProtectClient:
             List of Camera instances that are third-party cameras.
         """
         return [
-            cam
-            for cam in self.cameras.values()
-            if getattr(cam, 'is_third_party_camera', False)
+            cam for cam in self.cameras.values() if getattr(cam, 'is_third_party_camera', False)
         ]
 
     async def __aenter__(self) -> UniFiProtectClient:

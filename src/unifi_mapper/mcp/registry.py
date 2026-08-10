@@ -23,7 +23,7 @@ class ToolMetadata:
     handler: str
     description: str
     category: str
-    priority: str = "P2"
+    priority: str = 'P2'
     tags: list[str] = field(default_factory=lambda: [])
     parameters: dict[str, Any] = field(default_factory=lambda: {})
 
@@ -60,7 +60,7 @@ class ToolProxy:
 
         result = self._implementation(**params)
         # Handle both sync and async implementations
-        if hasattr(result, "__await__"):
+        if hasattr(result, '__await__'):
             return await result
         return result
 
@@ -81,7 +81,7 @@ class ToolRegistry:
 
     def __init__(self, manifests_dir: Path | None = None) -> None:
         """Initialize the tool registry with an optional manifests directory."""
-        self._manifests_dir = manifests_dir or (Path(__file__).parent / "manifests")
+        self._manifests_dir = manifests_dir or (Path(__file__).parent / 'manifests')
         self._metadata: dict[str, ToolMetadata] = {}
         self._categories: dict[str, list[str]] = {}
         self._proxies: dict[str, ToolProxy] = {}
@@ -101,7 +101,7 @@ class ToolRegistry:
                 self._loaded = True
                 return
 
-            for manifest_file in self._manifests_dir.glob("*.yaml"):
+            for manifest_file in self._manifests_dir.glob('*.yaml'):
                 self._load_manifest(manifest_file)
 
             self._loaded = True
@@ -111,21 +111,21 @@ class ToolRegistry:
         with open(manifest_file) as f:
             data = yaml.safe_load(f)
 
-        if not data or "tools" not in data:
+        if not data or 'tools' not in data:
             return
 
-        category = data.get("category", manifest_file.stem)
+        category = data.get('category', manifest_file.stem)
 
-        for tool_name, tool_data in data["tools"].items():
+        for tool_name, tool_data in data['tools'].items():
             metadata = ToolMetadata(
                 name=tool_name,
                 category=category,
-                module=tool_data.get("module", ""),
-                handler=tool_data.get("handler", tool_name),
-                description=tool_data.get("description", ""),
-                priority=tool_data.get("priority", "P2"),
-                tags=tool_data.get("tags", []),
-                parameters=tool_data.get("parameters", {}),
+                module=tool_data.get('module', ''),
+                handler=tool_data.get('handler', tool_name),
+                description=tool_data.get('description', ''),
+                priority=tool_data.get('priority', 'P2'),
+                tags=tool_data.get('tags', []),
+                parameters=tool_data.get('parameters', {}),
             )
             self._metadata[tool_name] = metadata
             self._categories.setdefault(category, []).append(tool_name)
@@ -135,7 +135,7 @@ class ToolRegistry:
         query: str | None = None,
         category: str | None = None,
         tags: list[str] | None = None,
-        detail_level: str = "summary",
+        detail_level: str = 'summary',
     ) -> list[dict[str, Any]]:
         """Search tools with progressive disclosure.
 
@@ -163,21 +163,21 @@ class ToolRegistry:
 
             # Filter by query
             if query:
-                search_text = f"{name} {meta.description}".lower()
+                search_text = f'{name} {meta.description}'.lower()
                 if query.lower() not in search_text:
                     continue
 
-            if detail_level == "summary":
-                results.append({"name": name, "description": meta.description})
+            if detail_level == 'summary':
+                results.append({'name': name, 'description': meta.description})
             else:
                 results.append(
                     {
-                        "name": name,
-                        "description": meta.description,
-                        "category": meta.category,
-                        "priority": meta.priority,
-                        "tags": meta.tags,
-                        "parameters": meta.parameters,
+                        'name': name,
+                        'description': meta.description,
+                        'category': meta.category,
+                        'priority': meta.priority,
+                        'tags': meta.tags,
+                        'parameters': meta.parameters,
                     }
                 )
 

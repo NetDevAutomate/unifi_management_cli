@@ -193,7 +193,7 @@ class ProtectDeviceCache:
         >>> cache = ProtectDeviceCache()
         >>> await cache.refresh(client)
         >>> for camera in cache.cameras:
-        ...     print(f"{camera.name}: recording={camera.is_recording}")
+        ...     print(f'{camera.name}: recording={camera.is_recording}')
     """
 
     def __init__(self) -> None:

@@ -65,14 +65,15 @@ def _find_uap(
     """
     needle = ap_name.lower()
     for ap in uaps:
-        name = (ap.get("name") or "").lower()
+        name = (ap.get('name') or '').lower()
         if name == needle or needle in name:
             return ap
-    known_names = sorted((ap.get("name") or ap.get("mac", "")) for ap in uaps)
+    known_names = sorted((ap.get('name') or ap.get('mac', '')) for ap in uaps)
     raise ToolError(
         message=(
-            f"No UAP matches name '{ap_name}'. Known APs: "
-            + ", ".join(known_names) if known_names else "no UAPs registered."
+            f"No UAP matches name '{ap_name}'. Known APs: " + ', '.join(known_names)
+            if known_names
+            else 'no UAPs registered.'
         ),
         error_code=ErrorCodes.DEVICE_NOT_FOUND,
         suggestion="Check the AP name spelling; use the CLI 'inventory list --filter uap' to see all UAPs.",
@@ -94,16 +95,16 @@ def _build_override_warnings(
         sc_mode = scorecard_recommendation.mode.value.upper()
         user_mode = user_override.mode.value.upper()
         warnings.append(
-            f"forcing {user_mode} against {scorecard_recommendation.confidence.value.upper()} "
-            f"confidence (coverage score {scorecard_recommendation.coverage_score:.2f}); "
+            f'forcing {user_mode} against {scorecard_recommendation.confidence.value.upper()} '
+            f'confidence (coverage score {scorecard_recommendation.coverage_score:.2f}); '
             f"scorecard's default is {sc_mode}"
         )
 
     if scorecard_recommendation.recommended_width != user_override.recommended_width:
         warnings.append(
-            f"width override: scorecard preferred {scorecard_recommendation.recommended_width} MHz, "
-            f"user requested {user_override.recommended_width} MHz "
-            f"(narrower-tiebreaker / DFS / crowd may favour the scorecard choice)"
+            f'width override: scorecard preferred {scorecard_recommendation.recommended_width} MHz, '
+            f'user requested {user_override.recommended_width} MHz '
+            f'(narrower-tiebreaker / DFS / crowd may favour the scorecard choice)'
         )
 
     return tuple(warnings)
@@ -132,7 +133,7 @@ async def simulate_disable(
         ToolError(DEVICE_NOT_FOUND): ``ap_name`` doesn't match any UAP.
     """
     _ = (ap_name, band, mode_override, history_path, min_history_hours)
-    raise NotImplementedError("simulate_disable to be implemented in step 4")
+    raise NotImplementedError('simulate_disable to be implemented in step 4')
 
 
 async def simulate_width_change(
@@ -156,4 +157,4 @@ async def simulate_width_change(
     scorecard would have chosen differently.
     """
     _ = (ap_name, band, width_mhz, history_path, min_history_hours)
-    raise NotImplementedError("simulate_width_change to be implemented in step 5")
+    raise NotImplementedError('simulate_width_change to be implemented in step 5')

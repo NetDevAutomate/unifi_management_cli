@@ -103,7 +103,9 @@ def check_inter_vlan_routing_from_data(
     if source_endpoint.resolved and destination_endpoint.resolved:
         if not route_required:
             verdict = 'allow'
-            recommendations.append('Endpoints are in the same VLAN; inter-VLAN routing is not required.')
+            recommendations.append(
+                'Endpoints are in the same VLAN; inter-VLAN routing is not required.'
+            )
         else:
             matching_rules = _matching_firewall_rules(
                 source_endpoint,
@@ -159,7 +161,9 @@ def _resolve_endpoint(
             return InterVLANEndpoint(
                 identifier=identifier,
                 resolved=True,
-                name=str(item.get('hostname') or item.get('display_name') or item.get('name') or ''),
+                name=str(
+                    item.get('hostname') or item.get('display_name') or item.get('name') or ''
+                ),
                 ip=str(item.get('ip') or ''),
                 mac=str(item.get('mac') or ''),
                 vlan_id=vlan_id,
@@ -241,9 +245,7 @@ def _matching_firewall_rules(
     port: str | None,
 ) -> list[dict[str, Any]]:
     rules = [
-        rule
-        for rule in firewall_rules
-        if _rule_matches(rule, source, destination, protocol, port)
+        rule for rule in firewall_rules if _rule_matches(rule, source, destination, protocol, port)
     ]
     return sorted(rules, key=lambda rule: _as_int(rule.get('rule_index'), default=9999))
 

@@ -232,7 +232,9 @@ def _render_topology_diagram(topology_data: dict[str, Any]) -> str:
                 node_id = device['mac'].replace(':', '')
                 device_name = device.get('name', 'Unnamed')
                 device_model = device.get('model', '')
-                lines.append(f'        {node_id}["{device_name}<br/><small>{device_model}</small>"]')
+                lines.append(
+                    f'        {node_id}["{device_name}<br/><small>{device_model}</small>"]'
+                )
             lines.append('    end')
             lines.append('')
 
@@ -243,7 +245,9 @@ def _render_topology_diagram(topology_data: dict[str, Any]) -> str:
                 node_id = device['mac'].replace(':', '')
                 device_name = device.get('name', 'Unnamed')
                 device_model = device.get('model', '')
-                lines.append(f'        {node_id}["{device_name}<br/><small>{device_model}</small>"]')
+                lines.append(
+                    f'        {node_id}["{device_name}<br/><small>{device_model}</small>"]'
+                )
             lines.append('    end')
             lines.append('')
 
@@ -286,16 +290,18 @@ def _render_topology_diagram(topology_data: dict[str, Any]) -> str:
     lines.append('')
 
     # Styling with distinct colors per device type
-    lines.extend([
-        '    %% Styling',
-        '    classDef gateway fill:#4CAF50,stroke:#2E7D32,color:#fff',
-        '    classDef switch fill:#2196F3,stroke:#1565C0,color:#fff',
-        '    classDef ap fill:#9C27B0,stroke:#6A1B9A,color:#fff',
-        '    classDef client fill:#FF9800,stroke:#E65100,color:#fff',
-        '    classDef internet fill:#607D8B,stroke:#37474F,color:#fff',
-        '',
-        '    class Internet internet',
-    ])
+    lines.extend(
+        [
+            '    %% Styling',
+            '    classDef gateway fill:#4CAF50,stroke:#2E7D32,color:#fff',
+            '    classDef switch fill:#2196F3,stroke:#1565C0,color:#fff',
+            '    classDef ap fill:#9C27B0,stroke:#6A1B9A,color:#fff',
+            '    classDef client fill:#FF9800,stroke:#E65100,color:#fff',
+            '    classDef internet fill:#607D8B,stroke:#37474F,color:#fff',
+            '',
+            '    class Internet internet',
+        ]
+    )
 
     # Apply class to each device
     for device in gateways:
@@ -404,7 +410,11 @@ def _render_stp_diagram(stp_data: Any) -> str:
     # Group switches by tier
     tier_switches: dict[int, list[Any]] = {}
     for switch in switches:
-        tier = switch.hierarchy_tier if hasattr(switch, 'hierarchy_tier') else switch.get('hierarchy_tier', 2)
+        tier = (
+            switch.hierarchy_tier
+            if hasattr(switch, 'hierarchy_tier')
+            else switch.get('hierarchy_tier', 2)
+        )
         if tier not in tier_switches:
             tier_switches[tier] = []
         tier_switches[tier].append(switch)
@@ -450,9 +460,17 @@ def _render_stp_diagram(stp_data: Any) -> str:
     # Add gateway connections
     if gateway_name:
         for switch in tier_switches.get(0, []):
-            connected = switch.connected_to_gateway if hasattr(switch, 'connected_to_gateway') else switch.get('connected_to_gateway', False)
+            connected = (
+                switch.connected_to_gateway
+                if hasattr(switch, 'connected_to_gateway')
+                else switch.get('connected_to_gateway', False)
+            )
             if connected:
-                device_id = switch.device_id if hasattr(switch, 'device_id') else switch.get('device_id', '')
+                device_id = (
+                    switch.device_id
+                    if hasattr(switch, 'device_id')
+                    else switch.get('device_id', '')
+                )
                 node_id = device_id.replace('-', '_')
                 lines.append(f'    GW --> {node_id}')
         lines.append('')
@@ -484,16 +502,18 @@ def _render_stp_diagram(stp_data: Any) -> str:
     lines.append('')
 
     # Styling
-    lines.extend([
-        '    %% Styling',
-        '    classDef core fill:#4CAF50,stroke:#2E7D32,color:#fff',
-        '    classDef dist fill:#2196F3,stroke:#1565C0,color:#fff',
-        '    classDef access fill:#FF9800,stroke:#E65100,color:#fff',
-        '    classDef root fill:#9C27B0,stroke:#6A1B9A,color:#fff',
-        '    classDef gateway fill:#607D8B,stroke:#37474F,color:#fff',
-        '',
-        '    class GW gateway',
-    ])
+    lines.extend(
+        [
+            '    %% Styling',
+            '    classDef core fill:#4CAF50,stroke:#2E7D32,color:#fff',
+            '    classDef dist fill:#2196F3,stroke:#1565C0,color:#fff',
+            '    classDef access fill:#FF9800,stroke:#E65100,color:#fff',
+            '    classDef root fill:#9C27B0,stroke:#6A1B9A,color:#fff',
+            '    classDef gateway fill:#607D8B,stroke:#37474F,color:#fff',
+            '',
+            '    class GW gateway',
+        ]
+    )
 
     # Apply classes based on tier and root status
     for tier, switches_in_tier in tier_switches.items():

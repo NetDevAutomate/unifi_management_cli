@@ -98,10 +98,7 @@ def _is_switch(device: dict[str, Any]) -> bool:
 
 
 def _ports_by_idx(device: dict[str, Any]) -> dict[int, dict[str, Any]]:
-    return {
-        _as_int(port.get('port_idx')): port
-        for port in _dict_list(device.get('port_table'))
-    }
+    return {_as_int(port.get('port_idx')): port for port in _dict_list(device.get('port_table'))}
 
 
 def _port_mtu(port: dict[str, Any] | None, device: dict[str, Any]) -> int:

@@ -12,6 +12,7 @@ Requirements:
 
 Based on: https://github.com/zhangyoufu/unifi-backup-decrypt
 """
+
 import argparse
 import gzip
 import io
@@ -26,38 +27,42 @@ from typing import Any, Dict, List, Optional
 try:
     from Crypto.Cipher import AES
 except ImportError:
-    print("ERROR: pycryptodome not installed. Run: pip install pycryptodome")
+    print('ERROR: pycryptodome not installed. Run: pip install pycryptodome')
     sys.exit(1)
 
 try:
     import bson
 except ImportError:
-    print("ERROR: bson not installed. Run: pip install pymongo")
+    print('ERROR: bson not installed. Run: pip install pymongo')
     sys.exit(1)
 
 
 # UniFi backup encryption constants (well-known, hardcoded in UniFi controller)
-UNIFI_AES_KEY = b"bcyangkmluohmars"  # 16 bytes for AES-128
-UNIFI_AES_IV = b"ubntenterpriseap"   # 16 bytes IV
+UNIFI_AES_KEY = b'bcyangkmluohmars'  # 16 bytes for AES-128
+UNIFI_AES_IV = b'ubntenterpriseap'  # 16 bytes IV
 
 
 class BackupDecryptError(Exception):
     """Base exception for backup decryption errors."""
+
     pass
 
 
 class DecryptionError(BackupDecryptError):
     """Failed to decrypt backup file."""
+
     pass
 
 
 class ExtractionError(BackupDecryptError):
     """Failed to extract backup contents."""
+
     pass
 
 
 class BSONParseError(BackupDecryptError):
     """Failed to parse BSON data."""
+
     pass
 
 
@@ -86,7 +91,7 @@ def decrypt_backup(encrypted_data: bytes) -> bytes:
 
         return decrypted
     except Exception as e:
-        raise DecryptionError(f"AES decryption failed: {e}")
+        raise DecryptionError(f'AES decryption failed: {e}')
 
 
 def extract_db_gz(zip_data: bytes) -> bytes:
@@ -105,7 +110,7 @@ def extract_db_gz(zip_data: bytes) -> bytes:
         with zipfile.ZipFile(io.BytesIO(zip_data), 'r') as zf:
             # List contents for debugging
             file_list = zf.namelist()
-            print(f"  ZIP contents: {file_list}")
+            print(f'  ZIP contents: {file_list}')
 
             # Look for db.gz
             if 'db.gz' in file_list:
@@ -114,15 +119,15 @@ def extract_db_gz(zip_data: bytes) -> bytes:
             # Try alternative names
             for name in file_list:
                 if name.endswith('.gz') or name == 'db':
-                    print(f"  Using alternative: {name}")
+                    print(f'  Using alternative: {name}')
                     return zf.read(name)
 
-            raise ExtractionError(f"No database file found. Contents: {file_list}")
+            raise ExtractionError(f'No database file found. Contents: {file_list}')
 
     except zipfile.BadZipFile as e:
-        raise ExtractionError(f"Invalid ZIP file: {e}")
+        raise ExtractionError(f'Invalid ZIP file: {e}')
     except Exception as e:
-        raise ExtractionError(f"ZIP extraction failed: {e}")
+        raise ExtractionError(f'ZIP extraction failed: {e}')
 
 
 def decompress_db(db_gz_data: bytes) -> bytes:
@@ -137,7 +142,7 @@ def decompress_db(db_gz_data: bytes) -> bytes:
     try:
         return gzip.decompress(db_gz_data)
     except gzip.BadGzipFile as e:
-        raise ExtractionError(f"Invalid gzip data: {e}")
+        raise ExtractionError(f'Invalid gzip data: {e}')
 
 
 def parse_bson_documents(bson_data: bytes) -> Dict[str, List[Dict[str, Any]]]:
@@ -162,13 +167,13 @@ def parse_bson_documents(bson_data: bytes) -> Dict[str, List[Dict[str, Any]]]:
             if offset + 4 > len(bson_data):
                 break
 
-            doc_size = int.from_bytes(bson_data[offset:offset+4], 'little')
+            doc_size = int.from_bytes(bson_data[offset : offset + 4], 'little')
 
             if doc_size < 5 or offset + doc_size > len(bson_data):
                 # Invalid size or not enough data
                 break
 
-            doc_bytes = bson_data[offset:offset + doc_size]
+            doc_bytes = bson_data[offset : offset + doc_size]
             doc = bson.decode(doc_bytes)
             doc_count += 1
 
@@ -181,11 +186,11 @@ def parse_bson_documents(bson_data: bytes) -> Dict[str, List[Dict[str, Any]]]:
             offset += doc_size
 
         except Exception as e:
-            print(f"  Warning: BSON parse error at offset {offset}: {e}")
+            print(f'  Warning: BSON parse error at offset {offset}: {e}')
             # Try to continue by searching for next valid document
             offset += 1
 
-    print(f"  Parsed {doc_count} BSON documents across {len(collections)} collections")
+    print(f'  Parsed {doc_count} BSON documents across {len(collections)} collections')
     return collections
 
 
@@ -194,7 +199,7 @@ def json_serializer(obj: Any) -> Any:
     if isinstance(obj, datetime):
         return obj.isoformat()
     if isinstance(obj, bytes):
-        return f"<bytes:{len(obj)}>"
+        return f'<bytes:{len(obj)}>'
     if hasattr(obj, '__dict__'):
         return str(obj)
     return str(obj)
@@ -202,34 +207,30 @@ def json_serializer(obj: Any) -> Any:
 
 def dump_collections_summary(collections: Dict[str, List[Dict[str, Any]]]) -> None:
     """Print summary of all collections found."""
-    print("\n" + "=" * 60)
-    print("COLLECTIONS SUMMARY")
-    print("=" * 60)
+    print('\n' + '=' * 60)
+    print('COLLECTIONS SUMMARY')
+    print('=' * 60)
 
     # Sort by document count (most important first)
-    sorted_collections = sorted(
-        collections.items(),
-        key=lambda x: len(x[1]),
-        reverse=True
-    )
+    sorted_collections = sorted(collections.items(), key=lambda x: len(x[1]), reverse=True)
 
     for name, docs in sorted_collections:
-        print(f"\n  {name}: {len(docs)} document(s)")
+        print(f'\n  {name}: {len(docs)} document(s)')
 
         # Show sample fields from first document
         if docs:
             sample = docs[0]
             fields = list(sample.keys())[:10]
-            print(f"    Fields: {', '.join(fields)}")
+            print(f'    Fields: {", ".join(fields)}')
             if len(sample.keys()) > 10:
-                print(f"    ... and {len(sample.keys()) - 10} more fields")
+                print(f'    ... and {len(sample.keys()) - 10} more fields')
 
 
 def dump_collection_detail(
     collections: Dict[str, List[Dict[str, Any]]],
     collection_name: str,
     max_docs: int = 3,
-    output_file: Optional[Path] = None
+    output_file: Optional[Path] = None,
 ) -> None:
     """Dump detailed contents of a specific collection."""
     if collection_name not in collections:
@@ -237,33 +238,33 @@ def dump_collection_detail(
         return
 
     docs = collections[collection_name]
-    print(f"\n{'=' * 60}")
-    print(f"COLLECTION: {collection_name} ({len(docs)} documents)")
-    print("=" * 60)
+    print(f'\n{"=" * 60}')
+    print(f'COLLECTION: {collection_name} ({len(docs)} documents)')
+    print('=' * 60)
 
     output_docs = docs[:max_docs]
 
     for i, doc in enumerate(output_docs):
-        print(f"\n--- Document {i + 1}/{len(docs)} ---")
+        print(f'\n--- Document {i + 1}/{len(docs)} ---')
         try:
             formatted = json.dumps(doc, indent=2, default=json_serializer)
             # Truncate very long output
             if len(formatted) > 5000:
-                formatted = formatted[:5000] + "\n... (truncated)"
+                formatted = formatted[:5000] + '\n... (truncated)'
             print(formatted)
         except Exception as e:
-            print(f"Error formatting document: {e}")
+            print(f'Error formatting document: {e}')
 
     if output_file:
         with open(output_file, 'w') as f:
             json.dump(docs, f, indent=2, default=json_serializer)
-        print(f"\nFull collection written to: {output_file}")
+        print(f'\nFull collection written to: {output_file}')
 
 
 def main():
     """Run the backup decrypt proof-of-concept CLI."""
     parser = argparse.ArgumentParser(
-        description="Decrypt and analyze UniFi backup files (.unf)",
+        description='Decrypt and analyze UniFi backup files (.unf)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -278,105 +279,92 @@ Examples:
 
   # Show all collections with full docs
   python -m unifi_mapper.backup.poc_decrypt backup.unf --all --max-docs 10
-        """
+        """,
     )
+    parser.add_argument('backup_file', type=Path, help='Path to .unf backup file')
     parser.add_argument(
-        "backup_file",
-        type=Path,
-        help="Path to .unf backup file"
-    )
-    parser.add_argument(
-        "-c", "--collection",
+        '-c',
+        '--collection',
         type=str,
-        action="append",
-        help="Show details for specific collection(s). Can be repeated."
+        action='append',
+        help='Show details for specific collection(s). Can be repeated.',
     )
+    parser.add_argument('--all', action='store_true', help='Show details for all collections')
     parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Show details for all collections"
-    )
-    parser.add_argument(
-        "--max-docs",
+        '--max-docs',
         type=int,
         default=3,
-        help="Maximum documents to show per collection (default: 3)"
+        help='Maximum documents to show per collection (default: 3)',
     )
+    parser.add_argument('-o', '--output', type=Path, help='Output JSON file for collection export')
     parser.add_argument(
-        "-o", "--output",
-        type=Path,
-        help="Output JSON file for collection export"
-    )
-    parser.add_argument(
-        "--list-only",
-        action="store_true",
-        help="Only list collections, don't show contents"
+        '--list-only', action='store_true', help="Only list collections, don't show contents"
     )
 
     args = parser.parse_args()
 
     # Validate input file
     if not args.backup_file.exists():
-        print(f"ERROR: File not found: {args.backup_file}")
+        print(f'ERROR: File not found: {args.backup_file}')
         sys.exit(1)
 
-    print(f"\n{'=' * 60}")
-    print("UNIFI BACKUP DECRYPT POC")
-    print("=" * 60)
-    print(f"Input: {args.backup_file}")
-    print(f"Size: {args.backup_file.stat().st_size:,} bytes")
+    print(f'\n{"=" * 60}')
+    print('UNIFI BACKUP DECRYPT POC')
+    print('=' * 60)
+    print(f'Input: {args.backup_file}')
+    print(f'Size: {args.backup_file.stat().st_size:,} bytes')
 
     try:
         # Step 1: Read encrypted backup
-        print("\n[1/4] Reading encrypted backup...")
+        print('\n[1/4] Reading encrypted backup...')
         encrypted_data = args.backup_file.read_bytes()
-        print(f"  Read {len(encrypted_data):,} bytes")
+        print(f'  Read {len(encrypted_data):,} bytes')
 
         # Step 2: Decrypt
-        print("\n[2/4] Decrypting (AES-128-CBC)...")
+        print('\n[2/4] Decrypting (AES-128-CBC)...')
         decrypted_data = decrypt_backup(encrypted_data)
-        print(f"  Decrypted to {len(decrypted_data):,} bytes")
+        print(f'  Decrypted to {len(decrypted_data):,} bytes')
 
         # Quick validation - ZIP files start with PK
         if decrypted_data[:2] != b'PK':
             print("  WARNING: Decrypted data doesn't look like ZIP (no PK header)")
-            print(f"  First bytes: {decrypted_data[:20].hex()}")
+            print(f'  First bytes: {decrypted_data[:20].hex()}')
         else:
-            print("  ✓ Valid ZIP header detected")
+            print('  ✓ Valid ZIP header detected')
 
         # Step 3: Extract db.gz
-        print("\n[3/4] Extracting database from ZIP...")
+        print('\n[3/4] Extracting database from ZIP...')
         db_gz_data = extract_db_gz(decrypted_data)
-        print(f"  Extracted {len(db_gz_data):,} bytes (compressed)")
+        print(f'  Extracted {len(db_gz_data):,} bytes (compressed)')
 
         # Decompress
-        print("  Decompressing gzip...")
+        print('  Decompressing gzip...')
         bson_data = decompress_db(db_gz_data)
-        print(f"  Decompressed to {len(bson_data):,} bytes")
+        print(f'  Decompressed to {len(bson_data):,} bytes')
 
         # Step 4: Parse BSON
-        print("\n[4/4] Parsing BSON documents...")
+        print('\n[4/4] Parsing BSON documents...')
         collections = parse_bson_documents(bson_data)
 
         # Show results
         dump_collections_summary(collections)
 
         if args.list_only:
-            print("\n✓ Decrypt successful! Use -c <collection> to see details.")
+            print('\n✓ Decrypt successful! Use -c <collection> to see details.')
             return
 
         # Important collections for network config comparison
         important_collections = [
-            "setting",
-            "networkconf",
-            "device",
-            "usergroup",
-            "firewallrule",
-            "firewallgroup",
-            "wlanconf",
-            "portconf",
-            "routing",
-            "dhcpd",
+            'setting',
+            'networkconf',
+            'device',
+            'usergroup',
+            'firewallrule',
+            'firewallgroup',
+            'wlanconf',
+            'portconf',
+            'routing',
+            'dhcpd',
         ]
 
         # Show requested collections
@@ -396,35 +384,33 @@ Examples:
         for coll_name in collections_to_show:
             output_file = args.output if len(collections_to_show) == 1 else None
             dump_collection_detail(
-                collections,
-                coll_name,
-                max_docs=args.max_docs,
-                output_file=output_file
+                collections, coll_name, max_docs=args.max_docs, output_file=output_file
             )
 
-        print("\n" + "=" * 60)
-        print("✓ DECRYPT SUCCESSFUL")
-        print("=" * 60)
-        print(f"Collections found: {len(collections)}")
-        print(f"Total documents: {sum(len(d) for d in collections.values())}")
+        print('\n' + '=' * 60)
+        print('✓ DECRYPT SUCCESSFUL')
+        print('=' * 60)
+        print(f'Collections found: {len(collections)}')
+        print(f'Total documents: {sum(len(d) for d in collections.values())}')
 
         # Suggestions
-        print("\nKey collections for config comparison:")
+        print('\nKey collections for config comparison:')
         for coll in important_collections:
             if coll in collections:
-                print(f"  ✓ {coll}: {len(collections[coll])} docs")
+                print(f'  ✓ {coll}: {len(collections[coll])} docs')
             else:
-                print(f"  ✗ {coll}: not found")
+                print(f'  ✗ {coll}: not found')
 
     except BackupDecryptError as e:
-        print(f"\n❌ ERROR: {e}")
+        print(f'\n❌ ERROR: {e}')
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ UNEXPECTED ERROR: {e}")
+        print(f'\n❌ UNEXPECTED ERROR: {e}')
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

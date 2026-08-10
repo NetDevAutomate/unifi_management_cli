@@ -51,7 +51,7 @@ def effective_rssi_for_channel(
     - 2.4 GHz ('ng'): applies dB offset based on channel distance;
       None if distance > 2
     """
-    if band == "na":
+    if band == 'na':
         return signal_dbm if source_channel == target_channel else None
     distance = abs(source_channel - target_channel)
     offset = ADJACENT_CHANNEL_OFFSETS_24GHZ.get(distance)
@@ -68,8 +68,8 @@ def compute_channel_neighbour_score(
     """Sum RSSI-weighted neighbour contribution for target_channel."""
     total = 0.0
     for nb in neighbours:
-        source_ch = nb.get("channel", 0)
-        signal = nb.get("signal", -100)
+        source_ch = nb.get('channel', 0)
+        signal = nb.get('signal', -100)
         effective = effective_rssi_for_channel(signal, source_ch, target_channel, band)
         if effective is None:
             continue
@@ -90,8 +90,7 @@ def filter_live_rogue_entries(
     return [
         e
         for e in rogue_entries
-        if not e.get("is_ubnt", False)
-        and e.get("age", 0) <= MAX_ROGUE_AGE_SECONDS
+        if not e.get('is_ubnt', False) and e.get('age', 0) <= MAX_ROGUE_AGE_SECONDS
     ]
 
 
@@ -113,8 +112,8 @@ def _filter_own_network_observations(
     return [
         e
         for e in rogue_entries
-        if e.get("bssid", "").lower() in our_ap_bssids_lower
-        and e.get("age", 0) <= MAX_ROGUE_AGE_SECONDS
+        if e.get('bssid', '').lower() in our_ap_bssids_lower
+        and e.get('age', 0) <= MAX_ROGUE_AGE_SECONDS
     ]
 
 
@@ -153,9 +152,9 @@ def compute_ap_to_ap_overlap(
     overlap: dict[tuple[str, str], int] = {}
 
     for entry in own_observations:
-        observer_mac: str = entry.get("ap_mac") or ""
-        observed_bssid: str = (entry.get("bssid") or "").lower()
-        signal = entry.get("signal")
+        observer_mac: str = entry.get('ap_mac') or ''
+        observed_bssid: str = (entry.get('bssid') or '').lower()
+        signal = entry.get('signal')
         if signal is None:
             continue
 
@@ -182,7 +181,7 @@ def _group_rogue_entries(
     """
     by_ap: dict[str, list[dict[str, Any]]] = {}
     for entry in filter_live_rogue_entries(rogue_entries):
-        ap_mac = entry.get("ap_mac", "")
+        ap_mac = entry.get('ap_mac', '')
         if filter_ap_mac and ap_mac != filter_ap_mac:
             continue
         by_ap.setdefault(ap_mac, []).append(entry)
@@ -191,19 +190,19 @@ def _group_rogue_entries(
     for ap_mac, entries in by_ap.items():
         channel_summary: dict[int, int] = {}
         for e in entries:
-            ch = e.get("channel", 0)
+            ch = e.get('channel', 0)
             channel_summary[ch] = channel_summary.get(ch, 0) + 1
-        strongest = sorted(
-            entries, key=lambda e: e.get("signal", -100), reverse=True
-        )[:5]
-        result.append({
-            "ap_mac": ap_mac,
-            "ap_name": ap_mac_to_name.get(ap_mac, ap_mac),
-            "channel_summary": channel_summary,
-            "neighbours": entries,
-            "total_neighbours": len(entries),
-            "strongest": strongest,
-        })
+        strongest = sorted(entries, key=lambda e: e.get('signal', -100), reverse=True)[:5]
+        result.append(
+            {
+                'ap_mac': ap_mac,
+                'ap_name': ap_mac_to_name.get(ap_mac, ap_mac),
+                'channel_summary': channel_summary,
+                'neighbours': entries,
+                'total_neighbours': len(entries),
+                'strongest': strongest,
+            }
+        )
     return result
 
 
@@ -217,11 +216,7 @@ async def scan_neighbours(ap_name: str | None = None) -> dict[str, Any]:
         rogue = await client.get_rogue_aps()
         devices = await client.get_devices()
 
-    ap_mac_to_name = {
-        d["mac"]: d.get("name", d["mac"])
-        for d in devices
-        if d.get("type") == "uap"
-    }
+    ap_mac_to_name = {d['mac']: d.get('name', d['mac']) for d in devices if d.get('type') == 'uap'}
 
     filter_mac = None
     if ap_name:
@@ -231,7 +226,7 @@ async def scan_neighbours(ap_name: str | None = None) -> dict[str, Any]:
                 break
 
     aps = _group_rogue_entries(rogue, ap_mac_to_name, filter_ap_mac=filter_mac)
-    return {"timestamp": datetime.now().isoformat(), "aps": aps}
+    return {'timestamp': datetime.now().isoformat(), 'aps': aps}
 
 
 async def get_our_ap_bssids(client: UniFiClient) -> set[str]:
@@ -248,10 +243,10 @@ async def get_our_ap_bssids(client: UniFiClient) -> set[str]:
     devices = await client.get_devices()
     bssids: set[str] = set()
     for device in devices:
-        if device.get("type") != "uap":
+        if device.get('type') != 'uap':
             continue
-        for vap in device.get("vap_table", []):
-            bssid = vap.get("bssid")
+        for vap in device.get('vap_table', []):
+            bssid = vap.get('bssid')
             if bssid:
                 bssids.add(bssid.lower())
     return bssids

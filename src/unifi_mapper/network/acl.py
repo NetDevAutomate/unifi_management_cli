@@ -78,7 +78,7 @@ class ACLManager:
         """Refresh the ACL rules cache."""
         rules = await self._client.list_acl_rules()
         self._rules_cache = {r.id: r for r in rules}
-        log.debug(f"Cached {len(self._rules_cache)} ACL rules")
+        log.debug(f'Cached {len(self._rules_cache)} ACL rules')
 
     async def get_all_rules(self, refresh: bool = False) -> list[ACLRule]:
         """Get all ACL rules.
@@ -187,10 +187,7 @@ class ACLManager:
             List of matching rules.
         """
         rules = await self.get_all_rules()
-        return [
-            r for r in rules
-            if r.protocol_filter and protocol in r.protocol_filter
-        ]
+        return [r for r in rules if r.protocol_filter and protocol in r.protocol_filter]
 
     async def get_rules_for_network(self, network_id: str) -> list[ACLRule]:
         """Get ACL rules associated with a network.
@@ -415,18 +412,24 @@ class ACLManager:
         Returns:
             Rule statistics.
         """
-        has_source = bool(rule.source_filter and (
-            rule.source_filter.ip_addresses_or_subnets or
-            rule.source_filter.ports_filter or
-            rule.source_filter.mac_addresses or
-            rule.source_filter.network_ids
-        ))
+        has_source = bool(
+            rule.source_filter
+            and (
+                rule.source_filter.ip_addresses_or_subnets
+                or rule.source_filter.ports_filter
+                or rule.source_filter.mac_addresses
+                or rule.source_filter.network_ids
+            )
+        )
 
-        has_dest = bool(rule.destination_filter and (
-            rule.destination_filter.ip_addresses_or_subnets or
-            rule.destination_filter.ports_filter or
-            rule.destination_filter.network_ids
-        ))
+        has_dest = bool(
+            rule.destination_filter
+            and (
+                rule.destination_filter.ip_addresses_or_subnets
+                or rule.destination_filter.ports_filter
+                or rule.destination_filter.network_ids
+            )
+        )
 
         enforcing_count = 0
         if rule.enforcing_device_filter and rule.enforcing_device_filter.device_ids:
@@ -472,24 +475,22 @@ class ACLManager:
                 summary.system_rules += 1
 
             if rule.source_filter and (
-                rule.source_filter.ip_addresses_or_subnets or
-                rule.source_filter.ports_filter or
-                rule.source_filter.mac_addresses
+                rule.source_filter.ip_addresses_or_subnets
+                or rule.source_filter.ports_filter
+                or rule.source_filter.mac_addresses
             ):
                 summary.rules_with_source_filter += 1
 
             if rule.destination_filter and (
-                rule.destination_filter.ip_addresses_or_subnets or
-                rule.destination_filter.ports_filter
+                rule.destination_filter.ip_addresses_or_subnets
+                or rule.destination_filter.ports_filter
             ):
                 summary.rules_with_destination_filter += 1
 
             if rule.protocol_filter:
                 for protocol in rule.protocol_filter:
                     key = protocol.value
-                    summary.rules_by_protocol[key] = (
-                        summary.rules_by_protocol.get(key, 0) + 1
-                    )
+                    summary.rules_by_protocol[key] = summary.rules_by_protocol.get(key, 0) + 1
 
         return summary
 
@@ -509,38 +510,40 @@ class ACLManager:
         # Check for disabled rules
         disabled = [r for r in rules if not r.enabled]
         if disabled:
-            issues.append({
-                'severity': 'INFO',
-                'message': f'{len(disabled)} ACL rules are disabled',
-                'rule_ids': [r.id for r in disabled],
-            })
+            issues.append(
+                {
+                    'severity': 'INFO',
+                    'message': f'{len(disabled)} ACL rules are disabled',
+                    'rule_ids': [r.id for r in disabled],
+                }
+            )
 
         # Check for rules without filters
         overly_broad = []
         for rule in rules:
             has_filter = bool(
-                rule.source_filter or
-                rule.destination_filter or
-                rule.protocol_filter
+                rule.source_filter or rule.destination_filter or rule.protocol_filter
             )
             if not has_filter and rule.action == ACLActionType.BLOCK:
                 overly_broad.append(rule)
 
         if overly_broad:
-            issues.append({
-                'severity': 'WARNING',
-                'message': f'{len(overly_broad)} BLOCK rules have no specific filters',
-                'rule_ids': [r.id for r in overly_broad],
-            })
+            issues.append(
+                {
+                    'severity': 'WARNING',
+                    'message': f'{len(overly_broad)} BLOCK rules have no specific filters',
+                    'rule_ids': [r.id for r in overly_broad],
+                }
+            )
             recommendations.append(
                 'Consider adding source/destination filters to broad BLOCK rules'
             )
 
         # Check for rules enforced on all devices
         global_rules = [
-            r for r in rules
-            if not r.enforcing_device_filter or
-            not r.enforcing_device_filter.device_ids
+            r
+            for r in rules
+            if not r.enforcing_device_filter or not r.enforcing_device_filter.device_ids
         ]
         if len(global_rules) > 5:
             recommendations.append(

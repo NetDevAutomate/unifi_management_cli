@@ -51,9 +51,7 @@ def audit_stp_guard_recommendations(
 
             if downstream.hierarchy_tier > switch.hierarchy_tier and switch.hierarchy_tier <= 1:
                 severity = (
-                    'WARNING'
-                    if downstream.current_priority <= switch.current_priority
-                    else 'INFO'
+                    'WARNING' if downstream.current_priority <= switch.current_priority else 'INFO'
                 )
                 findings.append(
                     STPGuardFinding(

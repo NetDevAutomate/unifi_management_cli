@@ -17,7 +17,7 @@ class PortInfo:
         self,
         idx: int,
         name: str,
-        media: str = "RJ45",
+        media: str = 'RJ45',
         is_uplink: bool = False,
         up: bool = True,
         enabled: bool = True,
@@ -46,7 +46,7 @@ class PortInfo:
             connected_port_name: Name of the connected port
             poe: Whether the port provides Power over Ethernet
         """
-        self.id = f"port_{idx}"
+        self.id = f'port_{idx}'
         self.name = name
         self.idx = idx
         self.media = media
@@ -55,34 +55,32 @@ class PortInfo:
         self.enabled = enabled
         self.speed = speed
         self.full_duplex = full_duplex
-        self.has_lldp_info = has_lldp_info or (
-            lldp_info is not None and len(lldp_info) > 0
-        )
+        self.has_lldp_info = has_lldp_info or (lldp_info is not None and len(lldp_info) > 0)
         self.lldp_info = lldp_info or {}
         self.modified = False
-        self.new_name = ""
+        self.new_name = ''
         self.connected_device_id = None
         self.connected_port_id = None
-        self.proposed_name = ""
+        self.proposed_name = ''
         self.connected_device_name = connected_device_name
         self.connected_port_name = connected_port_name
         self.poe = poe
 
     def get_display_name(self) -> str:
         """Get a display name for the port that includes media type and speed."""
-        speed_str = f"{self.speed / 1000}G" if self.speed >= 1000 else f"{self.speed}M"
-        return f"{self.name} ({self.media} {speed_str})"
+        speed_str = f'{self.speed / 1000}G' if self.speed >= 1000 else f'{self.speed}M'
+        return f'{self.name} ({self.media} {speed_str})'
 
     def get_lldp_display_name(self) -> str:
         """Get a display name based on LLDP/CDP information."""
         if not self.has_lldp_info:
             return self.name
 
-        chassis_name = self.lldp_info.get("chassis_name", "")
-        port_id = self.lldp_info.get("port_id", "")
+        chassis_name = self.lldp_info.get('chassis_name', '')
+        port_id = self.lldp_info.get('port_id', '')
 
         if chassis_name and port_id:
-            return f"{chassis_name} ({port_id})"
+            return f'{chassis_name} ({port_id})'
         elif chassis_name:
             return chassis_name
         elif port_id:
@@ -103,11 +101,11 @@ class PortInfo:
         self.has_lldp_info = True
 
         # Set proposed name based on LLDP/CDP information
-        chassis_name = lldp_info.get("chassis_name", "")
-        port_id = lldp_info.get("port_id", "")
+        chassis_name = lldp_info.get('chassis_name', '')
+        port_id = lldp_info.get('port_id', '')
 
         if chassis_name and port_id:
-            self.proposed_name = f"{chassis_name} ({port_id})"
+            self.proposed_name = f'{chassis_name} ({port_id})'
         elif chassis_name:
             self.proposed_name = chassis_name
         elif port_id:
@@ -158,30 +156,30 @@ class DeviceInfo:
         model_lower = self.model.lower()
 
         if (
-            "udm" in model_lower
-            or "usg" in model_lower
-            or "ugw" in model_lower
-            or "gateway" in model_lower
-            or "router" in model_lower
+            'udm' in model_lower
+            or 'usg' in model_lower
+            or 'ugw' in model_lower
+            or 'gateway' in model_lower
+            or 'router' in model_lower
         ):
-            return "router"
-        elif "usw" in model_lower or "switch" in model_lower:
-            return "switch"
+            return 'router'
+        elif 'usw' in model_lower or 'switch' in model_lower:
+            return 'switch'
         elif (
-            "uap" in model_lower
-            or "ap" in model_lower
-            or "access point" in model_lower
-            or "u6" in model_lower
-            or "u7" in model_lower
-            or "ac" in model_lower
-            or "nanostation" in model_lower
-            or "litebeam" in model_lower
+            'uap' in model_lower
+            or 'ap' in model_lower
+            or 'access point' in model_lower
+            or 'u6' in model_lower
+            or 'u7' in model_lower
+            or 'ac' in model_lower
+            or 'nanostation' in model_lower
+            or 'litebeam' in model_lower
         ):
-            return "ap"
-        elif "server" in model_lower or "nas" in model_lower:
-            return "server"
+            return 'ap'
+        elif 'server' in model_lower or 'nas' in model_lower:
+            return 'server'
         else:
-            return "other"
+            return 'other'
 
     def get_color(self) -> str:
         """Get a color for the device based on its type.
@@ -189,26 +187,26 @@ class DeviceInfo:
         Returns:
             str: Color in hex format
         """
-        if self.device_type == "router":
-            return "#3498db"  # Blue
-        elif self.device_type == "switch":
-            return "#2ecc71"  # Green
-        elif self.device_type == "ap":
-            return "#e74c3c"  # Red
-        elif self.device_type == "server":
-            return "#9b59b6"  # Purple
+        if self.device_type == 'router':
+            return '#3498db'  # Blue
+        elif self.device_type == 'switch':
+            return '#2ecc71'  # Green
+        elif self.device_type == 'ap':
+            return '#e74c3c'  # Red
+        elif self.device_type == 'server':
+            return '#9b59b6'  # Purple
         else:
-            return "#95a5a6"  # Gray
+            return '#95a5a6'  # Gray
 
 
 class NetworkHealthStatus(Enum):
     """Enum for network health status levels."""
 
-    EXCELLENT = "excellent"
-    GOOD = "good"
-    WARNING = "warning"
-    CRITICAL = "critical"
-    UNKNOWN = "unknown"
+    EXCELLENT = 'excellent'
+    GOOD = 'good'
+    WARNING = 'warning'
+    CRITICAL = 'critical'
+    UNKNOWN = 'unknown'
 
 
 class PortHealthMetrics:
@@ -336,7 +334,7 @@ class DeviceHealthMetrics:
         self.port_metrics: Dict[int, PortHealthMetrics] = {}
 
         # Device-specific metrics
-        self.firmware_version = ""
+        self.firmware_version = ''
         self.config_version = 0
         self.last_seen = datetime.now()
         self.reboot_count = 0
@@ -370,8 +368,7 @@ class DeviceHealthMetrics:
         # Port health average
         if self.port_metrics:
             port_scores = [
-                metrics.calculate_health_score()
-                for metrics in self.port_metrics.values()
+                metrics.calculate_health_score() for metrics in self.port_metrics.values()
             ]
             avg_port_score = sum(port_scores) / len(port_scores)
             scores.append(avg_port_score)
@@ -418,19 +415,21 @@ class NetworkTopologyChange:
     def __init__(self, change_type: str, device_id: str, details: Dict[str, Any]):
         """Initialize topology change record."""
         self.timestamp = datetime.now()
-        self.change_type = change_type  # 'device_added', 'device_removed', 'port_connected', 'port_disconnected'
+        self.change_type = (
+            change_type  # 'device_added', 'device_removed', 'port_connected', 'port_disconnected'
+        )
         self.device_id = device_id
         self.details = details
         self.severity = self._calculate_severity()
 
     def _calculate_severity(self) -> str:
         """Calculate change severity."""
-        if self.change_type in ["device_removed", "critical_port_down"]:
-            return "critical"
-        elif self.change_type in ["device_added", "port_disconnected"]:
-            return "warning"
+        if self.change_type in ['device_removed', 'critical_port_down']:
+            return 'critical'
+        elif self.change_type in ['device_added', 'port_disconnected']:
+            return 'warning'
         else:
-            return "info"
+            return 'info'
 
 
 class NetworkConfiguration:
@@ -455,18 +454,16 @@ class NetworkConfiguration:
         """Add topology connection."""
         self.topology_connections.append((device1_id, port1, device2_id, port2))
 
-    def compare_with(
-        self, other: "NetworkConfiguration"
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    def compare_with(self, other: 'NetworkConfiguration') -> Dict[str, List[Dict[str, Any]]]:
         """Compare with another configuration snapshot."""
         changes = {
-            "devices_added": [],
-            "devices_removed": [],
-            "devices_modified": [],
-            "connections_added": [],
-            "connections_removed": [],
-            "vlans_changed": [],
-            "port_profiles_changed": [],
+            'devices_added': [],
+            'devices_removed': [],
+            'devices_modified': [],
+            'connections_added': [],
+            'connections_removed': [],
+            'vlans_changed': [],
+            'port_profiles_changed': [],
         }
 
         # Compare devices
@@ -474,22 +471,22 @@ class NetworkConfiguration:
         other_devices = set(other.devices.keys())
 
         for device_id in other_devices - current_devices:
-            changes["devices_added"].append(
-                {"device_id": device_id, "config": other.devices[device_id]}
+            changes['devices_added'].append(
+                {'device_id': device_id, 'config': other.devices[device_id]}
             )
 
         for device_id in current_devices - other_devices:
-            changes["devices_removed"].append(
-                {"device_id": device_id, "config": self.devices[device_id]}
+            changes['devices_removed'].append(
+                {'device_id': device_id, 'config': self.devices[device_id]}
             )
 
         for device_id in current_devices & other_devices:
             if self.devices[device_id] != other.devices[device_id]:
-                changes["devices_modified"].append(
+                changes['devices_modified'].append(
                     {
-                        "device_id": device_id,
-                        "old_config": self.devices[device_id],
-                        "new_config": other.devices[device_id],
+                        'device_id': device_id,
+                        'old_config': self.devices[device_id],
+                        'new_config': other.devices[device_id],
                     }
                 )
 
@@ -498,22 +495,22 @@ class NetworkConfiguration:
         other_connections = set(other.topology_connections)
 
         for conn in other_connections - current_connections:
-            changes["connections_added"].append(
+            changes['connections_added'].append(
                 {
-                    "device1_id": conn[0],
-                    "port1": conn[1],
-                    "device2_id": conn[2],
-                    "port2": conn[3],
+                    'device1_id': conn[0],
+                    'port1': conn[1],
+                    'device2_id': conn[2],
+                    'port2': conn[3],
                 }
             )
 
         for conn in current_connections - other_connections:
-            changes["connections_removed"].append(
+            changes['connections_removed'].append(
                 {
-                    "device1_id": conn[0],
-                    "port1": conn[1],
-                    "device2_id": conn[2],
-                    "port2": conn[3],
+                    'device1_id': conn[0],
+                    'port1': conn[1],
+                    'device2_id': conn[2],
+                    'port2': conn[3],
                 }
             )
 
@@ -557,10 +554,7 @@ class NetworkAnalysisResult:
             health_scores.append(score)
 
             status = device_health.get_health_status()
-            if (
-                status == NetworkHealthStatus.EXCELLENT
-                or status == NetworkHealthStatus.GOOD
-            ):
+            if status == NetworkHealthStatus.EXCELLENT or status == NetworkHealthStatus.GOOD:
                 self.healthy_devices += 1
             elif status == NetworkHealthStatus.WARNING:
                 self.warning_devices += 1
@@ -580,12 +574,12 @@ class NetworkAnalysisResult:
         """Add improvement recommendation."""
         self.recommendations.append(
             {
-                "category": category,
-                "priority": priority,
-                "description": description,
-                "device_id": device_id,
-                "port_idx": port_idx,
-                "timestamp": datetime.now(),
+                'category': category,
+                'priority': priority,
+                'description': description,
+                'device_id': device_id,
+                'port_idx': port_idx,
+                'timestamp': datetime.now(),
             }
         )
 
@@ -598,16 +592,16 @@ class NetworkAnalysisResult:
             if health.get_health_status() == NetworkHealthStatus.CRITICAL:
                 issues.append(
                     {
-                        "type": "device_critical",
-                        "device_id": device_id,
-                        "description": f"Device {device_id} has critical health issues",
-                        "score": health.calculate_overall_health_score(),
+                        'type': 'device_critical',
+                        'device_id': device_id,
+                        'description': f'Device {device_id} has critical health issues',
+                        'score': health.calculate_overall_health_score(),
                     }
                 )
 
         # Security issues
         for issue in self.security_issues:
-            if issue.get("severity") == "critical":
+            if issue.get('severity') == 'critical':
                 issues.append(issue)
 
         return issues

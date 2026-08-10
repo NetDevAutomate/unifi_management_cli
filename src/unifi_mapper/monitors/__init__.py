@@ -2,4 +2,4 @@
 
 from .protect_monitor import ProtectMonitor
 
-__all__ = ["ProtectMonitor"]
+__all__ = ['ProtectMonitor']

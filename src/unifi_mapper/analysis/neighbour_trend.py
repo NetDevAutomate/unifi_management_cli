@@ -21,7 +21,7 @@ from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
-DEFAULT_BASELINE_PATH = "reports/neighbour-baseline.json"
+DEFAULT_BASELINE_PATH = 'reports/neighbour-baseline.json'
 
 # Signal change threshold (dB) — below this, treat as noise
 DEFAULT_SIGNAL_DELTA_DB = 10
@@ -44,20 +44,20 @@ async def snapshot_neighbours(
     # Keep only the fields we need for trend analysis
     entries = [
         {
-            "bssid": e.get("bssid", ""),
-            "essid": e.get("essid", ""),
-            "channel": e.get("channel", 0),
-            "signal": e.get("signal", -100),
-            "band": e.get("band", ""),
-            "ap_mac": e.get("ap_mac", ""),
+            'bssid': e.get('bssid', ''),
+            'essid': e.get('essid', ''),
+            'channel': e.get('channel', 0),
+            'signal': e.get('signal', -100),
+            'band': e.get('band', ''),
+            'ap_mac': e.get('ap_mac', ''),
         }
         for e in live
     ]
 
     snapshot = {
-        "timestamp": datetime.now().isoformat(),
-        "entry_count": len(entries),
-        "entries": entries,
+        'timestamp': datetime.now().isoformat(),
+        'entry_count': len(entries),
+        'entries': entries,
     }
 
     path = Path(output_path)
@@ -68,7 +68,7 @@ async def snapshot_neighbours(
 
 def _key(entry: dict[str, Any]) -> tuple[str, str]:
     """Index entries by (detecting AP MAC, neighbour BSSID) pair."""
-    return (entry.get("ap_mac", ""), entry.get("bssid", ""))
+    return (entry.get('ap_mac', ''), entry.get('bssid', ''))
 
 
 def _compare_snapshots(
@@ -77,8 +77,8 @@ def _compare_snapshots(
     signal_delta_threshold: int,
 ) -> dict[str, Any]:
     """Pure diff function — testable without hitting the network."""
-    baseline_map = {_key(e): e for e in baseline.get("entries", [])}
-    current_map = {_key(e): e for e in current.get("entries", [])}
+    baseline_map = {_key(e): e for e in baseline.get('entries', [])}
+    current_map = {_key(e): e for e in current.get('entries', [])}
 
     baseline_keys = set(baseline_map.keys())
     current_keys = set(current_map.keys())
@@ -93,48 +93,52 @@ def _compare_snapshots(
         prev = baseline_map[k]
         curr = current_map[k]
 
-        if prev.get("channel") != curr.get("channel"):
-            moved.append({
-                "ap_mac": curr.get("ap_mac", ""),
-                "bssid": curr.get("bssid", ""),
-                "essid": curr.get("essid", ""),
-                "from_channel": prev.get("channel"),
-                "to_channel": curr.get("channel"),
-                "signal": curr.get("signal"),
-            })
+        if prev.get('channel') != curr.get('channel'):
+            moved.append(
+                {
+                    'ap_mac': curr.get('ap_mac', ''),
+                    'bssid': curr.get('bssid', ''),
+                    'essid': curr.get('essid', ''),
+                    'from_channel': prev.get('channel'),
+                    'to_channel': curr.get('channel'),
+                    'signal': curr.get('signal'),
+                }
+            )
 
-        prev_signal = prev.get("signal", -100)
-        curr_signal = curr.get("signal", -100)
+        prev_signal = prev.get('signal', -100)
+        curr_signal = curr.get('signal', -100)
         delta = curr_signal - prev_signal
         if abs(delta) >= signal_delta_threshold:
-            signal_changes.append({
-                "ap_mac": curr.get("ap_mac", ""),
-                "bssid": curr.get("bssid", ""),
-                "essid": curr.get("essid", ""),
-                "channel": curr.get("channel"),
-                "signal_before": prev_signal,
-                "signal_after": curr_signal,
-                "delta_db": delta,
-            })
+            signal_changes.append(
+                {
+                    'ap_mac': curr.get('ap_mac', ''),
+                    'bssid': curr.get('bssid', ''),
+                    'essid': curr.get('essid', ''),
+                    'channel': curr.get('channel'),
+                    'signal_before': prev_signal,
+                    'signal_after': curr_signal,
+                    'delta_db': delta,
+                }
+            )
 
     # Sort for deterministic output
-    new_entries.sort(key=lambda e: e.get("signal", -100), reverse=True)
-    disappeared.sort(key=lambda e: e.get("signal", -100), reverse=True)
-    moved.sort(key=lambda e: e.get("signal", -100), reverse=True)
-    signal_changes.sort(key=lambda e: abs(e.get("delta_db", 0)), reverse=True)
+    new_entries.sort(key=lambda e: e.get('signal', -100), reverse=True)
+    disappeared.sort(key=lambda e: e.get('signal', -100), reverse=True)
+    moved.sort(key=lambda e: e.get('signal', -100), reverse=True)
+    signal_changes.sort(key=lambda e: abs(e.get('delta_db', 0)), reverse=True)
 
     return {
-        "baseline_timestamp": baseline.get("timestamp", ""),
-        "current_timestamp": current.get("timestamp", ""),
-        "signal_delta_threshold_db": signal_delta_threshold,
-        "new_count": len(new_entries),
-        "disappeared_count": len(disappeared),
-        "moved_count": len(moved),
-        "signal_changed_count": len(signal_changes),
-        "new": new_entries,
-        "disappeared": disappeared,
-        "moved": moved,
-        "signal_changes": signal_changes,
+        'baseline_timestamp': baseline.get('timestamp', ''),
+        'current_timestamp': current.get('timestamp', ''),
+        'signal_delta_threshold_db': signal_delta_threshold,
+        'new_count': len(new_entries),
+        'disappeared_count': len(disappeared),
+        'moved_count': len(moved),
+        'signal_changed_count': len(signal_changes),
+        'new': new_entries,
+        'disappeared': disappeared,
+        'moved': moved,
+        'signal_changes': signal_changes,
     }
 
 
@@ -154,9 +158,9 @@ async def detect_neighbour_trend(
     path = Path(baseline_path)
     if not path.exists():
         raise ToolError(
-            message=f"No neighbour baseline found at {baseline_path}. Run snapshot first.",
+            message=f'No neighbour baseline found at {baseline_path}. Run snapshot first.',
             error_code=ErrorCodes.NO_DATA,
-            suggestion="Run: unifi-mapper analyze neighbours --snapshot",
+            suggestion='Run: unifi-mapper analyze neighbours --snapshot',
         )
 
     baseline = json.loads(path.read_text())
@@ -167,16 +171,16 @@ async def detect_neighbour_trend(
 
     live = filter_live_rogue_entries(rogue_entries)
     current = {
-        "timestamp": datetime.now().isoformat(),
-        "entry_count": len(live),
-        "entries": [
+        'timestamp': datetime.now().isoformat(),
+        'entry_count': len(live),
+        'entries': [
             {
-                "bssid": e.get("bssid", ""),
-                "essid": e.get("essid", ""),
-                "channel": e.get("channel", 0),
-                "signal": e.get("signal", -100),
-                "band": e.get("band", ""),
-                "ap_mac": e.get("ap_mac", ""),
+                'bssid': e.get('bssid', ''),
+                'essid': e.get('essid', ''),
+                'channel': e.get('channel', 0),
+                'signal': e.get('signal', -100),
+                'band': e.get('band', ''),
+                'ap_mac': e.get('ap_mac', ''),
             }
             for e in live
         ],

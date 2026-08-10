@@ -68,7 +68,7 @@ class SiteManager:
         """Refresh the sites cache."""
         sites = await self._client.list_sites()
         self._sites_cache = {s.id: s for s in sites}
-        log.debug(f"Cached {len(self._sites_cache)} sites")
+        log.debug(f'Cached {len(self._sites_cache)} sites')
 
     async def get_all_sites(self, refresh: bool = False) -> list[SiteInfo]:
         """Get all sites.
@@ -151,10 +151,7 @@ class SiteManager:
             List of sites in the specified timezone.
         """
         sites = await self.get_all_sites()
-        return [
-            s for s in sites
-            if s.time_zone and s.time_zone.lower() == timezone.lower()
-        ]
+        return [s for s in sites if s.time_zone and s.time_zone.lower() == timezone.lower()]
 
     async def get_sites_by_country(self, country_code: str) -> list[SiteInfo]:
         """Get sites by country code.
@@ -167,10 +164,7 @@ class SiteManager:
         """
         sites = await self.get_all_sites()
         code_upper = country_code.upper()
-        return [
-            s for s in sites
-            if s.country_code and s.country_code.upper() == code_upper
-        ]
+        return [s for s in sites if s.country_code and s.country_code.upper() == code_upper]
 
     async def rename_site(self, site_id: str, new_name: str) -> SiteInfo:
         """Rename a site.
@@ -186,9 +180,7 @@ class SiteManager:
         self._sites_cache.clear()
         return result
 
-    async def update_site_description(
-        self, site_id: str, description: str
-    ) -> SiteInfo:
+    async def update_site_description(self, site_id: str, description: str) -> SiteInfo:
         """Update a site's description.
 
         Args:
@@ -333,16 +325,10 @@ class SiteManager:
             List of sites sorted by size (descending).
         """
         sites = await self.get_all_sites()
-        sorted_sites = sorted(
-            sites,
-            key=lambda s: s.total_devices_and_clients,
-            reverse=True
-        )
+        sorted_sites = sorted(sites, key=lambda s: s.total_devices_and_clients, reverse=True)
         return sorted_sites[:limit]
 
-    async def compare_sites(
-        self, site_id_1: str, site_id_2: str
-    ) -> dict[str, Any]:
+    async def compare_sites(self, site_id_1: str, site_id_2: str) -> dict[str, Any]:
         """Compare two sites.
 
         Args:
@@ -383,8 +369,7 @@ class SiteManager:
                 ),
                 'same_timezone': site1.time_zone == site2.time_zone,
                 'both_have_gateway': (
-                    (site1.gateway_mac is not None) and
-                    (site2.gateway_mac is not None)
+                    (site1.gateway_mac is not None) and (site2.gateway_mac is not None)
                 ),
             },
         }
@@ -404,27 +389,20 @@ class SiteManager:
         # Check for sites without gateways
         sites_without_gateway = [s for s in sites if not s.gateway_mac]
         if sites_without_gateway:
-            issues.append(
-                f"{len(sites_without_gateway)} sites without gateway configured"
-            )
+            issues.append(f'{len(sites_without_gateway)} sites without gateway configured')
 
         # Check for sites without timezone
         sites_without_tz = [s for s in sites if not s.time_zone]
         if sites_without_tz:
             recommendations.append(
-                f"{len(sites_without_tz)} sites have no timezone set - "
-                "consider setting for proper time-based features"
+                f'{len(sites_without_tz)} sites have no timezone set - '
+                'consider setting for proper time-based features'
             )
 
         # Check for empty sites
-        empty_sites = [
-            s for s in sites
-            if s.device_count == 0 and s.client_count == 0
-        ]
+        empty_sites = [s for s in sites if s.device_count == 0 and s.client_count == 0]
         if empty_sites:
-            recommendations.append(
-                f"{len(empty_sites)} sites have no devices or clients"
-            )
+            recommendations.append(f'{len(empty_sites)} sites have no devices or clients')
 
         return {
             'summary': {

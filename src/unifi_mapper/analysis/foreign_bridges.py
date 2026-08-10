@@ -89,11 +89,7 @@ def detect_foreign_bridges_from_data(
     port_profiles: list[dict[str, Any]] | None = None,
 ) -> ForeignBridgeReport:
     """Detect foreign bridges from already-fetched UniFi data."""
-    adopted = {
-        str(d.get('mac') or '').lower()
-        for d in devices
-        if d.get('mac')
-    }
+    adopted = {str(d.get('mac') or '').lower() for d in devices if d.get('mac')}
     profiles_by_id = {
         str(p.get('_id')): p for p in port_profiles or [] if p.get('_id') is not None
     }
@@ -173,55 +169,65 @@ def _findings_for(bridge: ForeignBridge) -> list[ForeignBridgeFinding]:
     out: list[ForeignBridgeFinding] = []
 
     if len(bridge.attached_to) >= 2:
-        out.append(ForeignBridgeFinding(
-            severity='CRITICAL',
-            bridge_mac=bridge.mac,
-            loop_risk=True,
-            message=(
-                f'Foreign bridge {label} is attached to {len(bridge.attached_to)} switch ports '
-                f'({where}). That is a second L2 path between those switches which RSTP cannot '
-                f'break, because a third-party bridge does not relay BPDUs. Expect broadcast '
-                f'storms or ports being error-disabled by loop protection.'
-            ),
-            recommendation=(
-                'Remove all but one wired connection to this bridge immediately. A device like '
-                'this must be a leaf with a single uplink, never a transit path between '
-                'switches.'
-            ),
-        ))
+        out.append(
+            ForeignBridgeFinding(
+                severity='CRITICAL',
+                bridge_mac=bridge.mac,
+                loop_risk=True,
+                message=(
+                    f'Foreign bridge {label} is attached to {len(bridge.attached_to)} switch ports '
+                    f'({where}). That is a second L2 path between those switches which RSTP cannot '
+                    f'break, because a third-party bridge does not relay BPDUs. Expect broadcast '
+                    f'storms or ports being error-disabled by loop protection.'
+                ),
+                recommendation=(
+                    'Remove all but one wired connection to this bridge immediately. A device like '
+                    'this must be a leaf with a single uplink, never a transit path between '
+                    'switches.'
+                ),
+            )
+        )
 
     if bridge.trunk_ports:
-        out.append(ForeignBridgeFinding(
-            severity='CRITICAL',
-            bridge_mac=bridge.mac,
-            message=(
-                f'Foreign bridge {label} at {where} is on a trunk profile '
-                f'({", ".join(sorted(set(bridge.trunk_ports)))}). It therefore receives every '
-                f'tagged VLAN and can bridge them across its own fabric, including the '
-                f'management VLAN.'
-            ),
-            recommendation=(
-                'Move this port to an access profile (forward=native, tagged_vlan_mgmt=block_all). '
-                'Reserve trunk profiles for switch-to-switch and UniFi AP links only.'
-            ),
-        ))
+        out.append(
+            ForeignBridgeFinding(
+                severity='CRITICAL',
+                bridge_mac=bridge.mac,
+                message=(
+                    f'Foreign bridge {label} at {where} is on a trunk profile '
+                    f'({", ".join(sorted(set(bridge.trunk_ports)))}). It therefore receives every '
+                    f'tagged VLAN and can bridge them across its own fabric, including the '
+                    f'management VLAN.'
+                ),
+                recommendation=(
+                    'Move this port to an access profile (forward=native, tagged_vlan_mgmt=block_all). '
+                    'Reserve trunk profiles for switch-to-switch and UniFi AP links only.'
+                ),
+            )
+        )
 
     if not out:
-        out.append(ForeignBridgeFinding(
-            severity='WARNING',
-            bridge_mac=bridge.mac,
-            message=(
-                f'Foreign bridge {label} at {where} has {bridge.downstream_clients} client(s) '
-                f'behind it. It is not an adopted UniFi device, so it is invisible to RSTP and '
-                f'to UniFi client tracking.'
-                + (' It is itself learned behind another foreign bridge, which means the fabric '
-                   'is performing transit bridging.' if bridge.behind_another_bridge else '')
-            ),
-            recommendation=(
-                'Confirm this device is intended, that it has exactly one wired uplink, and that '
-                'its port uses an access profile with BPDU Guard enabled.'
-            ),
-        ))
+        out.append(
+            ForeignBridgeFinding(
+                severity='WARNING',
+                bridge_mac=bridge.mac,
+                message=(
+                    f'Foreign bridge {label} at {where} has {bridge.downstream_clients} client(s) '
+                    f'behind it. It is not an adopted UniFi device, so it is invisible to RSTP and '
+                    f'to UniFi client tracking.'
+                    + (
+                        ' It is itself learned behind another foreign bridge, which means the fabric '
+                        'is performing transit bridging.'
+                        if bridge.behind_another_bridge
+                        else ''
+                    )
+                ),
+                recommendation=(
+                    'Confirm this device is intended, that it has exactly one wired uplink, and that '
+                    'its port uses an access profile with BPDU Guard enabled.'
+                ),
+            )
+        )
 
     return out
 

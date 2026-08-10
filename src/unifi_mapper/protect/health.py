@@ -10,7 +10,7 @@ Example:
     >>>
     >>> async with UniFiProtectClient(config) as client:
     ...     monitor = DeviceHealthMonitor(client)
-    ...     monitor.subscribe_health_changes(lambda c: print(f"Health changed: {c}"))
+    ...     monitor.subscribe_health_changes(lambda c: print(f'Health changed: {c}'))
     ...     await monitor.start()
     ...     # ... monitoring runs in background ...
     ...     monitor.stop()
@@ -43,10 +43,10 @@ if TYPE_CHECKING:
 class HealthTransition(str, Enum):
     """Types of health status transitions."""
 
-    DEGRADED = 'degraded'     # Health worsened
-    IMPROVED = 'improved'     # Health got better
-    RECOVERED = 'recovered'   # Device back to healthy
-    FAILED = 'failed'        # Device went offline/critical
+    DEGRADED = 'degraded'  # Health worsened
+    IMPROVED = 'improved'  # Health got better
+    RECOVERED = 'recovered'  # Device back to healthy
+    FAILED = 'failed'  # Device went offline/critical
 
 
 @dataclass
@@ -163,7 +163,7 @@ class DeviceHealthMonitor:
         >>> await monitor.start()
         >>> # ... runs in background ...
         >>> summary = monitor.get_device_summary('device-123')
-        >>> print(f"Uptime: {summary.uptime_percentage}%")
+        >>> print(f'Uptime: {summary.uptime_percentage}%')
         >>> monitor.stop()
     """
 
@@ -447,9 +447,7 @@ class DeviceHealthMonitor:
 
         if old_status != new_status:
             transition = self._determine_transition(old_status, new_status)
-            self._handle_status_change(
-                device_id, old_status, new_status, transition, new_health
-            )
+            self._handle_status_change(device_id, old_status, new_status, transition, new_health)
 
         # Record history periodically
         self._record_history(device_id, new_health)
@@ -494,7 +492,10 @@ class DeviceHealthMonitor:
             elif health.disconnect_count >= self._thresholds.critical_disconnect_count:
                 health.status = DeviceHealthStatus.CRITICAL
                 issues.append(f'{health.disconnect_count} disconnections (critical)')
-            elif health.battery_level is not None and health.battery_level <= self._thresholds.low_battery_critical:
+            elif (
+                health.battery_level is not None
+                and health.battery_level <= self._thresholds.low_battery_critical
+            ):
                 health.status = DeviceHealthStatus.CRITICAL
                 issues.append(f'Critical battery: {health.battery_level}%')
 
@@ -502,7 +503,10 @@ class DeviceHealthMonitor:
             elif health.disconnect_count >= self._thresholds.warning_disconnect_count:
                 health.status = DeviceHealthStatus.WARNING
                 issues.append(f'{health.disconnect_count} disconnections')
-            elif health.battery_level is not None and health.battery_level <= self._thresholds.low_battery_warning:
+            elif (
+                health.battery_level is not None
+                and health.battery_level <= self._thresholds.low_battery_warning
+            ):
                 health.status = DeviceHealthStatus.WARNING
                 issues.append(f'Low battery: {health.battery_level}%')
 
@@ -618,7 +622,11 @@ class DeviceHealthMonitor:
         )
 
         # Log the change
-        log_level = 'warning' if transition in (HealthTransition.FAILED, HealthTransition.DEGRADED) else 'info'
+        log_level = (
+            'warning'
+            if transition in (HealthTransition.FAILED, HealthTransition.DEGRADED)
+            else 'info'
+        )
         getattr(logger, log_level)(
             f'Health change for {change.device_name or device_id}: '
             f'{change.old_status.value} -> {change.new_status.value} '
@@ -654,15 +662,13 @@ class DeviceHealthMonitor:
 
         # Trim history
         if len(history) > self.MAX_HISTORY_PER_DEVICE:
-            self._device_history[device_id] = history[-self.MAX_HISTORY_PER_DEVICE:]
+            self._device_history[device_id] = history[-self.MAX_HISTORY_PER_DEVICE :]
 
         # Update healthy time tracking
         if health.status == DeviceHealthStatus.HEALTHY:
             # Approximate: add check interval to healthy time
             current = self._total_healthy_time.get(device_id, timedelta())
-            self._total_healthy_time[device_id] = current + timedelta(
-                seconds=self._check_interval
-            )
+            self._total_healthy_time[device_id] = current + timedelta(seconds=self._check_interval)
 
     def subscribe_health_changes(
         self,
@@ -715,10 +721,7 @@ class DeviceHealthMonitor:
         Returns:
             List of devices with that status.
         """
-        return [
-            health for health in self._device_health.values()
-            if health.status == status
-        ]
+        return [health for health in self._device_health.values() if health.status == status]
 
     def get_unhealthy_devices(self) -> list[DeviceHealth]:
         """Get all devices that are not healthy.
@@ -727,7 +730,8 @@ class DeviceHealthMonitor:
             List of devices with warning, critical, or offline status.
         """
         return [
-            health for health in self._device_health.values()
+            health
+            for health in self._device_health.values()
             if health.status != DeviceHealthStatus.HEALTHY
         ]
 
@@ -775,9 +779,7 @@ class DeviceHealthMonitor:
         recovery_times = self._recovery_times.get(device_id, [])
         if recovery_times:
             total_seconds = sum(rt.total_seconds() for rt in recovery_times)
-            summary.average_recovery_time = timedelta(
-                seconds=total_seconds / len(recovery_times)
-            )
+            summary.average_recovery_time = timedelta(seconds=total_seconds / len(recovery_times))
 
         # Determine health trend
         summary.health_trend = self._calculate_health_trend(history)
@@ -807,9 +809,7 @@ class DeviceHealthMonitor:
         def unhealthy_ratio(entries: list[HealthHistoryEntry]) -> float:
             if not entries:
                 return 0.0
-            unhealthy = sum(
-                1 for e in entries if e.status != DeviceHealthStatus.HEALTHY
-            )
+            unhealthy = sum(1 for e in entries if e.status != DeviceHealthStatus.HEALTHY)
             return unhealthy / len(entries)
 
         first_ratio = unhealthy_ratio(first_half)

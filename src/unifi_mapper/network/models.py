@@ -195,13 +195,13 @@ class DeviceStatistics(BaseModel):
         minutes, secs = divmod(remainder, 60)
         parts = []
         if days:
-            parts.append(f"{days}d")
+            parts.append(f'{days}d')
         if hours:
-            parts.append(f"{hours}h")
+            parts.append(f'{hours}h')
         if minutes:
-            parts.append(f"{minutes}m")
+            parts.append(f'{minutes}m')
         if secs or not parts:
-            parts.append(f"{secs}s")
+            parts.append(f'{secs}s')
         return ' '.join(parts)
 
     @property
@@ -274,9 +274,7 @@ class DHCPGuarding(BaseModel):
     """DHCP Guarding configuration for a network."""
 
     enabled: bool = False
-    trusted_servers: Annotated[
-        list[str], Field(alias='trustedServers', default_factory=list)
-    ]
+    trusted_servers: Annotated[list[str], Field(alias='trustedServers', default_factory=list)]
 
     model_config = {'populate_by_name': True}
 
@@ -453,7 +451,7 @@ class ClientFingerprint(BaseModel):
         if self.dev_family:
             parts.append(self.dev_family)
         if self.os_name:
-            parts.append(f"({self.os_name})")
+            parts.append(f'({self.os_name})')
         return ' '.join(parts) if parts else 'Unknown Device'
 
 
@@ -601,9 +599,7 @@ class ACLProtocol(str, Enum):
 class ACLDeviceFilter(BaseModel):
     """ACL rule device filter for switch enforcement."""
 
-    device_ids: Annotated[
-        list[str] | None, Field(alias='deviceIds', default=None)
-    ]
+    device_ids: Annotated[list[str] | None, Field(alias='deviceIds', default=None)]
 
     model_config = {'populate_by_name': True}
 
@@ -615,15 +611,9 @@ class ACLTrafficFilter(BaseModel):
     ip_addresses_or_subnets: Annotated[
         list[str], Field(alias='ipAddressesOrSubnets', default_factory=list)
     ]
-    ports_filter: Annotated[
-        list[int], Field(alias='portsFilter', default_factory=list)
-    ]
-    network_ids: Annotated[
-        list[str], Field(alias='networkIds', default_factory=list)
-    ]
-    mac_addresses: Annotated[
-        list[str], Field(alias='macAddresses', default_factory=list)
-    ]
+    ports_filter: Annotated[list[int], Field(alias='portsFilter', default_factory=list)]
+    network_ids: Annotated[list[str], Field(alias='networkIds', default_factory=list)]
+    mac_addresses: Annotated[list[str], Field(alias='macAddresses', default_factory=list)]
     prefix_length: Annotated[int | None, Field(alias='prefixLength')] = None
 
     model_config = {'populate_by_name': True}
@@ -642,15 +632,9 @@ class ACLRule(BaseModel):
         ACLDeviceFilter | None, Field(alias='enforcingDeviceFilter')
     ] = None
     index: int = 0
-    source_filter: Annotated[
-        ACLTrafficFilter | None, Field(alias='sourceFilter')
-    ] = None
-    destination_filter: Annotated[
-        ACLTrafficFilter | None, Field(alias='destinationFilter')
-    ] = None
-    protocol_filter: Annotated[
-        list[ACLProtocol] | None, Field(alias='protocolFilter')
-    ] = None
+    source_filter: Annotated[ACLTrafficFilter | None, Field(alias='sourceFilter')] = None
+    destination_filter: Annotated[ACLTrafficFilter | None, Field(alias='destinationFilter')] = None
+    protocol_filter: Annotated[list[ACLProtocol] | None, Field(alias='protocolFilter')] = None
     network_id: Annotated[str | None, Field(alias='networkId')] = None
     origin: str = ''  # 'SYSTEM', 'USER'
 
@@ -750,6 +734,6 @@ def _bytes_to_human(num_bytes: int) -> str:
     """Convert bytes to human-readable format."""
     for unit in ('B', 'KB', 'MB', 'GB', 'TB', 'PB'):
         if abs(num_bytes) < 1024.0:
-            return f"{num_bytes:.2f} {unit}"
+            return f'{num_bytes:.2f} {unit}'
         num_bytes /= 1024.0  # type: ignore[assignment]
-    return f"{num_bytes:.2f} EB"
+    return f'{num_bytes:.2f} EB'

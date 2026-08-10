@@ -85,7 +85,7 @@ class FirewallManager:
         policies = await self._client.list_firewall_policies()
         self._policies_cache = {p.id: p for p in policies}
 
-        log.debug(f"Cached {len(self._zones_cache)} zones, {len(self._policies_cache)} policies")
+        log.debug(f'Cached {len(self._zones_cache)} zones, {len(self._policies_cache)} policies')
 
     async def get_zones(self, refresh: bool = False) -> list[FirewallZone]:
         """Get all firewall zones.
@@ -145,13 +145,9 @@ class FirewallManager:
         policies = await self.get_policies()
         matching = []
         for policy in policies:
-            source_match = (
-                policy.source and
-                policy.source.firewall_zone_id == source_zone_id
-            )
+            source_match = policy.source and policy.source.firewall_zone_id == source_zone_id
             dest_match = (
-                policy.destination and
-                policy.destination.firewall_zone_id == destination_zone_id
+                policy.destination and policy.destination.firewall_zone_id == destination_zone_id
             )
             if source_match and dest_match:
                 matching.append(policy)
@@ -209,7 +205,7 @@ class FirewallManager:
         """
         policy = await self._client.enable_policy_logging(policy_id, enabled=True)
         self._policies_cache[policy_id] = policy
-        log.info(f"Enabled logging for policy {policy.name}")
+        log.info(f'Enabled logging for policy {policy.name}')
         return policy
 
     async def disable_logging_for_policy(self, policy_id: str) -> FirewallPolicy:
@@ -223,7 +219,7 @@ class FirewallManager:
         """
         policy = await self._client.enable_policy_logging(policy_id, enabled=False)
         self._policies_cache[policy_id] = policy
-        log.info(f"Disabled logging for policy {policy.name}")
+        log.info(f'Disabled logging for policy {policy.name}')
         return policy
 
     async def enable_logging_for_all_policies(
@@ -258,9 +254,9 @@ class FirewallManager:
                 updated_policy = await self.enable_logging_for_policy(policy.id)
                 updated.append(updated_policy)
             except Exception as e:
-                log.warning(f"Failed to enable logging for {policy.name}: {e}")
+                log.warning(f'Failed to enable logging for {policy.name}: {e}')
 
-        log.info(f"Enabled logging for {len(updated)} policies")
+        log.info(f'Enabled logging for {len(updated)} policies')
         return updated
 
     async def get_policies_without_logging(self) -> list[FirewallPolicy]:
@@ -297,11 +293,11 @@ class FirewallManager:
         """
         source_zone = await self.get_zone_by_name(source_zone_name)
         if not source_zone:
-            raise ValueError(f"Source zone not found: {source_zone_name}")
+            raise ValueError(f'Source zone not found: {source_zone_name}')
 
         dest_zone = await self.get_zone_by_name(destination_zone_name)
         if not dest_zone:
-            raise ValueError(f"Destination zone not found: {destination_zone_name}")
+            raise ValueError(f'Destination zone not found: {destination_zone_name}')
 
         policy = await self._client.create_firewall_policy(
             name=name,
@@ -314,7 +310,7 @@ class FirewallManager:
         )
 
         self._policies_cache[policy.id] = policy
-        log.info(f"Created block policy: {name}")
+        log.info(f'Created block policy: {name}')
         return policy
 
     async def create_allow_policy(
@@ -342,11 +338,11 @@ class FirewallManager:
         """
         source_zone = await self.get_zone_by_name(source_zone_name)
         if not source_zone:
-            raise ValueError(f"Source zone not found: {source_zone_name}")
+            raise ValueError(f'Source zone not found: {source_zone_name}')
 
         dest_zone = await self.get_zone_by_name(destination_zone_name)
         if not dest_zone:
-            raise ValueError(f"Destination zone not found: {destination_zone_name}")
+            raise ValueError(f'Destination zone not found: {destination_zone_name}')
 
         policy = await self._client.create_firewall_policy(
             name=name,
@@ -359,7 +355,7 @@ class FirewallManager:
         )
 
         self._policies_cache[policy.id] = policy
-        log.info(f"Created allow policy: {name}")
+        log.info(f'Created allow policy: {name}')
         return policy
 
     async def get_security_audit_report(self) -> dict:
@@ -394,7 +390,8 @@ class FirewallManager:
                 'block_policies': len(block_policies),
                 'allow_policies': len(allow_policies),
                 'policies_with_logging': len(policies_with_logging),
-                'block_policies_without_logging': len(block_policies) - len(block_policies_with_logging),
+                'block_policies_without_logging': len(block_policies)
+                - len(block_policies_with_logging),
                 'disabled_policies': len(disabled_policies),
                 'user_defined_policies': len(user_policies),
                 'system_policies': len(system_policies),
@@ -413,7 +410,8 @@ class FirewallManager:
             ],
             'policies_without_logging': [
                 {'id': p.id, 'name': p.name, 'action': p.action.type.value}
-                for p in policies if not p.logging_enabled
+                for p in policies
+                if not p.logging_enabled
             ],
         }
 
@@ -428,20 +426,21 @@ class FirewallManager:
 
         # Check block policies without logging
         block_without_logging = [
-            p for p in all_policies
+            p
+            for p in all_policies
             if p.action.type == FirewallActionType.BLOCK and not p.logging_enabled
         ]
         if block_without_logging:
             recommendations.append(
-                f"Enable logging for {len(block_without_logging)} BLOCK policies "
-                "to improve security visibility"
+                f'Enable logging for {len(block_without_logging)} BLOCK policies '
+                'to improve security visibility'
             )
 
         # Check for disabled policies
         if disabled_policies:
             recommendations.append(
-                f"Review {len(disabled_policies)} disabled policies - "
-                "consider removing if no longer needed"
+                f'Review {len(disabled_policies)} disabled policies - '
+                'consider removing if no longer needed'
             )
 
         # Check logging coverage
@@ -451,8 +450,8 @@ class FirewallManager:
             coverage_percent = (logging_coverage / total_policies) * 100
             if coverage_percent < 50:
                 recommendations.append(
-                    f"Logging coverage is only {coverage_percent:.0f}% - "
-                    "consider enabling for more policies"
+                    f'Logging coverage is only {coverage_percent:.0f}% - '
+                    'consider enabling for more policies'
                 )
 
         return recommendations

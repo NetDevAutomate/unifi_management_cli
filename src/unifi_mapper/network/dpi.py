@@ -72,7 +72,7 @@ class DPIAnalytics:
         >>> analytics = DPIAnalytics(client)
         >>> categories = await analytics.get_categories_with_apps()
         >>> for cat in categories:
-        ...     print(f"{cat.category.name}: {cat.application_count} apps")
+        ...     print(f'{cat.category.name}: {cat.application_count} apps')
     """
 
     def __init__(self, client: UniFiNetworkClient) -> None:
@@ -94,8 +94,8 @@ class DPIAnalytics:
         self._applications_cache = {a.id: a for a in applications}
 
         log.debug(
-            f"Cached {len(self._categories_cache)} categories, "
-            f"{len(self._applications_cache)} applications"
+            f'Cached {len(self._categories_cache)} categories, '
+            f'{len(self._applications_cache)} applications'
         )
 
     async def get_categories(self, refresh: bool = False) -> list[DPICategory]:
@@ -187,11 +187,13 @@ class DPIAnalytics:
         stats = []
         for category in categories:
             category_apps = apps_by_category.get(category.id, [])
-            stats.append(DPICategoryStats(
-                category=category,
-                application_count=len(category_apps),
-                applications=category_apps,
-            ))
+            stats.append(
+                DPICategoryStats(
+                    category=category,
+                    application_count=len(category_apps),
+                    applications=category_apps,
+                )
+            )
 
         # Sort by application count descending
         stats.sort(key=lambda s: s.application_count, reverse=True)
@@ -214,10 +216,7 @@ class DPIAnalytics:
         applications = await self.get_applications()
         query_lower = query.lower()
 
-        matching = [
-            app for app in applications
-            if query_lower in app.name.lower()
-        ]
+        matching = [app for app in applications if query_lower in app.name.lower()]
 
         return matching[:limit]
 
@@ -280,8 +279,7 @@ class DPIAnalytics:
             'total_applications': len(applications),
             'applications_per_category': dict(sorted_categories),
             'categories': [
-                {'id': c.id, 'name': c.name}
-                for c in sorted(categories, key=lambda c: c.name)
+                {'id': c.id, 'name': c.name} for c in sorted(categories, key=lambda c: c.name)
             ],
         }
 
@@ -340,6 +338,6 @@ def _bytes_to_human(num_bytes: int) -> str:
     """Convert bytes to human-readable format."""
     for unit in ('B', 'KB', 'MB', 'GB', 'TB', 'PB'):
         if abs(num_bytes) < 1024.0:
-            return f"{num_bytes:.2f} {unit}"
+            return f'{num_bytes:.2f} {unit}'
         num_bytes /= 1024.0  # type: ignore[assignment]
-    return f"{num_bytes:.2f} EB"
+    return f'{num_bytes:.2f} EB'

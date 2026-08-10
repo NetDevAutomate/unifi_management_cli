@@ -77,15 +77,30 @@ def diff_stp_snapshots(before: STPSnapshot, after: STPSnapshot) -> STPSnapshotDi
         old = before.switches.get(switch_id)
         new = after.switches.get(switch_id)
         if old is None or new is None:
-            changes.append(STPSnapshotChange(change_type='switch_presence_changed', subject=switch_id, before=old, after=new))
+            changes.append(
+                STPSnapshotChange(
+                    change_type='switch_presence_changed', subject=switch_id, before=old, after=new
+                )
+            )
             continue
         if old.get('priority') != new.get('priority'):
-            changes.append(STPSnapshotChange(change_type='priority_changed', subject=switch_id, before=old.get('priority'), after=new.get('priority')))
+            changes.append(
+                STPSnapshotChange(
+                    change_type='priority_changed',
+                    subject=switch_id,
+                    before=old.get('priority'),
+                    after=new.get('priority'),
+                )
+            )
     for port_id in sorted(set(before.ports) | set(after.ports)):
         old = before.ports.get(port_id)
         new = after.ports.get(port_id)
         if old is None or new is None:
-            changes.append(STPSnapshotChange(change_type='port_presence_changed', subject=port_id, before=old, after=new))
+            changes.append(
+                STPSnapshotChange(
+                    change_type='port_presence_changed', subject=port_id, before=old, after=new
+                )
+            )
             continue
         for key, change_type in (
             ('state', 'port_state_changed'),
@@ -93,7 +108,14 @@ def diff_stp_snapshots(before: STPSnapshot, after: STPSnapshot) -> STPSnapshotDi
             ('link_speed_mbps', 'link_speed_changed'),
         ):
             if old.get(key) != new.get(key):
-                changes.append(STPSnapshotChange(change_type=change_type, subject=port_id, before=old.get(key), after=new.get(key)))
+                changes.append(
+                    STPSnapshotChange(
+                        change_type=change_type,
+                        subject=port_id,
+                        before=old.get(key),
+                        after=new.get(key),
+                    )
+                )
     if before.connections != after.connections:
         changes.append(
             STPSnapshotChange(

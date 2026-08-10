@@ -84,11 +84,11 @@ class NetworkTopology:
         if not source_port:
             source_port = PortInfo(
                 idx=source_port_idx,
-                name=f"Port {source_port_idx}",
+                name=f'Port {source_port_idx}',
                 up=True,
                 enabled=True,
                 poe=False,
-                media="RJ45",
+                media='RJ45',
                 speed=1000,
                 lldp_info={},
             )
@@ -97,11 +97,11 @@ class NetworkTopology:
         if not target_port:
             target_port = PortInfo(
                 idx=target_port_idx,
-                name=f"Port {target_port_idx}",
+                name=f'Port {target_port_idx}',
                 up=True,
                 enabled=True,
                 poe=False,
-                media="RJ45",
+                media='RJ45',
                 speed=1000,
                 lldp_info={},
             )
@@ -110,12 +110,12 @@ class NetworkTopology:
         # Add the connection
         self.connections.append(
             {
-                "source_device_id": source_device_id,
-                "target_device_id": target_device_id,
-                "source_port_idx": source_port_idx,
-                "target_port_idx": target_port_idx,
-                "source_port_name": source_port.name,
-                "target_port_name": target_port.name,
+                'source_device_id': source_device_id,
+                'target_device_id': target_device_id,
+                'source_port_idx': source_port_idx,
+                'target_port_idx': target_port_idx,
+                'source_port_name': source_port.name,
+                'target_port_name': target_port.name,
             }
         )
 
@@ -132,24 +132,24 @@ class NetworkTopology:
             return False
 
         device = self.devices[device_id]
-        model_lower = device.model.lower() if device.model else ""
-        name_lower = device.name.lower() if device.name else ""
+        model_lower = device.model.lower() if device.model else ''
+        name_lower = device.name.lower() if device.name else ''
 
         # Check for UniFi device prefixes
         unifi_keywords = [
-            "u6",
-            "u7",
-            "uap",
-            "usw",
-            "udm",
-            "usg",
-            "ugw",
-            "unifi",
-            "us-",
-            "us8",
-            "us16",
-            "us24",
-            "us48",
+            'u6',
+            'u7',
+            'uap',
+            'usw',
+            'udm',
+            'usg',
+            'ugw',
+            'unifi',
+            'us-',
+            'us8',
+            'us16',
+            'us24',
+            'us48',
         ]
 
         # Check model for UniFi keywords
@@ -177,36 +177,36 @@ class NetworkTopology:
             return False
 
         device = self.devices[device_id]
-        model_lower = device.model.lower() if device.model else ""
-        name_lower = device.name.lower() if device.name else ""
+        model_lower = device.model.lower() if device.model else ''
+        name_lower = device.name.lower() if device.name else ''
 
         # Comprehensive check for switch identifiers
         switch_model_keywords = [
-            "usw",
-            "switch",
-            "flex",
-            "ultra",
-            "us-",
-            "us8",
-            "us16",
-            "us24",
-            "us48",
-            "usl",
-            "enterprise",
-            "lite",
-            "poe",
-            "2.5g",
-            "aggregation",
-            "sw",
-            "us8-60w",
-            "usw-flex",
-            "usw-lite",
-            "usw-pro",
-            "usw-enterprise",
-            "usw-aggregation",
+            'usw',
+            'switch',
+            'flex',
+            'ultra',
+            'us-',
+            'us8',
+            'us16',
+            'us24',
+            'us48',
+            'usl',
+            'enterprise',
+            'lite',
+            'poe',
+            '2.5g',
+            'aggregation',
+            'sw',
+            'us8-60w',
+            'usw-flex',
+            'usw-lite',
+            'usw-pro',
+            'usw-enterprise',
+            'usw-aggregation',
         ]
 
-        switch_name_keywords = ["switch", "flex", "sw", "usw"]
+        switch_name_keywords = ['switch', 'flex', 'sw', 'usw']
 
         # Check model for switch keywords
         for keyword in switch_model_keywords:
@@ -233,10 +233,10 @@ class NetworkTopology:
             return False
 
         device = self.devices[device_id]
-        model_lower = device.model.lower() if device.model else ""
-        name_lower = device.name.lower() if device.name else ""
+        model_lower = device.model.lower() if device.model else ''
+        name_lower = device.name.lower() if device.name else ''
 
-        router_keywords = ["ugw", "usg", "udm", "gateway", "router", "dream machine"]
+        router_keywords = ['ugw', 'usg', 'udm', 'gateway', 'router', 'dream machine']
 
         # Check model for router keywords
         for keyword in router_keywords:
@@ -263,19 +263,19 @@ class NetworkTopology:
             return False
 
         device = self.devices[device_id]
-        model_lower = device.model.lower() if device.model else ""
-        name_lower = device.name.lower() if device.name else ""
+        model_lower = device.model.lower() if device.model else ''
+        name_lower = device.name.lower() if device.name else ''
 
         ap_keywords = [
-            "uap",
-            "ap",
-            "u6",
-            "u7",
-            "ac",
-            "nanostation",
-            "litebeam",
-            "iw",
-            "access point",
+            'uap',
+            'ap',
+            'u6',
+            'u7',
+            'ac',
+            'nanostation',
+            'litebeam',
+            'iw',
+            'access point',
         ]
 
         # Check model for AP keywords
@@ -310,8 +310,8 @@ class NetworkTopology:
         connected_devices = set()
 
         for connection in self.connections:
-            source_id = connection.get("source_device_id")
-            target_id = connection.get("target_device_id")
+            source_id = connection.get('source_device_id')
+            target_id = connection.get('target_device_id')
 
             if source_id in switches and target_id in switches + routers:
                 connected_switches.add(source_id)
@@ -344,19 +344,18 @@ class NetworkTopology:
                 # Add an inferred connection
                 self.connections.append(
                     {
-                        "source_device_id": switch_id,
-                        "target_device_id": router_id,
-                        "source_port_idx": 1,  # Assume port 1 for simplicity
-                        "target_port_idx": len(self.connections)
-                        + 1,  # Use a unique port number
-                        "source_port_name": "Port 1 (inferred)",
-                        "target_port_name": f"Port {len(self.connections) + 1} (inferred)",
-                        "inferred": True,
+                        'source_device_id': switch_id,
+                        'target_device_id': router_id,
+                        'source_port_idx': 1,  # Assume port 1 for simplicity
+                        'target_port_idx': len(self.connections) + 1,  # Use a unique port number
+                        'source_port_name': 'Port 1 (inferred)',
+                        'target_port_name': f'Port {len(self.connections) + 1} (inferred)',
+                        'inferred': True,
                     }
                 )
 
                 log.info(
-                    f"Inferred connection from switch {self.devices[switch_id].name} to router {self.devices[router_id].name}"
+                    f'Inferred connection from switch {self.devices[switch_id].name} to router {self.devices[router_id].name}'
                 )
             # If no routers, connect to another switch that is already connected
             elif connected_switches:
@@ -365,19 +364,19 @@ class NetworkTopology:
                     # Add an inferred connection
                     self.connections.append(
                         {
-                            "source_device_id": switch_id,
-                            "target_device_id": connected_switch,
-                            "source_port_idx": 1,  # Assume port 1 for simplicity
-                            "target_port_idx": len(self.connections)
+                            'source_device_id': switch_id,
+                            'target_device_id': connected_switch,
+                            'source_port_idx': 1,  # Assume port 1 for simplicity
+                            'target_port_idx': len(self.connections)
                             + 1,  # Use a unique port number
-                            "source_port_name": "Port 1 (inferred)",
-                            "target_port_name": f"Port {len(self.connections) + 1} (inferred)",
-                            "inferred": True,
+                            'source_port_name': 'Port 1 (inferred)',
+                            'target_port_name': f'Port {len(self.connections) + 1} (inferred)',
+                            'inferred': True,
                         }
                     )
 
                     log.info(
-                        f"Inferred connection from switch {self.devices[switch_id].name} to switch {self.devices[connected_switch].name}"
+                        f'Inferred connection from switch {self.devices[switch_id].name} to switch {self.devices[connected_switch].name}'
                     )
                     break
             # If no routers or connected switches, connect to another switch
@@ -388,25 +387,23 @@ class NetworkTopology:
                         # Add an inferred connection
                         self.connections.append(
                             {
-                                "source_device_id": switch_id,
-                                "target_device_id": other_switch,
-                                "source_port_idx": 1,  # Assume port 1 for simplicity
-                                "target_port_idx": len(self.connections)
+                                'source_device_id': switch_id,
+                                'target_device_id': other_switch,
+                                'source_port_idx': 1,  # Assume port 1 for simplicity
+                                'target_port_idx': len(self.connections)
                                 + 1,  # Use a unique port number
-                                "source_port_name": "Port 1 (inferred)",
-                                "target_port_name": f"Port {len(self.connections) + 1} (inferred)",
-                                "inferred": True,
+                                'source_port_name': 'Port 1 (inferred)',
+                                'target_port_name': f'Port {len(self.connections) + 1} (inferred)',
+                                'inferred': True,
                             }
                         )
 
                         log.info(
-                            f"Inferred connection from switch {self.devices[switch_id].name} to switch {self.devices[other_switch].name}"
+                            f'Inferred connection from switch {self.devices[switch_id].name} to switch {self.devices[other_switch].name}'
                         )
                         break
 
-    def generate_png_diagram(
-        self, output_path: str, layout_style: str = "hierarchical"
-    ) -> None:
+    def generate_png_diagram(self, output_path: str, layout_style: str = 'hierarchical') -> None:
         """Generate a PNG diagram using Graphviz with hierarchical layout.
 
         Args:
@@ -421,27 +418,23 @@ class NetworkTopology:
 
             # Render to PNG
             graph = graphviz.Source(dot_source)
-            output_base = str(output_path).replace(".png", "")
-            graph.render(output_base, format="png", cleanup=True, view=False)
+            output_base = str(output_path).replace('.png', '')
+            graph.render(output_base, format='png', cleanup=True, view=False)
 
-            log.info(f"Generated PNG diagram ({layout_style} layout): {output_path}")
+            log.info(f'Generated PNG diagram ({layout_style} layout): {output_path}')
 
         except ImportError:
-            log.error(
-                "graphviz package not installed. Install with: uv pip install graphviz"
-            )
+            log.error('graphviz package not installed. Install with: uv pip install graphviz')
             # Create placeholder
-            with open(output_path, "w") as f:
+            with open(output_path, 'w') as f:
                 f.write(
                     "PNG generation requires 'graphviz' package. Install with: uv pip install graphviz"
                 )
         except Exception as e:
-            log.error(f"Error generating PNG diagram: {e}")
+            log.error(f'Error generating PNG diagram: {e}')
             raise
 
-    def generate_svg_diagram(
-        self, output_path: str, layout_style: str = "hierarchical"
-    ) -> None:
+    def generate_svg_diagram(self, output_path: str, layout_style: str = 'hierarchical') -> None:
         """Generate an SVG diagram using Graphviz with hierarchical layout.
 
         Args:
@@ -456,25 +449,23 @@ class NetworkTopology:
 
             # Render to SVG
             graph = graphviz.Source(dot_source)
-            output_base = str(output_path).replace(".svg", "")
-            graph.render(output_base, format="svg", cleanup=True, view=False)
+            output_base = str(output_path).replace('.svg', '')
+            graph.render(output_base, format='svg', cleanup=True, view=False)
 
-            log.info(f"Generated SVG diagram ({layout_style} layout): {output_path}")
+            log.info(f'Generated SVG diagram ({layout_style} layout): {output_path}')
 
         except ImportError:
-            log.error(
-                "graphviz package not installed. Install with: uv pip install graphviz"
-            )
-            with open(output_path, "w") as f:
+            log.error('graphviz package not installed. Install with: uv pip install graphviz')
+            with open(output_path, 'w') as f:
                 f.write(
                     "SVG generation requires 'graphviz' package. Install with: uv pip install graphviz"
                 )
         except Exception as e:
-            log.error(f"Error generating SVG diagram: {e}")
+            log.error(f'Error generating SVG diagram: {e}')
             raise
 
     def _generate_dot_source(
-        self, layout_style: str = "hierarchical", infrastructure_only: bool = True
+        self, layout_style: str = 'hierarchical', infrastructure_only: bool = True
     ) -> str:
         """Generate Graphviz DOT source code with device type hierarchy.
 
@@ -488,12 +479,12 @@ class NetworkTopology:
         Returns:
             DOT format source code as string
         """
-        lines = ["digraph NetworkTopology {"]
+        lines = ['digraph NetworkTopology {']
         # Use dot layout with vertical hierarchy - centered layout
         # Note: concentrate=true removed due to graphviz segfault bug with complex graphs
         lines.append(
-            "  graph [rankdir=TB, splines=spline, nodesep=0.8, ranksep=1.2, "
-            "compound=true, center=true];"
+            '  graph [rankdir=TB, splines=spline, nodesep=0.8, ranksep=1.2, '
+            'compound=true, center=true];'
         )
         # Fixed size nodes for visual consistency - all devices same size
         lines.append(
@@ -510,11 +501,11 @@ class NetworkTopology:
 
         for device_id, device in self.devices.items():
             device_type = self._determine_device_type(device)
-            if device_type == "router":
+            if device_type == 'router':
                 routers.append((device_id, device))
-            elif device_type == "switch":
+            elif device_type == 'switch':
                 switches.append((device_id, device))
-            elif device_type == "ap":
+            elif device_type == 'ap':
                 aps.append((device_id, device))
             else:
                 others.append((device_id, device))
@@ -527,41 +518,44 @@ class NetworkTopology:
         isp_connections = []
         for device_id, device in routers + switches:
             for port in device.ports:
-                port_name = port.name if port.name else ""
+                port_name = port.name if port.name else ''
                 port_name_lower = port_name.lower()
                 # Look for ISP provider names in port descriptions
-                if "virgin" in port_name_lower:
-                    isp_connections.append(("Virgin Media", port_name))
-                elif "bt " in port_name_lower or "bt isp" in port_name_lower:
-                    isp_connections.append(("BT", port_name))
-                elif "sky" in port_name_lower:
-                    isp_connections.append(("Sky", port_name))
-                elif "talktalk" in port_name_lower:
-                    isp_connections.append(("TalkTalk", port_name))
-                elif "isp" in port_name_lower and "virgin" not in port_name_lower and "bt" not in port_name_lower:
-                    isp_connections.append(("ISP", port_name))
+                if 'virgin' in port_name_lower:
+                    isp_connections.append(('Virgin Media', port_name))
+                elif 'bt ' in port_name_lower or 'bt isp' in port_name_lower:
+                    isp_connections.append(('BT', port_name))
+                elif 'sky' in port_name_lower:
+                    isp_connections.append(('Sky', port_name))
+                elif 'talktalk' in port_name_lower:
+                    isp_connections.append(('TalkTalk', port_name))
+                elif (
+                    'isp' in port_name_lower
+                    and 'virgin' not in port_name_lower
+                    and 'bt' not in port_name_lower
+                ):
+                    isp_connections.append(('ISP', port_name))
 
         # Deduplicate ISP names
         unique_isps = list({isp[0] for isp in isp_connections})
         if unique_isps:
-            log.info(f"Detected ISP connections: {unique_isps}")
+            log.info(f'Detected ISP connections: {unique_isps}')
         if isp_connections:
             for isp_name, port_name in isp_connections:
                 log.debug(f"  ISP '{isp_name}' from port: {port_name}")
 
         # Use subgraph clusters to enforce vertical hierarchy
-        lines.append("")
-        lines.append("  // Layer 0: Internet/ISP connections")
+        lines.append('')
+        lines.append('  // Layer 0: Internet/ISP connections')
         lines.append('  subgraph cluster_internet {')
         lines.append('    style=invis;')
         lines.append('    rank=source;')
         lines.append(
-            '    "Internet" [label="🌐 Internet", '
-            'fillcolor="#607D8B", fontcolor="white"];'
+            '    "Internet" [label="🌐 Internet", fillcolor="#607D8B", fontcolor="white"];'
         )
         # Add ISP nodes if detected
         for isp_name in unique_isps:
-            safe_id = isp_name.replace(" ", "_")
+            safe_id = isp_name.replace(' ', '_')
             lines.append(
                 f'    "ISP_{safe_id}" [label="{isp_name}", '
                 f'fillcolor="#FF5722", fontcolor="white"];'
@@ -570,8 +564,8 @@ class NetworkTopology:
 
         # Layer 1: Gateway/Router
         if routers:
-            lines.append("")
-            lines.append("  // Layer 1: Gateway")
+            lines.append('')
+            lines.append('  // Layer 1: Gateway')
             lines.append('  subgraph cluster_gateway {')
             lines.append('    style=invis;')
             for device_id, device in routers:
@@ -584,8 +578,8 @@ class NetworkTopology:
 
         # Layer 2: Core Switches (all switches for simplicity)
         if switches:
-            lines.append("")
-            lines.append("  // Layer 2: Switches")
+            lines.append('')
+            lines.append('  // Layer 2: Switches')
             lines.append('  subgraph cluster_switches {')
             lines.append('    style=invis;')
             for device_id, device in switches:
@@ -598,8 +592,8 @@ class NetworkTopology:
 
         # Layer 3: Access Points
         if aps:
-            lines.append("")
-            lines.append("  // Layer 3: Access Points")
+            lines.append('')
+            lines.append('  // Layer 3: Access Points')
             lines.append('  subgraph cluster_aps {')
             lines.append('    style=invis;')
             for device_id, device in aps:
@@ -612,20 +606,18 @@ class NetworkTopology:
 
         # Only include other devices if not infrastructure_only
         if not infrastructure_only and others:
-            lines.append("")
-            lines.append("  // Layer 4: Other devices")
+            lines.append('')
+            lines.append('  // Layer 4: Other devices')
             lines.append('  subgraph cluster_others {')
             lines.append('    style=invis;')
             for device_id, device in others:
                 wrapped_name = self._wrap_name(device.name)
-                lines.append(
-                    f'    "{device_id}" [label="{wrapped_name}", fillcolor="#FF9800"];'
-                )
+                lines.append(f'    "{device_id}" [label="{wrapped_name}", fillcolor="#FF9800"];')
             lines.append('  }')
 
         # Add invisible edges to enforce layer ordering (only where visible edges don't exist)
-        lines.append("")
-        lines.append("  // Invisible edges to enforce vertical hierarchy")
+        lines.append('')
+        lines.append('  // Invisible edges to enforce vertical hierarchy')
 
         # Internet -> router hierarchy is handled by visible edges below
         # Only add invisible edges between layers that don't have visible connections
@@ -639,30 +631,34 @@ class NetworkTopology:
             lines.append(f'  "{switches[0][0]}" -> "{aps[0][0]}" [style=invis, weight=100];')
 
         # Connections (visible edges)
-        lines.append("")
-        lines.append("  // Actual connections")
+        lines.append('')
+        lines.append('  // Actual connections')
 
         # Internet to routers - through ISP nodes if available
         if unique_isps:
             # Connect Internet to each ISP
             for isp_name in unique_isps:
-                safe_id = isp_name.replace(" ", "_")
+                safe_id = isp_name.replace(' ', '_')
                 lines.append(f'  "Internet" -> "ISP_{safe_id}" [color="#FF5722", penwidth=2.5];')
             # Connect ISPs to routers
             for device_id, _ in routers:
                 for isp_name in unique_isps:
-                    safe_id = isp_name.replace(" ", "_")
-                    lines.append(f'  "ISP_{safe_id}" -> "{device_id}" [color="#4CAF50", penwidth=2.0];')
+                    safe_id = isp_name.replace(' ', '_')
+                    lines.append(
+                        f'  "ISP_{safe_id}" -> "{device_id}" [color="#4CAF50", penwidth=2.0];'
+                    )
         else:
             # Direct Internet to routers if no ISP info found
             for device_id, _ in routers:
-                lines.append(f'  "Internet" -> "{device_id}" [color="#4CAF50", penwidth=2.5, label="WAN"];')
+                lines.append(
+                    f'  "Internet" -> "{device_id}" [color="#4CAF50", penwidth=2.5, label="WAN"];'
+                )
 
         # Device connections from LLDP data
         added_edges = set()
         for conn in self.connections:
-            src = conn.get("source_device_id", "")
-            tgt = conn.get("target_device_id", "")
+            src = conn.get('source_device_id', '')
+            tgt = conn.get('target_device_id', '')
 
             if not src or not tgt:
                 continue
@@ -683,24 +679,24 @@ class NetworkTopology:
             lines.append(f'  "{src}" -> "{tgt}" [dir=none];')
 
         # Compact title with legend info as a note
-        lines.append("")
-        lines.append("  // Title node with legend")
+        lines.append('')
+        lines.append('  // Title node with legend')
         lines.append('  labelloc="t";')
         lines.append('  label="UniFi Network Topology\\n🟢 Gateway  🔵 Switch  🟣 AP  🟠 ISP";')
         lines.append('  fontsize=14;')
 
-        lines.append("}")
-        return "\n".join(lines)
+        lines.append('}')
+        return '\n'.join(lines)
 
     def _shorten_name(self, name: str) -> str:
         """Shorten device name for cleaner diagram display."""
         if not name:
-            return "Unknown"
+            return 'Unknown'
         # Remove common prefixes/suffixes
-        name = name.replace("USW ", "").replace("U6-", "U6 ")
+        name = name.replace('USW ', '').replace('U6-', 'U6 ')
         # Truncate long names
         if len(name) > 18:
-            return name[:16] + "..."
+            return name[:16] + '...'
         return name
 
     def _wrap_name(self, name: str, max_chars: int = 14) -> str:
@@ -714,10 +710,10 @@ class NetworkTopology:
             Name with newlines for wrapping
         """
         if not name:
-            return "Unknown"
+            return 'Unknown'
 
         # Clean up common prefixes for shorter labels
-        name = name.replace("USW ", "").replace("U6-", "U6 ").replace("USW-", "")
+        name = name.replace('USW ', '').replace('U6-', 'U6 ').replace('USW-', '')
 
         # If short enough, return as-is
         if len(name) <= max_chars:
@@ -726,13 +722,13 @@ class NetworkTopology:
         # Split into words and wrap
         words = name.split()
         lines = []
-        current_line = ""
+        current_line = ''
 
         for word in words:
             if not current_line:
                 current_line = word
             elif len(current_line) + 1 + len(word) <= max_chars:
-                current_line += " " + word
+                current_line += ' ' + word
             else:
                 lines.append(current_line)
                 current_line = word
@@ -744,9 +740,9 @@ class NetworkTopology:
         if len(lines) > 2:
             lines = lines[:2]
             if len(lines[1]) > max_chars - 2:
-                lines[1] = lines[1][:max_chars - 3] + "..."
+                lines[1] = lines[1][: max_chars - 3] + '...'
 
-        return "\\n".join(lines)
+        return '\\n'.join(lines)
 
     def _group_devices_by_location_and_type(self) -> dict:
         """Group devices by location and type for hierarchical layout.
@@ -784,19 +780,19 @@ class NetworkTopology:
 
         # Common location keywords
         locations = [
-            "office",
-            "lounge",
-            "bedroom",
-            "kitchen",
-            "shed",
-            "hallway",
-            "dining",
-            "garage",
-            "basement",
-            "attic",
-            "bob",
-            "Bravo4",
-            "Sierra3",
+            'office',
+            'lounge',
+            'bedroom',
+            'kitchen',
+            'shed',
+            'hallway',
+            'dining',
+            'garage',
+            'basement',
+            'attic',
+            'bob',
+            'Bravo4',
+            'Sierra3',
         ]
 
         for loc in locations:
@@ -804,25 +800,25 @@ class NetworkTopology:
                 return loc.title()
 
         # Check for "Tower", "Desk", "Hub", "Core" identifiers
-        if any(x in name_lower for x in ["tower", "core", "main", "hub"]):
-            return "Core"
+        if any(x in name_lower for x in ['tower', 'core', 'main', 'hub']):
+            return 'Core'
 
-        return "Network"
+        return 'Network'
 
     def _get_device_color(self, device_type: str) -> str:
         """Get fill color based on device type."""
         colors = {
-            "router": "#3498db",
-            "switch": "#2ecc71",
-            "ap": "#e74c3c",
-            "unknown": "#95a5a6",
+            'router': '#3498db',
+            'switch': '#2ecc71',
+            'ap': '#e74c3c',
+            'unknown': '#95a5a6',
         }
-        return colors.get(device_type, colors["unknown"])
+        return colors.get(device_type, colors['unknown'])
 
     def _get_device_icon(self, device_type: str) -> str:
         """Get emoji icon based on device type."""
-        icons = {"router": "🌐", "switch": "🔄", "ap": "📶", "unknown": "💻"}
-        return icons.get(device_type, icons["unknown"])
+        icons = {'router': '🌐', 'switch': '🔄', 'ap': '📶', 'unknown': '💻'}
+        return icons.get(device_type, icons['unknown'])
 
     def _determine_device_type(self, device: DeviceInfo) -> str:
         """Determine device type from model name.
@@ -833,40 +829,62 @@ class NetworkTopology:
         Returns:
             Device type: 'router', 'switch', 'ap', or 'unknown'
         """
-        model_lower = device.model.lower() if device.model else ""
-        name_lower = device.name.lower() if device.name else ""
+        model_lower = device.model.lower() if device.model else ''
+        name_lower = device.name.lower() if device.name else ''
 
         # Check model patterns - order matters (most specific first)
         # Routers/Gateways
-        if any(x in model_lower for x in ["udm", "usg", "ugw", "gateway", "dream"]):
-            return "router"
+        if any(x in model_lower for x in ['udm', 'usg', 'ugw', 'gateway', 'dream']):
+            return 'router'
 
         # Switches - includes US-8, US-16, US-24, US-48 series
-        if any(x in model_lower for x in [
-            "usw", "usl", "usm", "switch", "flex",
-            "us8", "us16", "us24", "us48",  # US series without hyphen
-            "us-8", "us-16", "us-24", "us-48",  # US series with hyphen
-        ]):
-            return "switch"
+        if any(
+            x in model_lower
+            for x in [
+                'usw',
+                'usl',
+                'usm',
+                'switch',
+                'flex',
+                'us8',
+                'us16',
+                'us24',
+                'us48',  # US series without hyphen
+                'us-8',
+                'us-16',
+                'us-24',
+                'us-48',  # US series with hyphen
+            ]
+        ):
+            return 'switch'
 
         # Access Points - includes all UAP and U6/U7 variants
-        if any(x in model_lower for x in [
-            "uap", "u6", "u7", "ualr",  # U6 LR is UALR6v2
-            "ac", "iw", "nanohd", "hd", "shd", "xg",
-        ]):
-            return "ap"
+        if any(
+            x in model_lower
+            for x in [
+                'uap',
+                'u6',
+                'u7',
+                'ualr',  # U6 LR is UALR6v2
+                'ac',
+                'iw',
+                'nanohd',
+                'hd',
+                'shd',
+                'xg',
+            ]
+        ):
+            return 'ap'
 
         # Check name patterns as fallback
-        if any(x in name_lower for x in ["router", "gateway", "udm", "dream"]):
-            return "router"
-        if any(x in name_lower for x in ["switch", "sw", "us-8", "us 8", "us8"]):
-            return "switch"
-        if any(x in name_lower for x in [
-            "ap", "wifi", "access", "u6", "u7", "lr", "pro", "iw"
-        ]):
-            return "ap"
+        if any(x in name_lower for x in ['router', 'gateway', 'udm', 'dream']):
+            return 'router'
+        if any(x in name_lower for x in ['switch', 'sw', 'us-8', 'us 8', 'us8']):
+            return 'switch'
+        if any(x in name_lower for x in ['ap', 'wifi', 'access', 'u6', 'u7', 'lr', 'pro', 'iw']):
+            return 'ap'
 
-        return "unknown"
+        return 'unknown'
 
     def generate_dot_diagram(self, output_path: str) -> None:
         """Generate a DOT diagram of the network topology.
@@ -875,8 +893,8 @@ class NetworkTopology:
             output_path: Path to save the DOT file
         """
         # Create a simple text file as a placeholder
-        with open(output_path, "w") as f:
-            f.write("DOT diagram would be generated here")
+        with open(output_path, 'w') as f:
+            f.write('DOT diagram would be generated here')
 
     def generate_mermaid_diagram(self, output_path: str) -> None:
         """Generate a Mermaid diagram of the network topology.
@@ -885,8 +903,8 @@ class NetworkTopology:
             output_path: Path to save the Mermaid file
         """
         # Create a simple text file as a placeholder
-        with open(output_path, "w") as f:
-            f.write("Mermaid diagram would be generated here")
+        with open(output_path, 'w') as f:
+            f.write('Mermaid diagram would be generated here')
 
     def generate_html_diagram(
         self, output_path: str, show_connected_devices: bool = False
@@ -915,35 +933,35 @@ class NetworkTopology:
                 continue
 
             # Define node style based on device type
-            device_type = "other"
-            color = "#95a5a6"  # Default grey
-            icon = "💻"  # Default icon
+            device_type = 'other'
+            color = '#95a5a6'  # Default grey
+            icon = '💻'  # Default icon
 
             # Determine device type
             if self.is_router(device_id):
-                color = "#3498db"  # Blue
-                icon = "🌐"
-                device_type = "router"
+                color = '#3498db'  # Blue
+                icon = '🌐'
+                device_type = 'router'
             elif self.is_switch(device_id):
-                color = "#2ecc71"  # Green
-                icon = "🔄"
-                device_type = "switch"
+                color = '#2ecc71'  # Green
+                icon = '🔄'
+                device_type = 'switch'
             elif self.is_ap(device_id):
-                color = "#e74c3c"  # Red
-                icon = "📶"
-                device_type = "ap"
+                color = '#e74c3c'  # Red
+                icon = '📶'
+                device_type = 'ap'
 
             # Extract location from name
-            location = "unknown"
+            location = 'unknown'
             name_parts = device.name.lower().split() if device.name else []
             for loc in [
-                "office",
-                "lounge",
-                "bedroom",
-                "kitchen",
-                "dining",
-                "shed",
-                "Sierra3",
+                'office',
+                'lounge',
+                'bedroom',
+                'kitchen',
+                'dining',
+                'shed',
+                'Sierra3',
             ]:
                 if loc in name_parts:
                     location = loc.capitalize()
@@ -951,23 +969,23 @@ class NetworkTopology:
 
             nodes.append(
                 {
-                    "id": device_id,
-                    "name": device.name,
-                    "model": device.model,
-                    "ip": device.ip,
-                    "type": device_type,
-                    "color": color,
-                    "icon": icon,
-                    "location": location,
-                    "group": location,
+                    'id': device_id,
+                    'name': device.name,
+                    'model': device.model,
+                    'ip': device.ip,
+                    'type': device_type,
+                    'color': color,
+                    'icon': icon,
+                    'location': location,
+                    'group': location,
                 }
             )
             node_ids.add(device_id)
 
         # Process connections
         for connection in self.connections:
-            source_id = connection.get("source_device_id")
-            target_id = connection.get("target_device_id")
+            source_id = connection.get('source_device_id')
+            target_id = connection.get('target_device_id')
 
             # Skip connections with None IDs
             if source_id is None or target_id is None:
@@ -982,14 +1000,14 @@ class NetworkTopology:
             if source_id not in node_ids or target_id not in node_ids:
                 continue
 
-            source_port = connection.get("source_port_name", "Auto")
-            target_port = connection.get("target_port_name", "Auto")
+            source_port = connection.get('source_port_name', 'Auto')
+            target_port = connection.get('target_port_name', 'Auto')
 
             # Check if this link already exists (to avoid duplicates)
             link_exists = False
             for link in links:
-                if (link["source"] == source_id and link["target"] == target_id) or (
-                    link["source"] == target_id and link["target"] == source_id
+                if (link['source'] == source_id and link['target'] == target_id) or (
+                    link['source'] == target_id and link['target'] == source_id
                 ):
                     link_exists = True
                     break
@@ -997,10 +1015,10 @@ class NetworkTopology:
             if not link_exists:
                 links.append(
                     {
-                        "source": source_id,
-                        "target": target_id,
-                        "sourcePort": source_port,
-                        "targetPort": target_port,
+                        'source': source_id,
+                        'target': target_id,
+                        'sourcePort': source_port,
+                        'targetPort': target_port,
                     }
                 )
 
@@ -1319,10 +1337,10 @@ class NetworkTopology:
         """
 
         # Replace placeholders with actual data
-        html_content = html_template.replace(
-            "NODES_PLACEHOLDER", json.dumps(nodes)
-        ).replace("LINKS_PLACEHOLDER", json.dumps(links))
+        html_content = html_template.replace('NODES_PLACEHOLDER', json.dumps(nodes)).replace(
+            'LINKS_PLACEHOLDER', json.dumps(links)
+        )
 
         # Write HTML file
-        with open(output_path, "w") as f:
+        with open(output_path, 'w') as f:
             f.write(html_content)

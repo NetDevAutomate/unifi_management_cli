@@ -70,7 +70,7 @@ class UniFiNetworkClient:
         >>> async with UniFiNetworkClient(config) as client:
         ...     devices = await client.list_devices()
         ...     for device in devices:
-        ...         print(f"{device.name}: {device.state}")
+        ...         print(f'{device.name}: {device.state}')
     """
 
     def __init__(self, config: NetworkConfig) -> None:
@@ -108,7 +108,7 @@ class UniFiNetworkClient:
             if self.config.debug:
                 log.setLevel(logging.DEBUG)
 
-            log.debug(f"Connected to Network API at {self.config.base_url}")
+            log.debug(f'Connected to Network API at {self.config.base_url}')
 
     async def close(self) -> None:
         """Close the connection to the Network API."""
@@ -116,7 +116,7 @@ class UniFiNetworkClient:
             if self._client is not None:
                 await self._client.aclose()
                 self._client = None
-                log.debug("Disconnected from Network API")
+                log.debug('Disconnected from Network API')
 
     @property
     def is_connected(self) -> bool:
@@ -146,7 +146,7 @@ class UniFiNetworkClient:
             NetworkClientError: If the request fails.
         """
         if self._client is None:
-            raise NetworkConnectionError("Client not connected")
+            raise NetworkConnectionError('Client not connected')
 
         # Replace site_id placeholder
         path = path.replace('{siteId}', self.config.site_id)
@@ -161,29 +161,29 @@ class UniFiNetworkClient:
 
             if response.status_code == 401:
                 raise NetworkAuthenticationError(
-                    "Authentication failed - check API key",
+                    'Authentication failed - check API key',
                     status_code=401,
                 )
 
             if response.status_code == 403:
                 raise NetworkAuthenticationError(
-                    "Access forbidden - check API key permissions",
+                    'Access forbidden - check API key permissions',
                     status_code=403,
                 )
 
             if response.status_code >= 400:
                 error_msg = response.text
                 raise NetworkClientError(
-                    f"API request failed: {error_msg}",
+                    f'API request failed: {error_msg}',
                     status_code=response.status_code,
                 )
 
             return response.json()
 
         except httpx.ConnectError as e:
-            raise NetworkConnectionError(f"Connection failed: {e}") from e
+            raise NetworkConnectionError(f'Connection failed: {e}') from e
         except httpx.TimeoutException as e:
-            raise NetworkConnectionError(f"Request timed out: {e}") from e
+            raise NetworkConnectionError(f'Request timed out: {e}') from e
 
     async def _get(
         self,
@@ -578,9 +578,7 @@ class UniFiNetworkClient:
             List of site information.
         """
         sites = []
-        async for item in self._paginate(
-            '/sites', limit=limit, filter_expr=filter_expr
-        ):
+        async for item in self._paginate('/sites', limit=limit, filter_expr=filter_expr):
             sites.append(SiteInfo.model_validate(item))
         return sites
 
@@ -762,9 +760,7 @@ class UniFiNetworkClient:
             List of DPI categories.
         """
         categories = []
-        async for item in self._paginate(
-            '/dpi/categories', limit=limit, filter_expr=filter_expr
-        ):
+        async for item in self._paginate('/dpi/categories', limit=limit, filter_expr=filter_expr):
             categories.append(DPICategory.model_validate(item))
         return categories
 

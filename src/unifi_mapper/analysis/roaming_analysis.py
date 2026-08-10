@@ -12,7 +12,7 @@ from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
-DEFAULT_ROAMING_PATH = "reports/client-roaming-history.json"
+DEFAULT_ROAMING_PATH = 'reports/client-roaming-history.json'
 
 # Retention configuration — referenced by rf_strategy.py's 48h history gate.
 # Bumped from 288 (24h) to 576 (48h) during Phase D design to support the
@@ -44,25 +44,27 @@ async def snapshot_client_associations(output_path: str = DEFAULT_ROAMING_PATH) 
     # Build AP name lookup
     ap_names = {}
     for d in devices:
-        if d.get("type") == "uap":
-            ap_names[d.get("mac", "")] = d.get("name", "Unknown")
+        if d.get('type') == 'uap':
+            ap_names[d.get('mac', '')] = d.get('name', 'Unknown')
 
     # Current associations
     now = datetime.now().isoformat()
     associations = []
     for c in clients:
-        ap_mac = c.get("ap_mac")
+        ap_mac = c.get('ap_mac')
         if not ap_mac:
             continue
-        associations.append({
-            "client_mac": c.get("mac", ""),
-            "client_name": c.get("name") or c.get("hostname") or c.get("mac", ""),
-            "ap_mac": ap_mac,
-            "ap_name": ap_names.get(ap_mac, "Unknown"),
-            "rssi": c.get("rssi"),
-            "channel": c.get("channel"),
-            "ssid": c.get("essid", ""),
-        })
+        associations.append(
+            {
+                'client_mac': c.get('mac', ''),
+                'client_name': c.get('name') or c.get('hostname') or c.get('mac', ''),
+                'ap_mac': ap_mac,
+                'ap_name': ap_names.get(ap_mac, 'Unknown'),
+                'rssi': c.get('rssi'),
+                'channel': c.get('channel'),
+                'ssid': c.get('essid', ''),
+            }
+        )
 
     # Load existing history or create new
     path = Path(output_path)
@@ -71,15 +73,19 @@ async def snapshot_client_associations(output_path: str = DEFAULT_ROAMING_PATH) 
     if path.exists():
         history = json.loads(path.read_text())
     else:
-        history = {"snapshots": []}
+        history = {'snapshots': []}
 
-    history["snapshots"].append({"timestamp": now, "associations": associations})
+    history['snapshots'].append({'timestamp': now, 'associations': associations})
 
     # Keep the most recent snapshots within the retention window (48h at 5-min intervals = 576).
-    history["snapshots"] = history["snapshots"][-MAX_SNAPSHOTS_RETAINED:]
+    history['snapshots'] = history['snapshots'][-MAX_SNAPSHOTS_RETAINED:]
     path.write_text(json.dumps(history, indent=2))
 
-    return {"timestamp": now, "clients_tracked": len(associations), "snapshots_stored": len(history["snapshots"])}
+    return {
+        'timestamp': now,
+        'clients_tracked': len(associations),
+        'snapshots_stored': len(history['snapshots']),
+    }
 
 
 async def analyze_roaming(history_path: str = DEFAULT_ROAMING_PATH) -> dict:
@@ -93,91 +99,101 @@ async def analyze_roaming(history_path: str = DEFAULT_ROAMING_PATH) -> dict:
     path = Path(history_path)
     if not path.exists():
         raise ToolError(
-            message=f"No roaming history at {history_path}. Collect snapshots first.",
+            message=f'No roaming history at {history_path}. Collect snapshots first.',
             error_code=ErrorCodes.NO_DATA,
-            suggestion="Run: unifi-mapper analyze roaming --snapshot (multiple times over time)",
+            suggestion='Run: unifi-mapper analyze roaming --snapshot (multiple times over time)',
         )
 
     history = json.loads(path.read_text())
-    snapshots = history.get("snapshots", [])
+    snapshots = history.get('snapshots', [])
 
     if len(snapshots) < 2:
         raise ToolError(
-            message="Need at least 2 snapshots to analyze roaming. Collect more data.",
+            message='Need at least 2 snapshots to analyze roaming. Collect more data.',
             error_code=ErrorCodes.NO_DATA,
-            suggestion="Run snapshot collection periodically (e.g., every 5 minutes via cron)",
+            suggestion='Run snapshot collection periodically (e.g., every 5 minutes via cron)',
         )
 
     # Track AP associations per client across all snapshots
     client_history: dict[str, dict] = {}  # mac -> {name, aps: [(timestamp, ap_name, rssi)]}
 
     for snap in snapshots:
-        ts = snap["timestamp"]
-        for assoc in snap["associations"]:
-            mac = assoc["client_mac"]
+        ts = snap['timestamp']
+        for assoc in snap['associations']:
+            mac = assoc['client_mac']
             if mac not in client_history:
-                client_history[mac] = {"name": assoc["client_name"], "observations": []}
-            client_history[mac]["observations"].append({
-                "timestamp": ts,
-                "ap_name": assoc["ap_name"],
-                "rssi": assoc.get("rssi"),
-            })
+                client_history[mac] = {'name': assoc['client_name'], 'observations': []}
+            client_history[mac]['observations'].append(
+                {
+                    'timestamp': ts,
+                    'ap_name': assoc['ap_name'],
+                    'rssi': assoc.get('rssi'),
+                }
+            )
             # Update name to latest
-            client_history[mac]["name"] = assoc["client_name"]
+            client_history[mac]['name'] = assoc['client_name']
 
     # Analyze each client
     roamers = []
     sticky_clients = []
 
     for mac, data in client_history.items():
-        obs = data["observations"]
+        obs = data['observations']
         if len(obs) < 2:
             continue
 
         # Count unique APs
-        unique_aps = {o["ap_name"] for o in obs}
+        unique_aps = {o['ap_name'] for o in obs}
         roam_count = len(unique_aps) - 1
 
         # Check for sticky (low RSSI, never roams)
-        avg_rssi = sum(o["rssi"] for o in obs if o["rssi"]) / max(1, sum(1 for o in obs if o["rssi"]))
-        min_rssi = min((o["rssi"] for o in obs if o["rssi"]), default=0)
+        avg_rssi = sum(o['rssi'] for o in obs if o['rssi']) / max(
+            1, sum(1 for o in obs if o['rssi'])
+        )
+        min_rssi = min((o['rssi'] for o in obs if o['rssi']), default=0)
 
         if roam_count > 0:
             # Count actual transitions (AP changed between consecutive observations)
-            transitions = sum(1 for i in range(1, len(obs)) if obs[i]["ap_name"] != obs[i - 1]["ap_name"])
-            roamers.append({
-                "client": data["name"],
-                "mac": mac,
-                "unique_aps": len(unique_aps),
-                "transitions": transitions,
-                "aps_used": list(unique_aps),
-                "avg_rssi": round(avg_rssi),
-                "observations": len(obs),
-            })
+            transitions = sum(
+                1 for i in range(1, len(obs)) if obs[i]['ap_name'] != obs[i - 1]['ap_name']
+            )
+            roamers.append(
+                {
+                    'client': data['name'],
+                    'mac': mac,
+                    'unique_aps': len(unique_aps),
+                    'transitions': transitions,
+                    'aps_used': list(unique_aps),
+                    'avg_rssi': round(avg_rssi),
+                    'observations': len(obs),
+                }
+            )
         elif min_rssi < 30 and len(obs) >= 3:
             # Sticky: low signal but never roams
-            sticky_clients.append({
-                "client": data["name"],
-                "mac": mac,
-                "stuck_on": obs[-1]["ap_name"],
-                "avg_rssi": round(avg_rssi),
-                "min_rssi": min_rssi,
-                "observations": len(obs),
-            })
+            sticky_clients.append(
+                {
+                    'client': data['name'],
+                    'mac': mac,
+                    'stuck_on': obs[-1]['ap_name'],
+                    'avg_rssi': round(avg_rssi),
+                    'min_rssi': min_rssi,
+                    'observations': len(obs),
+                }
+            )
 
     # Sort roamers by transitions (most active first)
-    roamers.sort(key=lambda x: -x["transitions"])
-    sticky_clients.sort(key=lambda x: x["min_rssi"])
+    roamers.sort(key=lambda x: -x['transitions'])
+    sticky_clients.sort(key=lambda x: x['min_rssi'])
 
     return {
-        "timestamp": datetime.now().isoformat(),
-        "snapshots_analyzed": len(snapshots),
-        "time_span": f"{snapshots[0]['timestamp']} to {snapshots[-1]['timestamp']}",
-        "clients_tracked": len(client_history),
-        "roaming_clients": len(roamers),
-        "sticky_clients": len(sticky_clients),
-        "roamers": roamers[:20],
-        "sticky": sticky_clients[:10],
+        'timestamp': datetime.now().isoformat(),
+        'snapshots_analyzed': len(snapshots),
+        'time_span': f'{snapshots[0]["timestamp"]} to {snapshots[-1]["timestamp"]}',
+        'clients_tracked': len(client_history),
+        'roaming_clients': len(roamers),
+        'sticky_clients': len(sticky_clients),
+        'roamers': roamers[:20],
+        'sticky': sticky_clients[:10],
     }
 
 
@@ -204,25 +220,25 @@ def history_hours_available(history_path: str = DEFAULT_ROAMING_PATH) -> float:
         history = json.loads(path.read_text())
     except json.JSONDecodeError as err:
         raise ToolError(
-            message=f"Roaming history at {history_path} is not valid JSON: {err}",
+            message=f'Roaming history at {history_path} is not valid JSON: {err}',
             error_code=ErrorCodes.CONFIG_INVALID,
-            suggestion="Inspect the file manually; rerun the snapshot command to rebuild if corrupt.",
+            suggestion='Inspect the file manually; rerun the snapshot command to rebuild if corrupt.',
         ) from err
 
-    snapshots = history.get("snapshots")
+    snapshots = history.get('snapshots')
     if not isinstance(snapshots, list):
         raise ToolError(
             message=f"Roaming history at {history_path} is missing a 'snapshots' list.",
             error_code=ErrorCodes.CONFIG_INVALID,
-            suggestion="Delete the file and let snapshot collection rebuild it.",
+            suggestion='Delete the file and let snapshot collection rebuild it.',
         )
 
     if len(snapshots) < 2:
         return 0.0
 
     try:
-        oldest = datetime.fromisoformat(snapshots[0]["timestamp"])
-        newest = datetime.fromisoformat(snapshots[-1]["timestamp"])
+        oldest = datetime.fromisoformat(snapshots[0]['timestamp'])
+        newest = datetime.fromisoformat(snapshots[-1]['timestamp'])
     except (KeyError, ValueError, TypeError):
         return 0.0
 
@@ -272,19 +288,19 @@ def compute_twofour_only_clients(
         history = json.loads(path.read_text())
     except json.JSONDecodeError as err:
         raise ToolError(
-            message=f"Roaming history at {history_path} is not valid JSON: {err}",
+            message=f'Roaming history at {history_path} is not valid JSON: {err}',
             error_code=ErrorCodes.CONFIG_INVALID,
-            suggestion="Inspect the file manually; rerun the snapshot command to rebuild if corrupt.",
+            suggestion='Inspect the file manually; rerun the snapshot command to rebuild if corrupt.',
         ) from err
 
-    snapshots = history.get("snapshots", [])
+    snapshots = history.get('snapshots', [])
     if not snapshots:
         return {}
 
     # Window cutoff is anchored to the newest snapshot, not wall-clock now —
     # keeps the function pure/testable without freezing time in tests.
     try:
-        newest_ts = datetime.fromisoformat(snapshots[-1]["timestamp"])
+        newest_ts = datetime.fromisoformat(snapshots[-1]['timestamp'])
     except (KeyError, ValueError, TypeError):
         return {}
     cutoff = newest_ts - timedelta(hours=window_hours)
@@ -298,30 +314,32 @@ def compute_twofour_only_clients(
 
     for snap in snapshots:
         try:
-            ts = datetime.fromisoformat(snap["timestamp"])
+            ts = datetime.fromisoformat(snap['timestamp'])
         except (KeyError, ValueError, TypeError):
             continue
         if ts < cutoff:
             continue
 
-        for assoc in snap.get("associations", []):
-            ap_name = assoc.get("ap_name")
-            client_mac = assoc.get("client_mac")
+        for assoc in snap.get('associations', []):
+            ap_name = assoc.get('ap_name')
+            client_mac = assoc.get('client_mac')
             if not ap_name or not client_mac:
                 continue
 
             aps_seen.add(ap_name)
-            channel = assoc.get("channel")
+            channel = assoc.get('channel')
 
             # Track global 5 GHz capability proof (any AP, any observation).
             if channel is not None and channel not in CHANNELS_24GHZ:
                 clients_with_5ghz.add(client_mac)
 
-            per_ap_client.setdefault((ap_name, client_mac), []).append({
-                "timestamp": snap["timestamp"],
-                "channel": channel,
-                "client_name": assoc.get("client_name") or client_mac,
-            })
+            per_ap_client.setdefault((ap_name, client_mac), []).append(
+                {
+                    'timestamp': snap['timestamp'],
+                    'channel': channel,
+                    'client_name': assoc.get('client_name') or client_mac,
+                }
+            )
 
     # Build result: every AP is a key; populate lists with 2.4-only clients.
     result: dict[str, list[dict[str, Any]]] = {ap: [] for ap in aps_seen}
@@ -334,23 +352,25 @@ def compute_twofour_only_clients(
         # Evaluate observations on THIS AP: at least one 2.4 GHz sample,
         # no 5 GHz samples (already guaranteed by global filter above, but
         # defensive), and not all channels None.
-        channels = [o["channel"] for o in obs]
+        channels = [o['channel'] for o in obs]
         has_24ghz = any(c in CHANNELS_24GHZ for c in channels if c is not None)
         if not has_24ghz:
             # Either all None or all 5 GHz (the latter impossible here given
             # the global filter, but kept explicit for clarity).
             continue
 
-        result[ap_name].append({
-            "client_mac": client_mac,
-            "client_name": obs[-1]["client_name"],
-            "observation_count": len(obs),
-            "last_seen": obs[-1]["timestamp"],
-        })
+        result[ap_name].append(
+            {
+                'client_mac': client_mac,
+                'client_name': obs[-1]['client_name'],
+                'observation_count': len(obs),
+                'last_seen': obs[-1]['timestamp'],
+            }
+        )
 
     # Deterministic ordering — sort each AP's list by client_mac.
     for ap_name in result:
-        result[ap_name].sort(key=lambda entry: entry["client_mac"])
+        result[ap_name].sort(key=lambda entry: entry['client_mac'])
 
     return result
 
@@ -381,17 +401,17 @@ def build_mobility_graph(
         history = json.loads(path.read_text())
     except json.JSONDecodeError as err:
         raise ToolError(
-            message=f"Roaming history at {history_path} is not valid JSON: {err}",
+            message=f'Roaming history at {history_path} is not valid JSON: {err}',
             error_code=ErrorCodes.CONFIG_INVALID,
-            suggestion="Inspect the file manually; rerun the snapshot command to rebuild if corrupt.",
+            suggestion='Inspect the file manually; rerun the snapshot command to rebuild if corrupt.',
         ) from err
 
-    snapshots = history.get("snapshots", [])
+    snapshots = history.get('snapshots', [])
     if not snapshots:
         return {}
 
     try:
-        newest_ts = datetime.fromisoformat(snapshots[-1]["timestamp"])
+        newest_ts = datetime.fromisoformat(snapshots[-1]['timestamp'])
     except (KeyError, ValueError, TypeError):
         return {}
     cutoff = newest_ts - timedelta(hours=window_hours)
@@ -399,15 +419,15 @@ def build_mobility_graph(
     graph: dict[str, set[str]] = {}
     for snap in snapshots:
         try:
-            ts = datetime.fromisoformat(snap["timestamp"])
+            ts = datetime.fromisoformat(snap['timestamp'])
         except (KeyError, ValueError, TypeError):
             continue
         if ts < cutoff:
             continue
 
-        for assoc in snap.get("associations", []):
-            client_mac = assoc.get("client_mac")
-            ap_name = assoc.get("ap_name")
+        for assoc in snap.get('associations', []):
+            client_mac = assoc.get('client_mac')
+            ap_name = assoc.get('ap_name')
             if not client_mac or not ap_name:
                 continue
             graph.setdefault(client_mac, set()).add(ap_name)

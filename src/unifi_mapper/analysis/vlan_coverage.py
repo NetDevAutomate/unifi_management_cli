@@ -39,9 +39,13 @@ async def audit_vlan_coverage(
     """Fetch UniFi devices and audit VLAN coverage on trunk/planned uplink ports."""
     async with UniFiClient() as client:
         devices = await client.get_devices()
-        port_profiles = cast(list[dict[str, Any]], await client.get(client.build_path('rest/portconf')))
+        port_profiles = cast(
+            list[dict[str, Any]], await client.get(client.build_path('rest/portconf'))
+        )
         networks = await client.get_networks()
-    return audit_vlan_coverage_from_data(devices, required_vlans, planned_uplinks, port_profiles, networks)
+    return audit_vlan_coverage_from_data(
+        devices, required_vlans, planned_uplinks, port_profiles, networks
+    )
 
 
 def audit_vlan_coverage_from_data(
@@ -75,7 +79,9 @@ def audit_vlan_coverage_from_data(
 
         for port in _port_table(device):
             port_idx = _as_int(port.get('port_idx'))
-            profile = profiles_by_id.get(str(port.get('portconf_id') or port.get('port_conf_id') or ''))
+            profile = profiles_by_id.get(
+                str(port.get('portconf_id') or port.get('port_conf_id') or '')
+            )
             effective_port = _merge_profile_port(port, profile)
             lldp_entry = lldp_by_port.get(port_idx)
             matched_target = _matching_planned_target(effective_port, lldp_entry, planned_targets)
@@ -90,7 +96,11 @@ def audit_vlan_coverage_from_data(
                 continue
 
             port_name = str(port.get('name') or f'Port {port_idx}')
-            severity = 'CRITICAL' if _is_critical_target(matched_target, effective_port, lldp_entry) else 'WARNING'
+            severity = (
+                'CRITICAL'
+                if _is_critical_target(matched_target, effective_port, lldp_entry)
+                else 'WARNING'
+            )
             findings.append(
                 VLANCoverageFinding(
                     severity=severity,
@@ -202,7 +212,9 @@ def _is_trunk(port: dict[str, Any]) -> bool:
         return True
     if _profile_bool(port, ('is_access', 'access')) is True:
         return False
-    profile_text = _normalize_text(port.get('portconf_name') or port.get('profile_name') or port.get('name'))
+    profile_text = _normalize_text(
+        port.get('portconf_name') or port.get('profile_name') or port.get('name')
+    )
     if 'access' in profile_text or 'client' in profile_text:
         return False
     return any(port.get(key) is not None for key in _VLAN_KEYS)

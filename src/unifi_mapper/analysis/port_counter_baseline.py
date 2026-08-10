@@ -101,8 +101,7 @@ class PortCounterBaselineStore:
         """Persist baselines to disk, creating parent directories as needed."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            key: snapshot.model_dump(mode='json')
-            for key, snapshot in sorted(snapshots.items())
+            key: snapshot.model_dump(mode='json') for key, snapshot in sorted(snapshots.items())
         }
         with self.path.open('w', encoding='utf-8') as file:
             json.dump(payload, file, indent=2)

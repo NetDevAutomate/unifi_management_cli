@@ -38,9 +38,9 @@ PHY_WATT_ESTIMATES: dict[Any, float] = {
     1000: 0.6,
     2500: 1.3,
     5000: 1.8,
-    '10GE': 3.0,    # 10GBASE-T copper PHY
-    10000: 3.0,     # speed-only fallback when media is unknown
-    'SFP+': 1.0,    # optical / DAC
+    '10GE': 3.0,  # 10GBASE-T copper PHY
+    10000: 3.0,  # speed-only fallback when media is unknown
+    'SFP+': 1.0,  # optical / DAC
     'SFP': 0.8,
 }
 
@@ -71,14 +71,14 @@ class ModelPower(BaseModel):
 # Only models whose figures were read from a published Ubiquiti spec.
 MODEL_POWER: dict[str, ModelPower] = {
     'USWED36': ModelPower(
-        dc_supply_watts=15.0,      # "AC power adapter, 5V DC, 3A"
-        poe_input_watts=25.5,      # "(1) PoE+"  -> 802.3at delivered
+        dc_supply_watts=15.0,  # "AC power adapter, 5V DC, 3A"
+        poe_input_watts=25.5,  # "(1) PoE+"  -> 802.3at delivered
         base_watts=7.0,
         source='UniFi Flex 2.5G tech specs: power method "(1) AC power adapter, 5V DC, 3A", "(1) PoE+"',
     ),
     'USFXG': ModelPower(
-        dc_supply_watts=25.0,      # "USB Type-C, 5V DC, 5A"
-        poe_input_watts=25.5,      # "(1) PoE+"
+        dc_supply_watts=25.0,  # "USB Type-C, 5V DC, 5A"
+        poe_input_watts=25.5,  # "(1) PoE+"
         max_consumption_watts=25.0,
         base_watts=7.0,
         source='UniFi Flex 10 GbE tech specs: max power consumption 25W; power method "(1) PoE+", "(1) USB Type-C, 5V DC, 5A"',
@@ -232,8 +232,14 @@ def audit_power_budget_from_data(
             continue
 
         finding = _build_finding(
-            device=device, model=model, spec=spec, active=active,
-            load=load, base_watts=effective_base, ceiling=ceiling, pct=pct,
+            device=device,
+            model=model,
+            spec=spec,
+            active=active,
+            load=load,
+            base_watts=effective_base,
+            ceiling=ceiling,
+            pct=pct,
             phy_watts=phy_watts or PHY_WATT_ESTIMATES,
         )
         findings.append(finding)
@@ -264,13 +270,15 @@ def _build_finding(
 ) -> PowerBudgetFinding:
     name = str(device.get('name') or device.get('mac') or 'Unknown')
     poe_supported = spec.poe_input_watts is not None
-    poe_better = poe_supported and spec.dc_supply_watts is not None and (
-        cast(float, spec.poe_input_watts) > spec.dc_supply_watts
+    poe_better = (
+        poe_supported
+        and spec.dc_supply_watts is not None
+        and (cast(float, spec.poe_input_watts) > spec.dc_supply_watts)
     )
     severity = 'CRITICAL' if pct >= 90.0 else 'WARNING'
 
     detail = [
-        f"p{p.get('port_idx')}={p.get('speed')}/{p.get('media')}(~{_phy_watts(p, phy_watts)}W)"
+        f'p{p.get("port_idx")}={p.get("speed")}/{p.get("media")}(~{_phy_watts(p, phy_watts)}W)'
         for p in active
     ]
 

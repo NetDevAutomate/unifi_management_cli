@@ -45,7 +45,9 @@ def analyze_radio_optimization_from_data(
     """Analyse AP radio channel reuse and transmit power from device data."""
     aps = [device for device in devices if str(device.get('type') or '').lower() == 'uap']
     findings: list[RadioFinding] = []
-    radios_by_band_channel: dict[tuple[str, int], list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+    radios_by_band_channel: dict[tuple[str, int], list[tuple[str, dict[str, Any]]]] = defaultdict(
+        list
+    )
     radios_analyzed = 0
 
     for ap in aps:

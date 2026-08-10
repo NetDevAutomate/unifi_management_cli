@@ -84,7 +84,9 @@ class BaseDevice(BaseModel):
     type: Annotated[DeviceType, Field(description='Device type category')]
     mac: Annotated[str, Field(description='MAC address')]
     host: Annotated[str | None, Field(default=None, description='IP address or hostname')]
-    state: Annotated[DeviceState, Field(default=DeviceState.UNKNOWN, description='Connection state')]
+    state: Annotated[
+        DeviceState, Field(default=DeviceState.UNKNOWN, description='Connection state')
+    ]
     firmware_version: Annotated[str | None, Field(default=None, description='Firmware version')]
     is_adopted: Annotated[bool, Field(default=False, description='Adopted by controller')]
     is_updating: Annotated[bool, Field(default=False, description='Currently updating')]
@@ -153,9 +155,13 @@ class ProtectCamera(BaseDevice):
     is_motion_detected: Annotated[bool, Field(default=False, description='Motion detected')]
     is_smart_detected: Annotated[bool, Field(default=False, description='Smart detection active')]
     is_third_party: Annotated[bool, Field(default=False, description='Third-party camera')]
-    is_paired_with_ai_port: Annotated[bool, Field(default=False, description='Paired with AI Port')]
+    is_paired_with_ai_port: Annotated[
+        bool, Field(default=False, description='Paired with AI Port')
+    ]
     last_motion: Annotated[datetime | None, Field(default=None, description='Last motion time')]
-    last_smart_detect: Annotated[datetime | None, Field(default=None, description='Last smart detect')]
+    last_smart_detect: Annotated[
+        datetime | None, Field(default=None, description='Last smart detect')
+    ]
     has_recordings: Annotated[bool, Field(default=False, description='Has stored recordings')]
 
     @classmethod
@@ -209,7 +215,9 @@ class ProtectNVR(BaseDevice):
     hardware_platform: Annotated[str | None, Field(default=None, description='Hardware platform')]
     timezone: Annotated[str | None, Field(default=None, description='Configured timezone')]
     is_station: Annotated[bool, Field(default=False, description='Is Cloud Key/station')]
-    enable_automatic_backups: Annotated[bool, Field(default=False, description='Auto backups enabled')]
+    enable_automatic_backups: Annotated[
+        bool, Field(default=False, description='Auto backups enabled')
+    ]
 
     @classmethod
     def from_uiprotect(cls, nvr: NVR) -> ProtectNVR:
@@ -266,8 +274,12 @@ class ProtectSensor(BaseDevice):
     is_motion_detected: Annotated[bool, Field(default=False, description='Motion detected')]
     is_opened: Annotated[bool, Field(default=False, description='Door/window open')]
     motion_detected_at: Annotated[datetime | None, Field(default=None, description='Last motion')]
-    open_status_changed_at: Annotated[datetime | None, Field(default=None, description='Last open/close')]
-    tampering_detected_at: Annotated[datetime | None, Field(default=None, description='Last tampering')]
+    open_status_changed_at: Annotated[
+        datetime | None, Field(default=None, description='Last open/close')
+    ]
+    tampering_detected_at: Annotated[
+        datetime | None, Field(default=None, description='Last tampering')
+    ]
     alarm_triggered_at: Annotated[datetime | None, Field(default=None, description='Last alarm')]
     leak_detected_at: Annotated[datetime | None, Field(default=None, description='Last leak')]
     mount_type: Annotated[str | None, Field(default=None, description='Mount type')]
@@ -325,7 +337,9 @@ class ProtectLight(BaseDevice):
     light_level: Annotated[int, Field(default=0, ge=0, le=100, description='Brightness level')]
     is_motion_detected: Annotated[bool, Field(default=False, description='Motion detected')]
     last_motion: Annotated[datetime | None, Field(default=None, description='Last motion')]
-    is_pir_motion_detected: Annotated[bool, Field(default=False, description='PIR motion detected')]
+    is_pir_motion_detected: Annotated[
+        bool, Field(default=False, description='PIR motion detected')
+    ]
 
     @classmethod
     def from_uiprotect(cls, light: Light) -> ProtectLight:
@@ -351,7 +365,9 @@ class ProtectLight(BaseDevice):
             uptime=light.uptime,
             last_seen=light.last_seen,
             is_light_on=getattr(light, 'is_light_on', False),
-            light_level=getattr(light, 'light_device_settings', {}).get('led_level', 0) if hasattr(light, 'light_device_settings') else 0,
+            light_level=getattr(light, 'light_device_settings', {}).get('led_level', 0)
+            if hasattr(light, 'light_device_settings')
+            else 0,
             is_motion_detected=getattr(light, 'is_motion_detected', False),
             last_motion=getattr(light, 'last_motion', None),
             is_pir_motion_detected=getattr(light, 'is_pir_motion_detected', False),
@@ -408,7 +424,9 @@ class ProtectDoorlock(BaseDevice):
 
     is_locked: Annotated[bool, Field(default=True, description='Currently locked')]
     lock_status: Annotated[str | None, Field(default=None, description='Lock status')]
-    auto_close_time: Annotated[int | None, Field(default=None, description='Auto-lock delay seconds')]
+    auto_close_time: Annotated[
+        int | None, Field(default=None, description='Auto-lock delay seconds')
+    ]
 
     @classmethod
     def from_uiprotect(cls, doorlock: Doorlock) -> ProtectDoorlock:
@@ -507,4 +525,12 @@ class ProtectAIPort(BaseDevice):
 
 
 # Type alias for any Protect device model
-ProtectDevice = ProtectCamera | ProtectNVR | ProtectSensor | ProtectLight | ProtectChime | ProtectDoorlock | ProtectAIPort
+ProtectDevice = (
+    ProtectCamera
+    | ProtectNVR
+    | ProtectSensor
+    | ProtectLight
+    | ProtectChime
+    | ProtectDoorlock
+    | ProtectAIPort
+)

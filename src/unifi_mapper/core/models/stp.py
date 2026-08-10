@@ -98,9 +98,7 @@ class SwitchSTPConfig(BaseModel):
     root_port_idx: int | None = Field(
         default=None, description='Port index pointing toward root bridge'
     )
-    root_eligible: bool = Field(
-        default=True, description='Whether switch may be elected STP root'
-    )
+    root_eligible: bool = Field(default=True, description='Whether switch may be elected STP root')
     root_preference: int = Field(
         default=100, description='Lower value is preferred among eligible roots'
     )
@@ -122,7 +120,6 @@ class SwitchSTPConfig(BaseModel):
     connected_to_gateway: bool = Field(
         default=False, description='Whether directly connected to gateway/router'
     )
-
 
 
 class STPConnection(BaseModel):

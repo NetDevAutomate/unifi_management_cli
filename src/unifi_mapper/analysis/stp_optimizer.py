@@ -434,7 +434,9 @@ def _calculate_hierarchy_tiers(
                 switch.capability.value == 'unknown'
             )
             override_root = resolved_overrides.is_root_eligible_override(switch.mac)
-            if not force_access and (root_capable or (override_root and not is_access_class(switch.capability))):
+            if not force_access and (
+                root_capable or (override_root and not is_access_class(switch.capability))
+            ):
                 switch.hierarchy_tier = 0
                 switch.tier_reason = 'Gateway-connected root-capable switch'
                 core_switch_ids.add(switch.device_id)
@@ -742,11 +744,15 @@ async def generate_stp_report(
     optimal_root_reason = ''
     _apply_root_eligibility(topology.switches)
     root_candidates = [
-        switch for switch in topology.switches if switch.hierarchy_tier == 0 and switch.root_eligible
+        switch
+        for switch in topology.switches
+        if switch.hierarchy_tier == 0 and switch.root_eligible
     ]
     if not root_candidates:
         root_candidates = [
-            switch for switch in topology.switches if switch.hierarchy_tier == 0 and switch.connected_to_gateway
+            switch
+            for switch in topology.switches
+            if switch.hierarchy_tier == 0 and switch.connected_to_gateway
         ]
     if root_candidates:
         optimal_switch = sorted(
@@ -826,7 +832,9 @@ def build_10g_expansion_validation_report(
         if port.connected_device_id in switch_ids
     ]
     ten_gig_ports = [
-        (switch, port) for switch, port in inter_switch_ports if port.link_speed_mbps >= target_speed_mbps
+        (switch, port)
+        for switch, port in inter_switch_ports
+        if port.link_speed_mbps >= target_speed_mbps
     ]
 
     if planned_flex_xg_switches < 1:

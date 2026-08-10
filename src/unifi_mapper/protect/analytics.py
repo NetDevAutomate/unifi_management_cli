@@ -13,7 +13,7 @@ Example:
     ...     analytics.start()
     ...     # ... let events accumulate ...
     ...     stats = analytics.get_motion_stats()
-    ...     print(f"Motion events last hour: {stats.total_events}")
+    ...     print(f'Motion events last hour: {stats.total_events}')
 """
 
 from __future__ import annotations
@@ -243,11 +243,13 @@ class EventAnalytics:
         >>>
         >>> # Get motion statistics
         >>> motion_stats = analytics.get_motion_stats(TimeWindow.last_hour())
-        >>> print(f"Motion events: {motion_stats.total_events}")
+        >>> print(f'Motion events: {motion_stats.total_events}')
         >>>
         >>> # Get smart detection stats
         >>> smart_stats = analytics.get_smart_detect_stats()
-        >>> print(f"People detected: {smart_stats.detections_by_type.get(SmartDetectType.PERSON, 0)}")
+        >>> print(
+        ...     f'People detected: {smart_stats.detections_by_type.get(SmartDetectType.PERSON, 0)}'
+        ... )
         >>>
         >>> analytics.stop()
     """
@@ -357,7 +359,7 @@ class EventAnalytics:
 
         # Trim history if needed
         if len(self._event_history) > self.MAX_EVENT_HISTORY:
-            self._event_history = self._event_history[-self.MAX_EVENT_HISTORY:]
+            self._event_history = self._event_history[-self.MAX_EVENT_HISTORY :]
 
         # Track device health
         self._update_device_health(event)
@@ -406,7 +408,7 @@ class EventAnalytics:
 
         # Trim if needed
         if len(self._smart_detections) > self.MAX_RECENT_DETECTIONS:
-            self._smart_detections = self._smart_detections[-self.MAX_RECENT_DETECTIONS:]
+            self._smart_detections = self._smart_detections[-self.MAX_RECENT_DETECTIONS :]
 
     def get_event_aggregation(
         self,
@@ -430,10 +432,7 @@ class EventAnalytics:
         window_end = now
 
         # Filter events by time window
-        events = [
-            e for e in self._event_history
-            if e.timestamp >= window_start
-        ]
+        events = [e for e in self._event_history if e.timestamp >= window_start]
 
         # Apply additional filter if provided
         if event_filter is not None:
@@ -497,16 +496,15 @@ class EventAnalytics:
         while current_start < end:
             current_end = min(current_start + bucket_size, end)
 
-            count = sum(
-                1 for e in events
-                if current_start <= e.timestamp < current_end
-            )
+            count = sum(1 for e in events if current_start <= e.timestamp < current_end)
 
-            buckets.append(EventCount(
-                bucket_start=current_start,
-                bucket_end=current_end,
-                count=count,
-            ))
+            buckets.append(
+                EventCount(
+                    bucket_start=current_start,
+                    bucket_end=current_end,
+                    count=count,
+                )
+            )
 
             current_start = current_end
 
@@ -548,10 +546,7 @@ class EventAnalytics:
         window_start = now - window.duration
 
         # Filter detections by time window
-        detections = [
-            e for e in self._smart_detections
-            if e.timestamp >= window_start
-        ]
+        detections = [e for e in self._smart_detections if e.timestamp >= window_start]
 
         stats = SmartDetectStats(
             total_detections=len(detections),
@@ -649,52 +644,55 @@ class EventAnalytics:
         Returns:
             List of DeviceHealth for all devices seen.
         """
-        return [
-            self.get_device_health(device_id)
-            for device_id in self._device_last_seen.keys()
-        ]
+        return [self.get_device_health(device_id) for device_id in self._device_last_seen.keys()]
 
     def _init_default_correlation_rules(self) -> None:
         """Initialize default event correlation rules."""
         # Motion followed by doorbell ring
-        self._correlation_rules.append(CorrelationRule(
-            name='motion_then_doorbell',
-            trigger_filter=EventFilter(
-                categories=[ProtectEventCategory.MOTION],
-                model_types=[ProtectModelType.CAMERA],
-            ),
-            related_filter=EventFilter(
-                event_types=[ProtectEventType.RING],
-            ),
-            time_window=timedelta(seconds=60),
-            min_confidence=0.7,
-        ))
+        self._correlation_rules.append(
+            CorrelationRule(
+                name='motion_then_doorbell',
+                trigger_filter=EventFilter(
+                    categories=[ProtectEventCategory.MOTION],
+                    model_types=[ProtectModelType.CAMERA],
+                ),
+                related_filter=EventFilter(
+                    event_types=[ProtectEventType.RING],
+                ),
+                time_window=timedelta(seconds=60),
+                min_confidence=0.7,
+            )
+        )
 
         # Motion followed by door sensor open
-        self._correlation_rules.append(CorrelationRule(
-            name='motion_then_door_open',
-            trigger_filter=EventFilter(
-                categories=[ProtectEventCategory.MOTION],
-            ),
-            related_filter=EventFilter(
-                event_types=[ProtectEventType.SENSOR_OPENED],
-            ),
-            time_window=timedelta(seconds=30),
-            min_confidence=0.6,
-        ))
+        self._correlation_rules.append(
+            CorrelationRule(
+                name='motion_then_door_open',
+                trigger_filter=EventFilter(
+                    categories=[ProtectEventCategory.MOTION],
+                ),
+                related_filter=EventFilter(
+                    event_types=[ProtectEventType.SENSOR_OPENED],
+                ),
+                time_window=timedelta(seconds=30),
+                min_confidence=0.6,
+            )
+        )
 
         # Person detection followed by doorbell
-        self._correlation_rules.append(CorrelationRule(
-            name='person_then_doorbell',
-            trigger_filter=EventFilter(
-                event_types=[ProtectEventType.SMART_DETECT],
-            ),
-            related_filter=EventFilter(
-                event_types=[ProtectEventType.RING],
-            ),
-            time_window=timedelta(seconds=120),
-            min_confidence=0.9,
-        ))
+        self._correlation_rules.append(
+            CorrelationRule(
+                name='person_then_doorbell',
+                trigger_filter=EventFilter(
+                    event_types=[ProtectEventType.SMART_DETECT],
+                ),
+                related_filter=EventFilter(
+                    event_types=[ProtectEventType.RING],
+                ),
+                time_window=timedelta(seconds=120),
+                min_confidence=0.9,
+            )
+        )
 
     def add_correlation_rule(self, rule: CorrelationRule) -> None:
         """Add a custom correlation rule.

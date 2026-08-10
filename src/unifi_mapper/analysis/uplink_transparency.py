@@ -59,15 +59,19 @@ class UplinkTransparencyFinding(BaseModel):
     uplink_port: int = Field(description='Local port index elected as the uplink')
     uplink_port_name: str = Field(default='', description='Local uplink port name')
     profile_name: str = Field(default='', description='Port profile applied to the uplink port')
-    forward_mode: str = Field(default='', description="Profile 'forward' mode (all/native/customize)")
-    tagged_vlan_mgmt: str = Field(default='', description="Profile 'tagged_vlan_mgmt' (auto/block_all/custom)")
+    forward_mode: str = Field(
+        default='', description="Profile 'forward' mode (all/native/customize)"
+    )
+    tagged_vlan_mgmt: str = Field(
+        default='', description="Profile 'tagged_vlan_mgmt' (auto/block_all/custom)"
+    )
     severed_vlans: list[int] = Field(
         default_factory=lambda: [],
         description='Tagged VLANs that cannot reach anything behind this switch',
     )
     management_vlan_severed: bool = Field(
         default=False,
-        description="True when the management VLAN is severed, making the switch unreachable",
+        description='True when the management VLAN is severed, making the switch unreachable',
     )
     remote_uplink_mac: str = Field(default='', description='MAC at the far end of the uplink')
     remote_is_unifi: bool | None = Field(
@@ -113,7 +117,9 @@ async def audit_uplink_transparency(
     """Fetch UniFi devices and audit whether each switch's uplink carries tagged VLANs."""
     async with UniFiClient() as client:
         devices = await client.get_devices()
-        port_profiles = cast(list[dict[str, Any]], await client.get(client.build_path('rest/portconf')))
+        port_profiles = cast(
+            list[dict[str, Any]], await client.get(client.build_path('rest/portconf'))
+        )
         networks = await client.get_networks()
     return audit_uplink_transparency_from_data(
         devices,
@@ -144,12 +150,10 @@ def audit_uplink_transparency_from_data(
     }
     network_vlan_by_id = _network_vlan_by_id(networks or [])
     tagged_vlans = sorted({vlan for vlan in network_vlan_by_id.values() if vlan > 0})
-    resolved_mgmt_vlan = mgmt_vlan if mgmt_vlan is not None else _infer_mgmt_vlan(devices, networks or [])
-    unifi_macs = {
-        str(device.get('mac') or '').lower()
-        for device in devices
-        if device.get('mac')
-    }
+    resolved_mgmt_vlan = (
+        mgmt_vlan if mgmt_vlan is not None else _infer_mgmt_vlan(devices, networks or [])
+    )
+    unifi_macs = {str(device.get('mac') or '').lower() for device in devices if device.get('mac')}
 
     findings: list[UplinkTransparencyFinding] = []
     devices_analyzed = 0
@@ -165,7 +169,9 @@ def audit_uplink_transparency_from_data(
             continue
         uplinks_analyzed += 1
 
-        profile = profiles_by_id.get(str(uplink_port.get('portconf_id') or uplink_port.get('port_conf_id') or ''))
+        profile = profiles_by_id.get(
+            str(uplink_port.get('portconf_id') or uplink_port.get('port_conf_id') or '')
+        )
         effective = _merge_profile_port(uplink_port, profile)
         forward_mode = str(effective.get('forward') or '').lower()
         tagged_mgmt = str(effective.get('tagged_vlan_mgmt') or '').lower()
@@ -291,7 +297,7 @@ def _build_finding(
         message = (
             f'{device_name} is uplinked through {port_name} '
             f"(profile '{profile_name}', forward={forward_mode or 'unknown'}, "
-            f"tagged_vlan_mgmt={tagged_mgmt or 'unknown'}) which {reason}. "
+            f'tagged_vlan_mgmt={tagged_mgmt or "unknown"}) which {reason}. '
             f'Tagged VLAN(s) {_format_vlans(severed)} cannot reach anything behind this switch, '
             f'while untagged traffic continues to work.'
         )

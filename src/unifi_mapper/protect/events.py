@@ -11,7 +11,7 @@ Example:
     ...     handler = EventHandler(client)
     ...
     ...     def on_motion(event: ProtectEvent) -> None:
-    ...         print(f"Motion on {event.device_id}")
+    ...         print(f'Motion on {event.device_id}')
     ...
     ...     filter = EventFilter(event_types=[ProtectEventType.MOTION])
     ...     unsub = handler.subscribe(on_motion, filter)
@@ -376,8 +376,7 @@ class EventFilter:
     Example:
         >>> # Match motion events from cameras only
         >>> filter = EventFilter(
-        ...     categories=[ProtectEventCategory.MOTION],
-        ...     model_types=[ProtectModelType.CAMERA]
+        ...     categories=[ProtectEventCategory.MOTION], model_types=[ProtectModelType.CAMERA]
         ... )
         >>>
         >>> # Match any event from specific devices
@@ -400,13 +399,15 @@ class EventFilter:
             True if the event matches all specified criteria.
         """
         # If no filters are specified, match everything
-        if not any([
-            self.event_types,
-            self.categories,
-            self.model_types,
-            self.device_ids,
-            self.actions,
-        ]):
+        if not any(
+            [
+                self.event_types,
+                self.categories,
+                self.model_types,
+                self.device_ids,
+                self.actions,
+            ]
+        ):
             return True
 
         # Check each filter criterion (all must match if specified)
@@ -461,11 +462,11 @@ class EventHandler:
         ...     handler = EventHandler(client)
         ...
         ...     def on_motion(event: ProtectEvent) -> None:
-        ...         print(f"Motion detected: {event.device_id}")
+        ...         print(f'Motion detected: {event.device_id}')
         ...
-        ...     unsub = handler.subscribe(on_motion, EventFilter(
-        ...         categories=[ProtectEventCategory.MOTION]
-        ...     ))
+        ...     unsub = handler.subscribe(
+        ...         on_motion, EventFilter(categories=[ProtectEventCategory.MOTION])
+        ...     )
         ...
         ...     # Events are handled automatically
         ...     await asyncio.sleep(60)
@@ -570,9 +571,7 @@ class EventHandler:
             logger.warning('Cannot start WebSocket subscription: API not initialized')
             return
 
-        self._ws_unsubscribe = api.subscribe_websocket(
-            self._handle_ws_message
-        )
+        self._ws_unsubscribe = api.subscribe_websocket(self._handle_ws_message)
         self._is_subscribed = True
         logger.info('Started WebSocket event subscription')
 
@@ -629,9 +628,7 @@ class EventHandler:
                 asyncio.create_task(result)  # type: ignore[arg-type]
 
         except Exception as e:
-            logger.error(
-                f'Error in event callback {subscription.subscription_id}: {e}'
-            )
+            logger.error(f'Error in event callback {subscription.subscription_id}: {e}')
 
     def clear_subscriptions(self) -> None:
         """Remove all event subscriptions.

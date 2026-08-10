@@ -15,7 +15,7 @@ from typing import Any
 
 
 # Initialize the MCP server
-mcp = FastMCP("unifi-management")
+mcp = FastMCP('unifi-management')
 
 # Initialize the tool registry
 _registry: ToolRegistry | None = None
@@ -25,7 +25,7 @@ def get_registry() -> ToolRegistry:
     """Get or create the tool registry singleton."""
     global _registry
     if _registry is None:
-        _registry = ToolRegistry(Path(__file__).parent / "manifests")
+        _registry = ToolRegistry(Path(__file__).parent / 'manifests')
     return _registry
 
 
@@ -34,7 +34,7 @@ async def search_tools(
     query: str | None = None,
     category: str | None = None,
     tags: list[str] | None = None,
-    detail_level: str = "summary",
+    detail_level: str = 'summary',
 ) -> list[dict[str, Any]]:
     """Search available UniFi management tools.
 
@@ -105,14 +105,14 @@ async def get_tool_info(tool_name: str) -> dict[str, Any] | None:
         return None
 
     return {
-        "name": metadata.name,
-        "description": metadata.description,
-        "category": metadata.category,
-        "priority": metadata.priority,
-        "tags": metadata.tags,
-        "parameters": metadata.parameters,
-        "module": metadata.module,
-        "handler": metadata.handler,
+        'name': metadata.name,
+        'description': metadata.description,
+        'category': metadata.category,
+        'priority': metadata.priority,
+        'tags': metadata.tags,
+        'parameters': metadata.parameters,
+        'module': metadata.module,
+        'handler': metadata.handler,
     }
 
 
@@ -121,5 +121,5 @@ def main() -> None:
     mcp.run()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -82,7 +82,7 @@ class TrafficMatchingListManager:
         """Refresh the traffic matching lists cache."""
         lists = await self._client.list_traffic_matching_lists()
         self._lists_cache = {lst.id: lst for lst in lists}
-        log.debug(f"Cached {len(self._lists_cache)} traffic matching lists")
+        log.debug(f'Cached {len(self._lists_cache)} traffic matching lists')
 
     async def get_all_lists(self, refresh: bool = False) -> list[TrafficMatchingList]:
         """Get all traffic matching lists.
@@ -168,10 +168,7 @@ class TrafficMatchingListManager:
             List of matching lists.
         """
         lists = await self.get_port_lists()
-        return [
-            lst for lst in lists
-            if any(p.port == port for p in lst.ports)
-        ]
+        return [lst for lst in lists if any(p.port == port for p in lst.ports)]
 
     async def get_lists_containing_ip(self, ip_address: str) -> list[TrafficMatchingList]:
         """Get all lists containing a specific IP address.
@@ -184,8 +181,7 @@ class TrafficMatchingListManager:
         """
         lists = await self.get_ip_address_lists()
         return [
-            lst for lst in lists
-            if any(addr.ip_address == ip_address for addr in lst.ip_addresses)
+            lst for lst in lists if any(addr.ip_address == ip_address for addr in lst.ip_addresses)
         ]
 
     async def create_port_list(
@@ -208,10 +204,12 @@ class TrafficMatchingListManager:
                 protocol_str = protocol.value
             else:
                 protocol_str = protocol.upper()
-            port_configs.append({
-                'port': port,
-                'protocol': protocol_str,
-            })
+            port_configs.append(
+                {
+                    'port': port,
+                    'protocol': protocol_str,
+                }
+            )
 
         traffic_list = await self._client.create_traffic_matching_list(
             name=name,
@@ -238,14 +236,18 @@ class TrafficMatchingListManager:
         ip_configs = []
         for addr in addresses:
             if isinstance(addr, tuple):
-                ip_configs.append({
-                    'ipAddress': addr[0],
-                    'description': addr[1],
-                })
+                ip_configs.append(
+                    {
+                        'ipAddress': addr[0],
+                        'description': addr[1],
+                    }
+                )
             else:
-                ip_configs.append({
-                    'ipAddress': addr,
-                })
+                ip_configs.append(
+                    {
+                        'ipAddress': addr,
+                    }
+                )
 
         traffic_list = await self._client.create_traffic_matching_list(
             name=name,
@@ -303,15 +305,14 @@ class TrafficMatchingListManager:
         """
         traffic_list = await self.get_list_by_id(list_id)
         if not traffic_list:
-            raise ValueError(f"List not found: {list_id}")
+            raise ValueError(f'List not found: {list_id}')
 
         if traffic_list.type != TrafficMatchingListType.PORT_LIST:
-            raise ValueError("Cannot add port to non-port list")
+            raise ValueError('Cannot add port to non-port list')
 
         # Get existing ports
         existing_ports = [
-            {'port': p.port, 'protocol': p.protocol.value}
-            for p in traffic_list.ports
+            {'port': p.port, 'protocol': p.protocol.value} for p in traffic_list.ports
         ]
 
         # Add new port
@@ -320,10 +321,12 @@ class TrafficMatchingListManager:
         else:
             protocol_str = protocol.upper()
 
-        existing_ports.append({
-            'port': port,
-            'protocol': protocol_str,
-        })
+        existing_ports.append(
+            {
+                'port': port,
+                'protocol': protocol_str,
+            }
+        )
 
         return await self.update_list(list_id, ports=existing_ports)
 
@@ -345,10 +348,10 @@ class TrafficMatchingListManager:
         """
         traffic_list = await self.get_list_by_id(list_id)
         if not traffic_list:
-            raise ValueError(f"List not found: {list_id}")
+            raise ValueError(f'List not found: {list_id}')
 
         if traffic_list.type != TrafficMatchingListType.PORT_LIST:
-            raise ValueError("Cannot remove port from non-port list")
+            raise ValueError('Cannot remove port from non-port list')
 
         # Filter out the port
         remaining_ports = []
@@ -363,10 +366,12 @@ class TrafficMatchingListManager:
                         continue
                 else:
                     continue
-            remaining_ports.append({
-                'port': p.port,
-                'protocol': p.protocol.value,
-            })
+            remaining_ports.append(
+                {
+                    'port': p.port,
+                    'protocol': p.protocol.value,
+                }
+            )
 
         return await self.update_list(list_id, ports=remaining_ports)
 
@@ -388,10 +393,10 @@ class TrafficMatchingListManager:
         """
         traffic_list = await self.get_list_by_id(list_id)
         if not traffic_list:
-            raise ValueError(f"List not found: {list_id}")
+            raise ValueError(f'List not found: {list_id}')
 
         if traffic_list.type != TrafficMatchingListType.IP_ADDRESS_LIST:
-            raise ValueError("Cannot add IP to non-IP-address list")
+            raise ValueError('Cannot add IP to non-IP-address list')
 
         # Get existing addresses
         existing_ips = [
@@ -423,10 +428,10 @@ class TrafficMatchingListManager:
         """
         traffic_list = await self.get_list_by_id(list_id)
         if not traffic_list:
-            raise ValueError(f"List not found: {list_id}")
+            raise ValueError(f'List not found: {list_id}')
 
         if traffic_list.type != TrafficMatchingListType.IP_ADDRESS_LIST:
-            raise ValueError("Cannot remove IP from non-IP-address list")
+            raise ValueError('Cannot remove IP from non-IP-address list')
 
         # Filter out the IP
         remaining_ips = [
@@ -525,8 +530,7 @@ class TrafficMatchingListManager:
             }
             if traffic_list.type == TrafficMatchingListType.PORT_LIST:
                 entry['ports'] = [
-                    {'port': p.port, 'protocol': p.protocol.value}
-                    for p in traffic_list.ports
+                    {'port': p.port, 'protocol': p.protocol.value} for p in traffic_list.ports
                 ]
             else:
                 entry['ip_addresses'] = [
@@ -544,7 +548,13 @@ class TrafficMatchingListManager:
         """
         return {
             'Web Services': [(80, 'TCP'), (443, 'TCP')],
-            'Email Services': [(25, 'TCP'), (465, 'TCP'), (587, 'TCP'), (993, 'TCP'), (995, 'TCP')],
+            'Email Services': [
+                (25, 'TCP'),
+                (465, 'TCP'),
+                (587, 'TCP'),
+                (993, 'TCP'),
+                (995, 'TCP'),
+            ],
             'DNS': [(53, 'TCP'), (53, 'UDP')],
             'SSH': [(22, 'TCP')],
             'FTP': [(20, 'TCP'), (21, 'TCP')],

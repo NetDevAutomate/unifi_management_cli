@@ -73,7 +73,7 @@ class DNSPolicyManager:
         """Refresh the DNS policies cache."""
         policies = await self._client.list_dns_policies()
         self._policies_cache = {p.id: p for p in policies}
-        log.debug(f"Cached {len(self._policies_cache)} DNS policies")
+        log.debug(f'Cached {len(self._policies_cache)} DNS policies')
 
     async def get_all_policies(self, refresh: bool = False) -> list[DNSPolicy]:
         """Get all DNS policies.

@@ -29,9 +29,9 @@ class NetworkConfig(BaseModel):
 
     Example:
         >>> config = NetworkConfig(
-        ...     host="192.0.2.1",
-        ...     api_key=SecretStr("your-api-key"),
-        ...     site_id="550e8400-e29b-41d4-a716-446655440000"
+        ...     host='192.0.2.1',
+        ...     api_key=SecretStr('your-api-key'),
+        ...     site_id='550e8400-e29b-41d4-a716-446655440000',
         ... )
     """
 
@@ -40,7 +40,9 @@ class NetworkConfig(BaseModel):
     api_key: Annotated[SecretStr, Field(description='API key for authentication')]
     site_id: Annotated[str, Field(min_length=1, description='Site UUID')]
     verify_ssl: Annotated[bool, Field(default=False, description='Verify SSL certificates')]
-    timeout: Annotated[int, Field(default=30, ge=5, le=300, description='Request timeout in seconds')]
+    timeout: Annotated[
+        int, Field(default=30, ge=5, le=300, description='Request timeout in seconds')
+    ]
     debug: Annotated[bool, Field(default=False, description='Enable debug logging')]
 
     model_config = {'extra': 'forbid', 'validate_assignment': True}
@@ -52,7 +54,7 @@ class NetworkConfig(BaseModel):
         normalized = v.strip()
         for prefix in ('https://', 'http://'):
             if normalized.lower().startswith(prefix):
-                normalized = normalized[len(prefix):]
+                normalized = normalized[len(prefix) :]
                 break
         normalized = normalized.rstrip('/').split(':')[0]
         if not normalized:
@@ -83,12 +85,12 @@ class NetworkConfig(BaseModel):
     @property
     def base_url(self) -> str:
         """Get the base URL for API requests."""
-        return f"https://{self.host}:{self.port}"
+        return f'https://{self.host}:{self.port}'
 
     @property
     def api_base_url(self) -> str:
         """Get the base URL for the Network API."""
-        return f"{self.base_url}/proxy/network/integrations/v1"
+        return f'{self.base_url}/proxy/network/integrations/v1'
 
     @classmethod
     def from_env(

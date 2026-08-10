@@ -11,7 +11,7 @@ from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
-DEFAULT_BASELINE_PATH = "reports/link-error-baseline.json"
+DEFAULT_BASELINE_PATH = 'reports/link-error-baseline.json'
 
 
 async def snapshot_link_errors(output_path: str = DEFAULT_BASELINE_PATH) -> dict:
@@ -19,33 +19,35 @@ async def snapshot_link_errors(output_path: str = DEFAULT_BASELINE_PATH) -> dict
     async with UniFiClient() as client:
         devices = await client.get_devices()
 
-    snapshot = {"timestamp": datetime.now().isoformat(), "devices": []}
+    snapshot = {'timestamp': datetime.now().isoformat(), 'devices': []}
 
     for d in devices:
-        if d.get("type") not in ("usw", "udm", "udmpro"):
+        if d.get('type') not in ('usw', 'udm', 'udmpro'):
             continue
         # A factory-reset / pending-adoption device has no '_id'. There is no stable key
         # to anchor a baseline to, so it is skipped rather than crashing the snapshot.
-        if not d.get("_id"):
+        if not d.get('_id'):
             continue
         dev_entry = {
-            "device_id": d["_id"],
-            "name": d.get("name", "Unknown"),
-            "uptime": d.get("uptime", 0),
-            "ports": [],
+            'device_id': d['_id'],
+            'name': d.get('name', 'Unknown'),
+            'uptime': d.get('uptime', 0),
+            'ports': [],
         }
-        for p in d.get("port_table", []):
-            dev_entry["ports"].append({
-                "port_idx": p.get("port_idx"),
-                "name": p.get("name", ""),
-                "rx_errors": p.get("rx_errors", 0) or 0,
-                "tx_errors": p.get("tx_errors", 0) or 0,
-                "rx_dropped": p.get("rx_dropped", 0) or 0,
-                "tx_dropped": p.get("tx_dropped", 0) or 0,
-                "rx_bytes": p.get("rx_bytes", 0) or 0,
-                "tx_bytes": p.get("tx_bytes", 0) or 0,
-            })
-        snapshot["devices"].append(dev_entry)
+        for p in d.get('port_table', []):
+            dev_entry['ports'].append(
+                {
+                    'port_idx': p.get('port_idx'),
+                    'name': p.get('name', ''),
+                    'rx_errors': p.get('rx_errors', 0) or 0,
+                    'tx_errors': p.get('tx_errors', 0) or 0,
+                    'rx_dropped': p.get('rx_dropped', 0) or 0,
+                    'tx_dropped': p.get('tx_dropped', 0) or 0,
+                    'rx_bytes': p.get('rx_bytes', 0) or 0,
+                    'tx_bytes': p.get('tx_bytes', 0) or 0,
+                }
+            )
+        snapshot['devices'].append(dev_entry)
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,13 +71,13 @@ async def compare_link_errors(
     path = Path(baseline_path)
     if not path.exists():
         raise ToolError(
-            message=f"No baseline found at {baseline_path}. Run snapshot first.",
+            message=f'No baseline found at {baseline_path}. Run snapshot first.',
             error_code=ErrorCodes.NO_DATA,
-            suggestion="Run: unifi-mapper analyze link-errors --snapshot",
+            suggestion='Run: unifi-mapper analyze link-errors --snapshot',
         )
 
     baseline = json.loads(path.read_text())
-    baseline_time = datetime.fromisoformat(baseline["timestamp"])
+    baseline_time = datetime.fromisoformat(baseline['timestamp'])
 
     async with UniFiClient() as client:
         devices = await client.get_devices()
@@ -87,52 +89,52 @@ async def compare_link_errors(
     # Also track baseline uptime per device for reboot detection
     baseline_lookup = {}
     baseline_uptime = {}
-    for dev in baseline["devices"]:
-        baseline_uptime[dev["device_id"]] = dev.get("uptime", 0)
-        for port in dev["ports"]:
-            key = (dev["device_id"], port["port_idx"])
+    for dev in baseline['devices']:
+        baseline_uptime[dev['device_id']] = dev.get('uptime', 0)
+        for port in dev['ports']:
+            key = (dev['device_id'], port['port_idx'])
             baseline_lookup[key] = port
 
     # Detect devices that rebooted between snapshots
     # A reboot is: current uptime < baseline uptime (counter reset to 0 on boot)
     rebooted_devices: dict[str, dict] = {}
     for d in devices:
-        if d.get("type") not in ("usw", "udm", "udmpro"):
+        if d.get('type') not in ('usw', 'udm', 'udmpro'):
             continue
-        dev_id = d.get("_id")
+        dev_id = d.get('_id')
         if not dev_id:
             continue
         prev_uptime = baseline_uptime.get(dev_id)
-        curr_uptime = d.get("uptime", 0)
+        curr_uptime = d.get('uptime', 0)
         if prev_uptime is not None and curr_uptime < prev_uptime:
             rebooted_devices[dev_id] = {
-                "name": d.get("name", "Unknown"),
-                "previous_uptime_s": prev_uptime,
-                "current_uptime_s": curr_uptime,
+                'name': d.get('name', 'Unknown'),
+                'previous_uptime_s': prev_uptime,
+                'current_uptime_s': curr_uptime,
             }
 
     flagged = []
     all_deltas = []
 
     for d in devices:
-        if d.get("type") not in ("usw", "udm", "udmpro"):
+        if d.get('type') not in ('usw', 'udm', 'udmpro'):
             continue
-        dev_id = d.get("_id")
+        dev_id = d.get('_id')
         if not dev_id:
             continue
-        dev_name = d.get("name", "Unknown")
+        dev_name = d.get('name', 'Unknown')
 
-        for p in d.get("port_table", []):
-            port_idx = p.get("port_idx")
+        for p in d.get('port_table', []):
+            port_idx = p.get('port_idx')
             key = (dev_id, port_idx)
             prev = baseline_lookup.get(key)
             if not prev:
                 continue
 
-            rx_err_delta = max(0, (p.get("rx_errors", 0) or 0) - prev["rx_errors"])
-            tx_err_delta = max(0, (p.get("tx_errors", 0) or 0) - prev["tx_errors"])
-            rx_drop_delta = max(0, (p.get("rx_dropped", 0) or 0) - prev["rx_dropped"])
-            tx_drop_delta = max(0, (p.get("tx_dropped", 0) or 0) - prev["tx_dropped"])
+            rx_err_delta = max(0, (p.get('rx_errors', 0) or 0) - prev['rx_errors'])
+            tx_err_delta = max(0, (p.get('tx_errors', 0) or 0) - prev['tx_errors'])
+            rx_drop_delta = max(0, (p.get('rx_dropped', 0) or 0) - prev['rx_dropped'])
+            tx_drop_delta = max(0, (p.get('tx_dropped', 0) or 0) - prev['tx_dropped'])
             total_delta = rx_err_delta + tx_err_delta + rx_drop_delta + tx_drop_delta
 
             if total_delta == 0:
@@ -140,38 +142,38 @@ async def compare_link_errors(
 
             rate_per_min = total_delta / elapsed_minutes
             entry = {
-                "device": dev_name,
-                "port_idx": port_idx,
-                "port_name": p.get("name", f"Port {port_idx}"),
-                "rx_errors_delta": rx_err_delta,
-                "tx_errors_delta": tx_err_delta,
-                "rx_dropped_delta": rx_drop_delta,
-                "tx_dropped_delta": tx_drop_delta,
-                "total_delta": total_delta,
-                "rate_per_min": round(rate_per_min, 1),
-                "elapsed_minutes": round(elapsed_minutes, 1),
-                "reboot_detected": dev_id in rebooted_devices,
+                'device': dev_name,
+                'port_idx': port_idx,
+                'port_name': p.get('name', f'Port {port_idx}'),
+                'rx_errors_delta': rx_err_delta,
+                'tx_errors_delta': tx_err_delta,
+                'rx_dropped_delta': rx_drop_delta,
+                'tx_dropped_delta': tx_drop_delta,
+                'total_delta': total_delta,
+                'rate_per_min': round(rate_per_min, 1),
+                'elapsed_minutes': round(elapsed_minutes, 1),
+                'reboot_detected': dev_id in rebooted_devices,
             }
             all_deltas.append(entry)
 
             # Skip flagging on rebooted devices: counter resets make deltas
             # meaningless (the "new" counters started at 0 after boot).
             if rate_per_min >= threshold_errors_per_min and dev_id not in rebooted_devices:
-                entry["severity"] = "CRITICAL" if rate_per_min > 100 else "WARNING"
+                entry['severity'] = 'CRITICAL' if rate_per_min > 100 else 'WARNING'
                 flagged.append(entry)
 
     # Sort by rate descending
-    all_deltas.sort(key=lambda x: -x["rate_per_min"])
-    flagged.sort(key=lambda x: -x["rate_per_min"])
+    all_deltas.sort(key=lambda x: -x['rate_per_min'])
+    flagged.sort(key=lambda x: -x['rate_per_min'])
 
     return {
-        "timestamp": now.isoformat(),
-        "baseline_timestamp": baseline["timestamp"],
-        "elapsed_minutes": round(elapsed_minutes, 1),
-        "threshold_errors_per_min": threshold_errors_per_min,
-        "ports_with_new_errors": len(all_deltas),
-        "ports_flagged": len(flagged),
-        "flagged": flagged,
-        "all_deltas": all_deltas[:20],  # Top 20
-        "rebooted_devices": list(rebooted_devices.values()),
+        'timestamp': now.isoformat(),
+        'baseline_timestamp': baseline['timestamp'],
+        'elapsed_minutes': round(elapsed_minutes, 1),
+        'threshold_errors_per_min': threshold_errors_per_min,
+        'ports_with_new_errors': len(all_deltas),
+        'ports_flagged': len(flagged),
+        'flagged': flagged,
+        'all_deltas': all_deltas[:20],  # Top 20
+        'rebooted_devices': list(rebooted_devices.values()),
     }

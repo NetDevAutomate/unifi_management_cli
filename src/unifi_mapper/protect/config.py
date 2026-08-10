@@ -34,9 +34,7 @@ class ProtectConfig(BaseModel):
 
     Example:
         >>> config = ProtectConfig(
-        ...     host="192.0.2.1",
-        ...     username="admin",
-        ...     password=SecretStr("password123")
+        ...     host='192.0.2.1', username='admin', password=SecretStr('password123')
         ... )
         >>> print(config.host)
         192.0.2.1
@@ -53,15 +51,11 @@ class ProtectConfig(BaseModel):
     cache_dir: Annotated[
         Path | None, Field(default=None, description='Directory for caching session data')
     ]
-    store_sessions: Annotated[
-        bool, Field(default=True, description='Persist sessions to disk')
-    ]
+    store_sessions: Annotated[bool, Field(default=True, description='Persist sessions to disk')]
     minimum_score: Annotated[
         int, Field(default=0, ge=0, le=100, description='Min smart detection confidence')
     ]
-    ignore_unadopted: Annotated[
-        bool, Field(default=True, description='Skip unadopted devices')
-    ]
+    ignore_unadopted: Annotated[bool, Field(default=True, description='Skip unadopted devices')]
     debug: Annotated[bool, Field(default=False, description='Enable debug logging')]
 
     model_config = {'extra': 'forbid', 'validate_assignment': True}
