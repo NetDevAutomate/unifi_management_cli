@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """CLI command for comprehensive port name verification.
 
 Implements multiple verification techniques to detect API lying.

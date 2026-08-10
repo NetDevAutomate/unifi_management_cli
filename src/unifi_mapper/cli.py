@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """CLI entry point for UniFi Network Mapper.
 
 Enables running from anywhere with config file specification.

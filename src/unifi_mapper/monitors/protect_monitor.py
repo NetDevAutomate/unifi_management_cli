@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Enhanced UniFi Protect Monitor - Full Debug & AI Analytics.
 
 Monitors AI Ports, cameras, smart detection, and stream health in real-time.

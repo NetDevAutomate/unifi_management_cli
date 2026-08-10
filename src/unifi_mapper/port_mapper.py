@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Main port mapper module for the UniFi Port Mapper.
 
 Contains the UnifiPortMapper class for managing port names based on LLDP/CDP information.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Report generator module for the UniFi Port Mapper.
 
 Contains functions for generating port mapping reports.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """UniFi Device Capability Detection System.
 
 Determines which devices support reliable port naming based on model and firmware.

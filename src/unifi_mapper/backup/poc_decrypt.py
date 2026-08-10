@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """UniFi Backup Decrypt Proof-of-Concept.
 
 This script decrypts UniFi backup files (.unf) and dumps their BSON contents

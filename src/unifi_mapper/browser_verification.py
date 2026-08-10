@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Browser-based verification for UniFi port name updates.
 
 Uses Playwright to directly check the controller UI since the API lies about port names.

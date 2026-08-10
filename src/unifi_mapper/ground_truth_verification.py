@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Ground truth verification using browser automation.
 
 Bypasses the lying UniFi API by checking actual controller UI state.

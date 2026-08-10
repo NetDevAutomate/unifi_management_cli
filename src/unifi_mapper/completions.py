@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Shell completion installation for unifi-mapper CLI.
 
 Supports bash and zsh with comprehensive argument completion.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """UniFi Network Inventory and Firmware Management CLI.
 
 Provides inventory listing, firmware version reporting, and firmware update capabilities.

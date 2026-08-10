@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """API client module for the UniFi Port Mapper.
 
 Contains the UnifiApiClient class for interacting with the UniFi Controller API.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Adapter layer to make MCP server tools work with synchronous API client.
 
 Provides synchronous wrappers for async toolkit functions.

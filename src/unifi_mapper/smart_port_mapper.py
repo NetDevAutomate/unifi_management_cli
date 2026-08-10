@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Smart Port Mapper with Device-Aware Capabilities.
 
 Respects device limitations and provides appropriate strategies per device model.

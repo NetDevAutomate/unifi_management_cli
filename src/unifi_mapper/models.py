@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Models for the UniFi Port Mapper.
 
 Contains data classes for port and device information.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Enhanced UniFi Network Toolkit CLI.
 
 Comprehensive network analysis, discovery, and troubleshooting capabilities.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Network topology module for the UniFi Port Mapper.
 
 Contains the NetworkTopology class for managing network topology visualization.

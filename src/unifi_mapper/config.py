@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Configuration management for UniFi Network Mapper.
 
 Centralizes configuration loading and validation.

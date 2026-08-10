@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Analyze network device capabilities for port naming support."""
 
 import logging

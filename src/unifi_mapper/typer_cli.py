@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Typer-based CLI for UniFi Network Mapper with automatic completions."""
 
 import logging

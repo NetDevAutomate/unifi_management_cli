@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Exception hierarchy for UniFi API operations.
 
 Provides structured error handling with retry/no-retry classification.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Enhanced API client combining improvements from both versions.
 
 Provides better error handling, automatic provisioning, and reliable verification.
