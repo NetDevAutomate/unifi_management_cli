@@ -11,6 +11,7 @@ from unifi_mapper.analysis.port_naming import (
     build_port_name_plan,
     is_cosmetic_change,
     is_placeholder_name,
+    is_vendor_only_label,
     is_weak_label,
     name_quality,
     resolve_peer,
@@ -37,7 +38,12 @@ def _port(idx: int, name: str, up: bool = True) -> dict:
 
 
 def _client(
-    mac: str, sw_mac: str, sw_port: int, name: str | None = None, hostname: str | None = None
+    mac: str,
+    sw_mac: str,
+    sw_port: int,
+    name: str | None = None,
+    hostname: str | None = None,
+    oui: str | None = None,
 ) -> dict:
     return {
         'mac': mac,
@@ -46,6 +52,7 @@ def _client(
         'sw_port': sw_port,
         'name': name,
         'hostname': hostname,
+        'oui': oui,
     }
 
 
@@ -157,6 +164,56 @@ def test_would_lose_information_predicate() -> None:
     assert would_lose_information('Google Streamer 4K', '02:00:fe:02:00:0f') is True
     assert would_lose_information('Port 9', '02:00:fe:02:00:0f') is False
     assert would_lose_information('0200fe00000a', '02:00:fe:02:00:0f') is False
+
+
+# ─── Guard 1b: a vendor OUI string must not replace a curated label ──────────
+# Observed 2026-08-10: a NAS reporting no hostname would have renamed both
+# 'Synology NAS01 VLAN 15' and 'Synology NAS01' to 'Synology Incorporated',
+# collapsing two distinguishable ports onto one manufacturer name.
+
+
+def test_does_not_overwrite_a_real_name_with_a_vendor_string() -> None:
+    """'Synology NAS01 VLAN 15' must survive a poll where the client has no hostname."""
+    devices = [_switch('A', [_port(6, 'Synology NAS01 VLAN 15')], mac='sw:01')]
+    clients = [_client('02:00:00:00:00:03', 'sw:01', 6, oui='Synology Incorporated')]
+
+    plan = build_port_name_plan(devices, clients)
+
+    assert plan.count == 0
+
+
+def test_does_replace_a_placeholder_with_a_vendor_string() -> None:
+    """A manufacturer name still beats 'Port 6' when nothing better is reported."""
+    devices = [_switch('A', [_port(6, 'Port 6')], mac='sw:01')]
+    clients = [_client('02:00:00:00:00:03', 'sw:01', 6, oui='Synology Incorporated')]
+
+    plan = build_port_name_plan(devices, clients)
+
+    assert plan.count == 1
+    assert plan.renames[0].proposed == 'Synology Incorporated'
+
+
+def test_is_vendor_only_label_predicate() -> None:
+    """Vendor suffixes are detected regardless of case or trailing punctuation."""
+    for name in (
+        'Synology Incorporated',
+        'Winstars Technology Ltd',
+        'Ubiquiti Inc.',
+        'ACME CORP',
+        'Foo GmbH',
+        'Bar Electronics',
+    ):
+        assert is_vendor_only_label(name) is True, name
+
+    for name in ('Synology NAS01', 'Hotel3-Apple-TV', 'Google Streamer 4K', 'Port 6', ''):
+        assert is_vendor_only_label(name) is False, name
+
+
+def test_would_lose_information_covers_vendor_strings() -> None:
+    """The guard treats a vendor string as a downgrade from a curated label."""
+    assert would_lose_information('Synology NAS01', 'Synology Incorporated') is True
+    assert would_lose_information('Port 6', 'Synology Incorporated') is False
+    assert would_lose_information('02:00:00:00:00:03', 'Synology Incorporated') is False
 
 
 # ─── Guard 2: a MAC must not represent a multi-client port ───────────────────

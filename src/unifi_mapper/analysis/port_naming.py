@@ -51,6 +51,23 @@ NAME_MAX = 32
 # why those labels survived earlier refreshes.
 PLACEHOLDER_PREFIXES = ('poe out', 'poe in', 'sfp', 'port ')
 
+# Trailing tokens that mark a name as an OUI manufacturer string rather than a
+# device identity. Used to stop a curated label being replaced by one.
+VENDOR_SUFFIXES = (
+    'inc',
+    'incorporated',
+    'corp',
+    'corporation',
+    'ltd',
+    'limited',
+    'llc',
+    'gmbh',
+    'co',
+    'technology',
+    'technologies',
+    'electronics',
+)
+
 
 @dataclass
 class PortRename:
@@ -128,15 +145,24 @@ def is_placeholder_name(name: str, port_idx: int | None = None) -> bool:
     return False
 
 
+def is_vendor_only_label(name: str) -> bool:
+    """True for a bare OUI vendor string such as 'Synology Incorporated'.
+
+    These arrive when a client reports no hostname, so the only name available is
+    its manufacturer. They are legitimate as a last resort on an unlabelled port,
+    but they identify a manufacturer rather than a device: every NIC from the same
+    vendor collapses to an identical label. Treated as a downgrade so a curated
+    label is never traded for one.
+    """
+    cleaned = (name or '').strip().lower().rstrip('.')
+    return bool(cleaned) and cleaned.endswith(VENDOR_SUFFIXES)
+
+
 def name_quality(value: str) -> tuple[int, str]:
     """Sort key preferring human-readable names over addresses and vendor strings."""
     if looks_like_mac(value) or is_weak_label(value):
         return (2, value)
-    if (
-        value.lower()
-        .rstrip('.')
-        .endswith(('inc', 'incorporated', 'corp', 'ltd', 'limited', 'gmbh'))
-    ):
+    if is_vendor_only_label(value):
         return (1, value)
     return (0, value)
 
@@ -157,10 +183,15 @@ def is_cosmetic_change(current: str, proposed: str) -> bool:
 
 
 def would_lose_information(current: str, proposed: str) -> bool:
-    """True when the rename trades a readable label for a bare address."""
-    return (
-        is_weak_label(proposed) and not is_placeholder_name(current) and not is_weak_label(current)
-    )
+    """True when the rename trades a readable label for a weaker one.
+
+    A weaker label is either a bare hardware address or a vendor-only OUI
+    string. Renaming is always allowed over a controller placeholder or an
+    existing weak label, since neither carries information worth keeping.
+    """
+    if is_placeholder_name(current) or is_weak_label(current):
+        return False
+    return is_weak_label(proposed) or is_vendor_only_label(proposed)
 
 
 def resolve_peer(
