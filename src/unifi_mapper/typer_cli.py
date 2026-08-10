@@ -2324,6 +2324,63 @@ def ports_refresh(
     console.print('\n💡 Re-run to verify; a clean run reports no changes needed.')
 
 
+@ports_app.command('inspect')
+def ports_inspect(
+    switch: str = typer.Argument(
+        ..., help="Switch name, model, IP or MAC (e.g. 'Office Desk Flex 5')"
+    ),
+    port: int = typer.Argument(..., help='Port index (1-based)'),
+):
+    """🔎 Inspect one switch port: link state, LLDP peer, client identity and counters.
+
+    Gathers every fact the controller holds about a single port and flags when cached
+    controller state disagrees with ground truth, which is the usual cause of a port
+    that looks down but is actually carrying traffic.
+
+    Useful when a port misbehaves and the label alone is not enough — for example a
+    host that links up but never obtains DHCP.
+    """
+    from .api_client import UnifiApiClient
+    from .config import UnifiConfig
+    from .port_inspect import inspect_port, resolve_switch
+
+    load_env_from_config(str(state.config_path))
+    if not state.debug:
+        setup_logging(debug=False)
+
+    unifi_config = UnifiConfig.from_env()
+    client = UnifiApiClient(
+        base_url=unifi_config.base_url,
+        site=unifi_config.site,
+        verify_ssl=unifi_config.verify_ssl,
+        username=unifi_config.username,
+        password=unifi_config.password,
+        api_token=unifi_config.api_token,
+        timeout=unifi_config.timeout,
+    )
+
+    if not client.login():
+        console.print('[red]❌ Could not authenticate to the controller[/red]')
+        raise typer.Exit(code=1)
+
+    try:
+        try:
+            target = resolve_switch(client, unifi_config.site, switch)
+        except LookupError as e:
+            console.print(f'[red]❌ {e}[/red]')
+            raise typer.Exit(code=1)
+
+        try:
+            result = inspect_port(client, unifi_config.site, target, port)
+        except LookupError as e:
+            console.print(f'[red]❌ {e}[/red]')
+            raise typer.Exit(code=1)
+
+        result.render(console)
+    finally:
+        client.logout()
+
+
 if __name__ == '__main__':
     app()
 

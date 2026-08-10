@@ -171,7 +171,17 @@ unifi-mapper ports refresh
 
 # Apply
 unifi-mapper ports refresh --apply
+
+# Inspect a single port in depth (link state, LLDP peer, client identity, counters)
+unifi-mapper ports inspect "Hotel3 India3 USW Flex 2.5G 5" 2
 ```
+
+`ports inspect` resolves the switch by name, model, IP or MAC and reports everything the
+controller holds about one port: link state, LLDP neighbour, the switch's remembered
+`last_connection`, the live client with its resolved identity and VLAN, port config, PoE
+and error counters. It warns when cached controller state disagrees with ground truth,
+which is the usual reason a port looks down while still carrying traffic. Use it when a
+host links up but misbehaves at L3 — for example a NIC that never obtains DHCP.
 
 Resolves each connected switch port to either its LLDP peer or its wired client, and rewrites the label to match. LLDP peers are resolved via the adopted-device registry (`chassis_id`), so access points resolve correctly even though they do not send `system_name` — this is what recovers factory labels such as `PoE Out + Data` on PoE passthrough switches.
 
