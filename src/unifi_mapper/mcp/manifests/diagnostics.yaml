@@ -29,3 +29,23 @@ tools:
     description: Connection troubleshooting and path analysis
     priority: P2
     tags: [connectivity, troubleshooting, path, diagnostic]
+
+  inspect_switch_port:
+    module: unifi_mapper.diagnostics.inspect_port
+    handler: inspect_switch_port
+    description: >-
+      Deep inspection of a single switch port: link state, effective VLAN and
+      port profile, the connected device (UniFi or third-party, with fingerprint
+      model and confidence), DHCP lease vs static addressing verdict, LLDP
+      neighbour resolved to an adopted device, error counters and PoE state
+    priority: P1
+    tags: [port, vlan, dhcp, lldp, client, troubleshooting, diagnostic]
+    parameters:
+      switch:
+        type: string
+        required: true
+        description: Switch name, model, IP or MAC (e.g. "Office Desk Flex 5")
+      port:
+        type: integer
+        required: true
+        description: Port index on the switch, 1-based

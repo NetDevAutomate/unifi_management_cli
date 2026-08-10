@@ -9,7 +9,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **61 MCP Tools**: Network health, performance, security diagnostics, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
+- **64 MCP Tools**: Network health, performance, security diagnostics, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
 - **MCP Server**: AI-assisted network troubleshooting via Model Context Protocol
 
@@ -177,11 +177,31 @@ unifi-mapper ports inspect "Hotel3 India3 USW Flex 2.5G 5" 2
 ```
 
 `ports inspect` resolves the switch by name, model, IP or MAC and reports everything the
-controller holds about one port: link state, LLDP neighbour, the switch's remembered
-`last_connection`, the live client with its resolved identity and VLAN, port config, PoE
-and error counters. It warns when cached controller state disagrees with ground truth,
-which is the usual reason a port looks down while still carrying traffic. Use it when a
-host links up but misbehaves at L3 — for example a NIC that never obtains DHCP.
+controller holds about one port: link state, the effective port profile and which VLANs it
+actually forwards, the native network with its subnet and DHCP pool, the connected device,
+an addressing verdict, the LLDP neighbour, the switch's remembered `last_connection`, port
+config, PoE and error counters. It warns when cached controller state disagrees with ground
+truth, which is the usual reason a port looks down while still carrying traffic.
+
+The connected device is resolved whether or not it is UniFi gear. Adopted devices are named
+from the device registry; third-party hosts are reported with their OUI vendor and the
+controller's fingerprint model guess, shown alongside its confidence score because that
+guess is regularly wrong. LLDP peers are resolved via the same registry, so switches and
+access points are named even though they send no `system_name`.
+
+The addressing verdict is what makes an L3-only fault legible:
+
+| Verdict | Meaning |
+|---------|---------|
+| `leased` | A DHCP lease expiry exists — DHCP is working on this port |
+| `static` | An address with no lease, configured on the host itself |
+| `no_address` | Client present but unaddressed — suspect the VLAN path or DHCP, not the cable |
+| `no_client` | Nothing reporting on the port |
+
+A `no_address` verdict points at the uplink path: check that the native VLAN reaches the
+gateway on every hop, and that the switch has been provisioned since the VLAN was created.
+The tool also flags a DHCP pool that spans the gateway's own address, which can hand a
+client a conflicting address.
 
 Resolves each connected switch port to either its LLDP peer or its wired client, and rewrites the label to match. LLDP peers are resolved via the adopted-device registry (`chassis_id`), so access points resolve correctly even though they do not send `system_name` — this is what recovers factory labels such as `PoE Out + Data` on PoE passthrough switches.
 
@@ -278,21 +298,22 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-**Available Tools (61 total):**
+**Available Tools (64 total):**
 
 | Category | Tools | Description |
 |----------|-------|-------------|
 | discovery | 4 | Device/IP/MAC location and client tracing |
-| diagnostics | 4 | Health checks, performance analysis, security audit |
+| diagnostics | 5 | Health checks, performance analysis, security audit, single-port inspection |
 | connectivity | 4 | Firewall checks, path analysis, traceroute, inter-VLAN endpoint validation |
 | network | 6 | Firewall zones/policies, ACLs, DNS, clients, VLANs |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells |
-| analysis | 30 | Capacity, link quality, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, drift and change plans |
-| radio | 5 | Channel optimization, snapshots, apply/restore radio config |
+| analysis | 40 | Capacity, link quality, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, drift and change plans |
 
 **Usage Example:**
 
 Ask Claude: "Check the health of my UniFi network" → Claude uses `network_health_check` tool
+
+Ask Claude: "Why isn't the device on port 2 of my office switch getting an IP?" → Claude uses `inspect_switch_port` tool
 
 Ask Claude: "Find all cameras and their status" → Claude uses `get_cameras` tool
 
@@ -326,11 +347,11 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (61 tools via FastMCP)
+└── MCP Server (64 tools via FastMCP)
 
 Analysis Toolkit
-├── Analysis Tools (30 tools)
-├── Diagnostics (4 tools)
+├── Analysis Tools (40 tools)
+├── Diagnostics (5 tools)
 ├── Discovery (4 tools)
 ├── Connectivity (4 tools)
 ├── Network Control (6 wrappers)
