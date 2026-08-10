@@ -1,7 +1,7 @@
 # UniFi Management CLI: Troubleshooting Guide and Operational Runbook
 
-**Version**: 1.0  
-**Last Updated**: 2026-04-06  
+**Version**: 1.0
+**Last Updated**: 2026-04-06
 **Audience**: Network engineers and operations staff managing UniFi infrastructure via this CLI
 
 > **See also**: [Use Cases and How-To](../guides/use-cases-and-howto.md) | [Architecture Overview](../architecture/architecture-overview.md) | [Codebase Map](../architecture/codemap.md) | [AXIS Provisioning](../guides/axis-provisioning.md)
@@ -130,15 +130,15 @@ flowchart TD
     B -->|401| C[Credential is wrong or expired]
     B -->|403| D[Credential is valid but lacks permissions]
     B -->|No HTTP error, empty results| E[Silent auth failure - check logs at DEBUG level]
-    
+
     C --> F{Which auth method?}
     F -->|Token: UNIFI_CONSOLE_API_TOKEN| G[Regenerate API token in UniFi OS UI]
     F -->|Username/Password| H[Verify username and password in UniFi controller]
-    
+
     D --> I{Is user a Local Admin or Super Admin?}
     I -->|Read-only role| J[Promote user to Local Admin in UniFi OS]
     I -->|Admin but 403| K[Check site membership - user must be assigned to the site]
-    
+
     E --> L[Set UNIFI_LOGLEVEL=DEBUG and retry]
     L --> M{Does log show UniFi OS detected?}
     M -->|Yes - is_unifi_os=True| N[Verify endpoint: /proxy/network/api/s/SITE/self]
@@ -217,11 +217,11 @@ flowchart TD
     B -->|Yes, still failing| D{Is the error CERTIFICATE_VERIFY_FAILED?}
     D -->|Yes| E[Python's own CA bundle is rejecting the cert]
     D -->|No - different SSL error| F[Check TLS version compatibility]
-    
+
     E --> G{Are you on macOS?}
     G -->|Yes| H[Run: /Applications/Python*/Install\ Certificates.command]
     G -->|No| I[Update ca-certificates package on Linux]
-    
+
     F --> J{Controller TLS version?}
     J -->|TLS 1.0 or 1.1| K[Upgrade controller firmware - old TLS deprecated]
     J -->|TLS 1.2+| L[Check if corporate proxy is intercepting HTTPS]
@@ -271,21 +271,21 @@ flowchart TD
     A[Port name reverted or not persisting] --> B{Did the API return 200?}
     B -->|No| C[Update method failed entirely - see Section 2]
     B -->|Yes, 200 but reverted| D{Check response meta.rc field}
-    
+
     D -->|meta.rc != 'ok'| E[API accepted request but controller rejected change internally]
     D -->|meta.rc = 'ok'| F{Which field was written?}
-    
+
     F -->|port_table| G[WRONG FIELD - port_table is read-only]
     F -->|port_overrides| H{Were config_version fields included?}
-    
+
     G --> I[Switch to port_overrides - this is the correct writeable field]
-    
+
     H -->|config_version missing| J[Re-read device_details and include config_version, cfgversion, config_revision in payload]
     H -->|config_version present| K{Is firmware 7.2.123 on US-8-60W?}
-    
+
     K -->|Yes| L[Known firmware bug - auto-resets. See Section 6]
     K -->|No| M[Enable DEBUG logging and capture full payload/response]
-    
+
     E --> N[Check meta.msg for specific error]
     N --> O{Contains 'invalid speed' or similar?}
     O -->|Yes| P[Remove speed field from port_overrides or use valid values only]
@@ -394,7 +394,7 @@ flowchart TD
     C -->|Yes, wrong value| D[Update genuinely failed - debug port_overrides payload]
     C -->|Mixed values| E[API cache is actively returning stale data]
     C -->|Yes, correct value| F[Verification passed - cache was temporarily inconsistent]
-    
+
     E --> G{How long have you waited?}
     G -->|Less than 30 seconds| H[Wait longer - cache typically stabilises within 30-60 seconds]
     G -->|More than 60 seconds| I[Controller may require restart to clear persistent cache]
@@ -445,18 +445,18 @@ Never trust a single read for verification. Always use `--verify-updates`. The L
 flowchart TD
     A[Port update skipped or reverting] --> B[Run capability analysis]
     B --> C{What is the support level?}
-    
+
     C -->|RESETS_AUTOMATICALLY| D{Is it firmware 7.2.123?}
     D -->|Yes| E[Do NOT update ports on this device via API]
     E --> F[Downgrade firmware or wait for fix in 7.2.124+]
-    
+
     D -->|No, other firmware| G[Check PROBLEMATIC_FIRMWARE list]
     G --> H[Consider firmware upgrade/downgrade]
-    
+
     C -->|LIMITED| I{Which specific restriction?}
     I -->|USWED35 network override| J[Use UI-based configuration for this device]
     I -->|USL8LP VLAN issue| K[Configure VLANs at network level, not port level]
-    
+
     C -->|FULL_SUPPORT but still failing| L[Check UniFi Network Application version]
     L --> M{Is NW App >= 10.0.162?}
     M -->|No| N[Upgrade - resolves most API rejection issues]
@@ -512,17 +512,17 @@ Run the compatibility report before deploying to a new site. Upgrade the UniFi N
 ```mermaid
 stateDiagram-v2
     [*] --> DISCONNECTED : initial state
-    
+
     DISCONNECTED --> CONNECTING : connect() called
     CONNECTING --> CONNECTED : get_bootstrap() success
     CONNECTING --> ERROR : auth failure or connection refused
-    
+
     CONNECTED --> RECONNECTING : connection lost
     CONNECTED --> DISCONNECTED : disconnect() called
-    
+
     RECONNECTING --> CONNECTED : reconnect success
     RECONNECTING --> ERROR : max reconnect attempts exceeded
-    
+
     ERROR --> CONNECTING : manual reconnect
     ERROR --> DISCONNECTED : disconnect() called
 ```
@@ -625,12 +625,12 @@ flowchart TD
     C -->|UNIFI_URL missing| D[Set all required env vars in claude_desktop_config.json]
     C -->|Import error| E[Run: uv sync to reinstall dependencies]
     C -->|Port already in use| F[Kill existing unifi-mcp process]
-    
+
     B -->|Yes, starts but tools fail| G{Which tool is failing?}
     G -->|Network tools| H[Verify UNIFI_URL and UNIFI_CONSOLE_API_TOKEN in MCP env config]
     G -->|Protect tools| I[Verify PROTECT_HOST, PROTECT_USERNAME, PROTECT_PASSWORD]
     G -->|All tools| J[Test API connectivity directly with unifi-mapper first]
-    
+
     B -->|Claude Desktop shows disconnected| K{Check Claude Desktop logs}
     K -->|Connection refused| L[MCP server is not running - check command path]
     K -->|Auth error| M[Check env vars passed to uvx command in config]
@@ -714,12 +714,12 @@ flowchart TD
     B -->|Single device| C{Is the device offline?}
     C -->|Yes| D[Device is unreachable - normal timeout, check device power/connectivity]
     C -->|No, device is online| E[Increase UNIFI_TIMEOUT for high-latency links]
-    
+
     B -->|All devices| F{What is the controller load?}
     F -->|High CPU/memory| G[Schedule operations during maintenance windows]
     F -->|Normal load| H{Is UNIFI_TIMEOUT appropriate for network latency?}
     H -->|Too low| I[Increase UNIFI_TIMEOUT to 30 seconds for WAN-connected controllers]
-    
+
     A --> J{Is verify_port_update taking too long?}
     J -->|Yes| K[verify_port_update waits 5s initially, then 3+n seconds per attempt]
     K --> L[Default 5 attempts = up to 35+ seconds total per port]
@@ -969,7 +969,7 @@ sequenceDiagram
 
     Alert->>Op: UniFiConnectionError or timeout in logs
     Op->>Op: Check controller management IP is reachable (ping)
-    
+
     alt Controller unreachable from management host
         Op->>Net: Escalate - controller off network
         Net->>Op: Restore controller connectivity
@@ -977,7 +977,7 @@ sequenceDiagram
         Op->>CLI: curl -k https://CONTROLLER/api/system
         CLI-->>Op: Check response (200 = UniFi OS up, 5xx = app issue)
     end
-    
+
     Op->>Op: Check UniFi Network Application service status
     Op->>Op: Restart application if unresponsive (not the hardware)
     Op->>CLI: uv run unifi-mapper --dry-run (connectivity test)
