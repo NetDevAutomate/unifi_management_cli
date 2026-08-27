@@ -108,3 +108,50 @@ def test_choose_port_name_defaults_disconnected_port_to_numbered_label():
     )
 
     assert (name, source) == ('Port 7', 'default')
+
+
+def test_choose_port_name_renames_uplink_labelled_port_from_lldp():
+    """LLDP wins over an existing uplink/trunk label.
+
+    Regression guard for behaviour that was previously unasserted. Earlier
+    revisions excluded uplink ports from naming outright (``not is_uplink``);
+    that exclusion was removed deliberately, so an uplink is named from LLDP
+    like any other port. ``_choose_port_name`` takes no ``is_uplink``
+    argument -- the only uplink signal reaching it is the port's own current
+    name, which is also what the caller in ``run_methods`` uses to derive
+    ``is_uplink`` ('uplink' or 'trunk' appearing in the name). This asserts
+    that signal does not make the old label sticky.
+    """
+    port_mapper = Mock()
+
+    name, source = _choose_port_name(
+        9,
+        {'remote_device_name': 'Core USW Pro Aggregation'},
+        {},
+        port_mapper,
+        current_name='Uplink to Core',
+        port_up=True,
+    )
+
+    assert (name, source) == ('Core USW Pro Aggregation', 'lldp')
+
+
+def test_choose_port_name_keeps_trunk_label_when_lldp_is_unusable():
+    """A live uplink/trunk port is never blanked to a numbered default.
+
+    The companion risk to the test above: an uplink whose neighbour reports
+    only a MAC must keep its operator-set label rather than being reset to
+    'Port N', which would erase the record of what the port carries.
+    """
+    port_mapper = Mock()
+
+    name, source = _choose_port_name(
+        10,
+        {'remote_device_name': 'e4:38:83:1a:2b:3c'},
+        {},
+        port_mapper,
+        current_name='Trunk to Shed',
+        port_up=True,
+    )
+
+    assert (name, source) == ('Trunk to Shed', 'current')
