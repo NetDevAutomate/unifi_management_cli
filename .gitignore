@@ -102,9 +102,6 @@ reports/*.py
 graphify-out/
 .kirograph/
 
-# bv (beads viewer) local config and caches
-.bv/
-
 # Local SQLite databases (tool artifacts)
 8085
 8085-shm
