@@ -110,7 +110,15 @@ async def main() -> int:
     args = parser.parse_args()
 
     print('📡 Fetching current STP topology...')
-    changes = await build_changes()
+    try:
+        changes = await build_changes()
+    except Exception as exc:
+        # discover_stp_topology reaches the controller, so auth failure, an
+        # unreachable host or a TLS problem all land here. Without this the
+        # script exits on a traceback, which reads like a bug in the tool
+        # rather than a connection problem.
+        print(f'\n❌ Could not read the STP topology: {exc}')
+        return 2
 
     if not changes:
         print('\n✅ No changes required — all priorities already match overrides.')
@@ -130,7 +138,16 @@ async def main() -> int:
             return 1
 
     print('\n⚡ Applying changes...')
-    result: dict[str, Any] = await apply_stp_changes(changes, dry_run=False)
+    try:
+        result: dict[str, Any] = await apply_stp_changes(changes, dry_run=False)
+    except Exception as exc:
+        # apply_stp_changes reports per-device outcomes in result['failed'], so
+        # reaching here means it aborted rather than a device rejecting a write.
+        # Priorities are applied per switch, so earlier ones may already be live.
+        print(f'\n❌ Apply aborted: {exc}')
+        print('   Some priorities may already have been applied. Verify with:')
+        print('       uv run unifi-mapper stp analyze')
+        return 2
 
     print(f'\n✅ Applied: {len(result["applied"])}')
     for r in result['applied']:
