@@ -154,3 +154,74 @@ def test_radios_touched_are_tracked_for_result_reporting() -> None:
 
     assert sorted(plans[0]['radios']) == ['na', 'ng']
     assert plans[0]['name'] == 'AP1'
+
+
+# ─── Field removal: the controller rejects null, so the key must be absent ────
+
+
+def test_remove_fields_deletes_the_key_rather_than_nulling_it() -> None:
+    """A removed field is absent from the payload, not set to None.
+
+    Needed by `scripts/apply_ap_tx_power_auto.py`: an AP can read
+    `tx_power_mode='auto'` while a manual `tx_power` still pins it low, so
+    setting the mode alone is a no-op and the override must be deleted.
+    """
+    devices = [_ap('AP1', [_radio('na', channel=157, tx_power_mode='auto', tx_power=6)])]
+    changes = [
+        {
+            'device_id': 'id-AP1',
+            'radio': 'na',
+            'tx_power_mode': 'auto',
+            'remove_fields': ['tx_power'],
+        }
+    ]
+
+    plans, missing = build_radio_table_updates(devices, changes)
+
+    assert missing == []
+    radio = plans[0]['payload']['radio_table'][0]
+    assert 'tx_power' not in radio, 'key must be absent, not null'
+    assert radio['tx_power_mode'] == 'auto'
+
+
+def test_remove_fields_cannot_delete_identity_fields() -> None:
+    """Only RADIO_WRITE_FIELDS are removable; `radio` and `mac` are not."""
+    devices = [_ap('AP1', [_radio('na', tx_power=6)])]
+    changes = [
+        {
+            'device_id': 'id-AP1',
+            'radio': 'na',
+            'remove_fields': ['radio', 'mac', 'tx_power'],
+        }
+    ]
+
+    plans, _ = build_radio_table_updates(devices, changes)
+
+    radio = plans[0]['payload']['radio_table'][0]
+    assert radio['radio'] == 'na', 'identity field must survive'
+    assert 'tx_power' not in radio, 'writable field should still be removed'
+    assert plans[0]['payload']['mac'] == 'mac-AP1'
+
+
+def test_absent_remove_fields_changes_nothing() -> None:
+    """Backward compatibility: the existing change shape is unaffected."""
+    devices = [_ap('AP1', [_radio('na', channel=36, tx_power=6)])]
+    changes = [{'device_id': 'id-AP1', 'radio': 'na', 'channel': 149}]
+
+    plans, _ = build_radio_table_updates(devices, changes)
+
+    radio = plans[0]['payload']['radio_table'][0]
+    assert radio['channel'] == 149
+    assert radio['tx_power'] == 6, 'nothing asked for removal, so nothing removed'
+
+
+def test_remove_fields_only_touches_the_named_radio() -> None:
+    """Removing a field on one radio leaves the other radios intact."""
+    devices = [_ap('AP1', [_radio('ng', tx_power=8), _radio('na', tx_power=6)])]
+    changes = [{'device_id': 'id-AP1', 'radio': 'na', 'remove_fields': ['tx_power']}]
+
+    plans, _ = build_radio_table_updates(devices, changes)
+
+    table = {r['radio']: r for r in plans[0]['payload']['radio_table']}
+    assert 'tx_power' not in table['na']
+    assert table['ng']['tx_power'] == 8

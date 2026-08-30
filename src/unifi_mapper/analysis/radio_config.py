@@ -79,7 +79,13 @@ def build_radio_table_updates(
     Args:
         devices: Devices as returned by `get_devices()`.
         changes: Change dicts with `device_id`, `radio` ('ng'/'na'/'6e') and any of
-            RADIO_WRITE_FIELDS.
+            RADIO_WRITE_FIELDS. A change may also carry `remove_fields`, an
+            iterable of RADIO_WRITE_FIELDS names to DELETE from the radio rather
+            than set. Removal is needed because the controller rejects a null
+            value, so clearing a manual override (e.g. a `tx_power` pinning an
+            AP low while `tx_power_mode` already reads 'auto') requires the key
+            to be absent. Fields outside RADIO_WRITE_FIELDS are ignored, so a
+            caller cannot delete `radio` or `mac` and corrupt the payload.
 
     Returns:
         (plans, missing) where each plan has `device_id`, `name`, `mac`, `radios`
@@ -101,6 +107,7 @@ def build_radio_table_updates(
     for device_id, device_changes in grouped.items():
         device = device_map[device_id]
         patches: dict[str, dict] = {}
+        removals: dict[str, set[str]] = {}
         for change in device_changes:
             target = change.get('radio')
             if not isinstance(target, str):
@@ -109,6 +116,11 @@ def build_radio_table_updates(
             for field in RADIO_WRITE_FIELDS:
                 if field in change:
                     patch[field] = _coerce_radio_value(field, change[field])
+            drop = change.get('remove_fields') or ()
+            if not isinstance(drop, str):
+                removals.setdefault(target, set()).update(
+                    field for field in drop if field in RADIO_WRITE_FIELDS
+                )
 
         new_radio_table = []
         for radio in device.get('radio_table', []):
@@ -116,6 +128,8 @@ def build_radio_table_updates(
             if radio_id in patches:
                 updated = dict(radio)
                 updated.update(patches[radio_id])
+                for field in removals.get(radio_id, ()):
+                    updated.pop(field, None)
                 new_radio_table.append(updated)
             else:
                 new_radio_table.append(radio)
