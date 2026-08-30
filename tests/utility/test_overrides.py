@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from pathlib import Path
 from unifi_mapper.core.utils.overrides import STPOverrides, load_stp_overrides
 
@@ -75,3 +76,33 @@ def test_non_list_values_are_ignored(tmp_path: Path) -> None:
 
     assert result.root_eligible_macs == frozenset()
     assert result.force_access_macs == frozenset()
+
+
+# ─── Default location must track the project's config directory ───────────────
+
+
+def test_default_overrides_path_lives_in_the_project_config_dir() -> None:
+    """The default path must match where every other config file lives.
+
+    It previously pointed at `~/.config/unifi_network_mapper/`, the project's old
+    name, while prod.env is loaded from `~/.config/unifi_management_cli/`. An
+    stp_overrides.yaml created in the documented directory was therefore read
+    from a different one and silently ignored - a no-op with no error, which is
+    the failure class this repo exists to catch.
+    """
+    from unifi_mapper.core.utils.overrides import _default_path
+
+    path = _default_path()
+
+    assert path.parent.name == 'unifi_management_cli'
+    assert path.name == 'stp_overrides.yaml'
+    assert 'unifi_network_mapper' not in str(path)
+
+
+def test_overrides_path_env_var_still_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """UNIFI_STP_OVERRIDES overrides the default location."""
+    from unifi_mapper.core.utils.overrides import _default_path
+
+    monkeypatch.setenv('UNIFI_STP_OVERRIDES', '/tmp/custom-overrides.yaml')
+
+    assert _default_path() == Path('/tmp/custom-overrides.yaml')

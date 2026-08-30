@@ -38,7 +38,7 @@ def _default_path() -> Path:
     env = os.environ.get('UNIFI_STP_OVERRIDES')
     if env:
         return Path(env).expanduser()
-    return Path.home() / '.config' / 'unifi_network_mapper' / 'stp_overrides.yaml'
+    return Path.home() / '.config' / 'unifi_management_cli' / 'stp_overrides.yaml'
 
 
 def _coerce_mac_list(value: Any) -> list[str]:

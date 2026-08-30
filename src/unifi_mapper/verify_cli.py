@@ -39,7 +39,7 @@ Examples:
         '--config',
         '-c',
         help='Path to .env configuration file',
-        default='~/.dotfiles/.config/unifi_management_cli/prod.env',
+        default='~/.config/unifi_management_cli/prod.env',
     )
 
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')

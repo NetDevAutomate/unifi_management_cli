@@ -20,8 +20,9 @@ log = logging.getLogger(__name__)
 
 def main():
     """Analyze all devices in network for port naming capabilities."""
-    # Load config
-    config_path = '/Users/ataylor/.dotfiles/.config/unifi_management_cli/prod.env'
+    # Load config. Derived from the running user's home rather than hardcoded, so
+    # this works on any machine and does not bake one developer's username in.
+    config_path = str(Path.home() / '.config' / 'unifi_management_cli' / 'prod.env')
     load_env_from_config(config_path)
     config = UnifiConfig.from_env()
 
