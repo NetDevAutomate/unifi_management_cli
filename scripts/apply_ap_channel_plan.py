@@ -1,187 +1,215 @@
 #!/usr/bin/env python3
-"""Apply 5GHz channel + width plan to reduce inter-AP contention.
+"""Apply a 5GHz channel + width plan to reduce inter-AP contention.
 
-After a power disruption 5 APs rebooted and auto-selected overlapping 80MHz
-blocks. This script narrows all APs to 40MHz and assigns non-overlapping
-channels, giving every AP its own airtime.
+After a power disruption several APs rebooted and auto-selected overlapping
+80MHz blocks. This narrows every AP to 40MHz on a non-overlapping block, giving
+each its own airtime.
 
-The AP holding the user's current Wi-Fi association is applied LAST.
+Writes go through `apply_radio_config`, the repo's tested apply path, rather
+than raw HTTP. That is deliberate and load-bearing: `UniFiClient` raises on a
+non-2xx response AND on `meta.rc == 'error'`, which the controller returns with
+HTTP 200 for a *rejected* update. A hand-rolled `requests` version of this
+script reported such rejections as 'applied'. Going through the client also
+preserves `config_version` on the payload and force-provisions the device, both
+of which a bare PUT omits.
+
+The AP holding the operator's own Wi-Fi association is applied LAST.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
-import requests
+import asyncio
 import sys
-import time
-import urllib3
-from typing import Any
+from unifi_mapper.analysis.radio_config import apply_radio_config
+from unifi_mapper.core.utils.client import UniFiClient
 
-
-urllib3.disable_warnings()
 
 # -----------------------------------------------------------------------------
-# Plan: (name, 5GHz primary channel, 80|40|20 width MHz)
+# Plan: (AP name, 5GHz primary channel, width MHz as the controller stores it)
+#
+# `ht` is a STRING in this codebase (radio_config.py writes '80'); an int is
+# accepted by the API and then ignored - the silent-no-op class that
+# _coerce_radio_value's docstring warns about.
+#
+# Every entry must occupy a distinct 40MHz block. `find_overlaps` enforces it at
+# startup, so a self-colliding plan cannot reach the network.
 # -----------------------------------------------------------------------------
-CHANNEL_PLAN: list[tuple[str, int, int]] = [
-    ('Charlie2 U6-Pro', 36, 40),
-    ('Juliett U6 IW', 120, 40),
-    ('Hotel3 U6-Pro', 132, 40),
-    ('Yankee U6-Pro', 52, 40),
-    ('Mike2 U6 Pro', 60, 40),
-    ('Bravo4 U6-Pro', 112, 40),
-    ('Victor3 U6-Pro', 149, 40),
-    ('Sierra3 U6-Pro', 157, 40),
-    ('U6 LR', 161, 40),
-    # Oscar-Papa goes LAST — this is the AP the operator is connected via.
-    ('Oscar Papa U6-Pro', 140, 40),
+CHANNEL_PLAN: list[tuple[str, int, str]] = [
+    ('Charlie2 U6-Pro', 36, '40'),
+    # Was 161, which shares the 157+161 block with Sierra3 below - two APs on
+    # identical spectrum, in a script whose purpose is removing contention.
+    # 44+48 is the only free NON-DFS block, so a long-range AP is not subject
+    # to radar-triggered channel changes.
+    ('U6 LR', 44, '40'),
+    ('Yankee U6-Pro', 52, '40'),
+    ('Mike2 U6 Pro', 60, '40'),
+    ('Bravo4 U6-Pro', 112, '40'),
+    ('Juliett U6 IW', 120, '40'),
+    ('Hotel3 U6-Pro', 132, '40'),
+    ('Victor3 U6-Pro', 149, '40'),
+    ('Sierra3 U6-Pro', 157, '40'),
+    # Oscar-Papa goes LAST - this is the AP the operator is connected via.
+    ('Oscar Papa U6-Pro', 140, '40'),
 ]
 
-
-def get_session() -> tuple[requests.Session, str, str]:
-    """Return an authenticated session with the controller base URL and site."""
-    base = os.environ['UNIFI_URL'].rstrip('/')
-    token = os.environ['UNIFI_CONSOLE_API_TOKEN']
-    site = os.environ.get('UNIFI_SITE', 'default')
-    s = requests.Session()
-    s.verify = False
-    s.headers.update({'X-API-Key': token, 'Accept': 'application/json'})
-    return s, base, site
-
-
-def load_devices(s: requests.Session, base: str, site: str) -> list[dict[str, Any]]:
-    """Fetch the full device list for a site."""
-    r = s.get(f'{base}/proxy/network/api/s/{site}/stat/device', timeout=10)
-    r.raise_for_status()
-    return [d for d in r.json().get('data', []) if d.get('type') == 'uap']
-
-
-def apply_change(
-    s: requests.Session,
-    base: str,
-    site: str,
-    device: dict[str, Any],
-    new_channel: int,
-    new_width: int,
-) -> dict[str, Any]:
-    """PUT new radio config to a single AP. Returns summary dict."""
-    mac = device['mac']
-    name = device.get('name', '?')
-    device_id = device['_id']
-
-    # Preserve the full radio_table, only modifying the 5GHz (na) entry.
-    radio_table = list(device.get('radio_table', []))
-    modified = False
-    for radio in radio_table:
-        if radio.get('radio') == 'na':
-            radio['channel'] = new_channel
-            radio['ht'] = new_width  # 'ht' is the width field in UniFi API
-            radio['tx_power_mode'] = radio.get('tx_power_mode', 'auto')
-            modified = True
-            break
-
-    if not modified:
-        return {'name': name, 'status': 'skipped', 'error': 'no 5GHz radio found'}
-
-    payload = {
-        '_id': device_id,
-        'mac': mac,
-        'radio_table': radio_table,
-    }
-
-    url = f'{base}/proxy/network/api/s/{site}/rest/device/{device_id}'
-    r = s.put(url, json=payload, timeout=15)
-
-    if r.status_code >= 300:
-        return {
-            'name': name,
-            'status': 'failed',
-            'http': r.status_code,
-            'error': r.text[:200],
-        }
-
-    return {
-        'name': name,
-        'status': 'applied',
-        'channel': new_channel,
-        'width': new_width,
-    }
+# Canonical 5GHz bonded blocks. A primary channel plus a width determines which
+# 20MHz channels are actually occupied, which is what "non-overlapping" means.
+_BLOCKS_40 = (
+    (36, 40),
+    (44, 48),
+    (52, 56),
+    (60, 64),
+    (100, 104),
+    (108, 112),
+    (116, 120),
+    (124, 128),
+    (132, 136),
+    (140, 144),
+    (149, 153),
+    (157, 161),
+)
+_BLOCKS_80 = (
+    (36, 40, 44, 48),
+    (52, 56, 60, 64),
+    (100, 104, 108, 112),
+    (116, 120, 124, 128),
+    (132, 136, 140, 144),
+    (149, 153, 157, 161),
+)
 
 
-def main() -> int:
+def occupied_channels(channel: int, width: str) -> tuple[int, ...]:
+    """Return the 20MHz channels a radio occupies at this primary and width."""
+    if width == '20':
+        return (channel,)
+    table = _BLOCKS_40 if width == '40' else _BLOCKS_80 if width == '80' else ()
+    for block in table:
+        if channel in block:
+            return tuple(block)
+    # Unknown width or a primary outside the standard blocks: treat the channel
+    # itself as occupied rather than silently claiming no spectrum.
+    return (channel,)
+
+
+def find_overlaps(plan: list[tuple[str, int, str]]) -> list[tuple[str, str, tuple[int, ...]]]:
+    """Return (ap_a, ap_b, shared_channels) for every overlapping pair in a plan."""
+    spans = [(name, set(occupied_channels(ch, width))) for name, ch, width in plan]
+    clashes: list[tuple[str, str, tuple[int, ...]]] = []
+    for i, (name_a, span_a) in enumerate(spans):
+        for name_b, span_b in spans[i + 1 :]:
+            shared = span_a & span_b
+            if shared:
+                clashes.append((name_a, name_b, tuple(sorted(shared))))
+    return clashes
+
+
+async def _load_aps() -> dict[str, dict]:
+    """Return adopted APs by name."""
+    async with UniFiClient() as client:
+        devices = await client.get_devices()
+    return {d['name']: d for d in devices if d.get('type') == 'uap' and d.get('name')}
+
+
+def _current_5ghz(device: dict) -> dict:
+    return next((r for r in device.get('radio_table', []) if r.get('radio') == 'na'), {})
+
+
+async def main() -> int:
     """Apply the 5GHz channel and width plan, or preview it under dry-run."""
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true', help='Commit (default: dry-run)')
     args = parser.parse_args()
 
-    s, base, site = get_session()
-    devices = load_devices(s, base, site)
-    by_name = {d.get('name'): d for d in devices}
-
-    # Build actionable changes
-    plan: list[tuple[dict[str, Any], int, int, dict[str, int]]] = []
-    missing: list[str] = []
-    for name, ch, width in CHANNEL_PLAN:
-        d = by_name.get(name)
-        if not d:
-            missing.append(name)
-            continue
-        current = next((r for r in d.get('radio_table', []) if r.get('radio') == 'na'), {})
-        cur_ch = current.get('channel')
-        cur_w = current.get('ht')
-        if str(cur_ch) == str(ch) and str(cur_w) == str(width):
-            continue
-        plan.append((d, ch, width, {'ch': cur_ch, 'w': cur_w}))
-
-    if missing:
-        print('⚠️  Not found on controller:')
-        for m in missing:
-            print(f'    - {m}')
-
-    if not plan:
-        print('✅ All APs already match the plan. Nothing to do.')
-        return 0
-
-    print(f'\n📋 {len(plan)} AP change(s) proposed:\n')
-    print(f'{"AP":<24}{"Current":>14}{"→":>4}{"New":>12}')
-    print('-' * 56)
-    for d, ch, width, before in plan:
-        print(
-            f'{d.get("name", "?")[:22]:<24}'
-            f'{f"ch{before['ch']}@{before['w']}MHz":>14}'
-            f'{"→":>4}'
-            f'{f"ch{ch}@{width}MHz":>12}'
-        )
-
-    if not args.apply:
-        print('\n🔍 DRY RUN — re-run with --apply to commit.')
-        return 0
-
-    print('\n⚡ Applying changes (Oscar-Papa LAST to preserve shell Wi-Fi)...\n')
-    results: list[dict[str, Any]] = []
-    for d, ch, width, _ in plan:
-        print(f'  → {d.get("name")}: setting ch{ch}@{width}MHz ... ', end='', flush=True)
-        r = apply_change(s, base, site, d, ch, width)
-        results.append(r)
-        print(r['status'].upper() + (f' ({r.get("error", "")[:80]})' if r.get('error') else ''))
-        # Brief inter-AP pause to avoid controller queue backlog
-        time.sleep(1.5)
-
-    success = sum(1 for r in results if r['status'] == 'applied')
-    failed = [r for r in results if r['status'] != 'applied']
-
-    print(f'\n✅ Applied: {success}/{len(results)}')
-    if failed:
-        print(f'❌ Failed:  {len(failed)}')
-        for r in failed:
-            print(f'    - {r["name"]}: {r.get("error", r.get("status"))}')
+    overlaps = find_overlaps(CHANNEL_PLAN)
+    if overlaps:
+        print('CHANNEL_PLAN is self-inconsistent - refusing to touch the network:')
+        for name_a, name_b, shared in overlaps:
+            print(f'    {name_a} and {name_b} both occupy {list(shared)}')
         return 2
 
-    print('\n🕐 APs will restart their 5GHz radios over the next 30–60s.')
-    print('   Your Wi-Fi may drop briefly when Oscar Papa U6-Pro applies.')
+    try:
+        by_name = await _load_aps()
+    except Exception as exc:
+        print(f'Could not read the device list: {exc}')
+        return 2
+
+    changes: list[dict] = []
+    rows: list[tuple[str, str, str]] = []
+    missing: list[str] = []
+
+    for name, channel, width in CHANNEL_PLAN:
+        device = by_name.get(name)
+        if device is None:
+            missing.append(name)
+            continue
+        current = _current_5ghz(device)
+        if str(current.get('channel')) == str(channel) and str(current.get('ht')) == width:
+            continue
+        changes.append(
+            {
+                'device_id': device['_id'],
+                'radio': 'na',
+                'channel': channel,
+                'ht': width,
+            }
+        )
+        rows.append(
+            (
+                name,
+                f'ch{current.get("channel")}@{current.get("ht")}MHz',
+                f'ch{channel}@{width}MHz',
+            )
+        )
+
+    if missing:
+        print('Not found on the controller:')
+        for name in missing:
+            print(f'    - {name}')
+
+    if not changes:
+        print('All APs already match the plan. Nothing to do.')
+        return 0 if not missing else 2
+
+    print(f'\n{len(changes)} AP change(s) proposed:\n')
+    print(f'{"AP":<24}{"Current":>16}{"New":>18}')
+    print('-' * 58)
+    for name, before, after in rows:
+        print(f'{name[:22]:<24}{before:>16}{after:>18}')
+
+    if not args.apply:
+        results = await apply_radio_config(changes, dry_run=True)
+        print(f'\nDRY RUN - {len(results)} radio write(s) would be made.')
+        not_found = [r for r in results if r.get('status') == 'NOT_FOUND']
+        if not_found:
+            print(f'{len(not_found)} change(s) resolved to no device.')
+        print('Re-run with --apply to commit.')
+        return 0
+
+    print('\nApplying (Oscar-Papa last, to preserve the operator shell)...\n')
+    results: list[dict] = []
+    for change, (name, _, after) in zip(changes, rows, strict=True):
+        print(f'  -> {name}: {after} ... ', end='', flush=True)
+        applied = await apply_radio_config([change], dry_run=False)
+        results.extend(applied)
+        print(', '.join(r.get('status', '?') for r in applied))
+        # Pace the writes: each apply force-provisions the AP, and the original
+        # operator run found back-to-back provisions backing up the controller.
+        await asyncio.sleep(1.5)
+
+    ok = [r for r in results if r.get('status') == 'APPLIED']
+    bad = [r for r in results if r.get('status') != 'APPLIED']
+    print(f'\nApplied: {len(ok)}/{len(results)}')
+    if bad:
+        print(f'Failed: {len(bad)}')
+        for r in bad:
+            print(f'    - {r.get("name", r.get("device_id"))}: {r.get("status")}')
+        return 2
+
+    print('\nAPs will restart their 5GHz radios over the next 30-60s.')
+    print('Wi-Fi may drop briefly when Oscar Papa U6-Pro applies.')
     return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(asyncio.run(main()))
