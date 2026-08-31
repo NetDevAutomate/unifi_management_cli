@@ -265,6 +265,22 @@ def test_suffix_flap_is_suppressed() -> None:
     assert build_port_name_plan(devices, clients).count == 0
 
 
+def test_client_name_and_hostname_aliases_do_not_oscillate() -> None:
+    """The controller may alternate between a curated name and hostname."""
+    devices = [_switch('A', [_port(5, 'ugreen-nas-01')], mac='sw:01')]
+    clients = [
+        _client(
+            '6c:1f:f7:ac:a9:00',
+            'sw:01',
+            5,
+            name='DXP4800GT-60A3',
+            hostname='ugreen-nas-01',
+        )
+    ]
+
+    assert build_port_name_plan(devices, clients).count == 0
+
+
 def test_strip_multi_suffix_predicate() -> None:
     assert strip_multi_suffix('Hotel3-Apple-TV +2') == 'Hotel3-Apple-TV'
     assert strip_multi_suffix('Hotel3-Apple-TV') == 'Hotel3-Apple-TV'
@@ -330,6 +346,27 @@ def test_non_switch_devices_are_skipped() -> None:
     clients = [_client('aa:bb', 'gw:01', 1, name='WAN')]
 
     assert build_port_name_plan(devices, clients).count == 0
+
+
+def test_integrated_udm_switch_ports_are_named() -> None:
+    """A UCG/UDM gateway has managed LAN ports even though its type is not usw."""
+    devices = [
+        {
+            '_id': 'ucg',
+            'mac': 'gw:01',
+            'name': 'UCG Fiber',
+            'type': 'udm',
+            'port_table': [_port(7, 'SFP+ 2')],
+            'lldp_table': [{'local_port_idx': 7, 'chassis_id': 'sw:01', 'port_id': 'te4'}],
+        },
+        _switch('Office Core', [], mac='sw:01'),
+    ]
+
+    plan = build_port_name_plan(devices, [])
+
+    assert plan.count == 1
+    assert plan.renames[0].device == 'UCG Fiber'
+    assert plan.renames[0].proposed == 'Office Core te4'
 
 
 def test_names_are_truncated_to_the_controller_limit() -> None:

@@ -36,6 +36,7 @@ from unifi_mapper.analysis.port_naming import (
     name_quality,
     resolve_peer,
     strip_multi_suffix,
+    supports_port_naming,
     would_lose_information,
 )
 from unifi_mapper.core.utils.client import UniFiClient
@@ -91,7 +92,7 @@ async def main() -> int:
     wired = index_wired_clients(clients)
 
     buckets: dict[str, list[tuple[str, int, str]]] = defaultdict(list)
-    switches = 0
+    switching_devices = 0
     ports_total = 0
     ports_down = 0
     non_switch_ports = 0
@@ -99,10 +100,10 @@ async def main() -> int:
     for device in devices:
         dev_name = str(device.get('name') or '?')
         table = device.get('port_table') or []
-        if device.get('type') != 'usw':
+        if not supports_port_naming(device):
             non_switch_ports += len(table)
             continue
-        switches += 1
+        switching_devices += 1
         lldp = {e.get('local_port_idx'): e for e in (device.get('lldp_table') or [])}
 
         for port in table:
@@ -120,11 +121,11 @@ async def main() -> int:
 
     up_ports = ports_total - ports_down
     print('PORT LABEL CENSUS\n')
-    print(f'  switches (type=usw)        {switches}')
+    print(f'  managed switching devices  {switching_devices}')
     print(f'  switch ports total         {ports_total}')
     print(f'    down (never touched)     {ports_down}')
     print(f'    up   (considered)        {up_ports}')
-    print(f'  ports on non-switches      {non_switch_ports}  (gateway/APs: out of scope)')
+    print(f'  ports on unsupported gear  {non_switch_ports}  (APs/legacy gateways)')
     print(f'  wired clients tied to port {len(wired)}')
     print(f'  wired clients total        {sum(1 for c in clients if c.get("is_wired"))}')
 

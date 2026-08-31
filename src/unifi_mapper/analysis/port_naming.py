@@ -46,6 +46,12 @@ from unifi_mapper.core.utils.client import UniFiClient
 # UniFi rejects port names longer than this.
 NAME_MAX = 32
 
+# UniFi reports integrated gateway/switch appliances as ``udm`` rather than
+# ``usw`` even though their LAN/SFP ports use the same port_table and
+# port_overrides API. Keep older standalone gateways out of scope: they do not
+# share that write contract consistently.
+PORT_NAMING_DEVICE_TYPES = frozenset({'usw', 'udm', 'udmpro'})
+
 # Factory-default labels that carry no information. `_is_default_port_name` in
 # run_methods only knew about "Port N"; the Ultra series ships "PoE Out + Data", which is
 # why those labels survived earlier refreshes.
@@ -173,6 +179,13 @@ def strip_multi_suffix(name: str) -> str:
     return head if head and tail.isdigit() else name
 
 
+def supports_port_naming(device: dict[str, Any]) -> bool:
+    """Return whether a device exposes the managed-switch port naming contract."""
+    return device.get('type') in PORT_NAMING_DEVICE_TYPES and isinstance(
+        device.get('port_table'), list
+    )
+
+
 def is_cosmetic_change(current: str, proposed: str) -> bool:
     """True when a rename differs only by punctuation, spacing or case."""
 
@@ -237,6 +250,30 @@ def index_wired_clients(clients: list[dict[str, Any]]) -> dict[tuple[str, int], 
     return index
 
 
+def index_wired_client_aliases(
+    clients: list[dict[str, Any]],
+) -> dict[tuple[str, int], set[str]]:
+    """Map each port to all human-readable aliases reported for its clients.
+
+    UniFi may alternate between a curated ``name`` and a device ``hostname``
+    across controller reads. Keeping both prevents a correct label oscillating
+    when the same client remains on the same port.
+    """
+    aliases: dict[tuple[str, int], set[str]] = {}
+    for client in clients:
+        if not client.get('is_wired'):
+            continue
+        switch_mac, port_idx = client.get('sw_mac'), client.get('sw_port')
+        if not switch_mac or port_idx is None:
+            continue
+        key = (str(switch_mac), int(port_idx))
+        for field_name in ('name', 'display_name', 'hostname'):
+            value = str(client.get(field_name) or '').strip()
+            if value:
+                aliases.setdefault(key, set()).add(value)
+    return aliases
+
+
 def build_port_name_plan(
     devices: list[dict[str, Any]],
     clients: list[dict[str, Any]],
@@ -249,10 +286,11 @@ def build_port_name_plan(
     """
     unifi_by_mac = {d['mac']: d for d in devices if d.get('mac')}
     wired = index_wired_clients(clients)
+    wired_aliases = index_wired_client_aliases(clients)
 
     plan = PortNamePlan()
     for device in devices:
-        if device.get('type') != 'usw':
+        if not supports_port_naming(device):
             continue
         switch_mac = device.get('mac')
         lldp = {entry.get('local_port_idx'): entry for entry in (device.get('lldp_table') or [])}
@@ -261,22 +299,34 @@ def build_port_name_plan(
             if not port.get('up'):
                 continue
             port_idx = port.get('port_idx')
+            if port_idx is None:
+                continue
             current = str(port.get('name') or '')
+            key = (str(switch_mac), int(port_idx))
 
             proposed = resolve_peer(lldp.get(port_idx, {}), unifi_by_mac, name_max)
             reason = 'lldp-peer'
+            proposed_from_clients = False
             if not proposed:
-                key = (str(switch_mac), int(port_idx))
                 names = sorted(set(wired.get(key, [])), key=name_quality)
                 if len(names) == 1:
                     proposed, reason = names[0], 'wired-client'
+                    proposed_from_clients = True
                 elif len(names) > 1:
                     proposed = f'{names[0]} +{len(names) - 1}'
                     reason = f'{len(names)} wired clients'
+                    proposed_from_clients = True
 
             if not proposed:
                 continue
             proposed = proposed[:name_max]
+
+            current_identity = strip_multi_suffix(current)
+            if proposed_from_clients and any(
+                is_cosmetic_change(current_identity, alias)
+                for alias in wired_aliases.get(key, set())
+            ):
+                continue
 
             if (
                 proposed == current
