@@ -2277,8 +2277,11 @@ def ports_refresh(
     """🔌 Refresh switch port labels from live LLDP and wired-client data.
 
     Resolves each connected port to its LLDP peer (via the adopted-device registry, so
-    APs resolve even though they send no system_name) or its wired client. Down ports are
-    never touched, and four guards prevent losing information or churning labels.
+    APs resolve even though they send no system_name) or its wired client. A
+    DISCONNECTED port is reverted to its default (``Port N``), since a label naming
+    hardware that is no longer plugged in is misinformation; a down port already
+    carrying a factory placeholder such as ``PoE Out + Data`` is left alone. Four
+    guards prevent losing information or churning labels.
     """
     import asyncio
     from rich.table import Table
