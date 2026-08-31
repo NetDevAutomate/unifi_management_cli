@@ -21,8 +21,21 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 from unifi_mapper.analysis.radio_config import apply_radio_config
+from unifi_mapper.cli import get_default_config_path, load_env_from_config
 from unifi_mapper.core.utils.client import UniFiClient
+
+
+def load_config(config: str | None = None) -> None:
+    """Populate the environment from the config file, exactly as `unifi-mapper` does.
+
+    `UniFiClient` reads UNIFI_URL / UNIFI_CONSOLE_API_TOKEN from os.environ and
+    does NOT read the config file itself, so a script that skips this step fails
+    with 'No credentials found from any source' even when the config is present.
+    """
+    path = Path(config).expanduser() if config else get_default_config_path()
+    load_env_from_config(str(path))
 
 
 # -----------------------------------------------------------------------------
@@ -119,14 +132,19 @@ async def main() -> int:
     """Apply the 5GHz channel and width plan, or preview it under dry-run."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true', help='Commit (default: dry-run)')
+    parser.add_argument('--config', help='Path to a .env config file (default: XDG lookup)')
     args = parser.parse_args()
 
+    # Validate the plan BEFORE touching config or the network: it is a pure data
+    # check, so a self-colliding plan should be reported even with no credentials.
     overlaps = find_overlaps(CHANNEL_PLAN)
     if overlaps:
         print('CHANNEL_PLAN is self-inconsistent - refusing to touch the network:')
         for name_a, name_b, shared in overlaps:
             print(f'    {name_a} and {name_b} both occupy {list(shared)}')
         return 2
+
+    load_config(args.config)
 
     try:
         by_name = await _load_aps()

@@ -21,9 +21,22 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 from typing import Any
 from unifi_mapper.analysis.radio_config import apply_radio_config
+from unifi_mapper.cli import get_default_config_path, load_env_from_config
 from unifi_mapper.core.utils.client import UniFiClient
+
+
+def load_config(config: str | None = None) -> None:
+    """Populate the environment from the config file, exactly as `unifi-mapper` does.
+
+    `UniFiClient` reads UNIFI_URL / UNIFI_CONSOLE_API_TOKEN from os.environ and
+    does NOT read the config file itself, so a script that skips this step fails
+    with 'No credentials found from any source' even when the config is present.
+    """
+    path = Path(config).expanduser() if config else get_default_config_path()
+    load_env_from_config(str(path))
 
 
 # A radio reporting less than this many dBm is treated as pinned low.
@@ -63,7 +76,10 @@ async def main() -> int:
     """Release 5GHz TX power to auto on pinned APs, or preview under dry-run."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true', help='Commit (default: dry-run)')
+    parser.add_argument('--config', help='Path to a .env config file (default: XDG lookup)')
     args = parser.parse_args()
+
+    load_config(args.config)
 
     try:
         devices = await _load_aps()

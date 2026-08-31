@@ -26,9 +26,11 @@ Two buckets are worth attention:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import sys
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 from unifi_mapper.analysis.port_naming import (
     NAME_MAX,
@@ -41,7 +43,20 @@ from unifi_mapper.analysis.port_naming import (
     supports_port_naming,
     would_lose_information,
 )
+from unifi_mapper.cli import get_default_config_path, load_env_from_config
 from unifi_mapper.core.utils.client import UniFiClient
+
+
+def load_config(config: str | None = None) -> None:
+    """Populate the environment from the config file, exactly as `unifi-mapper` does.
+
+    `UniFiClient` reads UNIFI_URL / UNIFI_CONSOLE_API_TOKEN from os.environ and
+    does NOT read the config file itself, so a script that skips this step fails
+    with 'No credentials found from any source' even when the config is present
+    and correct.
+    """
+    path = Path(config).expanduser() if config else get_default_config_path()
+    load_env_from_config(str(path))
 
 
 def classify_port(
@@ -88,6 +103,12 @@ def classify_port(
 
 async def main() -> int:
     """Print the port-label census."""
+    parser = argparse.ArgumentParser(description='Read-only port label census.')
+    parser.add_argument('--config', help='Path to a .env config file (default: XDG lookup)')
+    args = parser.parse_args()
+
+    load_config(args.config)
+
     try:
         async with UniFiClient() as client:
             devices = await client.get_devices()
