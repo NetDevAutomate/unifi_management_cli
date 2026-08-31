@@ -205,7 +205,7 @@ client a conflicting address.
 
 Resolves each connected managed switch port, including the integrated LAN/SFP ports on UCG/UDM gateways, to either its LLDP peer or its wired client, and rewrites the label to match. LLDP peers are resolved via the adopted-device registry (`chassis_id`), so access points resolve correctly even though they do not send `system_name` — this is what recovers factory labels such as `PoE Out + Data` on PoE passthrough switches.
 
-Down ports are never touched: a disconnected port's label is often the only record of what used to be plugged into it. Four guards prevent bad rewrites:
+Down ports are reverted to their default (`Port N`): a label naming hardware that is no longer plugged in is misinformation. A disconnected port already carrying a factory placeholder such as `PoE Out + Data` or `SFP 1` is left alone, since those say what the port physically is. Four guards prevent bad rewrites:
 
 | Guard | Prevents |
 |-------|----------|

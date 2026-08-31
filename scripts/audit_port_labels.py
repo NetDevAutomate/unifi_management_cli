@@ -8,7 +8,8 @@ resolver simply cannot name.
 
 This walks the same devices through the same decision functions imported from
 `analysis.port_naming`, so it cannot drift from the real logic, and reports
-which bucket every connected switch port lands in.
+which bucket every switch port lands in — connected ports that would be
+relabelled, and disconnected ports that would be reverted to their default.
 
 READ-ONLY BY CONSTRUCTION: it fetches and prints. There is no apply path and no
 --apply flag, so it cannot modify the network.
@@ -33,6 +34,7 @@ from unifi_mapper.analysis.port_naming import (
     NAME_MAX,
     index_wired_clients,
     is_cosmetic_change,
+    is_placeholder_name,
     name_quality,
     resolve_peer,
     strip_multi_suffix,
@@ -49,8 +51,14 @@ def classify_port(
     wired_names: list[str],
     had_lldp: bool,
 ) -> tuple[str, str]:
-    """Return (bucket, detail) for one UP switch port, mirroring the real plan logic."""
+    """Return (bucket, detail) for one switch port, mirroring the real plan logic."""
     current = str(port.get('name') or '')
+    port_idx = port.get('port_idx')
+
+    if not port.get('up'):
+        if is_placeholder_name(current, port_idx):
+            return 'down-already-default', f'current={current!r}'
+        return 'down-REVERTS-TO-DEFAULT', f'{current!r} -> {f"Port {port_idx}"!r}'
 
     proposed = resolve_peer(lldp_entry, unifi_by_mac, NAME_MAX)
     if not proposed:
@@ -108,10 +116,11 @@ async def main() -> int:
 
         for port in table:
             ports_total += 1
+            idx = port.get('port_idx')
+            if idx is None:
+                continue
             if not port.get('up'):
                 ports_down += 1
-                continue
-            idx = port.get('port_idx')
             entry = lldp.get(idx, {})
             key = (str(device.get('mac')), int(idx))
             bucket, detail = classify_port(
@@ -123,16 +132,18 @@ async def main() -> int:
     print('PORT LABEL CENSUS\n')
     print(f'  managed switching devices  {switching_devices}')
     print(f'  switch ports total         {ports_total}')
-    print(f'    down (never touched)     {ports_down}')
-    print(f'    up   (considered)        {up_ports}')
+    print(f'    down                     {ports_down}  (revert to default if mislabelled)')
+    print(f'    up                       {up_ports}')
     print(f'  ports on unsupported gear  {non_switch_ports}  (APs/legacy gateways)')
     print(f'  wired clients tied to port {len(wired)}')
     print(f'  wired clients total        {sum(1 for c in clients if c.get("is_wired"))}')
 
-    print('\nEvery UP switch port, by outcome:\n')
+    print('\nEvery switch port, by outcome:\n')
     order = [
         'WOULD-RENAME',
+        'down-REVERTS-TO-DEFAULT',
         'already-correct',
+        'down-already-default',
         'nothing-reported',
         'lldp-peer-not-adopted',
         'would-downgrade',
@@ -149,10 +160,14 @@ async def main() -> int:
         print()
 
     accounted = sum(len(v) for v in buckets.values())
-    if accounted != up_ports:
-        print(f'  NOTE: {accounted} classified vs {up_ports} up ports - buckets are incomplete.')
+    if accounted != ports_total:
+        print(f'  NOTE: {accounted} classified vs {ports_total} ports - buckets are incomplete.')
 
-    print(f'`ports refresh` would propose {len(buckets.get("WOULD-RENAME", []))} change(s).')
+    renames = len(buckets.get('WOULD-RENAME', []))
+    reverts = len(buckets.get('down-REVERTS-TO-DEFAULT', []))
+    print(f'`ports refresh` would propose {renames + reverts} change(s):')
+    print(f'    {renames} connected port(s) relabelled from LLDP/client')
+    print(f'    {reverts} disconnected port(s) reverted to their default')
     print('Everything in the other buckets is deliberately left alone.')
     return 0
 

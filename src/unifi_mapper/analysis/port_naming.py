@@ -279,10 +279,17 @@ def build_port_name_plan(
     clients: list[dict[str, Any]],
     name_max: int = NAME_MAX,
 ) -> PortNamePlan:
-    """Compute port label changes for every connected switch port.
+    """Compute port label changes for every switch port.
 
-    Down ports and non-switch devices are left alone — clearing a disconnected port's
-    label discards the only record of what used to be plugged into it.
+    A connected port is labelled from its LLDP peer or its wired client. A
+    DISCONNECTED port is reverted to the controller default (``Port N``), because
+    a label naming a device that is no longer plugged in is misinformation.
+
+    A disconnected port already carrying a factory placeholder is left alone:
+    rewriting ``PoE Out + Data`` or ``SFP 1`` to ``Port 8`` would discard what the
+    port physically is and churn the label on every run for no gain.
+
+    Non-switch devices are skipped entirely — see ``supports_port_naming``.
     """
     unifi_by_mac = {d['mac']: d for d in devices if d.get('mac')}
     wired = index_wired_clients(clients)
@@ -296,12 +303,29 @@ def build_port_name_plan(
         lldp = {entry.get('local_port_idx'): entry for entry in (device.get('lldp_table') or [])}
 
         for port in device.get('port_table') or []:
-            if not port.get('up'):
-                continue
             port_idx = port.get('port_idx')
             if port_idx is None:
                 continue
             current = str(port.get('name') or '')
+
+            if not port.get('up'):
+                # Nothing is connected, so a label naming a device is stale.
+                # Revert it to the default rather than leaving the port
+                # advertising hardware that is not there.
+                if is_placeholder_name(current, port_idx):
+                    continue
+                plan.renames.append(
+                    PortRename(
+                        device_id=device['_id'],
+                        device=str(device.get('name') or '?'),
+                        port_idx=port_idx,
+                        current=current,
+                        proposed=f'Port {port_idx}'[:name_max],
+                        reason='port-down',
+                    )
+                )
+                continue
+
             key = (str(switch_mac), int(port_idx))
 
             proposed = resolve_peer(lldp.get(port_idx, {}), unifi_by_mac, name_max)

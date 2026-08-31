@@ -324,12 +324,74 @@ def test_weak_label_detection() -> None:
 # ─── Scope: what must never be touched ───────────────────────────────────────
 
 
-def test_down_ports_are_left_alone() -> None:
-    """A disconnected port's label is the only record of what used to be there."""
+def test_down_port_already_at_the_default_is_left_alone() -> None:
+    """No churn: a disconnected port already reading 'Port N' needs no write.
+
+    Note the client still reporting on the port — a down port must never adopt a
+    client name, only the default.
+    """
     devices = [_switch('A', [_port(3, 'Port 3', up=False)], mac='sw:01')]
     clients = [_client('aa:bb', 'sw:01', 3, name='Something')]
 
     assert build_port_name_plan(devices, clients).count == 0
+
+
+def test_down_port_with_a_stale_device_label_reverts_to_the_default() -> None:
+    """Nothing is plugged in, so a label naming hardware is misinformation."""
+    devices = [_switch('A', [_port(5, 'Office Printer', up=False)], mac='sw:01')]
+
+    plan = build_port_name_plan(devices, [])
+
+    assert plan.count == 1
+    assert plan.renames[0].current == 'Office Printer'
+    assert plan.renames[0].proposed == 'Port 5'
+    assert plan.renames[0].reason == 'port-down'
+
+
+def test_down_port_reverts_to_default_rather_than_a_reporting_client() -> None:
+    """The discriminating case: revert wins over naming, even with a live client.
+
+    A client record can outlive the link going down. Without this the port would
+    be relabelled to the client instead of cleared.
+    """
+    devices = [_switch('A', [_port(7, 'Old NAS', up=False)], mac='sw:01')]
+    clients = [_client('aa:bb', 'sw:01', 7, name='ugreen-nas-01')]
+
+    plan = build_port_name_plan(devices, clients)
+
+    assert plan.count == 1
+    assert plan.renames[0].proposed == 'Port 7', 'must revert, not adopt the client name'
+
+
+def test_down_port_keeps_a_factory_placeholder() -> None:
+    """'PoE Out + Data' and 'SFP 1' ARE defaults, and say what the port physically is.
+
+    Rewriting them to 'Port N' would trade information for uniformity and churn
+    the label on every run.
+    """
+    devices = [
+        _switch(
+            'Ultra',
+            [
+                _port(1, 'PoE Out + Data', up=False),
+                _port(9, 'SFP 1', up=False),
+                _port(4, '', up=False),
+            ],
+            mac='sw:01',
+        )
+    ]
+
+    assert build_port_name_plan(devices, []).count == 0
+
+
+def test_down_port_with_a_mac_label_reverts_to_the_default() -> None:
+    """A bare hardware address on a dead port carries nothing worth keeping."""
+    devices = [_switch('A', [_port(2, '02:00:fe:02:00:0f', up=False)], mac='sw:01')]
+
+    plan = build_port_name_plan(devices, [])
+
+    assert plan.count == 1
+    assert plan.renames[0].proposed == 'Port 2'
 
 
 def test_non_switch_devices_are_skipped() -> None:
