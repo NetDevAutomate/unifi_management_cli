@@ -82,9 +82,10 @@ graph TB
     end
 
     subgraph AT["Layer 4 - Analysis Toolkit"]
-        AN["analysis/ (42 registered tools)"]
-        DG["diagnostics/ (4 tools)"]
-        DS["discovery/ (4 tools)"]
+        AN["analysis/ (40 registered tools)"]
+        DG["diagnostics (8 registered tools)"]
+        DS["discovery (5 registered tools)"]
+        OB["observability (2 registered tools)"]
         CN["connectivity/ (4 registered tools)"]
     end
 
@@ -466,7 +467,7 @@ The toolkit is 42 individual async functions organised across four sub-packages 
 
 ```mermaid
 graph TD
-    subgraph analysis["analysis/ (42 registered tools)"]
+    subgraph analysis["analysis/ (40 registered tools)"]
         direction LR
         subgraph original["Original Tools"]
             A1["detect_ip_conflicts"]
@@ -505,18 +506,28 @@ graph TD
         end
     end
 
-    subgraph diagnostics["diagnostics/ (4 tools)"]
-        D1["analyze_connectivity"]
-        D2["check_network_health"]
-        D3["analyze_performance"]
-        D4["run_security_audit"]
+    subgraph diagnostics["diagnostics (8 registered tools)"]
+        D1["connectivity_analysis"]
+        D2["network_health_check"]
+        D3["performance_analysis"]
+        D4["security_audit"]
+        D5["inspect_switch_port"]
+        D6["diagnose_switch_port\n(read-only evidence bundle)"]
+        D7["get_switch_ports"]
+        D8["diff_port_profiles"]
     end
 
-    subgraph discovery["discovery/ (4 tools)"]
+    subgraph discovery["discovery (5 registered tools)"]
         DS1["find_device"]
         DS2["find_ip"]
         DS3["find_mac"]
-        DS4["trace_client"]
+        DS4["client_trace"]
+        DS5["get_client_history"]
+    end
+
+    subgraph observability["observability (2 registered tools)"]
+        O1["get_device_events\n(stat/event, alarms, system log)"]
+        O2["get_port_counter_rates"]
     end
 
     subgraph connectivity["connectivity/ (4 registered tools)"]

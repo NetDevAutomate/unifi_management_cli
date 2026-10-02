@@ -790,6 +790,16 @@ uv run unifi-network-toolkit diagnose performance --device Core-SW-01
 | `performance_analysis` | Bottleneck identification |
 | `security_audit` | Security configuration review |
 | `connectivity_analysis` | Connection troubleshooting |
+| `inspect_switch_port` | Deep single-port inspection |
+| `diagnose_switch_port` | Read-only evidence bundle for one port, with a request audit |
+| `get_switch_ports` | Every port on a switch: negotiation, profile, LLDP peer, counters |
+| `diff_port_profiles` | Key-by-key diff of two port profiles and where each is used |
+| `get_client_history` | Where the controller places a client, current and offline |
+| `get_device_events` | Events, alarms, system log and admin audit for a device, port or client |
+| `get_port_counter_rates` | Sampled port error rates with a trust verdict (blocks while sampling) |
+
+The `ports` CLI group has the same read-only diagnostics: `ports list`, `ports profile-diff`,
+`ports client`, `ports events`, `ports counters` and `ports diagnose` (see the README).
 
 **Connectivity tools (firewall and path analysis)**
 
@@ -1775,12 +1785,13 @@ flowchart TB
     end
 
     subgraph Analysis["Analysis Toolkit"]
-        G[analysis - 30 tools]
-        H[diagnostics - 4 tools]
-        I[discovery - 4 tools]
+        G[analysis - 40 tools]
+        H[diagnostics - 8 tools]
+        I[discovery - 5 tools]
         J[connectivity - 4 tools]
         K[network - 6 tools]
         L[protect - 5 tools]
+        P[observability - 2 tools]
     end
 
     subgraph API["API Integration Layer"]

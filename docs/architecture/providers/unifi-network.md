@@ -172,3 +172,9 @@ sequenceDiagram
 - `network_topology.py` is a compatibility re-export of `enhanced_network_topology.py`.
 - STP-related automation is broad in the current manifest: discovery, optimal priorities, change plans, snapshots, drift, preflight, guard recommendations, and 10G readiness are registered under `analysis.yaml`.
 - Keep new controller-specific behavior behind the relevant client/config path rather than mixing auth styles in one module.
+- Read-only port diagnostics (`ports list/profile-diff/client/events/counters/diagnose` and the matching MCP tools) run on the synchronous `UnifiApiClient` behind `core/utils/readonly.py`'s transport guard. The endpoints they use:
+  - `GET` legacy `stat/device`, `stat/device/{id}`, `stat/sta`, `stat/sysinfo`, `stat/user/{mac}`, `rest/portconf`, `rest/networkconf`, `rest/user` and `list/alarm`
+  - `GET` v2 `clients/active`, `clients/history` and `models`
+  - `POST` query bodies to legacy `stat/event` (`_start`/`_limit` paging) and v2 `system-log/{device-alert,admin-activity,update-alert,client-alert}` (`pageNumber`/`pageSize`)
+  - `GET` Integration API `/v1/info`, `/v1/sites`, `/v1/sites/{id}/devices`, `.../devices/{id}` and `.../statistics/latest`, only on UniFi OS with API-key auth
+- Integration API base path: Ubiquiti's published spec gives `/proxy/network/integration`, while `network/config.py` builds `/proxy/network/integrations`. This has not been verified against a controller. The diagnostics try the documented path first, fall back to the plural on a 404, and record `base_path_used`, so a single `ports diagnose` run shows which one the controller answers.

@@ -26,6 +26,7 @@ Generated: 2026-05-02
    - 7.3 [device_capabilities.py - DeviceCapabilityDetector](#73-device_capabilitiespy)
    - 7.4 [ground_truth_verification.py - GroundTruthVerifier](#74-ground_truth_verificationpy)
    - 7.5 [run_methods.py - Orchestration functions](#75-run_methodspy)
+   - 7.6 [Port inspection and read-only port diagnostics](#76-port-inspection-and-read-only-port-diagnostics)
 8. [Core Data Models](#8-core-data-models)
    - 8.1 [models.py - Legacy in-memory models](#81-modelspy)
    - 8.2 [core/models/ - Pydantic typed models](#82-coremodels)
@@ -36,6 +37,7 @@ Generated: 2026-05-02
    - 10.1 [core/utils/auth.py - Credentials](#101-coreutilsauthpy)
    - 10.2 [core/utils/client.py - UniFiClient (async)](#102-coreutilsclientpy)
    - 10.3 [core/utils/errors.py - ToolError](#103-coreutilserrorspy)
+   - 10.4 [core/utils/redact.py and core/utils/readonly.py](#104-coreutilsredactpy-and-coreutilsreadonlypy)
 11. [analysis/ Package](#11-analysis-package)
 12. [diagnostics/ Package](#12-diagnostics-package)
 13. [discovery/ Package](#13-discovery-package)
@@ -111,7 +113,7 @@ graph TB
 
     subgraph "Domain Packages"
         ANA["analysis/\n30+ modules"]
-        DIA["diagnostics/\n4 tools"]
+        DIA["diagnostics/\n11 tool handlers"]
         DIS["discovery/\n4 tools"]
         CON["connectivity/\n4 tools"]
         NET["network/\n10 modules"]
@@ -624,6 +626,24 @@ classDiagram
 
 ---
 
+### 7.6 Port inspection and read-only port diagnostics
+
+**Purpose.** Answer "what is on this port, how did it negotiate, and what has the controller seen?" for any switch and port, without any controller write. These modules use the synchronous `UnifiApiClient` and back both the `unifi-mapper ports` commands and the MCP tools in `diagnostics/`.
+
+| Module | Key functions | Purpose |
+|---|---|---|
+| `port_inspect.py` | `resolve_switch_match`, `resolve_switch`, `inspect_port` | Resolve a switch (exact name, then MAC, IP, tokens, substring) and inspect one port: link, profile, network, connected device, addressing, LLDP |
+| `port_diagnostics.py` | `collect_device_identity`, `collect_port_detail`, `collect_override`, `list_switch_ports`, `diff_port_profiles`, `get_client_history`, `collect_integration_snapshot`, `build_port_diagnostic_bundle` | Verbatim, sanitised evidence: raw port entry with raw `speed_caps`, full override, profile diff and usage, client placement checked from each record, Integration API port capability, and the evidence bundle with `request_audit` |
+| `port_history.py` | `collect_events`, `sample_port_counters`, `read_counter_baselines` | Paged `stat/event`, `list/alarm` and v2 `system-log` history with observed retention per source; counter rates with a trust verdict; read-only baseline comparison |
+| `diagnostic_reads.py` | `Collection`, `fetch`, `resolve_device`, `find_port_entry` | Shared fetch helper that records failures instead of raising, the report model base (`schema_version`, final secret-stripping pass) and port lookups |
+| `port_diagnostics_render.py` | `render_*` | Rich tables for the CLI; `--json` bypasses it |
+
+**Safety.** Every entry point installs `core/utils/readonly.py`'s guard after login, so reused helpers cannot write either. Every output passes through `core/utils/redact.py`.
+
+**Dependencies.** `api_client.py`, `core/utils/readonly.py`, `core/utils/redact.py`, `analysis/port_counter_baseline.py` (read only)
+
+---
+
 ## 8. Core Data Models
 
 ### 8.1 `models.py`
@@ -848,6 +868,14 @@ The `core/` package provides shared infrastructure consumed by the async analysi
 
 ---
 
+### 10.4 `core/utils/redact.py` and `core/utils/readonly.py`
+
+**`redact.py`.** `strip_secrets(value, path)` removes (never masks) every key starting with `x_` or containing `password`, `secret`, `token`, `authkey`, `psk`, `passphrase`, `api_key` or `private_key`, at any depth, and returns the dotted paths it removed. `redact_text()` masks secret values quoted in error or HTTP text and truncates it. `SECRET_KEY_RE` is the single shared pattern.
+
+**`readonly.py`.** `install_read_only_guard(client)` wraps an authenticated `UnifiApiClient` session in `ReadOnlySession`: `GET`/`HEAD` pass except `cmd`/`upd` paths, `POST` passes only to `stat/event`, `list/alarm`, the v2 `system-log/{device-alert,admin-activity,update-alert,client-alert}` queries and logout, and every other method raises `ReadOnlyViolation` (a `PermissionError`) before any I/O. Each sent request is audited as `{method, path}`. It must be installed after `login()`, which replaces the session; `assert_guarded()` detects that.
+
+---
+
 ## 11. `analysis/` Package
 
 Analysis modules expose focused `async` functions or pure data helpers. Controller-backed tools use `UniFiClient` from `core/utils/client.py`, return Pydantic models or plain dictionaries, and are registered in `mcp/manifests/analysis.yaml`.
@@ -895,7 +923,7 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 
 ## 12. `diagnostics/` Package
 
-Four diagnostic tools that assess operational health. All use `UniFiClient`.
+Diagnostic tools. The first four use `UniFiClient`; `inspect_port.py` and `port_diagnostics_tools.py` run the synchronous port code (section 7.6) in a worker thread behind the read-only guard.
 
 | Module | Purpose |
 |---|---|
@@ -903,6 +931,8 @@ Four diagnostic tools that assess operational health. All use `UniFiClient`.
 | `network_health.py` | Aggregate network health scoring across all devices |
 | `performance_analysis.py` | Bandwidth utilisation, latency, and packet loss trending |
 | `security_audit.py` | Security posture assessment: open ports, weak auth, unencrypted traffic |
+| `inspect_port.py` | `inspect_switch_port`: deep single-port inspection |
+| `port_diagnostics_tools.py` | `diagnose_switch_port`, `get_switch_ports`, `diff_port_profiles` (diagnostics category), `get_client_history` (discovery) and `get_device_events`, `get_port_counter_rates` (observability) |
 
 ---
 
@@ -1155,7 +1185,7 @@ classDiagram
 
 **Lazy loading.** `ToolProxy._load_implementation()` calls `importlib.import_module` and `getattr` on first `execute()` call, not at startup. This keeps server startup fast regardless of the number of registered tools.
 
-**Manifest files.** Six YAML files under `mcp/manifests/`: `analysis.yaml`, `connectivity.yaml`, `diagnostics.yaml`, `discovery.yaml`, `network.yaml`, `protect.yaml`. Each declares a `category` and a `tools` mapping of name to `{module, handler, description, priority, tags, parameters}`.
+**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml`, `connectivity.yaml`, `diagnostics.yaml`, `discovery.yaml`, `network.yaml`, `observability.yaml`, `protect.yaml`. Each declares a `category` and a `tools` mapping of name to `{module, handler, description, priority, tags, parameters}`.
 
 ---
 
