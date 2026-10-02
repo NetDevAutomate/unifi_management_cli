@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from typing import Any, Callable, Optional
+from unifi_mapper.core.utils.coerce import float_or_none, int_or_none
 from unifi_mapper.core.utils.readonly import ReadOnlyViolation
 from unifi_mapper.core.utils.redact import redact_text, strip_secrets
 from unifi_mapper.port_inspect import (
@@ -230,24 +231,8 @@ def is_ip_address(value: str) -> bool:
 # --- scalar coercion (controller types vary by model and firmware) -------------------
 
 
-def int_or_none(value: Any) -> Optional[int]:
-    """Return ``value`` as an int, or None when it is absent or not numeric."""
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        return int(float(value))
-    except (TypeError, ValueError):
-        return None
-
-
-def float_or_none(value: Any) -> Optional[float]:
-    """Return ``value`` as a float, or None when it is absent or not numeric."""
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+# ``int_or_none`` and ``float_or_none`` live in ``core.utils.coerce`` (imported above),
+# so modules that must not import this one can share them.
 
 
 def str_or_none(value: Any) -> Optional[str]:

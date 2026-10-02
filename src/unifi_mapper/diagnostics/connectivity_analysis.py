@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional, Tuple
 from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.coerce import float_or_none
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
@@ -438,9 +439,8 @@ def _identify_bottlenecks(
     for device in devices_data:
         device_name = device.get('name', 'Unknown')
 
-        # High CPU can cause latency
-        system_stats = device.get('system-stats', {})
-        cpu = system_stats.get('cpu', 0)
+        # High CPU can cause latency (the controller may send cpu as a string)
+        cpu = float_or_none((device.get('system-stats') or {}).get('cpu')) or 0.0
         if cpu > 90:
             latency_issues.append(f'{device_name} - high CPU usage may cause latency')
 
@@ -550,8 +550,7 @@ def _assess_segment_congestion(
 
     high_cpu_devices = 0
     for device in devices:
-        system_stats = device.get('system-stats', {})
-        cpu = system_stats.get('cpu', 0)
+        cpu = float_or_none((device.get('system-stats') or {}).get('cpu')) or 0.0
         if cpu > 80:
             high_cpu_devices += 1
 

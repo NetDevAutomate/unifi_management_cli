@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.coerce import float_or_none
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
@@ -132,7 +133,7 @@ async def performance_analysis() -> NetworkPerformanceReport:
 def _analyze_device_performance(device_data: Dict[str, Any]) -> Optional[DevicePerformance]:
     """Analyze performance metrics for a single device."""
     # Skip if device doesn't have system stats
-    system_stats = device_data.get('system-stats', {})
+    system_stats = device_data.get('system-stats') or {}
     if not system_stats:
         return None
 
@@ -141,10 +142,10 @@ def _analyze_device_performance(device_data: Dict[str, Any]) -> Optional[DeviceP
     model = device_data.get('model', '')
     device_type = device_data.get('type', 'unknown')
 
-    # Extract system metrics
-    cpu_percent = system_stats.get('cpu')
-    memory_percent = system_stats.get('mem')
-    load_average = system_stats.get('loadavg_1')
+    # Extract system metrics: the controller may send these as strings ("7.1").
+    cpu_percent = float_or_none(system_stats.get('cpu'))
+    memory_percent = float_or_none(system_stats.get('mem'))
+    load_average = float_or_none(system_stats.get('loadavg_1'))
     uptime_seconds = device_data.get('uptime', 0)
     uptime_days = uptime_seconds / 86400 if uptime_seconds else None
 
@@ -166,28 +167,28 @@ def _analyze_device_performance(device_data: Dict[str, Any]) -> Optional[DeviceP
     # CPU analysis
     if cpu_percent:
         if cpu_percent > 90:
-            bottlenecks.append(f'Critical CPU usage: {cpu_percent}%')
+            bottlenecks.append(f'Critical CPU usage: {cpu_percent:g}%')
             recommendations.append('Immediate CPU load reduction needed')
         elif cpu_percent > 80:
-            bottlenecks.append(f'High CPU usage: {cpu_percent}%')
+            bottlenecks.append(f'High CPU usage: {cpu_percent:g}%')
             recommendations.append('Monitor CPU usage and consider load balancing')
 
     # Memory analysis
     if memory_percent:
         if memory_percent > 95:
-            bottlenecks.append(f'Critical memory usage: {memory_percent}%')
+            bottlenecks.append(f'Critical memory usage: {memory_percent:g}%')
             recommendations.append('Memory usage critical - restart may be needed')
         elif memory_percent > 85:
-            bottlenecks.append(f'High memory usage: {memory_percent}%')
+            bottlenecks.append(f'High memory usage: {memory_percent:g}%')
             recommendations.append('Monitor memory usage patterns')
 
     # Load average analysis (for Unix-like systems, >1.0 per core indicates load)
     if load_average:
         if load_average > 4.0:
-            bottlenecks.append(f'Very high load average: {load_average}')
+            bottlenecks.append(f'Very high load average: {load_average:g}')
             recommendations.append('System under heavy load - investigate processes')
         elif load_average > 2.0:
-            bottlenecks.append(f'High load average: {load_average}')
+            bottlenecks.append(f'High load average: {load_average:g}')
             recommendations.append('Monitor system load trends')
 
     # Network error analysis

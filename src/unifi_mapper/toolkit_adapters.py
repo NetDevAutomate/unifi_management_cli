@@ -5,6 +5,7 @@ Provides synchronous wrappers for async toolkit functions.
 
 import logging
 from typing import Any, Dict, List, Optional
+from unifi_mapper.core.utils.coerce import float_or_none
 
 
 log = logging.getLogger(__name__)
@@ -155,22 +156,17 @@ class ToolkitAdapter:
                         }
                     )
 
-                # Check for high CPU/memory if available
-                system_stats = device.get('system-stats', {})
-                cpu_usage = system_stats.get('cpu', 0)
-                try:
-                    if isinstance(cpu_usage, (int, float)) and float(cpu_usage) > 80:
-                        health_report['devices_with_issues'] += 1
-                        health_report['issues'].append(
-                            {
-                                'device': device.get('name', 'Unknown'),
-                                'issue': f'High CPU usage: {cpu_usage}%',
-                                'severity': 'medium',
-                            }
-                        )
-                except (ValueError, TypeError):
-                    # Skip if CPU data is not numeric
-                    pass
+                # Check for high CPU if available (the controller may send it as a string)
+                cpu_usage = float_or_none((device.get('system-stats') or {}).get('cpu'))
+                if cpu_usage is not None and cpu_usage > 80:
+                    health_report['devices_with_issues'] += 1
+                    health_report['issues'].append(
+                        {
+                            'device': device.get('name', 'Unknown'),
+                            'issue': f'High CPU usage: {cpu_usage:g}%',
+                            'severity': 'medium',
+                        }
+                    )
 
             # Determine overall health
             if health_report['offline_devices'] > 0:

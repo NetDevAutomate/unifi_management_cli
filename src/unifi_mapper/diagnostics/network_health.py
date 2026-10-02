@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List
 from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.coerce import float_or_none
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
@@ -131,29 +132,29 @@ def _analyze_network_health(
         else:
             warnings.append(f'Device {device_name} is not adopted')
 
-        # Performance metrics
-        system_stats = device.get('system-stats', {})
+        # Performance metrics: the controller may send these as strings ("7.1").
+        system_stats = device.get('system-stats') or {}
         if system_stats:
-            cpu_percent = system_stats.get('cpu')
-            memory_percent = system_stats.get('mem')
-            load_avg = system_stats.get('loadavg_1')
+            cpu_percent = float_or_none(system_stats.get('cpu'))
+            memory_percent = float_or_none(system_stats.get('mem'))
+            load_avg = float_or_none(system_stats.get('loadavg_1'))
 
-            if cpu_percent and cpu_percent > 80:
-                high_cpu_devices.append(f'{device_name} ({cpu_percent}%)')
+            if cpu_percent is not None and cpu_percent > 80:
+                high_cpu_devices.append(f'{device_name} ({cpu_percent:g}%)')
                 if cpu_percent > 95:
                     critical_issues.append(
-                        f'Device {device_name} has critical CPU usage: {cpu_percent}%'
+                        f'Device {device_name} has critical CPU usage: {cpu_percent:g}%'
                     )
 
-            if memory_percent and memory_percent > 85:
-                high_memory_devices.append(f'{device_name} ({memory_percent}%)')
+            if memory_percent is not None and memory_percent > 85:
+                high_memory_devices.append(f'{device_name} ({memory_percent:g}%)')
                 if memory_percent > 95:
                     critical_issues.append(
-                        f'Device {device_name} has critical memory usage: {memory_percent}%'
+                        f'Device {device_name} has critical memory usage: {memory_percent:g}%'
                     )
 
-            if load_avg and load_avg > 2.0:
-                high_load_devices.append(f'{device_name} ({load_avg})')
+            if load_avg is not None and load_avg > 2.0:
+                high_load_devices.append(f'{device_name} ({load_avg:g})')
 
         # Uplink status
         uplink = device.get('uplink', {})
