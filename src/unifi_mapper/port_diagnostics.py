@@ -1397,7 +1397,8 @@ def _section(name: str, ctx: Collection, client: Any, collect: Callable[[], Any]
     """Run one collector, recording any failure instead of losing the bundle.
 
     A ReadOnlyViolation is never swallowed: it means a collector tried to write.
-    The guard is re-checked after every section in case something re-logged in.
+    The guard is re-checked after every section, as a backstop for anything that
+    assigned ``client.session`` directly (a re-login keeps the guard).
     """
     try:
         result = collect()

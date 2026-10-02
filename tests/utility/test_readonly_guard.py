@@ -1,7 +1,21 @@
 """Tests for the transport-level read-only guard."""
 
 import pytest
+import re
+import requests
+from tests.fixtures_unifi import (
+    BASE_URL,
+    FAKE_PW,
+    SITE,
+    SWITCH_ID,
+    FakeResponse,
+    FakeSession,
+    default_routes,
+    fake_client,
+    fake_devices,
+)
 from types import SimpleNamespace
+from unifi_mapper.api_client import UnifiApiClient
 from unifi_mapper.core.utils.readonly import (
     ReadOnlySession,
     ReadOnlyViolation,
@@ -14,6 +28,7 @@ from unittest.mock import MagicMock
 BASE = 'https://192.0.2.1'
 API = f'{BASE}/proxy/network/api/s/default'
 V2 = f'{BASE}/proxy/network/v2/api/site/default'
+STAT_DEVICE = {'method': 'GET', 'path': '/proxy/network/api/s/default/stat/device'}
 
 pytestmark = pytest.mark.usefixtures('block_network')
 
@@ -167,6 +182,150 @@ def test_assert_guarded_detects_a_replaced_session(inner):
     client = SimpleNamespace(session=inner, is_authenticated=True, site='default')
     install_read_only_guard(client)
     assert_guarded(client)
-    client.session = MagicMock()  # what a re-login would do
+    client.session = MagicMock()  # a direct assignment that bypasses login
     with pytest.raises(ReadOnlyViolation, match='no longer installed'):
         assert_guarded(client)
+
+
+# ---------------------------------------------------------------------------
+# The guard survives a later login
+# ---------------------------------------------------------------------------
+
+
+class _RelogClient:
+    """Mimics UnifiApiClient: ``_perform_login`` swaps in a fresh session, then logs in on it."""
+
+    def __init__(self, session: object, fresh: MagicMock, outcome: str = 'ok') -> None:
+        self.session = session
+        self.fresh = fresh
+        self.outcome = outcome
+        self.site = 'default'
+        self.is_authenticated = True
+
+    def _perform_login(self) -> bool:
+        self.session = self.fresh
+        # Not on the POST allowlist: this only works because login runs before the re-wrap.
+        self.session.post(f'{BASE}/api/auth/login', json={'username': 'fake-admin'})
+        if self.outcome == 'raises':
+            raise ConnectionError('controller unreachable')
+        return self.outcome == 'ok'
+
+
+def test_a_relogin_rewraps_the_new_session_with_the_same_audit(inner):
+    fresh = MagicMock()
+    client = _RelogClient(inner, fresh)
+    audit = install_read_only_guard(client)
+    client.session.get(f'{API}/stat/device')
+
+    assert client._perform_login() is True
+
+    fresh.post.assert_called_once()  # the login itself ran on the fresh, unwrapped session
+    assert isinstance(client.session, ReadOnlySession)
+    client.session.get(f'{API}/stat/device')
+    fresh.get.assert_called_once()
+    assert audit == [STAT_DEVICE, STAT_DEVICE]  # login traffic is not audited
+    with pytest.raises(ReadOnlyViolation):
+        client.session.put(f'{API}/rest/device/0000000000000000000000a1', json={})
+    fresh.put.assert_not_called()
+
+
+@pytest.mark.parametrize('outcome', ['fails', 'raises'])
+def test_a_failed_relogin_still_leaves_the_new_session_guarded(inner, outcome):
+    fresh = MagicMock()
+    client = _RelogClient(inner, fresh, outcome=outcome)
+    install_read_only_guard(client)
+    if outcome == 'raises':
+        with pytest.raises(ConnectionError):
+            client._perform_login()
+    else:
+        assert client._perform_login() is False
+    assert isinstance(client.session, ReadOnlySession)
+    with pytest.raises(ReadOnlyViolation):
+        client.session.delete(f'{API}/rest/portconf/0000000000000000000000b1')
+    fresh.delete.assert_not_called()
+
+
+def test_a_second_install_keeps_the_same_login_wrapper(inner):
+    client = _RelogClient(inner, MagicMock())
+    install_read_only_guard(client)
+    wrapper = client._perform_login
+    install_read_only_guard(client)
+    assert client._perform_login is wrapper
+
+
+def test_a_mock_client_keeps_its_configured_login(inner):
+    client = MagicMock(session=inner, is_authenticated=True, site='default')
+    client.login.return_value = 'configured'
+    install_read_only_guard(client)
+    assert client.login() == 'configured'
+    assert isinstance(client.session, ReadOnlySession)
+
+
+def test_reinstalling_after_a_direct_session_swap_does_not_stack_login_wrappers(inner):
+    client = _RelogClient(inner, MagicMock())
+    first = install_read_only_guard(client)
+    client.session = MagicMock()  # bypasses login, so the guard is gone
+    second = install_read_only_guard(client)
+    assert second is not first
+
+    client._perform_login()
+    client.session.get(f'{API}/stat/device')
+
+    assert second == [STAT_DEVICE]
+    assert first == []
+
+
+def test_a_401_from_stat_device_is_retried_through_the_same_guard():
+    responses = iter([(401, {'meta': {'rc': 'error', 'msg': 'api.err.LoginRequired'}})])
+
+    def devices(**_: object) -> object:
+        return next(responses, {'data': fake_devices()})
+
+    session = FakeSession(default_routes(devices=devices))
+    client = fake_client(session)
+    audit = install_read_only_guard(client, SITE)
+
+    assert client.get_devices(SITE)['data']
+
+    assert isinstance(client.session, ReadOnlySession)
+    assert audit == [STAT_DEVICE, STAT_DEVICE]
+
+
+@pytest.mark.parametrize(
+    ('auth', 'login_method', 'login_path'),
+    [
+        ('token', 'GET', '/proxy/network/api/s/default/self'),
+        ('username_password', 'POST', '/api/auth/login'),
+    ],
+)
+def test_the_real_client_is_guarded_again_after_logout_and_login(
+    monkeypatch, auth, login_method, login_path
+):
+    first = FakeSession(default_routes())
+    if auth == 'token':
+        client = fake_client(first)
+    else:
+        client = UnifiApiClient(
+            base_url=BASE_URL, site=SITE, username='fake-admin', password=FAKE_PW, max_retries=1
+        )
+        client.is_authenticated, client.is_unifi_os, client.session = True, True, first
+    audit = install_read_only_guard(client, SITE)
+    assert client.get_devices(SITE)['data']
+
+    second = FakeSession(
+        {**default_routes(), (login_method, rf'^{re.escape(login_path)}$'): {'data': []}}
+    )
+    monkeypatch.setattr(requests, 'Session', lambda: second)
+    monkeypatch.setattr(requests, 'get', lambda *_a, **_k: FakeResponse(200, {}))  # OS probe
+    client.logout()
+    assert client.is_authenticated is False and first.closed
+
+    assert client.get_devices(SITE)['data']  # logs in again on `second`, then reads
+
+    assert client.is_authenticated is True
+    assert login_path in second.paths(login_method)
+    assert isinstance(client.session, ReadOnlySession)
+    assert audit == [STAT_DEVICE, STAT_DEVICE]
+    with pytest.raises(ReadOnlyViolation):
+        client.session.put(f'{API}/rest/device/{SWITCH_ID}', json={})
+    assert second.paths('PUT') == []

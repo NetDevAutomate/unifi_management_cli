@@ -248,17 +248,19 @@ They are read-only by construction, not by convention: after login the client's 
 session is wrapped by a transport guard that allows `GET` (except `cmd/` and `upd/`
 paths) and `POST` only to the `stat/event`, `list/alarm` and v2 `system-log` query
 endpoints. Anything else, including every `PUT`/`DELETE`, is refused before it leaves
-the machine. Secret fields (`x_*`, passwords, tokens, PSKs, passphrases) are removed
-from every output, and only their key paths are listed in `sanitised_paths`. These
-commands read configuration only from `--config` (or the default config path), never
-from a stray `./.env` in the working directory; `ports inspect` follows the same rule.
+the machine. If the client has to log in again mid-run, the new session is wrapped too.
+Secret fields (`x_*`, passwords, tokens, PSKs, passphrases) are removed from every
+output, and only their key paths are listed in `sanitised_paths`. These commands read
+configuration only from `--config` (or the default config path), never from a stray
+`./.env` in the working directory; `ports inspect` follows the same rule.
 
 `ports diagnose` writes `reports/port-diagnostics-<switch>-p<N>-<timestamp>.json` (or
 `-o PATH`). The bundle includes `request_audit`, the method and path of every request
-made after login, as evidence that collection never wrote to the controller. Undocumented
-values such as `speed_caps` are reported raw, alongside the ports that share the same
-value, rather than decoded by guesswork. Counter rates are withheld when the device did
-not inform between samples, since a stale snapshot would read as zero errors.
+made after login (login requests themselves are not listed), as evidence that collection
+never wrote to the controller. Undocumented values such as `speed_caps` are reported raw,
+alongside the ports that share the same value, rather than decoded by guesswork. Counter
+rates are withheld when the device did not inform between samples, since a stale snapshot
+would read as zero errors.
 
 ### Analysis Tools
 

@@ -23,16 +23,25 @@ no host, query string, headers, cookies or body. Diagnostic output ships that
 list as proof that collection was read-only.
 
 The guard must be installed *after* ``login()``, because ``_perform_login``
-replaces ``client.session`` and would silently discard it.
+replaces ``client.session`` and would silently discard it. Once installed it
+survives a later login (for example after ``logout()``): the client's
+``login``/``_perform_login`` are wrapped so that whatever session they leave
+behind is wrapped again, with the same audit list, whether the login succeeded,
+failed or raised. Login traffic itself runs on the fresh session before it is
+wrapped, so it is never audited, exactly as for the first login.
 """
 
 import re
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import unquote, urlsplit
 
 
 _FORBIDDEN_GET_SEGMENTS = frozenset({'cmd', 'upd'})
 _SYSTEM_LOG_CLASSES = ('device-alert', 'admin-activity', 'update-alert', 'client-alert')
+# Client methods that may replace ``client.session``, and the marker that lets a
+# re-install find the original method instead of stacking wrappers.
+_LOGIN_METHODS = ('login', '_perform_login')
+_ORIGINAL_LOGIN_ATTR = '_read_only_original_login'
 
 
 class ReadOnlyViolation(PermissionError):
@@ -186,6 +195,9 @@ def install_read_only_guard(client: Any, site: str | None = None) -> list[dict[s
     """Wrap ``client.session`` in a :class:`ReadOnlySession` and return its audit list.
 
     Idempotent: a client that is already guarded keeps its guard and audit list.
+    The guard also survives a later login: the client's ``login`` and
+    ``_perform_login`` are wrapped so that the session they leave behind is
+    wrapped again, appending to the same audit list.
 
     Args:
         client: An authenticated ``UnifiApiClient`` (or compatible object).
@@ -206,16 +218,58 @@ def install_read_only_guard(client: Any, site: str | None = None) -> list[dict[s
             'install the read-only guard after login(): login replaces client.session'
         )
     audit: list[dict[str, str]] = []
-    client.session = ReadOnlySession(session, site or getattr(client, 'site', 'default'), audit)
+    guarded_site = site or getattr(client, 'site', 'default')
+    client.session = ReadOnlySession(session, guarded_site, audit)
+    _keep_guard_across_login(client, guarded_site, audit)
     return audit
+
+
+def _keep_guard_across_login(client: Any, site: str, audit: list[dict[str, str]]) -> None:
+    """Re-wrap ``client.session`` after every call to the client's login methods.
+
+    ``UnifiApiClient._perform_login`` assigns a fresh ``requests.Session`` before
+    it authenticates, so any later login would otherwise leave the client
+    unguarded and unaudited for the rest of the run. Each login method that the
+    client has is replaced, on the instance only, by a wrapper that runs it
+    unchanged and then wraps whatever session it left behind. A wrapper from an
+    earlier install is unwrapped first, so wrappers never stack.
+
+    Args:
+        client: The client whose session was just wrapped.
+        site: Site the POST allowlist is anchored to.
+        audit: The audit list the re-wrapped session must keep appending to.
+    """
+    for name in _LOGIN_METHODS:
+        method = getattr(client, name, None)
+        if callable(method):
+            original = getattr(method, '__dict__', {}).get(_ORIGINAL_LOGIN_ATTR, method)
+            setattr(client, name, _login_then_guard(original, client, site, audit))
+
+
+def _login_then_guard(
+    original: Callable[..., Any], client: Any, site: str, audit: list[dict[str, str]]
+) -> Callable[..., Any]:
+    """Return a wrapper that runs ``original``, then guards the session it left behind."""
+
+    def login_then_guard(*args: Any, **kwargs: Any) -> Any:
+        """Run the original login, then put the guard back on ``client.session``."""
+        try:
+            return original(*args, **kwargs)
+        finally:
+            if not isinstance(client.session, ReadOnlySession):
+                client.session = ReadOnlySession(client.session, site, audit)
+
+    setattr(login_then_guard, _ORIGINAL_LOGIN_ATTR, original)
+    return login_then_guard
 
 
 def assert_guarded(client: Any) -> None:
     """Raise if the client's session is no longer behind the read-only guard.
 
     Raises:
-        ReadOnlyViolation: Something replaced ``client.session`` (for example a
-            re-login), so further requests would be unguarded.
+        ReadOnlyViolation: Something assigned ``client.session`` directly,
+            bypassing the login methods the guard re-wraps, so further requests
+            would be unguarded.
     """
     if not isinstance(getattr(client, 'session', None), ReadOnlySession):
         raise ReadOnlyViolation('the read-only guard is no longer installed on this client')
