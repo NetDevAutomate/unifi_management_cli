@@ -1,0 +1,60 @@
+category: observability
+description: Read-only history and counter trends for devices, ports and clients
+
+tools:
+  get_device_events:
+    module: unifi_mapper.diagnostics.port_diagnostics_tools
+    handler: get_device_events
+    description: >-
+      Events, alarms, system log and admin audit entries that mention a device,
+      one of its ports, or a client. Pages stat/event, reads list/alarm and pages
+      the v2 system-log classes device-alert, admin-activity, update-alert and
+      client-alert. Each source reports its record count, truncation and the
+      earliest entry returned, which is the observed retention. Read-only.
+    priority: P1
+    tags: [events, alarms, syslog, audit, history, port, client, read-only]
+    parameters:
+      device:
+        type: string
+        required: true
+        description: Device name, MAC or IP (any adopted device)
+      port:
+        type: integer
+        description: Only flag entries that mention this port
+      clients:
+        type: array
+        items: {type: string}
+        description: Client MACs to match as well
+      since_days:
+        type: integer
+        description: History window in days (1-3650, default 365)
+      max_events:
+        type: integer
+        description: Keep at most this many matches, newest first (default 200)
+
+  get_port_counter_rates:
+    module: unifi_mapper.diagnostics.port_diagnostics_tools
+    handler: get_port_counter_rates
+    description: >-
+      Sample one port's error, drop, CRC and link-down counters and report
+      per-minute rates with a trust verdict that withholds rates when the device
+      did not inform between samples. BLOCKS for (samples - 1) x interval_seconds,
+      about 100 s by default; use samples=1 for a single snapshot. Existing
+      baselines are compared, never written. Read-only.
+    priority: P2
+    tags: [counters, errors, crc, trend, port, link-quality, read-only]
+    parameters:
+      switch:
+        type: string
+        required: true
+        description: Switch name, MAC or IP
+      port:
+        type: integer
+        required: true
+        description: Port index on the switch, 1-based
+      samples:
+        type: integer
+        description: Number of samples (1-5, default 2)
+      interval_seconds:
+        type: integer
+        description: Seconds between samples (30-300, default 100)

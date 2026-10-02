@@ -9,7 +9,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **64 MCP Tools**: Network health, performance, security diagnostics, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
+- **70 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
 - **MCP Server**: AI-assisted network troubleshooting via Model Context Protocol
 
@@ -408,12 +408,13 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-**Available Tools (64 total):**
+**Available Tools (70 total):**
 
 | Category | Tools | Description |
 |----------|-------|-------------|
-| discovery | 4 | Device/IP/MAC location and client tracing |
-| diagnostics | 5 | Health checks, performance analysis, security audit, single-port inspection |
+| discovery | 5 | Device/IP/MAC location, client tracing and client history |
+| diagnostics | 8 | Health checks, performance analysis, security audit, single-port inspection, all-ports view, port profile diff, port evidence bundle |
+| observability | 2 | Event, alarm, system-log and admin-audit history; port counter rates |
 | connectivity | 4 | Firewall checks, path analysis, traceroute, inter-VLAN endpoint validation |
 | network | 6 | Firewall zones/policies, ACLs, DNS, clients, VLANs |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells |
@@ -424,6 +425,8 @@ Add to your `claude_desktop_config.json`:
 Ask Claude: "Check the health of my UniFi network" → Claude uses `network_health_check` tool
 
 Ask Claude: "Why isn't the device on port 2 of my office switch getting an IP?" → Claude uses `inspect_switch_port` tool
+
+Ask Claude: "Collect evidence on why port 5 of my Flex XG won't link at 10G" → Claude uses `diagnose_switch_port` tool
 
 Ask Claude: "Find all cameras and their status" → Claude uses `get_cameras` tool
 
@@ -457,12 +460,13 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (64 tools via FastMCP)
+└── MCP Server (70 tools via FastMCP)
 
 Analysis Toolkit
 ├── Analysis Tools (40 tools)
-├── Diagnostics (5 tools)
-├── Discovery (4 tools)
+├── Diagnostics (8 tools)
+├── Discovery (5 tools)
+├── Observability (2 tools)
 ├── Connectivity (4 tools)
 ├── Network Control (6 wrappers)
 └── Protect Integration (5 wrappers)
@@ -543,12 +547,20 @@ UniFi Network Application 10.0.162+ resolves most device-level rejection issues.
 - PoE Budget Analysis: Per-switch PoE consumption vs capacity
 - Client Density Analysis: AP client load distribution
 - Uplink Redundancy: Multi-path and failover validation
+- Switch Port Evidence Bundle: read-only `diagnose_switch_port` with raw port entry, override, profiles, clients, history, counters and a request audit
+- All-Ports View: every port on a switch with negotiation, profile, LLDP peer and counters
+- Port Profile Diff: key-by-key comparison of two port profiles and where each is used
 
 ### Discovery Tools
 - Find Device: Search by name/IP/MAC
 - Find IP: Locate device/port by IP address
 - Find MAC: MAC address location tracking
 - Client Trace: End-to-end client path analysis
+- Client History: where the controller places a client, across current and offline client tables
+
+### Observability Tools
+- Device Events: events, alarms, system log and admin audit for a device, port or client, with observed retention per source
+- Port Counter Rates: sampled error/CRC/link-down rates with a verdict that refuses false zeros from a stale device
 
 ## UniFi Protect Integration
 

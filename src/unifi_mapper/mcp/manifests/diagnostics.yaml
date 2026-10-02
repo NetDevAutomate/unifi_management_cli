@@ -49,3 +49,84 @@ tools:
         type: integer
         required: true
         description: Port index on the switch, 1-based
+
+  diagnose_switch_port:
+    module: unifi_mapper.diagnostics.port_diagnostics_tools
+    handler: diagnose_switch_port
+    description: >-
+      Read-only evidence bundle for one switch port, for vendor tickets. Switch
+      identity and Network application version, the raw port_table entry with
+      negotiation fields and raw speed_caps, the full port override with both
+      profile ids side by side, an optional diff of two port profiles, where the
+      controller places each client, events and system log, counter samples,
+      every port on the switch and the Integration API port capability. Includes
+      request_audit as proof that collection never wrote to the controller.
+      counter_samples above 1 blocks for 100 s per extra sample.
+    priority: P1
+    tags: [port, diagnostic, evidence, negotiation, speed, profile, events, read-only]
+    parameters:
+      switch:
+        type: string
+        required: true
+        description: 'Switch name, MAC or IP; an exact name or MAC always wins'
+      port:
+        type: integer
+        required: true
+        description: Port index on the switch, 1-based
+      clients:
+        type: array
+        items: {type: string}
+        description: Clients (MAC, IP or name) to locate; default is whatever is on the port
+      compare_profiles:
+        type: array
+        items: {type: string}
+        description: Exactly two port profile names or ids to diff
+      since_days:
+        type: integer
+        description: History window in days (1-3650, default 365)
+      counter_samples:
+        type: integer
+        description: Counter samples 100 s apart (1-5, default 1, which never blocks)
+      max_events:
+        type: integer
+        description: Keep at most this many history matches (default 200)
+
+  get_switch_ports:
+    module: unifi_mapper.diagnostics.port_diagnostics_tools
+    handler: get_switch_ports
+    description: >-
+      Every port on one switch with the switch identity. Per port the name,
+      media, speed, duplex, autoneg, up, STP state, effective profile and whether
+      an override sets it, raw speed_caps, PoE, LLDP neighbour, clients and
+      error, CRC and link-down counters. Device model, firmware, uptime, state,
+      system stats and thermal and power fields. Read-only.
+    priority: P1
+    tags: [port, switch, inventory, speed, lldp, diagnostic, read-only]
+    parameters:
+      switch:
+        type: string
+        required: true
+        description: 'Switch name, MAC or IP; an exact name or MAC always wins'
+      include_raw:
+        type: boolean
+        description: Include the full sanitised stat/device record
+
+  diff_port_profiles:
+    module: unifi_mapper.diagnostics.port_diagnostics_tools
+    handler: diff_port_profiles
+    description: >-
+      Key-by-key diff of two port profiles (rest/portconf) with identity and
+      attr_* metadata kept separate, referenced networks resolved to names and
+      VLANs, and every switch port that runs each profile with its live speed.
+      Read-only.
+    priority: P1
+    tags: [port, profile, portconf, diff, vlan, diagnostic, read-only]
+    parameters:
+      profile_a:
+        type: string
+        required: true
+        description: First port profile name or _id
+      profile_b:
+        type: string
+        required: true
+        description: Second port profile name or _id

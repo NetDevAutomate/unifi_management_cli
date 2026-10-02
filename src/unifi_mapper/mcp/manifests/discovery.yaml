@@ -49,3 +49,26 @@ tools:
         type: string
         required: true
         description: Client MAC or IP to trace
+
+  get_client_history:
+    module: unifi_mapper.diagnostics.port_diagnostics_tools
+    handler: get_client_history
+    description: >-
+      Where the controller places a client, across stat/sta, v2 clients/active,
+      v2 clients/history, rest/user and stat/user, including offline records and
+      previous ports and link rates. With switch and port, each record is checked
+      against that port from its own location fields, independently of how it
+      was found. Read-only.
+    priority: P1
+    tags: [client, mac, history, locate, port, layer2, read-only]
+    parameters:
+      client:
+        type: string
+        required: true
+        description: Client MAC (any notation), IP, or a name or hostname substring
+      switch:
+        type: string
+        description: Switch to check each record against
+      port:
+        type: integer
+        description: Port on that switch to check against (needs switch)
