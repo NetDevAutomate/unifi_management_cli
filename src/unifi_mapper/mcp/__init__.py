@@ -7,11 +7,14 @@ Features:
     - Dynamic tool discovery via search_tools
     - Lazy loading of tool definitions
     - Progressive disclosure of tool information
-    - 30+ network management tools across 6 categories
+    - Network management tools grouped by category, declared in YAML manifests
 
 Usage:
-    # Run the MCP server
-    uvx run unifi-mcp
+    # Run the MCP server (stdio) without installing it
+    uvx --from <path-or-git-url> unifi-mcp
+
+    # Or install it as a tool, then run unifi-mcp
+    uv tool install <path>
 
     # Or programmatically
     from unifi_mapper.mcp import mcp, get_registry, ToolRegistry

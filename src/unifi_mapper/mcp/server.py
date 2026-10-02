@@ -4,20 +4,59 @@ Implements the Code Mode architecture pattern with:
 - Dynamic tool discovery via search_tools
 - Lazy loading of tool definitions
 - Progressive disclosure of tool information
+
+Launch it with the ``unifi-mcp`` console script, for example
+``uvx --from <path-or-git-url> unifi-mcp`` or after ``uv tool install <path>``.
 """
 
 from __future__ import annotations
 
+import argparse
+import importlib.metadata
+import sys
 from .registry import ToolRegistry
 from dataclasses import asdict, is_dataclass
 from mcp.server.fastmcp import FastMCP
-from pathlib import Path
 from typing import Any
 from unifi_mapper.core.utils.errors import ToolError
 
 
+DIST_NAME = 'unifi-management-cli'
+
+
+def package_version() -> str:
+    """Return the installed distribution version, or a sentinel for source trees.
+
+    Returns:
+        The version from distribution metadata, or ``'0+unknown'``.
+    """
+    try:
+        return importlib.metadata.version(DIST_NAME)
+    except importlib.metadata.PackageNotFoundError:
+        return '0+unknown'
+
+
+def _mcp_sdk_version() -> str:
+    """Return the installed ``mcp`` SDK version, or ``'unknown'``."""
+    try:
+        return importlib.metadata.version('mcp')
+    except importlib.metadata.PackageNotFoundError:
+        return 'unknown'
+
+
+def version_string() -> str:
+    """Return the ``unifi-mcp --version`` line.
+
+    Returns:
+        ``'unifi-mcp (unifi-management-cli <version>; mcp SDK <version>)'``.
+    """
+    return f'unifi-mcp ({DIST_NAME} {package_version()}; mcp SDK {_mcp_sdk_version()})'
+
+
 # Initialize the MCP server
 mcp = FastMCP('unifi-management')
+# FastMCP has no version kwarg; without this, serverInfo.version reports the SDK's version.
+mcp._mcp_server.version = package_version()
 
 # Initialize the tool registry
 _registry: ToolRegistry | None = None
@@ -27,7 +66,7 @@ def get_registry() -> ToolRegistry:
     """Get or create the tool registry singleton."""
     global _registry
     if _registry is None:
-        _registry = ToolRegistry(Path(__file__).parent / 'manifests')
+        _registry = ToolRegistry()
     return _registry
 
 
@@ -188,8 +227,31 @@ async def execute_tool(tool_name: str, params: dict[str, Any] | None = None) -> 
     return {'ok': True, 'result': _to_jsonable(result)}
 
 
-def main() -> None:
-    """Entry point for uvx run unifi-mcp."""
+def _arg_parser() -> argparse.ArgumentParser:
+    """Build the ``unifi-mcp`` argument parser."""
+    parser = argparse.ArgumentParser(
+        prog='unifi-mcp',
+        description=(
+            'UniFi management MCP server. With no arguments it serves the Model Context '
+            'Protocol over stdin/stdout for an MCP client.'
+        ),
+    )
+    parser.add_argument('--version', action='version', version=version_string())
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Entry point for the ``unifi-mcp`` console script.
+
+    ``--version`` and ``-h/--help`` print to stdout and exit 0 without starting the server.
+    Unknown arguments are reported on stderr and ignored. Otherwise the stdio server runs.
+
+    Args:
+        argv: Arguments to parse; ``None`` means ``sys.argv[1:]``.
+    """
+    _, unknown = _arg_parser().parse_known_args(argv)
+    if unknown:
+        print(f'unifi-mcp: ignoring unknown arguments: {" ".join(unknown)}', file=sys.stderr)
     mcp.run()
 
 

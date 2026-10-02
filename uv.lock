@@ -1,6 +1,12 @@
 version = 1
 revision = 3
 requires-python = ">=3.12"
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and sys_platform != 'win32'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'win32'",
+]
 
 [[package]]
 name = "aiofiles"
@@ -1002,7 +1008,7 @@ wheels = [
 
 [[package]]
 name = "mcp"
-version = "1.25.0"
+version = "1.30.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1020,9 +1026,9 @@ dependencies = [
     { name = "typing-inspection" },
     { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d5/2d/649d80a0ecf6a1f82632ca44bec21c0461a9d9fc8934d38cb5b319f2db5e/mcp-1.25.0.tar.gz", hash = "sha256:56310361ebf0364e2d438e5b45f7668cbb124e158bb358333cd06e49e83a6802", size = 605387, upload-time = "2025-12-19T10:19:56.985Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ba/93/0142dc84a666daf8ad51a34268f34c12fd6fda4f3810c4be2504eecc8212/mcp-1.30.0.tar.gz", hash = "sha256:445414625fce5c295faa505bb11bacece661ab6f4028d57c935db57820b7a3e4", size = 680511, upload-time = "2026-09-07T14:34:15.845Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e2/fc/6dc7659c2ae5ddf280477011f4213a74f806862856b796ef08f028e664bf/mcp-1.25.0-py3-none-any.whl", hash = "sha256:b37c38144a666add0862614cc79ec276e97d72aa8ca26d622818d4e278b9721a", size = 233076, upload-time = "2025-12-19T10:19:55.416Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/f4/e58bc33317c92a0203664daaf00bf6f41166cc0149e5d6870a03f7cd004a/mcp-1.30.0-py3-none-any.whl", hash = "sha256:666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0", size = 234581, upload-time = "2026-09-07T14:34:14.266Z" },
 ]
 
 [[package]]
@@ -2216,9 +2222,10 @@ wheels = [
 
 [[package]]
 name = "unifi-management-cli"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "asyncssh" },
     { name = "graphviz" },
     { name = "httpx" },
@@ -2238,6 +2245,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "jsonschema" },
     { name = "pre-commit" },
     { name = "pyright" },
     { name = "pytest" },
@@ -2249,25 +2257,27 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncssh", specifier = ">=2.22.0" },
-    { name = "graphviz", specifier = ">=0.20.0" },
-    { name = "httpx", specifier = ">=0.28.0" },
-    { name = "keyring", specifier = ">=25.5.0" },
-    { name = "loguru", specifier = ">=0.7.0" },
-    { name = "mcp", specifier = ">=1.0.0" },
-    { name = "onvif-zeep-async", specifier = ">=4.0.4" },
-    { name = "pycryptodome", specifier = ">=3.20.0" },
-    { name = "pydantic", specifier = ">=2.10.0" },
-    { name = "pymongo", specifier = ">=4.8.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", specifier = ">=2.31.0" },
-    { name = "rich", specifier = ">=13.9.0" },
-    { name = "typer", specifier = ">=0.9.0" },
-    { name = "uiprotect", specifier = ">=7.0.0" },
+    { name = "anyio", specifier = ">=4.12,<5" },
+    { name = "asyncssh", specifier = ">=2.22,<3" },
+    { name = "graphviz", specifier = ">=0.21,<0.22" },
+    { name = "httpx", specifier = ">=0.28.1,<0.29" },
+    { name = "keyring", specifier = ">=25.7,<26" },
+    { name = "loguru", specifier = ">=0.7.3,<0.8" },
+    { name = "mcp", specifier = ">=1.30,<1.31" },
+    { name = "onvif-zeep-async", specifier = ">=4.0.4,<5" },
+    { name = "pycryptodome", specifier = ">=3.23,<4" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pymongo", specifier = ">=4.16,<5" },
+    { name = "pyyaml", specifier = ">=6.0.3,<7" },
+    { name = "requests", specifier = ">=2.32.5,<3" },
+    { name = "rich", specifier = ">=14.2,<15" },
+    { name = "typer", specifier = ">=0.21,<0.22" },
+    { name = "uiprotect", specifier = ">=8.1.1,<9" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "jsonschema", specifier = ">=4.26,<5" },
     { name = "pre-commit", specifier = ">=4.0.0" },
     { name = "pyright", specifier = ">=1.1.390" },
     { name = "pytest", specifier = ">=8.0.0" },

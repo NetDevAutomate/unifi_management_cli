@@ -7,11 +7,24 @@ following the Code Mode architecture pattern for progressive tool discovery.
 from __future__ import annotations
 
 import importlib
+import importlib.resources
 import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable
+
+
+def default_manifests_dir() -> Path:
+    """Return the manifests directory shipped inside the installed package.
+
+    Resolved through ``importlib.resources`` rather than ``__file__`` so it follows the
+    installed ``unifi_mapper.mcp`` package (wheel, uv tool or uvx environment).
+
+    Returns:
+        The ``unifi_mapper/mcp/manifests`` directory.
+    """
+    return Path(str(importlib.resources.files('unifi_mapper.mcp') / 'manifests'))
 
 
 @dataclass
@@ -85,7 +98,7 @@ class ToolRegistry:
 
     def __init__(self, manifests_dir: Path | None = None) -> None:
         """Initialize the tool registry with an optional manifests directory."""
-        self._manifests_dir = manifests_dir or (Path(__file__).parent / 'manifests')
+        self._manifests_dir = manifests_dir or default_manifests_dir()
         self._metadata: dict[str, ToolMetadata] = {}
         self._categories: dict[str, list[str]] = {}
         self._proxies: dict[str, ToolProxy] = {}
