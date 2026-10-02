@@ -2,6 +2,12 @@
 
 Implements lazy loading of tool definitions from YAML manifests,
 following the Code Mode architecture pattern for progressive tool discovery.
+
+Manifest entries are validated when they load: every key must be in
+:data:`MANIFEST_KEYS` and every value must have the documented type. A bad file or
+entry is skipped with one ERROR log (``ToolRegistry(strict=True)``, used by tests,
+raises :class:`ManifestError` instead), so one broken manifest can't break every
+tool call.
 """
 
 from __future__ import annotations
@@ -10,9 +16,10 @@ import importlib
 import importlib.resources
 import yaml
 from dataclasses import dataclass, field
+from loguru import logger
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable
+from typing import Any, Callable, Literal, get_args
 
 
 def default_manifests_dir() -> Path:
@@ -25,6 +32,93 @@ def default_manifests_dir() -> Path:
         The ``unifi_mapper/mcp/manifests`` directory.
     """
     return Path(str(importlib.resources.files('unifi_mapper.mcp') / 'manifests'))
+
+
+CredentialFamily = Literal['controller', 'network_api', 'protect', 'none']
+CREDENTIAL_FAMILIES: tuple[str, ...] = get_args(CredentialFamily)
+
+# Every key a manifest tool entry may carry, with the type its value must have.
+MANIFEST_KEYS: dict[str, type | tuple[type, ...]] = {
+    'module': str,
+    'handler': str,
+    'description': str,
+    'priority': str,
+    'tags': list,
+    'parameters': dict,
+    'mutates': bool,
+    'title': str,
+    'writes_local': bool,
+    'open_world': bool,
+    'pipeline': bool,
+    'mcp': bool,
+    'aliases': dict,
+    'credentials': str,
+    'idempotent': bool,
+}
+
+
+class ManifestError(ValueError):
+    """A manifest file or entry is malformed (raised only by ``ToolRegistry(strict=True)``)."""
+
+
+class UnknownToolError(KeyError):
+    """No tool is registered under the requested name."""
+
+
+class MutationRefusedError(PermissionError):
+    """The tool changes live controller state and mutation was not allowed."""
+
+
+class InvalidParamsError(ValueError):
+    """The supplied parameters don't match the tool.
+
+    Attributes:
+        input_schema: The tool's JSON input schema, when known (for the error payload).
+    """
+
+    def __init__(self, message: str, *, input_schema: dict[str, Any] | None = None) -> None:
+        """Build the error.
+
+        Args:
+            message: What is wrong, naming parameters only (never their values).
+            input_schema: The tool's JSON input schema, if known.
+        """
+        super().__init__(message)
+        self.input_schema = input_schema
+
+    @classmethod
+    def from_errors(
+        cls, errors: list[Any], *, input_schema: dict[str, Any] | None = None
+    ) -> InvalidParamsError:
+        """Build the error from pydantic ``ValidationError.errors()`` (without inputs).
+
+        Each field error renders as ``loc (msg)``, never ``loc: msg``, so free-text
+        redaction can't rewrite the message for a parameter whose name looks secret.
+
+        Args:
+            errors: ``e.errors(include_input=False, include_url=False)``.
+            input_schema: The tool's JSON input schema.
+
+        Returns:
+            The error.
+        """
+        parts = [
+            f'{".".join(str(p) for p in err.get("loc", ())) or "params"} ({err.get("msg", "")})'
+            for err in errors
+        ]
+        return cls(f'invalid parameter(s): {"; ".join(parts)}', input_schema=input_schema)
+
+
+def default_title(name: str) -> str:
+    """Return the default ``title`` for a tool: its name, title-cased.
+
+    Args:
+        name: The tool name, e.g. ``inspect_switch_port``.
+
+    Returns:
+        E.g. ``'Inspect Switch Port'``.
+    """
+    return name.replace('_', ' ').title()
 
 
 @dataclass
@@ -43,6 +137,73 @@ class ToolMetadata:
     # The MCP execute_tool meta-tool refuses these; they must go through the CLI's
     # plan -> review -> apply flow. Declared per tool in the YAML manifests.
     mutates: bool = False
+    # Human-readable Tool.title; empty means the name, title-cased.
+    title: str = ''
+    # Writes a local file (e.g. a snapshot under reports/).
+    writes_local: bool = False
+    # Talks to an external system (annotation only).
+    open_world: bool = True
+    # A required parameter is a pipeline model (STPTopology, ...); not listed directly.
+    pipeline: bool = False
+    # Listed on the direct MCP surface.
+    mcp: bool = True
+    # Deprecated parameter name -> canonical (handler) parameter name.
+    aliases: dict[str, str] = field(default_factory=lambda: {})
+    # Credential family the MCP gate checks before running the tool.
+    credentials: str = 'controller'
+    # idempotentHint; false for wall-clock sampling or long-blocking tools.
+    idempotent: bool = True
+
+    def __post_init__(self) -> None:
+        """Fill the default title."""
+        if not self.title:
+            self.title = default_title(self.name)
+
+
+def _check_entry(tool_name: str, tool_data: Any) -> tuple[dict[str, Any], list[str]]:
+    """Validate one manifest entry's types; return it plus any unknown key names.
+
+    Args:
+        tool_name: The entry's name.
+        tool_data: The entry's mapping as loaded from YAML.
+
+    Returns:
+        ``(entry, unknown_keys)``.
+
+    Raises:
+        ManifestError: The entry is not a mapping, lacks ``module``, or a value has the
+            wrong type.
+    """
+    if not isinstance(tool_name, str) or not tool_name:
+        raise ManifestError(f'tool name {tool_name!r} is not a non-empty string')
+    if not isinstance(tool_data, dict):
+        raise ManifestError(f'{tool_name}: entry is not a mapping')
+    unknown = sorted(str(k) for k in tool_data if k not in MANIFEST_KEYS)
+    for key, expected in MANIFEST_KEYS.items():
+        if key in tool_data and not isinstance(tool_data[key], expected):
+            raise ManifestError(
+                f'{tool_name}: {key} must be {_type_name(expected)}, '
+                f'not {type(tool_data[key]).__name__}'
+            )
+    if not tool_data.get('module'):
+        raise ManifestError(f'{tool_name}: module is required')
+    if not all(isinstance(t, str) for t in tool_data.get('tags', [])):
+        raise ManifestError(f'{tool_name}: tags must be a list of strings')
+    aliases = tool_data.get('aliases', {})
+    if not all(isinstance(k, str) and isinstance(v, str) for k, v in aliases.items()):
+        raise ManifestError(f'{tool_name}: aliases must map strings to strings')
+    if tool_data.get('credentials', 'controller') not in CREDENTIAL_FAMILIES:
+        raise ManifestError(
+            f'{tool_name}: credentials must be one of {", ".join(CREDENTIAL_FAMILIES)}'
+        )
+    return tool_data, unknown
+
+
+def _type_name(expected: type | tuple[type, ...]) -> str:
+    """Return a readable name for an expected type."""
+    if isinstance(expected, tuple):
+        return ' or '.join(t.__name__ for t in expected)
+    return expected.__name__
 
 
 class ToolProxy:
@@ -96,9 +257,16 @@ class ToolRegistry:
     - Category-based organization
     """
 
-    def __init__(self, manifests_dir: Path | None = None) -> None:
-        """Initialize the tool registry with an optional manifests directory."""
+    def __init__(self, manifests_dir: Path | None = None, *, strict: bool = False) -> None:
+        """Initialize the tool registry.
+
+        Args:
+            manifests_dir: Directory of ``*.yaml`` manifests; defaults to the shipped one.
+            strict: Raise :class:`ManifestError` on any manifest problem (unknown key,
+                bad type, YAML error, duplicate name) instead of logging and skipping.
+        """
         self._manifests_dir = manifests_dir or default_manifests_dir()
+        self._strict = strict
         self._metadata: dict[str, ToolMetadata] = {}
         self._categories: dict[str, list[str]] = {}
         self._proxies: dict[str, ToolProxy] = {}
@@ -118,32 +286,77 @@ class ToolRegistry:
                 self._loaded = True
                 return
 
-            for manifest_file in self._manifests_dir.glob('*.yaml'):
+            for manifest_file in sorted(self._manifests_dir.glob('*.yaml')):
                 self._load_manifest(manifest_file)
 
             self._loaded = True
 
-    def _load_manifest(self, manifest_file: Path) -> None:
-        """Load a single manifest file."""
-        with open(manifest_file) as f:
-            data = yaml.safe_load(f)
+    def _reject(self, message: str) -> None:
+        """Raise in strict mode; otherwise log one ERROR (the caller skips the input)."""
+        if self._strict:
+            raise ManifestError(message)
+        logger.error('MCP manifest: {}; skipped', message)
 
-        if not data or 'tools' not in data:
+    def _load_manifest(self, manifest_file: Path) -> None:
+        """Load a single manifest file, isolating a bad file or entry."""
+        try:
+            with open(manifest_file) as f:
+                data = yaml.safe_load(f)
+        except (OSError, yaml.YAMLError) as e:
+            self._reject(f'{manifest_file.name}: cannot be read ({type(e).__name__})')
+            return
+
+        if not data:
+            return
+        if not isinstance(data, dict):
+            self._reject(f'{manifest_file.name}: top level must be a mapping')
+            return
+        if not data.get('tools'):
+            return
+        if not isinstance(data['tools'], dict):
+            self._reject(f'{manifest_file.name}: tools must be a mapping')
             return
 
         category = data.get('category', manifest_file.stem)
+        if not isinstance(category, str):
+            self._reject(f'{manifest_file.name}: category must be a string')
+            return
 
         for tool_name, tool_data in data['tools'].items():
+            try:
+                entry, unknown = _check_entry(tool_name, tool_data)
+            except ManifestError as e:
+                self._reject(f'{manifest_file.name}: {e}')
+                continue
+            if unknown:
+                message = f'{manifest_file.name}: {tool_name}: unknown key(s) {", ".join(unknown)}'
+                if self._strict:
+                    raise ManifestError(message)
+                logger.warning('MCP manifest: {}; ignored', message)
+            if tool_name in self._metadata:
+                self._reject(
+                    f'{manifest_file.name}: {tool_name} is already defined in category '
+                    f'{self._metadata[tool_name].category!r}'
+                )
+                continue
             metadata = ToolMetadata(
                 name=tool_name,
                 category=category,
-                module=tool_data.get('module', ''),
-                handler=tool_data.get('handler', tool_name),
-                description=tool_data.get('description', ''),
-                priority=tool_data.get('priority', 'P2'),
-                tags=tool_data.get('tags', []),
-                parameters=tool_data.get('parameters', {}),
-                mutates=bool(tool_data.get('mutates', False)),
+                module=entry['module'],
+                handler=entry.get('handler', tool_name),
+                description=entry.get('description', ''),
+                priority=entry.get('priority', 'P2'),
+                tags=list(entry.get('tags', [])),
+                parameters=dict(entry.get('parameters', {})),
+                mutates=entry.get('mutates', False),
+                title=entry.get('title', ''),
+                writes_local=entry.get('writes_local', False),
+                open_world=entry.get('open_world', True),
+                pipeline=entry.get('pipeline', False),
+                mcp=entry.get('mcp', True),
+                aliases=dict(entry.get('aliases', {})),
+                credentials=entry.get('credentials', 'controller'),
+                idempotent=entry.get('idempotent', True),
             )
             self._metadata[tool_name] = metadata
             self._categories.setdefault(category, []).append(tool_name)
@@ -164,13 +377,14 @@ class ToolRegistry:
             detail_level: "summary" (name + description) or "full" (includes parameters)
 
         Returns:
-            List of matching tools with requested detail level
+            List of matching tools with requested detail level, sorted by
+            ``(category, name)``.
         """
         self._load_manifests()
 
         results: list[dict[str, Any]] = []
 
-        for name, meta in self._metadata.items():
+        for name, meta in sorted(self._metadata.items(), key=lambda i: (i[1].category, i[0])):
             # Filter by category
             if category and meta.category != category:
                 continue
@@ -236,30 +450,31 @@ class ToolRegistry:
                 ``mutates: true``. The MCP server never passes True.
 
         Raises:
-            KeyError: Unknown tool name.
-            PermissionError: Tool mutates controller state and allow_mutation is False.
-            ValueError: A parameter marked ``required`` in the manifest is missing, or an
-                unknown parameter was supplied.
+            UnknownToolError: Unknown tool name (a ``KeyError``).
+            MutationRefusedError: Tool mutates controller state and allow_mutation is
+                False (a ``PermissionError``).
+            InvalidParamsError: A parameter marked ``required`` in the manifest is
+                missing, or an unknown parameter was supplied (a ``ValueError``).
         """
         params = dict(params or {})
         meta = self.get_metadata(name)
         if meta is None:
-            raise KeyError(name)
+            raise UnknownToolError(name)
         if meta.mutates and not allow_mutation:
-            raise PermissionError(name)
+            raise MutationRefusedError(name)
 
         declared = meta.parameters or {}
         if declared:
             unknown = sorted(set(params) - set(declared))
             if unknown:
-                raise ValueError(f'unknown parameter(s): {", ".join(unknown)}')
+                raise InvalidParamsError(f'unknown parameter(s): {", ".join(unknown)}')
         missing = sorted(
             p
             for p, spec in declared.items()
             if isinstance(spec, dict) and spec.get('required') and p not in params
         )
         if missing:
-            raise ValueError(f'missing required parameter(s): {", ".join(missing)}')
+            raise InvalidParamsError(f'missing required parameter(s): {", ".join(missing)}')
 
         proxy = self.get_tool(name)
         assert proxy is not None  # metadata exists, so the proxy does too
