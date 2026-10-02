@@ -21,11 +21,17 @@ Usage:
 
 Categories:
     - analysis: Network analysis (IP conflicts, STP, VLAN, QoS)
-    - diagnostics: Health, performance, security diagnostics
-    - discovery: Device/IP/MAC discovery, client tracing
     - connectivity: Firewall, path analysis, traceroute
+    - diagnostics: Health, performance, security and switch-port diagnostics
+    - discovery: Device/IP/MAC discovery, client tracing and history
     - network: Network control plane (Firewall, ACL, DNS, DPI)
+    - observability: Device events and port counter trends
     - protect: UniFi Protect integration (cameras, events, AI)
+
+Surfaces:
+    - discovery (default): search_tools, list_categories, get_tool_info, execute_tool
+    - direct (``--surface direct`` / ``UNIFI_MCP_TOOL_SURFACE=direct``): those plus every
+      read-only, non-pipeline catalog tool
 """
 
 from .registry import ToolMetadata, ToolProxy, ToolRegistry

@@ -12,6 +12,7 @@ from collections.abc import Callable
 from loguru import logger
 from mcp.server.fastmcp.exceptions import InvalidSignature
 from mcp.server.fastmcp.tools import Tool
+from mcp.types import ToolAnnotations
 from typing import Any
 from unifi_mapper.core.utils.redact import redact_text
 
@@ -34,6 +35,28 @@ class ToolNotLoadableError(Exception):
         self.exc_type = exc_type
 
 
+def annotations_for(meta: ToolMetadata) -> ToolAnnotations:
+    """Derive MCP annotations from one manifest entry (never called for mutates tools).
+
+    ``idempotentHint`` is set on read-only tools too, because some hosts read it as a
+    retry signal, which the sampling tools (``idempotent: false``) must not invite.
+
+    Args:
+        meta: The tool's manifest metadata.
+
+    Returns:
+        The tool's annotations.
+    """
+    read_only = not meta.writes_local
+    return ToolAnnotations(
+        title=meta.title,
+        readOnlyHint=read_only,
+        destructiveHint=False,
+        idempotentHint=meta.idempotent and read_only,
+        openWorldHint=meta.open_world,
+    )
+
+
 def build_tool(fn: Callable[..., Any], meta: ToolMetadata) -> Tool:
     """Build the SDK Tool for a manifest entry, falling back to no outputSchema.
 
@@ -42,12 +65,13 @@ def build_tool(fn: Callable[..., Any], meta: ToolMetadata) -> Tool:
         meta: The validated manifest metadata.
 
     Returns:
-        An SDK Tool with input schema and title.
+        An SDK Tool with input schema, title and annotations.
     """
     kw: dict[str, Any] = {
         'name': meta.name,
         'title': meta.title,
         'description': meta.description,
+        'annotations': annotations_for(meta),
     }
     try:
         return Tool.from_function(fn, structured_output=True, **kw)

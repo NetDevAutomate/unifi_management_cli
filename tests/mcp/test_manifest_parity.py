@@ -16,7 +16,7 @@ import yaml
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Any
-from unifi_mapper.mcp.catalog import build_tool
+from unifi_mapper.mcp.catalog import annotations_for, build_tool
 from unifi_mapper.mcp.config import ServerSettings
 from unifi_mapper.mcp.registry import (
     MANIFEST_KEYS,
@@ -286,3 +286,33 @@ async def test_every_read_only_entry_reaches_its_handler(
         assert out['error_code'] == 'INVALID_PARAMETERS', out
         assert 'Field required' in out['message'], out
         assert re.search(r'\b[a-z_]+\.[a-z_]+ \(Field required\)', out['message']), out
+
+
+# ---------------------------------------------------------------------------
+# annotations_for (design §2.6 table)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ('overrides', 'expected'),
+    [
+        ({}, (True, False, True, True)),
+        ({'open_world': False}, (True, False, True, False)),
+        ({'idempotent': False}, (True, False, False, True)),
+        ({'writes_local': True}, (False, False, False, True)),
+    ],
+)
+def test_annotations_for_table(overrides: dict[str, Any], expected: tuple[bool, ...]) -> None:
+    meta = ToolMetadata('some_tool', 'm', 'h', 'd', 'c', **overrides)
+    a = annotations_for(meta)
+    assert (a.readOnlyHint, a.destructiveHint, a.idempotentHint, a.openWorldHint) == expected
+    assert a.title == 'Some Tool'
+
+
+def test_shipped_annotations_for_the_sampling_and_writing_tools() -> None:
+    for name in ('get_port_counter_rates', 'diagnose_switch_port', 'check_device_freshness'):
+        assert annotations_for(_meta(name)).idempotentHint is False
+    snapshot = annotations_for(_meta('snapshot_radio_config'))
+    assert snapshot.readOnlyHint is False and snapshot.idempotentHint is False
+    pure = annotations_for(_meta('diff_stp_snapshots'))
+    assert pure.openWorldHint is False

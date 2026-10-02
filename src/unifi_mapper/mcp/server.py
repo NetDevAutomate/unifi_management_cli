@@ -5,6 +5,15 @@ Implements the Code Mode architecture pattern with:
 - Lazy loading of tool definitions
 - Progressive disclosure of tool information
 
+Tool categories: analysis, connectivity, diagnostics, discovery, network, observability
+and protect. Every catalog tool is read-only over MCP; tools that change the controller
+are refused and go through the ``unifi-mapper`` CLI's plan -> review -> apply flow.
+
+Two tool surfaces: ``discovery`` (the default) lists the four meta-tools
+``search_tools``, ``list_categories``, ``get_tool_info`` and ``execute_tool``;
+``direct`` (``--surface direct`` or ``UNIFI_MCP_TOOL_SURFACE=direct``) also lists every
+non-mutating, non-pipeline catalog tool. Both run catalog tools through one ToolRunner.
+
 Launch it with the ``unifi-mcp`` console script, for example
 ``uvx --from <path-or-git-url> unifi-mcp`` or after ``uv tool install <path>``.
 
@@ -21,6 +30,7 @@ import importlib.metadata
 import json
 import os
 import sys
+from .catalog import ToolCatalog, annotations_for
 from .config import (
     ConfigFileError,
     ResolvedConfig,
@@ -35,16 +45,24 @@ from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from loguru import logger
 from mcp.server.fastmcp import FastMCP
-from mcp.types import CallToolResult
+from mcp.types import CallToolResult, ToolAnnotations
+from mcp.types import Tool as MCPTool
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal, cast
 from unifi_mapper.core.utils.client import SharedControllerClient, use_shared_controller_client
 from unifi_mapper.core.utils.readonly import configure_request_audit
 
 
 DIST_NAME = 'unifi-management-cli'
+SERVER_NAME = 'unifi-management'
 REQUEST_AUDIT_ENV = 'UNIFI_MCP_REQUEST_AUDIT'
+SURFACE_ENV = 'UNIFI_MCP_TOOL_SURFACE'
 SHUTDOWN_TIMEOUT_S = 3.0
+
+Surface = Literal['discovery', 'direct']
+SURFACES: tuple[Surface, ...] = ('discovery', 'direct')
+# Plan decision P2 (design D2): discovery stays the default; direct is opt-in.
+DEFAULT_SURFACE: Surface = 'discovery'
 
 
 def package_version() -> str:
@@ -143,11 +161,6 @@ def _clear_active_config() -> None:
     _active_config = None
 
 
-# Initialize the MCP server
-mcp = FastMCP('unifi-management', lifespan=lifespan)
-# FastMCP has no version kwarg; without this, serverInfo.version reports the SDK's version.
-mcp._mcp_server.version = package_version()
-
 # Initialize the tool registry
 _registry: ToolRegistry | None = None
 
@@ -173,7 +186,6 @@ def get_runner() -> ToolRunner:
     return _runner
 
 
-@mcp.tool()
 async def search_tools(
     query: str | None = None,
     category: str | None = None,
@@ -188,8 +200,8 @@ async def search_tools(
 
     Args:
         query: Text search in tool names and descriptions
-        category: Filter by category (analysis, diagnostics, discovery,
-                  connectivity, network, protect)
+        category: Filter by category (analysis, connectivity, diagnostics,
+                  discovery, network, observability, protect)
         tags: Filter by tags (e.g., ["ip", "vlan", "stp"])
         detail_level: "summary" (name + description) or "full" (includes parameters)
 
@@ -216,7 +228,6 @@ async def search_tools(
     return results
 
 
-@mcp.tool()
 async def list_categories() -> dict[str, list[str]]:
     """List all tool categories and their tools.
 
@@ -225,10 +236,11 @@ async def list_categories() -> dict[str, list[str]]:
 
     Categories:
         - analysis: Network analysis tools (IP conflicts, STP, VLAN, QoS)
-        - diagnostics: Health, performance, security diagnostics
-        - discovery: Device/IP/MAC discovery and client tracing
         - connectivity: Firewall, path analysis, traceroute
+        - diagnostics: Health, performance, security and switch-port diagnostics
+        - discovery: Device/IP/MAC discovery, client tracing and history
         - network: Network control plane (Firewall, ACL, DNS, DPI)
+        - observability: Device events and port counter trends
         - protect: UniFi Protect integration (cameras, events, AI)
 
     Returns:
@@ -238,7 +250,6 @@ async def list_categories() -> dict[str, list[str]]:
     return registry.get_categories()
 
 
-@mcp.tool()
 async def get_tool_info(tool_name: str) -> dict[str, Any] | None:
     """Get detailed information about a specific tool.
 
@@ -247,8 +258,9 @@ async def get_tool_info(tool_name: str) -> dict[str, Any] | None:
 
     Returns:
         Tool metadata including description, parameters, category, and tags, plus the
-        JSON ``input_schema`` execute_tool validates against and the ``output_schema``
-        (null for mutating, unloadable or untyped tools).
+        JSON ``input_schema`` execute_tool validates against, the ``output_schema``
+        (null for mutating, unloadable or untyped tools) and the MCP ``annotations``
+        (null for mutating tools).
         Returns None if the tool is not found.
     """
     registry = get_registry()
@@ -269,10 +281,14 @@ async def get_tool_info(tool_name: str) -> dict[str, Any] | None:
         'mutates': metadata.mutates,
         'input_schema': tool.parameters if tool is not None else None,
         'output_schema': tool.output_schema if tool is not None else None,
+        'annotations': (
+            None
+            if metadata.mutates
+            else annotations_for(metadata).model_dump(mode='json', exclude_none=True)
+        ),
     }
 
 
-@mcp.tool()
 async def execute_tool(
     tool_name: str, params: dict[str, Any] | None = None
 ) -> Annotated[CallToolResult, ExecuteResult]:
@@ -295,6 +311,316 @@ async def execute_tool(
     return await get_runner().run(tool_name, params, surface='execute_tool')
 
 
+# --- server assembly (design §2.4, §2.6, §2.7, §2.10) --------------------------------
+
+# Fixed annotations for the meta-tools. execute_tool can reach writes_local tools
+# (snapshot_radio_config), so it can't claim readOnlyHint.
+META_TOOLS: dict[str, tuple[Any, ToolAnnotations]] = {
+    'search_tools': (
+        search_tools,
+        ToolAnnotations(
+            title='Search Tools',
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    ),
+    'list_categories': (
+        list_categories,
+        ToolAnnotations(
+            title='List Categories',
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    ),
+    'get_tool_info': (
+        get_tool_info,
+        ToolAnnotations(
+            title='Get Tool Info',
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    ),
+    'execute_tool': (
+        execute_tool,
+        ToolAnnotations(
+            title='Execute Tool',
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    ),
+}
+
+CATEGORY_SUMMARY = (
+    'analysis (IP conflicts, STP, VLAN, QoS, MTU, PoE, Wi-Fi radio), connectivity '
+    '(firewall, path analysis, traceroute, inter-VLAN routing), diagnostics (health, '
+    'performance, security, switch-port inspection), discovery (device, IP, MAC, client '
+    'tracing and history), network (firewall zones and policies, ACL, DNS, clients, '
+    'networks via the Network Integration API), observability (device events, port '
+    'counter trends) and protect (UniFi Protect cameras, NVR, sensors)'
+)
+
+
+def build_instructions(registry: ToolRegistry) -> str:
+    """Return the server ``instructions``: one paragraph naming only registered tools.
+
+    Args:
+        registry: The tool registry.
+
+    Returns:
+        The instructions text.
+    """
+    link_tools = [n for n in ('inspect_switch_port', 'audit_link_speeds') if n in registry]
+    parts = [
+        'Read-only UniFi Network and Protect troubleshooting for switching, Wi-Fi, STP, '
+        f'VLAN and firewall. Tool categories: {CATEGORY_SUMMARY}.',
+        'Tools that would change the controller are refused; changes go through the '
+        "unifi-mapper CLI's plan -> review -> apply flow.",
+        'Discover tools with search_tools (or list_categories), read get_tool_info for '
+        'the input_schema, then run them with execute_tool.',
+    ]
+    if link_tools:
+        parts.append(f'For link or negotiation problems start with {" and ".join(link_tools)}.')
+    if 'diagnose_switch_port' in registry:
+        parts.append(
+            'diagnose_switch_port produces a single-port evidence bundle for a vendor ticket.'
+        )
+    return ' '.join(parts)
+
+
+class UnifiFastMCP(FastMCP[Any]):
+    """FastMCP whose direct catalog tools run through ToolRunner, not Tool.run."""
+
+    runner: ToolRunner | None = None
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        """Route direct catalog tools to ToolRunner; everything else to FastMCP.
+
+        Args:
+            name: The tool name from the ``tools/call`` request.
+            arguments: The raw request arguments.
+
+        Returns:
+            A ``CallToolResult`` for direct catalog tools (passed through unchanged by the
+            low-level server), otherwise whatever ``FastMCP.call_tool`` returns.
+        """
+        if self.runner is not None and self.runner.is_direct(name):
+            return await self.runner.run(name, arguments, surface='direct')
+        return await super().call_tool(name, arguments)
+
+    async def list_tools(self) -> list[MCPTool]:
+        """List tools sorted by name (spec SHOULD, so hosts can cache the listing)."""
+        return sorted(await super().list_tools(), key=lambda tool: tool.name)
+
+
+def _build_fastmcp(surface: Surface, registry: ToolRegistry) -> UnifiFastMCP:
+    """Construct the FastMCP object; the only place that writes ``_mcp_server.version``.
+
+    The discovery surface builds no catalog tools (and no runner) here: execute_tool
+    gets its runner at call time.
+    """
+    runner = get_runner() if surface == 'direct' else None
+    server = UnifiFastMCP(
+        SERVER_NAME,
+        instructions=build_instructions(registry),
+        lifespan=lifespan,
+        tools=runner.catalog.direct_tools() if runner is not None else None,
+    )
+    # FastMCP has no version kwarg; without this, serverInfo.version reports the SDK's version.
+    server._mcp_server.version = package_version()
+    server.runner = runner
+    return server
+
+
+def catalog_resource() -> str:
+    """``unifi://catalog``: every tool (name + description) and the categories, as JSON."""
+    registry = get_registry()
+    return json.dumps(
+        {
+            'categories': registry.get_categories(),
+            'tools': registry.search(detail_level='summary'),
+        },
+        indent=2,
+    )
+
+
+def config_status_resource() -> str:
+    """``unifi://config/status``: where config came from and family readiness (key names)."""
+    config = _active_config or resolve_mcp_config(_config_path)
+    return json.dumps(config.to_json_dict(), indent=2)
+
+
+def _call(tool: str, args: str) -> str:
+    """Render one tool call as the prompt shows it."""
+    return f'execute_tool("{tool}", {{{args}}})'
+
+
+def troubleshoot_port_link(switch: str, port: int) -> str:
+    """Investigate a switch port that links at the wrong speed, flaps or stays down.
+
+    Args:
+        switch: Switch name, MAC or IP.
+        port: Port number on that switch.
+
+    Returns:
+        Step-by-step instructions naming only tools registered right now.
+    """
+    registry = get_registry()
+    at = f'"switch": {json.dumps(switch)}, "port": {port}'
+    on_switch = f'"switch": {json.dumps(switch)}'
+    steps = [
+        (
+            'inspect_switch_port',
+            _call('inspect_switch_port', at) + ': negotiated speed and duplex, the '
+            'effective port profile and any override, LLDP neighbour and errors.',
+        ),
+        (
+            'audit_link_speeds',
+            _call('audit_link_speeds', on_switch) + ': every port below its capability '
+            'or forced to a speed that is down.',
+        ),
+        (
+            'audit_port_profile_usage',
+            _call('audit_port_profile_usage', '"profile": "<the port profile>"')
+            + ': the other ports on the same profile and how they link.',
+        ),
+        (
+            'analyze_link_quality',
+            _call('analyze_link_quality', '"device_id": "<the switch id or MAC>"')
+            + ': error and drop counters per port.',
+        ),
+        (
+            'get_switch_ports',
+            _call('get_switch_ports', on_switch) + ': compare peer ports with the same '
+            'speed capabilities.',
+        ),
+        (
+            'diff_port_profiles',
+            _call('diff_port_profiles', '"profile_a": "<A>", "profile_b": "<B>"')
+            + ': what differs between the two profiles involved (for example forced vs '
+            'auto).',
+        ),
+        (
+            'diagnose_switch_port',
+            _call('diagnose_switch_port', at) + ': the single-port evidence bundle for a '
+            'vendor ticket.',
+        ),
+    ]
+    lines = [
+        f'Troubleshoot the link on port {port} of switch {switch!r}. Every tool here is '
+        'read-only; do not change port profiles or overrides from this conversation '
+        '(changes go through the unifi-mapper CLI).',
+        '',
+    ]
+    present = [text for name, text in steps if name in registry]
+    lines += [f'{i}. {text}' for i, text in enumerate(present, start=1)]
+    lines += [
+        f'{len(present) + 1}. Ask the user for far-end NIC evidence: `ethtool <iface>` '
+        '(supported and advertised link modes, negotiated speed), `ethtool -i <iface>` '
+        '(driver and firmware versions) and the NIC or NAS firmware release.',
+        '',
+        'Summarise what the switch side shows, what the far end shows, and which '
+        'combination fails.',
+    ]
+    return '\n'.join(lines)
+
+
+def plan_stp_change() -> str:
+    """Plan a spanning-tree change safely, through the CLI rather than MCP.
+
+    Returns:
+        Instructions that steer the change to the unifi-mapper CLI.
+    """
+    return '\n'.join(
+        [
+            'STP changes are applied with the unifi-mapper CLI, never over MCP. Ask the '
+            'user to run, in order:',
+            '',
+            '1. `unifi-mapper stp analyze`: the current topology, root bridge and priorities.',
+            '2. `unifi-mapper stp report`: the optimisation report to review together.',
+            '3. `unifi-mapper stp optimize --plan stp-plan.json`: a dry run that writes a '
+            'reversible change plan.',
+            '4. Review the plan, then `unifi-mapper stp apply --plan stp-plan.json` '
+            '(a dry run by default; `--no-dry-run` applies it).',
+            '',
+            'Read-only MCP tools can help explain the topology (discover_stp_topology) '
+            'before and after.',
+        ]
+    )
+
+
+def create_server(surface: Surface = DEFAULT_SURFACE) -> UnifiFastMCP:
+    """Build the MCP server for a tool surface.
+
+    ``discovery`` lists the four meta-tools; ``direct`` also lists every non-mutating,
+    non-pipeline catalog tool (built here) with its own annotations. Mutating tools are
+    never listed or executed on either surface.
+
+    Args:
+        surface: ``'discovery'`` or ``'direct'``.
+
+    Returns:
+        The server.
+    """
+    registry = get_registry()
+    server = _build_fastmcp(surface, registry)
+    for name, (fn, annotations) in META_TOOLS.items():
+        server.add_tool(fn, name=name, annotations=annotations)
+    server.resource(
+        'unifi://catalog',
+        name='catalog',
+        description='Every tool (name and description) and the categories.',
+        mime_type='application/json',
+    )(catalog_resource)
+    server.resource(
+        'unifi://config/status',
+        name='config-status',
+        description='Where MCP config came from and which credential families are ready '
+        '(key names only, never values).',
+        mime_type='application/json',
+    )(config_status_resource)
+    server.prompt(name='troubleshoot_port_link')(troubleshoot_port_link)
+    server.prompt(name='plan_stp_change')(plan_stp_change)
+    return server
+
+
+def resolve_surface(flag: str | None, env: dict[str, str] | None = None) -> Surface:
+    """Choose the tool surface: ``--surface`` first, then ``UNIFI_MCP_TOOL_SURFACE``.
+
+    Args:
+        flag: The validated ``--surface`` value, if given.
+        env: The environment; ``None`` means ``os.environ``.
+
+    Returns:
+        The surface. An invalid environment value warns and falls back to the default.
+    """
+    if flag is not None:
+        return cast(Surface, flag)
+    raw = (os.environ if env is None else env).get(SURFACE_ENV)
+    if raw is None or not raw.strip():
+        return DEFAULT_SURFACE
+    value = raw.strip().lower()
+    if value in SURFACES:
+        return cast(Surface, value)
+    print(
+        f'unifi-mcp: {SURFACE_ENV}={raw!r} is not one of {", ".join(SURFACES)}; '
+        f'using {DEFAULT_SURFACE}',
+        file=sys.stderr,
+    )
+    return DEFAULT_SURFACE
+
+
+# The default (discovery) server; `from unifi_mapper.mcp import mcp` keeps working.
+mcp = create_server('discovery')
+
+
 def _arg_parser() -> argparse.ArgumentParser:
     """Build the ``unifi-mcp`` argument parser."""
     parser = argparse.ArgumentParser(
@@ -305,6 +631,15 @@ def _arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument('--version', action='version', version=version_string())
+    parser.add_argument(
+        '--surface',
+        type=str.lower,
+        choices=SURFACES,
+        help=(
+            'tools to list: discovery (the four meta-tools, the default) or direct (also '
+            f'every read-only catalog tool). Default: ${SURFACE_ENV} or {DEFAULT_SURFACE}'
+        ),
+    )
     parser.add_argument(
         '--config',
         metavar='PATH',
@@ -333,21 +668,28 @@ def _configure_logging(level: str) -> None:
     logger.add(sys.stderr, level=level)
 
 
-def check_report(config: ResolvedConfig) -> dict[str, Any]:
+def check_report(config: ResolvedConfig, surface: Surface = DEFAULT_SURFACE) -> dict[str, Any]:
     """Return the ``--check`` JSON: config source and per-family readiness, no values.
 
     Args:
         config: The resolved configuration.
+        surface: The selected tool surface.
 
     Returns:
-        A JSON-safe dict naming keys only.
+        A JSON-safe dict naming keys only, plus the tool counts each surface lists.
     """
     report = config.to_json_dict()
     controller = report['families'].get('controller')
     if controller is not None and not controller['ready']:
         # --check never runs the Keychain/1Password chain.
         controller['fallback_chain'] = 'not probed'
-    report['tool_count'] = len(ToolRegistry())
+    registry = ToolRegistry()
+    report['tool_count'] = len(registry)
+    report['surface'] = surface
+    report['listed_tools'] = {
+        'discovery': len(META_TOOLS),
+        'direct': len(META_TOOLS) + len(ToolCatalog(registry).direct_tools()),
+    }
     return report
 
 
@@ -355,6 +697,8 @@ def main(argv: list[str] | None = None) -> None:
     """Entry point for the ``unifi-mcp`` console script.
 
     ``--version`` and ``-h/--help`` print to stdout and exit 0 without starting the server.
+    ``--surface discovery|direct`` (or ``UNIFI_MCP_TOOL_SURFACE``) picks the tools listed;
+    an invalid flag value exits 2, an invalid environment value warns and uses discovery.
     ``--check`` prints the resolved config (key names only) and exits 0 if the controller
     is configured, else 1. ``--config PATH`` must name a readable file (else exit 2).
     Unknown arguments are reported on stderr and ignored. Otherwise the stdio server runs.
@@ -367,6 +711,7 @@ def main(argv: list[str] | None = None) -> None:
     if unknown:
         print(f'unifi-mcp: ignoring unknown arguments: {" ".join(unknown)}', file=sys.stderr)
     settings = load_server_settings()
+    surface = resolve_surface(args.surface)
 
     explicit: Path | None = args.config
     if explicit is not None:
@@ -381,12 +726,13 @@ def main(argv: list[str] | None = None) -> None:
         except ConfigFileError as e:
             print(f'unifi-mcp: {e}', file=sys.stderr)
             sys.exit(2)
-        print(json.dumps(check_report(config), indent=2))
+        print(json.dumps(check_report(config, surface), indent=2))
         sys.exit(0 if config.families['controller'].ready else 1)
 
     _config_path, _settings = explicit, settings
     _configure_logging(settings.log_level)
-    mcp.run()
+    server = mcp if surface == 'discovery' else create_server(surface)
+    server.run()
 
 
 if __name__ == '__main__':

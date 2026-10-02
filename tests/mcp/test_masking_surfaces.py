@@ -1,15 +1,18 @@
 """T9, surface level: no secret value leaves an MCP surface (results or error text).
 
 Each case asserts on ``structuredContent`` and on ``content[0].text`` (parsed and as a
-raw substring search).
+raw substring search), on the execute_tool surface and on the direct surface.
 """
 
 import json
+import jsonschema
 import pytest
+from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import CallToolResult
 from pathlib import Path
 from tests.mcp import fakes
 from typing import Any
+from unifi_mapper.mcp import server
 from unifi_mapper.mcp.config import ServerSettings
 from unifi_mapper.mcp.runner import ExecuteResult, ToolRunner
 
@@ -89,3 +92,78 @@ async def test_secret_written_after_the_runner_was_built_is_masked(runner, monke
     monkeypatch.setenv('UNIFI_API_TOKEN', late)  # as apply_credentials_to_env would
     out = await runner.run('raise_exc', {'kind': 'RuntimeError', 'text': late}, 'execute_tool')
     assert late not in json.dumps(out.model_dump(mode='json'))
+
+
+# ---------------------------------------------------------------------------
+# Direct surface, over the in-memory protocol
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def direct(runner: ToolRunner, monkeypatch: pytest.MonkeyPatch):
+    """A direct-surface server over the fakes, with the runner fixture's secrets exported."""
+    monkeypatch.setattr(server, 'get_registry', lambda: runner.registry)
+    return server.create_server('direct')
+
+
+async def _direct_call(direct, name: str, args: dict[str, Any] | None = None):
+    async with create_connected_server_and_client_session(direct._mcp_server) as session:
+        tools = {t.name: t for t in (await session.list_tools()).tools}
+        out = await session.call_tool(name, args or {})
+    _assert_clean(out)
+    return out, tools.get(name)
+
+
+async def test_direct_model_result_is_masked_and_still_validates(direct) -> None:
+    out, tool = await _direct_call(direct, 'returns_device')
+    assert out.isError is False
+    assert out.structuredContent == {
+        'name': 'USW Flex XG',
+        'x_authkey': REDACTED,
+        'x_has_ssh_hostkey': True,
+    }
+    jsonschema.validate(out.structuredContent, tool.outputSchema)
+    assert json.loads(out.content[0].text) == out.structuredContent
+
+
+async def test_direct_wrap_output_list_is_masked_and_still_validates(direct) -> None:
+    out, tool = await _direct_call(direct, 'returns_device_list')
+    assert out.isError is False
+    assert out.structuredContent == {
+        'result': [{'name': 'sw', 'x_authkey': REDACTED, 'note': f'token is {REDACTED}'}]
+    }
+    jsonschema.validate(out.structuredContent, tool.outputSchema)
+
+
+async def test_direct_untyped_result_is_masked(direct) -> None:
+    out, tool = await _direct_call(direct, 'returns_untyped')
+    assert tool.outputSchema is None
+    assert out.isError is False and out.structuredContent is None
+    assert json.loads(out.content[0].text) == {'x_authkey': REDACTED, 'echo': REDACTED}
+
+
+async def test_direct_exception_text_is_masked(direct) -> None:
+    text = f'connect failed for {fakes.SECRET_API_KEY}'
+    out, _ = await _direct_call(direct, 'raise_exc', {'kind': 'RuntimeError', 'text': text})
+    assert out.isError is True
+    assert out.content[0].text.startswith(
+        f'[TOOL_FAILED] RuntimeError: connect failed for {REDACTED}'
+    )
+
+
+async def test_direct_handler_validation_error_is_masked(direct) -> None:
+    out, _ = await _direct_call(direct, 'raise_validation', {'value': fakes.SECRET_TOKEN})
+    assert out.isError is True
+    assert out.content[0].text.startswith('[TOOL_FAILED] ValidationError: ')
+
+
+async def test_config_status_resource_has_key_names_only(direct) -> None:
+    async with create_connected_server_and_client_session(direct._mcp_server) as session:
+        status = await session.read_resource('unifi://config/status')  # type: ignore[arg-type]
+    text = status.contents[0].text  # type: ignore[union-attr]
+    for secret in SECRETS:
+        assert secret not in text
+    families = json.loads(text)['families']
+    assert 'UNIFI_CONSOLE_API_TOKEN' in families['controller']['present']
+    assert 'UNIFI_NETWORK_API_KEY' in families['network_api']['present']
+    assert 'PROTECT_PASSWORD' in families['protect']['present']

@@ -19,7 +19,11 @@ MANIFESTS_SRC = ROOT / 'src' / 'unifi_mapper' / 'mcp' / 'manifests'
 ENTRY_POINT = 'unifi-mcp = unifi_mapper.mcp.server:main'
 # The interpreter the suite is tested on (plan P13); an unpinned resolve could pick 3.13/3.14.
 PYTHON = '3.12'
-ISOLATED_TESTS = ['tests/mcp/test_cli_entry.py', 'tests/mcp/test_registry.py']
+ISOLATED_TESTS = [
+    'tests/mcp/test_cli_entry.py',
+    'tests/mcp/test_registry.py',
+    'tests/mcp/test_protocol_contract.py',
+]
 
 
 def _uv() -> str:
