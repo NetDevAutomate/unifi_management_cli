@@ -98,6 +98,34 @@ tools:
         type: array
         description: Planned uplink ports (names or {device, port} objects) to check as well
 
+  audit_link_speeds:
+    module: unifi_mapper.analysis.link_speed_audit
+    handler: audit_link_speeds
+    title: Audit Link Speeds
+    credentials: controller
+    description: >-
+      Fleet-wide audit of negotiated switch-port speeds. Flags half duplex,
+      ports forced to a speed that are down or linked at another rate, and
+      autonegotiated ports below their Integration API maxSpeedMbps (the
+      10G-at-5G downgrade). Raw speed_caps is never decoded, only compared for
+      equality between ports when the Integration API has no capability.
+      Stale devices are excluded. Paged findings. Read-only.
+    priority: P1
+    tags: [port, speed, autoneg, duplex, negotiation, link, audit, read-only]
+    parameters:
+      switch:
+        type: string
+        description: Audit only this switch (name, MAC or IP); omit for every switch
+      include_ok:
+        type: boolean
+        description: Also list ports with unknown capability and healthy up ports
+      limit:
+        type: integer
+        description: Maximum findings to return (1-1000)
+      offset:
+        type: integer
+        description: Findings to skip, for paging
+
   detect_foreign_bridges:
     module: unifi_mapper.analysis.foreign_bridges
     handler: detect_foreign_bridges

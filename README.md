@@ -319,6 +319,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `analyze radio` | Wi-Fi channel and transmit power optimisation |
 | `analyze lag-candidates` | Parallel links that may be LACP candidates |
 | `analyze power-budget` | Switch *input* power headroom, distinct from PoE output |
+| `analyze link-speeds` | Fleet-wide ports below their capability, forced-speed traps and half duplex (exit 2 on HIGH) |
 | `analyze traffic-matrix` | Top flows and top talkers |
 | `analyze roaming` | Sticky clients and frequent roamers |
 | `analyze config-drift` | Full device config snapshot and diff |

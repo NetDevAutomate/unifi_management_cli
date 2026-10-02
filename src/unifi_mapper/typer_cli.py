@@ -815,6 +815,89 @@ def analyze_power_budget(
         raise typer.Exit(1)
 
 
+@analyze_app.command('link-speeds')
+def analyze_link_speeds(
+    switch: Optional[str] = typer.Option(
+        None, '--switch', '-s', help='Audit only this switch (name, MAC or IP)'
+    ),
+    include_ok: bool = typer.Option(
+        False, '--include-ok', help='Also list ports with unknown capability and healthy ports'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🚦 Find ports below their capability or forced into a speed trap, fleet-wide.
+
+    Flags half duplex, forced-speed ports that are down or linked at another rate,
+    and autonegotiated ports below the Integration API's maxSpeedMbps (for example a
+    10G NAS linked at 5G). The raw speed_caps value is never decoded. Exits 2 when a
+    CRITICAL or HIGH finding exists. For one port in depth see `ports inspect`. Read-only.
+    """
+    from .analysis.link_speed_audit import MAX_LIMIT, collect_link_speed_audit
+
+    with _diagnostic_errors(), _readonly_client() as (client, site):
+        report = collect_link_speed_audit(
+            client, site, switch=switch, include_ok=include_ok, limit=MAX_LIMIT
+        )
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+    else:
+        _render_link_speed_audit(report)
+    if not report.validation_passed:
+        raise typer.Exit(2)
+
+
+def _render_link_speed_audit(report: Any) -> None:
+    """Print a link-speed audit as tables."""
+    console.print('🚦 [bold]Link Speed Audit[/bold]')
+    console.print(
+        f'Switches analyzed: [cyan]{report.switches_analyzed}[/cyan]  '
+        f'Ports analyzed: [cyan]{report.ports_analyzed}[/cyan]  '
+        f'Findings: [yellow]{report.findings_total}[/yellow]'
+    )
+    integration = report.integration
+    note = f' ({escape(integration.reason)})' if integration.reason else ''
+    console.print(f'Integration API: {integration.status}{note}')
+    for warning in report.data_freshness_warnings:
+        console.print(f'[yellow]⚠ {escape(warning)}[/yellow]')
+    if report.findings:
+        table = Table(title='Link Speed Findings', show_header=True)
+        table.add_column('Severity', style='bold')
+        table.add_column('Code', style='cyan')
+        table.add_column('Switch', style='magenta')
+        table.add_column('Port', style='yellow')
+        table.add_column('Profile')
+        table.add_column('Negotiated')
+        table.add_column('Max')
+        table.add_column('Source', style='dim')
+        for f in report.findings:
+            style = {'CRITICAL': 'red', 'HIGH': 'red', 'WARNING': 'yellow'}.get(f.severity, 'blue')
+            table.add_row(
+                f'[{style}]{f.severity}[/]',
+                f.code,
+                escape(str(f.switch)),
+                str(f.port_idx),
+                escape(str(f.profile_name or '—')),
+                f'{f.negotiated_mbps} Mbps' if f.negotiated_mbps else '—',
+                f'{f.local_max_mbps} Mbps' if f.local_max_mbps else '—',
+                f.capability_source,
+            )
+        console.print(table)
+        for f in report.findings:
+            if f.severity == 'OK':
+                continue
+            console.print(
+                f'\n[bold]{escape(str(f.switch))} port {f.port_idx}[/bold]: {escape(f.message)}'
+            )
+            if f.recommendation:
+                console.print(f'  → {escape(f.recommendation)}')
+    else:
+        console.print('✅ No port below its capability or forced into a speed trap.')
+    if report.truncated:
+        console.print(f'[dim]{len(report.findings)} of {report.findings_total} shown.[/dim]')
+    for error in report.errors:
+        err_console.print(f'[yellow]⚠ {escape(error.section)}: {escape(error.error)}[/yellow]')
+
+
 @analyze_app.command('traffic-matrix')
 def analyze_traffic_matrix_cmd(
     top: int = typer.Option(10, '--top', help='Number of flows/talkers to show', min=1),

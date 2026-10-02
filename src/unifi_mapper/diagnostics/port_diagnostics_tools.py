@@ -21,9 +21,12 @@ never mislabelled by a generic exception handler:
 import asyncio
 from contextlib import contextmanager
 from pydantic import Field
-from typing import Annotated, Any, Callable, Iterator, Optional
+from typing import Annotated, Any, Callable, Iterator, Optional, TypeVar
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+
+
+T = TypeVar('T')
 
 
 @contextmanager
@@ -69,7 +72,7 @@ def _readonly_sync_client() -> Iterator[tuple[Any, str]]:
         api.logout()
 
 
-def _mapped(fn: Callable[..., dict[str, Any]], *args: Any) -> dict[str, Any]:
+def _mapped(fn: Callable[..., T], *args: Any) -> T:
     """Run ``fn`` and convert collector failures into specific ToolErrors."""
     from unifi_mapper.core.utils.readonly import ReadOnlyViolation
     from unifi_mapper.diagnostic_reads import PortNotFound, ProfileNotFound, SwitchNotFound

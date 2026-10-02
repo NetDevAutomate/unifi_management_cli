@@ -9,9 +9,11 @@ from pathlib import Path
 from tests.fixtures_unifi import (
     API,
     NAS_MAC,
+    NOW,
     PROFILE_10G_NAME,
     PROFILE_AUTO_NAME,
     SITE,
+    SWITCH_MAC,
     SWITCH_NAME,
     FakeSession,
     assert_no_secrets,
@@ -95,7 +97,7 @@ def test_manifest_descriptions_use_folded_blocks(name):
 
 def test_registry_totals(registry):
     categories = registry.get_categories()
-    assert len(registry) == 70
+    assert len(registry) == 71
     assert len(categories['diagnostics']) == 8
     assert len(categories['discovery']) == 5
     assert len(categories['observability']) == 2
@@ -205,3 +207,48 @@ async def test_login_failure_is_controller_unreachable(monkeypatch):
     monkeypatch.setattr('unifi_mapper.api_client.UnifiApiClient.login', lambda self: False)
     out = _envelope(await server.execute_tool('get_switch_ports', {'switch': SWITCH_NAME}))
     assert out['ok'] is False and out['error_code'] == 'CONTROLLER_UNREACHABLE'
+
+
+# ---------------------------------------------------------------------------
+# Fleet audits (analysis.yaml) over the same read-only fake controller
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def frozen_clock(monkeypatch):
+    from unifi_mapper.analysis import link_speed_audit
+
+    monkeypatch.setattr(link_speed_audit, '_now', lambda: NOW)
+
+
+async def test_audit_link_speeds_runs_read_only(fake_controller, frozen_clock):
+    client, session = fake_controller
+    raw = await server.execute_tool('audit_link_speeds', {'switch': SWITCH_NAME})
+    assert raw.isError is False
+    out = _envelope(raw)
+    assert out['ok'] is True, out
+    result = out['result']
+    assert result['schema_version'] == 1 and result['validation_passed'] is False
+    assert [(f['switch_mac'], f['port_idx'], f['code']) for f in result['findings']] == [
+        (SWITCH_MAC, 5, 'FORCED_SPEED_MISMATCH')
+    ]
+    assert result['integration']['status'] == 'ok'
+    assert_no_secrets(raw.model_dump(mode='json'))
+    assert isinstance(client.session, ReadOnlySession)
+    assert {c['method'] for c in session.calls} == {'GET'}
+
+
+@pytest.mark.parametrize(
+    ('params', 'code'),
+    [
+        ({'switch': 'nope'}, 'DEVICE_NOT_FOUND'),
+        ({'switch': 'Flex XG'}, 'DEVICE_NOT_FOUND'),
+        ({'limit': 0}, 'CONFIG_INVALID'),
+        ({'offset': -1}, 'CONFIG_INVALID'),
+    ],
+)
+async def test_audit_link_speeds_errors(fake_controller, frozen_clock, params, code):
+    raw = await server.execute_tool('audit_link_speeds', params)
+    out = _envelope(raw)
+    assert raw.isError is True and out['ok'] is False
+    assert out['error_code'] == code, out
