@@ -58,7 +58,8 @@ UNIFI_SSH_PASSWORD=your_ssh_password     # SSH password for gateway
 ### Port Mapping
 
 ```bash
-# Discover network and generate reports (read-only)
+# Discover the network, generate reports AND write port names to the controller
+# (add --dry-run to preview without writing)
 unifi-mapper --connected-devices
 
 # Apply port name updates with verification
