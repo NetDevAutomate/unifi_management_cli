@@ -757,14 +757,13 @@ def _describe_candidates(devices: list[dict[str, Any]]) -> str:
     )
 
 
-def resolve_switch_match(
-    client: UnifiApiClient,
-    site: str,
+def match_switch(
+    devices: list[dict[str, Any]],
     query: str,
     *,
     device_types: Optional[tuple[str, ...]] = ('usw',),
 ) -> tuple[dict[str, Any], str, list[dict[str, Any]]]:
-    """Find one device and report how it matched.
+    """Pick one device from an already-fetched device list and report how it matched.
 
     Tiers are tried in order and the first non-empty tier wins:
 
@@ -780,8 +779,7 @@ def resolve_switch_match(
     switch named exactly that even when 'Hotel3 USW Flex XG 10G' also exists.
 
     Args:
-        client: Authenticated API client.
-        site: Site name.
+        devices: ``stat/device`` records (non-dict entries are ignored).
         query: Device name, MAC, IP, or a partial name.
         device_types: Device ``type`` values to consider. None considers every
             adopted device. Defaults to switches only.
@@ -794,13 +792,6 @@ def resolve_switch_match(
         LookupError: Nothing matched, or the winning tier matched more than one
             device. The message lists the name, MAC and model of every candidate.
     """
-    resp = client.get_devices(site)
-    devices = (resp or {}).get('data', []) if isinstance(resp, dict) else []
-    if not devices:
-        raise LookupError(
-            f'The controller returned no devices for site {site!r}: check the site name and '
-            'that the account can read devices'
-        )
     pool = [
         d
         for d in devices
@@ -840,6 +831,44 @@ def resolve_switch_match(
     kind, plural = ('switch', 'switches') if device_types == ('usw',) else ('device', 'devices')
     available = ', '.join(sorted({(d.get('name') or '?') for d in pool}))
     raise LookupError(f'No {kind} matched {query!r}. Known {plural}: {available}')
+
+
+def resolve_switch_match(
+    client: UnifiApiClient,
+    site: str,
+    query: str,
+    *,
+    device_types: Optional[tuple[str, ...]] = ('usw',),
+) -> tuple[dict[str, Any], str, list[dict[str, Any]]]:
+    """Find one device and report how it matched.
+
+    Reads the site's device list once, then applies :func:`match_switch` (same
+    tiers, same messages).
+
+    Args:
+        client: Authenticated API client.
+        site: Site name.
+        query: Device name, MAC, IP, or a partial name.
+        device_types: Device ``type`` values to consider. None considers every
+            adopted device. Defaults to switches only.
+
+    Returns:
+        ``(device, matched_by, candidates)`` where ``candidates`` is the winning
+        tier's match list (a single entry on success).
+
+    Raises:
+        LookupError: The controller returned no devices, nothing matched, or the
+            winning tier matched more than one device. The message lists the
+            name, MAC and model of every candidate.
+    """
+    resp = client.get_devices(site)
+    devices = (resp or {}).get('data', []) if isinstance(resp, dict) else []
+    if not devices:
+        raise LookupError(
+            f'The controller returned no devices for site {site!r}: check the site name and '
+            'that the account can read devices'
+        )
+    return match_switch(devices, query, device_types=device_types)
 
 
 def resolve_switch(

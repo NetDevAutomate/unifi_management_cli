@@ -395,6 +395,25 @@ class IntegrationSnapshot(BaseModel):
     port: Optional[dict[str, Any]] = None
 
 
+class IntegrationDevice(BaseModel):
+    """One device the Integration API listing resolved, with its sanitised detail record."""
+
+    device_id: str
+    device: Optional[dict[str, Any]] = None  # None when the detail read failed
+
+
+class IntegrationPorts(BaseModel):
+    """The Integration API's device records for a set of MACs, best effort, GET only."""
+
+    status: str = 'skipped'  # ok | skipped | unavailable | error
+    reason: str = ''
+    base_path_used: Optional[str] = None
+    application_version: Optional[str] = None
+    site_id: Optional[str] = None
+    devices: dict[str, IntegrationDevice] = Field(default_factory=lambda: {})
+    missing_macs: list[str] = Field(default_factory=lambda: [])
+
+
 class ControllerInfo(BaseModel):
     """The controller and Network application the evidence came from."""
 
@@ -1268,20 +1287,44 @@ def get_client_history(
 # ---------------------------------------------------------------------------
 
 
-def collect_integration_snapshot(
-    client: Any, site: str, switch_mac: Optional[str], port_idx: int, ctx: Collection
-) -> IntegrationSnapshot:
-    """Read the official Integration API's view of the device, best effort.
+def fetch_integration_ports(
+    client: Any, site: str, macs: Iterable[Optional[str]], ctx: Collection
+) -> IntegrationPorts:
+    """Read the official Integration API's device records for ``macs``, best effort.
 
     Only runs on UniFi OS with API-key auth, which is what the Integration API
-    accepts. Tries the documented base path, then the repo's plural variant on
-    a 404, and records ``base_path_used``.
+    accepts. Probes ``{base}/v1/info`` over :data:`INTEGRATION_BASES` (the
+    documented base first, the plural variant on a 404) and records
+    ``base_path_used``; then reads ``/v1/sites`` once, pages the site's device
+    listing until every requested MAC is found or a page is short, and reads
+    ``/devices/{deviceId}`` once per found MAC. GET only; never raises on an
+    HTTP failure (each one is recorded in ``ctx`` as the snapshot always did).
+
+    Args:
+        client: Authenticated, guarded ``UnifiApiClient``.
+        site: Legacy site name (matched to ``internalReference``).
+        macs: Device MACs to resolve, in any notation. Invalid ones are ignored.
+        ctx: The collection that records failures and stripped secret paths.
+
+    Returns:
+        The :class:`IntegrationPorts` result. ``devices`` is keyed by normalised
+        MAC; MACs the listing did not return are in ``missing_macs``.
     """
+    wanted: list[str] = []
+    for mac in macs:
+        normalised = normalise_mac(mac)
+        if normalised and normalised not in wanted:
+            wanted.append(normalised)
+
     if not getattr(client, 'is_unifi_os', False):
-        return IntegrationSnapshot(status='skipped', reason='controller is not UniFi OS')
+        return IntegrationPorts(
+            status='skipped', reason='controller is not UniFi OS', missing_macs=wanted
+        )
     if getattr(client, 'auth_method', None) != 'token':
-        return IntegrationSnapshot(
-            status='skipped', reason='the Integration API needs API-key (token) authentication'
+        return IntegrationPorts(
+            status='skipped',
+            reason='the Integration API needs API-key (token) authentication',
+            missing_macs=wanted,
         )
 
     base: Optional[str] = None
@@ -1294,30 +1337,33 @@ def collect_integration_snapshot(
             continue
         if not fetched.ok:
             ctx.error('integration.info', f'GET {candidate}/v1/info: {fetched.error}')
-            return IntegrationSnapshot(
+            return IntegrationPorts(
                 status='unavailable' if fetched.status in (401, 403) else 'error',
                 reason=fetched.error or 'request failed',
                 base_path_used=candidate,
+                missing_macs=wanted,
             )
         base, info = candidate, fetched.data
         break
     if base is None:
-        return IntegrationSnapshot(
+        return IntegrationPorts(
             status='unavailable',
             reason=f'Integration API not found at {" or ".join(INTEGRATION_BASES)}',
+            missing_macs=wanted,
         )
 
-    snapshot = IntegrationSnapshot(
+    result = IntegrationPorts(
         status='ok',
         base_path_used=base,
         application_version=str_or_none((info or {}).get('applicationVersion'))
         if isinstance(info, dict)
         else None,
+        missing_macs=wanted,
     )
     sites = ctx.fetch(client, f'{base}/v1/sites', section='integration.sites')
     if not sites.ok:
-        snapshot.status, snapshot.reason = 'error', sites.error or 'GET /v1/sites failed'
-        return snapshot
+        result.status, result.reason = 'error', sites.error or 'GET /v1/sites failed'
+        return result
     site_id = next(
         (
             str_or_none(s.get('id'))
@@ -1327,11 +1373,11 @@ def collect_integration_snapshot(
         None,
     )
     if site_id is None:
-        snapshot.status, snapshot.reason = 'error', f'site {site!r} not found in /v1/sites'
-        return snapshot
-    snapshot.site_id = site_id
+        result.status, result.reason = 'error', f'site {site!r} not found in /v1/sites'
+        return result
+    result.site_id = site_id
 
-    device_id: Optional[str] = None
+    found: dict[str, str] = {}
     for page in range(INTEGRATION_MAX_PAGES):
         listed = ctx.fetch(
             client,
@@ -1340,34 +1386,67 @@ def collect_integration_snapshot(
             params={'offset': page * INTEGRATION_PAGE_SIZE, 'limit': INTEGRATION_PAGE_SIZE},
         )
         page_rows = rows(listed.data)
-        device_id = next(
-            (
-                str_or_none(d.get('id'))
-                for d in page_rows
-                if switch_mac and normalise_mac(d.get('macAddress')) == switch_mac
-            ),
-            None,
-        )
-        if device_id or len(page_rows) < INTEGRATION_PAGE_SIZE:
+        for record in page_rows:
+            mac = normalise_mac(record.get('macAddress'))
+            device_id = str_or_none(record.get('id'))
+            if mac in wanted and mac not in found and device_id:
+                found[mac] = device_id
+        if (wanted and len(found) == len(wanted)) or len(page_rows) < INTEGRATION_PAGE_SIZE:
             break
-    if device_id is None:
+    result.missing_macs = [mac for mac in wanted if mac not in found]
+
+    for mac in wanted:
+        device_id = found.get(mac)
+        if device_id is None:
+            continue
+        detail = ctx.fetch(
+            client, f'{base}/v1/sites/{site_id}/devices/{device_id}', section='integration.device'
+        )
+        device = (
+            ctx.clean(detail.data, 'integration.device')
+            if detail.ok and isinstance(detail.data, dict)
+            else None
+        )
+        result.devices[mac] = IntegrationDevice(device_id=device_id, device=device)
+    return result
+
+
+def collect_integration_snapshot(
+    client: Any, site: str, switch_mac: Optional[str], port_idx: int, ctx: Collection
+) -> IntegrationSnapshot:
+    """Read the official Integration API's view of the device, best effort.
+
+    Only runs on UniFi OS with API-key auth, which is what the Integration API
+    accepts. Tries the documented base path, then the repo's plural variant on
+    a 404, and records ``base_path_used``. The device lookup is
+    :func:`fetch_integration_ports` for one MAC.
+    """
+    fetched = fetch_integration_ports(client, site, [switch_mac], ctx)
+    snapshot = IntegrationSnapshot(
+        status=fetched.status,
+        reason=fetched.reason,
+        base_path_used=fetched.base_path_used,
+        application_version=fetched.application_version,
+        site_id=fetched.site_id,
+    )
+    if fetched.status != 'ok':
+        return snapshot
+    found = fetched.devices.get(normalise_mac(switch_mac) or '')
+    if found is None:
         snapshot.status, snapshot.reason = 'error', 'device not found in the Integration API'
         return snapshot
-    snapshot.device_id = device_id
-
-    detail = ctx.fetch(
-        client, f'{base}/v1/sites/{site_id}/devices/{device_id}', section='integration.device'
-    )
-    if detail.ok and isinstance(detail.data, dict):
-        snapshot.device = ctx.clean(detail.data, 'integration.device')
-        ports = ((snapshot.device or {}).get('interfaces') or {}).get('ports') or []
+    snapshot.device_id = found.device_id
+    snapshot.device = found.device
+    if found.device is not None:
+        ports = (found.device.get('interfaces') or {}).get('ports') or []
         snapshot.port = next(
             (p for p in ports if isinstance(p, dict) and int_or_none(p.get('idx')) == port_idx),
             None,
         )
     stats = ctx.fetch(
         client,
-        f'{base}/v1/sites/{site_id}/devices/{device_id}/statistics/latest',
+        f'{fetched.base_path_used}/v1/sites/{fetched.site_id}/devices/{found.device_id}'
+        '/statistics/latest',
         section='integration.statistics',
     )
     if stats.ok and isinstance(stats.data, dict):
