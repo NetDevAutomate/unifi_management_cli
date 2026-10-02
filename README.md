@@ -313,8 +313,11 @@ unifi-mapper analyze neighbours --diff --signal-delta 15
   the two can be combined and share one controller read.
 - Recording never moves the baseline. Set the baseline deliberately with `--snapshot`
   after a known-good physical state.
-- The history keeps `--retention-days` days (default 14, 1-365) and at most 64 MiB; older
-  lines are dropped when a run exceeds either cap.
+- The history keeps `--retention-days` days (default 14, 1-365) and at most 64 MiB. So that a
+  full file is not rewritten on every run, compaction runs only once the oldest line is a day
+  past the window (it then drops every line older than the window), or once the file passes
+  64 MiB (it then trims the oldest lines to 80% of the cap). The file therefore holds between
+  N and N+1 days unless the size cap binds first; each `--record` prints the days it holds.
 - `ports counters`, `ports diagnose`, `get_port_counter_rates` and `diagnose_switch_port`
   report `baselines.history` for the port: the recorded window, deltas, resets (reboots or
   cleared counters) and `first_increase`, the first sample in which each counter rose.

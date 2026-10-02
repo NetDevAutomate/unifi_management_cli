@@ -86,6 +86,7 @@ def test_record_writes_only_the_history(controller):
     lines = (state_dir() / HISTORY_FILENAME).read_text().splitlines()
     assert len(lines) == 1 and json.loads(lines[0])['device_id'] == SWITCH_ID
     assert 'retention 7 days' in result.output
+    assert 'holds 0 days' in _plain(result)  # the window the file actually holds
 
 
 def test_snapshot_and_record_share_one_device_read(controller):

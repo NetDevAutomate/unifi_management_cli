@@ -51,8 +51,10 @@ Applied the recommended fix (approved, design §10.5):
   per switch per run to `$XDG_STATE_HOME/unifi_mapper/port-counter-history.jsonl` (schema
   version, time, device id/MAC/name, uptime, `last_seen`, and every port's state, error,
   drop, CRC, link-down and byte counters). The append holds an `fcntl.flock` on a sibling
-  `.lock`; compaction (temp file + `os.replace`) runs only when `--retention-days`
-  (default 14, 1-365) or the 64 MiB cap is exceeded.
+  `.lock`; compaction (temp file + `os.replace`) runs only once the oldest line is a day past
+  `--retention-days` (default 14, 1-365; it then drops every line older than the window) or
+  the file passes the 64 MiB cap (it then trims to 80% of the cap), so a full file is not
+  rewritten on every run (code-review F6). Each `--record` prints the days the file holds.
 - The comparison baseline stays separate: only `--snapshot` sets it. The link-error
   baseline default moved off the working directory to
   `$XDG_STATE_HOME/unifi_mapper/link-error-baseline.json`; a legacy

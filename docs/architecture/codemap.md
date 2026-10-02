@@ -1401,7 +1401,7 @@ sequenceDiagram
     Note over Hist,Disk: Read only: never calls save(), a snapshot function or append_history()
 ```
 
-Writers, all behind explicit flags of `analyze link-errors`: `--snapshot` (both baselines) and `--record` (`append_history`: `fcntl.flock` on `port-counter-history.jsonl.lock`, append, then compaction through a temp file and `os.replace` only when `--retention-days` (default 14) or the 64 MiB cap is exceeded). Issues [002](../issues/002-port-counter-baseline-has-no-producer.md) and [004](../issues/004-no-counter-history.md) record the decision.
+Writers, all behind explicit flags of `analyze link-errors`: `--snapshot` (both baselines) and `--record` (`append_history`: `fcntl.flock` on `port-counter-history.jsonl.lock`, append, then compaction through a temp file and `os.replace` only once the oldest line is a day past `--retention-days` (default 14) or the file passes the 64 MiB cap, trimming to 80% of the cap, so a full file is not rewritten on every run). Issues [002](../issues/002-port-counter-baseline-has-no-producer.md) and [004](../issues/004-no-counter-history.md) record the decision.
 
 **State location.** `port_counter_baseline.state_dir()` is `$XDG_STATE_HOME/unifi_mapper` when set, otherwise `~/.local/state/unifi_mapper`. It holds `port-counters.json` (`default_baseline_path()`), `link-error-baseline.json` (`default_link_error_baseline_path()`) and `port-counter-history.jsonl` (`default_history_path()`).
 

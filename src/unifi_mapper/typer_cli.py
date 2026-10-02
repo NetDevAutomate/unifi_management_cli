@@ -3696,10 +3696,11 @@ def analyze_link_errors(
                 retention_days=retention_days,
                 now=epoch,
             )
+            held = f', holds {written.span_days:g} days' if written.span_days is not None else ''
             console.print(
                 f'🗂️ Recorded {written.records_written} switch(es) to '
                 f'[green]{escape(written.path)}[/green] '
-                f'(retention {written.retention_days} days, {written.bytes} bytes)'
+                f'(retention {written.retention_days} days, {written.bytes} bytes{held})'
             )
             if written.compacted:
                 console.print(

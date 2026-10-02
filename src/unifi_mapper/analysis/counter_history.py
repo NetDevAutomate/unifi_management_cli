@@ -8,7 +8,8 @@ moves the point a comparison is made against.
 Writing happens only in :func:`append_history`, behind that explicit flag. It
 takes an exclusive ``fcntl.flock`` on a sibling ``.lock`` file, appends, and
 compacts the file through a temporary file plus ``os.replace`` only when the age
-or size cap is exceeded, so a reader never sees a half-written file.
+or size cap is exceeded (with hysteresis, so a full file is not rewritten on
+every run), so a reader never sees a half-written file.
 
 :func:`read_port_history` and :func:`summarise_port_history` only read. They feed
 the ``baselines.history`` section of ``ports counters``, ``ports diagnose``,
@@ -35,6 +36,11 @@ MAX_RETENTION_DAYS = 365
 DEFAULT_MAX_HISTORY_BYTES = 64 * 1024 * 1024
 HISTORY_POINTS_LIMIT = 48
 SECONDS_PER_DAY = 86400
+# Hysteresis, so a file at a cap is not rewritten on every append: compaction trims to
+# this fraction of max_bytes, and an age compaction waits until the oldest line is
+# this far past the retention cutoff (then drops everything older than the cutoff).
+COMPACT_LOW_WATER_RATIO = 0.8
+AGE_COMPACTION_GRACE_SECONDS = SECONDS_PER_DAY
 
 # Counters recorded per port, in output order.
 HISTORY_COUNTERS = (
@@ -115,6 +121,8 @@ class HistoryWriteResult(BaseModel):
     bytes: int = 0
     retention_days: int
     max_bytes: int
+    earliest_epoch: Optional[float] = None
+    span_days: Optional[float] = None
 
 
 def default_history_path() -> Path:
@@ -273,8 +281,15 @@ def append_history(
 
     Creates the directory, holds an exclusive ``flock`` on ``<file>.lock`` for the
     whole append-and-compact, and rewrites the file (temp file + ``os.replace``)
-    only when its oldest line is older than ``retention_days`` or it is larger
-    than ``max_bytes``.
+    only when it is larger than ``max_bytes``, its first line is unparsable, or
+    its oldest line is more than :data:`AGE_COMPACTION_GRACE_SECONDS` older than
+    the ``retention_days`` cutoff. A rewrite drops unparsable lines and every line
+    older than the cutoff, then the oldest lines until the file is at most
+    :data:`COMPACT_LOW_WATER_RATIO` of ``max_bytes``. So at steady state the file
+    is rewritten once per grace period or per 20% of the cap, never on every
+    append, and holds between ``retention_days`` and ``retention_days`` + 1 days
+    unless the size cap binds first. ``earliest_epoch`` and ``span_days`` report
+    the window the file actually holds.
 
     Args:
         records: Records from :func:`build_history_records`.
@@ -314,12 +329,14 @@ def append_history(
                 history.writelines(lines)
             size = target.stat().st_size
             oldest = _line_epoch(_first_line(target))
-            if size > max_bytes or oldest is None or oldest < cutoff:
+            age_due = oldest is not None and oldest < cutoff - AGE_COMPACTION_GRACE_SECONDS
+            if size > max_bytes or oldest is None or age_due:
                 existing = target.read_text(encoding='utf-8', errors='replace').splitlines(True)
                 parsed = [(line, _line_epoch(line)) for line in existing]
                 valid = [line for line, epoch in parsed if epoch is not None]
                 in_age = [line for line, epoch in parsed if epoch is not None and epoch >= cutoff]
-                kept = compact_history_lines(existing, cutoff_epoch=cutoff, max_bytes=max_bytes)
+                low_water = max(1, int(max_bytes * COMPACT_LOW_WATER_RATIO))
+                kept = compact_history_lines(existing, cutoff_epoch=cutoff, max_bytes=low_water)
                 result.dropped_unparsable = len(existing) - len(valid)
                 result.dropped_by_age = len(valid) - len(in_age)
                 result.dropped_by_size = len(in_age) - len(kept)
@@ -328,6 +345,11 @@ def append_history(
                     result.compacted = True
                 result.lines_kept = len(kept)
             result.bytes = target.stat().st_size
+            result.earliest_epoch = _line_epoch(_first_line(target)) if result.bytes else None
+            if result.earliest_epoch is not None:
+                result.span_days = round(
+                    max(0.0, now - result.earliest_epoch) / SECONDS_PER_DAY, 1
+                )
         finally:
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
     return result

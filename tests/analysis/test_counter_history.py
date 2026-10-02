@@ -134,17 +134,75 @@ def test_age_retention_drops_old_lines(tmp_path):
     assert [line['epoch'] for line in _lines(path)] == [NOW - 2 * DAY, NOW]
 
 
-def test_byte_cap_drops_the_oldest_lines(tmp_path):
+def test_byte_cap_drops_the_oldest_lines_down_to_the_low_water_mark(tmp_path):
     path = tmp_path / 'history.jsonl'
     for offset in range(5):
         append_history([_record(NOW + offset)], path=path, now=NOW + offset)
     line_size = len(path.read_text().splitlines(True)[0].encode())
+    cap = line_size * 3
 
-    result = append_history([_record(NOW + 5)], path=path, max_bytes=line_size * 3, now=NOW + 5)
+    result = append_history([_record(NOW + 5)], path=path, max_bytes=cap, now=NOW + 5)
 
-    assert result.compacted and result.dropped_by_size == 3 and result.lines_kept == 3
-    assert [line['epoch'] for line in _lines(path)] == [NOW + 3, NOW + 4, NOW + 5]
-    assert path.stat().st_size <= line_size * 3
+    # 6 lines over a 3-line cap: trimmed to 80% of the cap (2 lines), not to just under it.
+    assert result.compacted and result.dropped_by_size == 4 and result.lines_kept == 2
+    assert [line['epoch'] for line in _lines(path)] == [NOW + 4, NOW + 5]
+    assert path.stat().st_size <= cap * counter_history.COMPACT_LOW_WATER_RATIO
+
+
+def test_the_append_after_a_size_compaction_does_not_rewrite_the_file(tmp_path):
+    path = tmp_path / 'history.jsonl'
+    append_history([_record(NOW)], path=path, now=NOW)
+    line_size = len(path.read_text().encode())
+    cap = line_size * 10
+    for offset in range(1, 11):
+        filled = append_history(
+            [_record(NOW + offset)], path=path, max_bytes=cap, now=NOW + offset
+        )
+    assert filled.compacted and filled.lines_kept == 8  # 11 lines over a 10-line cap -> 80%
+    inode = path.stat().st_ino
+
+    rewrites = []
+    for offset in range(11, 14):
+        result = append_history(
+            [_record(NOW + offset)], path=path, max_bytes=cap, now=NOW + offset
+        )
+        rewrites.append((result.compacted, path.stat().st_ino == inode))
+
+    # Regression (code-review F6): without a low-water mark every append past the cap
+    # rewrote the whole file. Now the two appends after a compaction append in place,
+    # and the cap is still enforced by the next one.
+    assert rewrites == [(False, True), (False, True), (True, False)]
+    assert path.stat().st_size <= cap
+
+
+def test_age_compaction_waits_for_the_grace_period_then_drops_to_the_cutoff(tmp_path):
+    path = tmp_path / 'history.jsonl'
+    days = 14
+    lines = [_record(NOW - (days * DAY) - 3600), _record(NOW - days * DAY + 60), _record(NOW - 1)]
+    path.write_text(''.join(json.dumps(r) + '\n' for r in lines), encoding='utf-8')
+    inode = path.stat().st_ino
+
+    # One hour past the cutoff is inside the one-day grace: appended in place.
+    quiet = append_history([_record(NOW)], path=path, retention_days=days, now=NOW)
+    assert quiet.compacted is False and path.stat().st_ino == inode
+    assert quiet.span_days == round((days * DAY + 3600) / DAY, 1)
+
+    # Once the oldest line is past the grace, every line older than the cutoff goes.
+    later = NOW + DAY
+    swept = append_history([_record(later)], path=path, retention_days=days, now=later)
+    assert swept.compacted is True and swept.dropped_by_age == 2
+    assert [line['epoch'] for line in _lines(path)] == [NOW - 1, NOW, later]
+    assert swept.earliest_epoch == NOW - 1
+
+
+def test_write_result_reports_the_window_the_file_holds(tmp_path):
+    path = tmp_path / 'history.jsonl'
+    append_history([_record(NOW - 2 * DAY)], path=path, now=NOW - 2 * DAY)
+
+    result = append_history([_record(NOW)], path=path, now=NOW)
+
+    assert result.earliest_epoch == NOW - 2 * DAY
+    assert result.span_days == 2.0
 
 
 def test_compaction_leaves_valid_jsonl_and_counts_unparsable_lines(tmp_path):
