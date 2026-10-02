@@ -15,6 +15,8 @@ BASE = 'https://192.0.2.1'
 API = f'{BASE}/proxy/network/api/s/default'
 V2 = f'{BASE}/proxy/network/v2/api/site/default'
 
+pytestmark = pytest.mark.usefixtures('block_network')
+
 
 @pytest.fixture
 def inner() -> MagicMock:

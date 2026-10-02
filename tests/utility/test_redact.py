@@ -7,6 +7,8 @@ from unifi_mapper.core.utils.redact import REDACTED, is_secret_key, redact_text,
 
 FAKE = 'FAKE-SECRET-MUST-NOT-APPEAR'  # pragma: allowlist secret
 
+pytestmark = pytest.mark.usefixtures('block_network')
+
 
 def test_x_prefixed_keys_are_removed_at_every_depth():
     payload = {
