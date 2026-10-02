@@ -151,7 +151,8 @@ read-only guard.
 let through: `{"t": <UTC time>, "method": …, "path": …}`. No host, query string, headers or
 body is recorded. It's how you can show that a session sent nothing but reads: every
 `controller`-family tool, `inspect_switch_port` included, goes through one of the two guards.
-The `network_api` and `protect` tools use their own clients and aren't recorded here.
+The `network_api` and `protect` tools use their own clients and aren't recorded here
+(issue 024).
 
 ## Tool Surfaces
 

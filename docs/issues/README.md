@@ -34,3 +34,4 @@ the reasoning stays next to the code it explains.
 | [021](021-sync-diagnostic-path-logs-in-per-call.md) | The sync port-diagnostics MCP tools log in to the controller on every call | open |
 | [022](022-search-tools-quality.md) | `search_tools` misses multi-word queries, tags and differently-cased categories | open |
 | [023](023-related-tools-hints-name-missing-tools.md) | Error hints send the model to `get_network_topology` and `vlan_info`, which don't exist | open |
+| [024](024-network-protect-tools-unguarded.md) | Network Integration API and Protect MCP tools run without a read-only guard or request audit | open |
