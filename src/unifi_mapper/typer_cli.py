@@ -341,7 +341,10 @@ def analyze_link_quality(
 
 @analyze_app.command('port-profiles')
 def analyze_port_profiles():
-    """🔌 Validate port profile safety for STP Edge, BPDU Guard, and uplinks."""
+    """🔌 Validate port profile safety for STP Edge, BPDU Guard, and uplinks.
+
+    For usage and speed forcing see `analyze port-profile-usage`.
+    """
     import asyncio
 
     config = state.config_path
@@ -830,7 +833,8 @@ def analyze_link_speeds(
     Flags half duplex, forced-speed ports that are down or linked at another rate,
     and autonegotiated ports below the Integration API's maxSpeedMbps (for example a
     10G NAS linked at 5G). The raw speed_caps value is never decoded. Exits 2 when a
-    CRITICAL or HIGH finding exists. For one port in depth see `ports inspect`. Read-only.
+    CRITICAL or HIGH finding exists. For usage and speed forcing see
+    `analyze port-profile-usage`; for one port in depth see `ports inspect`. Read-only.
     """
     from .analysis.link_speed_audit import MAX_LIMIT, collect_link_speed_audit
 
@@ -894,6 +898,89 @@ def _render_link_speed_audit(report: Any) -> None:
         console.print('✅ No port below its capability or forced into a speed trap.')
     if report.truncated:
         console.print(f'[dim]{len(report.findings)} of {report.findings_total} shown.[/dim]')
+    for error in report.errors:
+        err_console.print(f'[yellow]⚠ {escape(error.section)}: {escape(error.error)}[/yellow]')
+
+
+@analyze_app.command('port-profile-usage')
+def analyze_port_profile_usage(
+    profile: Optional[str] = typer.Option(
+        None, '--profile', help='Report only this port profile (exact name or _id)'
+    ),
+    hide_unused: bool = typer.Option(False, '--hide-unused', help='Hide profiles no port uses'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🧩 Where each port profile is used, and which profiles are traps.
+
+    Lists every profile with the ports it is the effective profile of (an override
+    wins over the port table), whether it forces a speed, its native network and
+    forward mode. Flags forced-speed profiles, overrides that shadow their profile,
+    ports referencing a deleted profile, and duplicate or unused profiles. Exits 2
+    when a port references a missing profile. For STP edge/BPDU safety see
+    `analyze port-profiles`; to compare two profiles key by key see
+    `ports profile-diff`; for how each port linked see `analyze link-speeds`. Read-only.
+    """
+    from .analysis.port_profile_usage import MAX_LIMIT, collect_port_profile_usage
+
+    with _diagnostic_errors(), _readonly_client() as (client, site):
+        report = collect_port_profile_usage(
+            client, site, profile=profile, include_unused=not hide_unused, limit=MAX_LIMIT
+        )
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+    else:
+        _render_port_profile_usage(report)
+    if not report.validation_passed:
+        raise typer.Exit(2)
+
+
+def _render_port_profile_usage(report: Any) -> None:
+    """Print a port-profile usage audit as tables."""
+    console.print('🧩 [bold]Port Profile Usage[/bold]')
+    console.print(
+        f'Profiles: [cyan]{report.profiles_total}[/cyan]  '
+        f'Ports analyzed: [cyan]{report.ports_analyzed}[/cyan]  '
+        f'Findings: [yellow]{report.findings_total}[/yellow]'
+    )
+    if report.profiles:
+        table = Table(title='Port Profiles', show_header=True)
+        table.add_column('Profile', style='cyan')
+        table.add_column('Ports', style='yellow')
+        table.add_column('Speed')
+        table.add_column('Native network')
+        table.add_column('Forward')
+        table.add_column('PoE', style='dim')
+        for p in report.profiles:
+            speed = f'forced {p.forced_speed_mbps} Mbps' if p.forces_speed else 'auto'
+            native = (
+                f'{p.native_network_name} (VLAN {p.native_vlan})'
+                if p.native_network_name
+                else (p.native_network_id or '—')
+            )
+            table.add_row(
+                escape(str(p.name or p.id)),
+                f'{p.port_count}{"+" if p.ports_truncated else ""}',
+                speed,
+                escape(str(native)),
+                escape(str(p.forward or '—')),
+                escape(str(p.poe_mode or '—')),
+            )
+        console.print(table)
+    if report.findings:
+        table = Table(title='Port Profile Findings', show_header=True)
+        table.add_column('Severity', style='bold')
+        table.add_column('Code', style='cyan')
+        table.add_column('Finding')
+        for f in report.findings:
+            style = {'HIGH': 'red', 'WARNING': 'yellow'}.get(f.severity, 'blue')
+            table.add_row(f'[{style}]{f.severity}[/]', f.code, escape(f.message))
+        console.print(table)
+    else:
+        console.print('✅ No port profile usage findings.')
+    if report.truncated:
+        console.print(
+            f'[dim]{len(report.profiles)} of {report.profiles_total} profiles shown.[/dim]'
+        )
     for error in report.errors:
         err_console.print(f'[yellow]⚠ {escape(error.section)}: {escape(error.error)}[/yellow]')
 

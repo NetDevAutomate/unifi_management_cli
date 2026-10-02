@@ -97,7 +97,7 @@ def test_manifest_descriptions_use_folded_blocks(name):
 
 def test_registry_totals(registry):
     categories = registry.get_categories()
-    assert len(registry) == 71
+    assert len(registry) == 72
     assert len(categories['diagnostics']) == 8
     assert len(categories['discovery']) == 5
     assert len(categories['observability']) == 2
@@ -252,3 +252,28 @@ async def test_audit_link_speeds_errors(fake_controller, frozen_clock, params, c
     out = _envelope(raw)
     assert raw.isError is True and out['ok'] is False
     assert out['error_code'] == code, out
+
+
+async def test_audit_port_profile_usage_runs_read_only(fake_controller):
+    client, session = fake_controller
+    raw = await server.execute_tool('audit_port_profile_usage', {'profile': PROFILE_10G_NAME})
+    assert raw.isError is False
+    out = _envelope(raw)
+    assert out['ok'] is True, out
+    result = out['result']
+    assert result['schema_version'] == 1
+    assert [p['name'] for p in result['profiles']] == [PROFILE_10G_NAME]
+    assert [f['code'] for f in result['findings']] == ['FORCED_SPEED_PROFILE']
+    assert_no_secrets(raw.model_dump(mode='json'))
+    assert isinstance(client.session, ReadOnlySession)
+    assert {c['method'] for c in session.calls} == {'GET'}
+
+
+@pytest.mark.parametrize(
+    ('params', 'code'),
+    [({'profile': 'Nope'}, 'PROFILE_NOT_FOUND'), ({'limit': 1001}, 'CONFIG_INVALID')],
+)
+async def test_audit_port_profile_usage_errors(fake_controller, params, code):
+    raw = await server.execute_tool('audit_port_profile_usage', params)
+    out = _envelope(raw)
+    assert raw.isError is True and out['error_code'] == code, out

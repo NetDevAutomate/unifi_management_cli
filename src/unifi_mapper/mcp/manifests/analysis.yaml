@@ -126,6 +126,33 @@ tools:
         type: integer
         description: Findings to skip, for paging
 
+  audit_port_profile_usage:
+    module: unifi_mapper.analysis.port_profile_usage
+    handler: audit_port_profile_usage
+    title: Audit Port Profile Usage
+    credentials: controller
+    description: >-
+      Where every port profile is applied (each port's effective profile, the
+      override winning over the port table) and which profiles are traps.
+      Flags profiles that force a speed, port overrides that shadow their
+      profile's speed, autoneg or native network, ports referencing a deleted
+      profile, duplicate and unused profiles. Paged profiles. Read-only.
+    priority: P1
+    tags: [port, profile, portconf, speed, autoneg, override, audit, read-only]
+    parameters:
+      profile:
+        type: string
+        description: Report only this port profile (exact name or _id); omit for all
+      include_unused:
+        type: boolean
+        description: List profiles no port uses (UNUSED_PROFILE)
+      limit:
+        type: integer
+        description: Maximum profiles to return (1-1000)
+      offset:
+        type: integer
+        description: Profiles to skip, for paging
+
   detect_foreign_bridges:
     module: unifi_mapper.analysis.foreign_bridges
     handler: detect_foreign_bridges
