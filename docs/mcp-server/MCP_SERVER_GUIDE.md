@@ -127,8 +127,11 @@ after 60 s. Other requests keep being answered while it waits.
 **Per-process state.** One server process logs in to the controller once: the lifespan
 installs a shared client (connect timeout 10 s, request timeout 30 s) that every async tool
 borrows, behind a read-only HTTP transport that refuses any request that could change the
-controller. The sync port-diagnostics tools (`inspect_switch_port`, `diagnose_switch_port`,
-`audit_link_speeds`, …) keep one guarded login per call.
+controller. The sync port-diagnostics tools (`diagnose_switch_port`, `get_switch_ports`,
+`diff_port_profiles`, `get_client_history`, `get_device_events`, `get_port_counter_rates`,
+`audit_link_speeds`, `audit_port_profile_usage`) keep one guarded login per call.
+`inspect_switch_port` also logs in per call, but through its own sync client without the
+read-only guard (it only reads; issue 021 tracks guarding it).
 
 ### Environment variables
 
@@ -146,7 +149,8 @@ controller. The sync port-diagnostics tools (`inspect_switch_port`, `diagnose_sw
 
 `UNIFI_MCP_REQUEST_AUDIT=<file>` appends one line per controller request the read-only guards
 let through: `{"t": <UTC time>, "method": …, "path": …}`. No host, query string, headers or
-body is recorded. It's how you can show that a session sent nothing but reads.
+body is recorded. It's how you can show that a session sent nothing but reads, with one gap:
+`inspect_switch_port` doesn't go through a guard, so its requests aren't recorded (issue 021).
 
 ## Tool Surfaces
 
@@ -315,9 +319,10 @@ as the `command`, because GUI apps start with a minimal `PATH`.
 
 No tool that changes the controller runs over MCP. Mutating manifest entries
 (`mutates: true`: `apply_stp_changes`, `apply_radio_optimization`, `restore_radio_config`) are
-never listed and `execute_tool` refuses them with `MUTATION_REFUSED`; the shared client's
-transport refuses any controller write a read-only tool might attempt
-(`READ_ONLY_VIOLATION`). Any new tool that writes controller state must declare
+never listed and `execute_tool` refuses them with `MUTATION_REFUSED`; the shared async client's
+transport and the sync diagnostics client's guard refuse any controller write a read-only tool
+might attempt (`READ_ONLY_VIOLATION`), with the one unguarded exception noted in
+[Configuration](#configuration) (`inspect_switch_port`, issue 021). Any new tool that writes controller state must declare
 `mutates: true`; `tests/mcp/test_execute.py` fails if an `apply_*` / `restore_*` tool ships
 without it. One catalog tool writes a **local** file: `snapshot_radio_config`.
 

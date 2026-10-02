@@ -2,6 +2,7 @@
 title: "`unifi-mapper --connected-devices` writes port names by default"
 date: 2026-10-02
 status: resolved
+resolved_by: 27bca7c
 severity: medium
 components: [typer_cli, run_methods, port_mapper]
 found_by: port diagnostics gap analysis (F2)

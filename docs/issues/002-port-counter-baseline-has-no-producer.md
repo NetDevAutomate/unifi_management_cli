@@ -2,6 +2,7 @@
 title: "The port counter baseline store has no producer"
 date: 2026-10-02
 status: resolved
+resolved_by: 55b67b0
 severity: low
 components: [analysis/port_counter_baseline, port_history]
 found_by: port diagnostics gap analysis (F4)

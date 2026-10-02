@@ -2,6 +2,7 @@
 title: "There is no on-disk history of port error counters"
 date: 2026-10-02
 status: resolved
+resolved_by: 55b67b0
 severity: low
 components: [analysis/link_error_tracking, scripts/unifi-cron.sh]
 found_by: port diagnostics gap analysis (F6)
