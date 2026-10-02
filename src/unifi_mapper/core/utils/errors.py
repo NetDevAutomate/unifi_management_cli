@@ -75,6 +75,9 @@ class ErrorCodes:
 
     # Configuration errors
     CONFIG_INVALID = 'CONFIG_INVALID'
+    # The credentials a tool needs are not configured (no env/file keys, or the bounded
+    # Keychain/1Password lookup did not finish). Raised by the MCP server, never by a tool.
+    CONFIG_MISSING = 'CONFIG_MISSING'
     BACKUP_NOT_FOUND = 'BACKUP_NOT_FOUND'
 
     # Data availability errors
