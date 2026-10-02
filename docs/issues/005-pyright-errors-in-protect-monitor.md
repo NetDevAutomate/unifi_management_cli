@@ -1,7 +1,7 @@
 ---
 title: "pyright reports 3 errors in monitors/protect_monitor.py"
 date: 2026-10-02
-status: open
+status: resolved
 severity: low
 components: [monitors/protect_monitor]
 found_by: port diagnostics verification
@@ -36,3 +36,9 @@ if missing:
 # parser.error() exits, so all three are set from here on.
 assert base_url and username and password
 ```
+
+## Resolution
+
+Applied the recommended fix: `main()` now asserts `base_url and username and password`
+straight after the `missing` check. `parser.error()` already exits when any of them is
+missing, so runtime behaviour is unchanged. `uv run pyright src/` reports 0 errors.

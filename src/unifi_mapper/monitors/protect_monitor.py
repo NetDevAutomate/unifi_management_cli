@@ -661,6 +661,8 @@ Examples:
     ]
     if missing:
         parser.error('missing required credentials: ' + ', '.join(missing))
+    # parser.error() exits, so all three are set from here on.
+    assert base_url and username and password
 
     if base_url and not base_url.startswith(('http://', 'https://')):
         base_url = f'https://{base_url}'
