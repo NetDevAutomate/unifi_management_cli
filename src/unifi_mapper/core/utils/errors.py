@@ -84,3 +84,9 @@ class ErrorCodes:
     # each of those modules crashed on its own error path (e.g. "no baseline snapshot
     # found") rather than reporting the condition.
     NO_DATA = 'NO_DATA'
+
+    # Port diagnostics
+    PROFILE_NOT_FOUND = 'PROFILE_NOT_FOUND'
+    # The read-only transport guard refused a request. Diagnostic tools never write, so
+    # this always signals a bug in the tool rather than a user error.
+    READ_ONLY_VIOLATION = 'READ_ONLY_VIOLATION'
