@@ -322,21 +322,89 @@ def install_completions(
 
 
 @find_app.command('device')
-def find_device(query: str = typer.Argument(..., help='🔍 Device name, IP, or MAC to search for')):
-    """🔍 Find device by name, IP, or MAC address."""
-    console.print(f'🔍 Searching for device: [cyan]{query}[/cyan]')
-    console.print('💡 Integration with enhanced device discovery in network_cli')
+def find_device(
+    query: str = typer.Argument(..., help='🔍 Device name, IP, or MAC to search for'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """🔍 Find device by name, IP, or MAC address.
+
+    Searches UniFi devices first, then connected clients. Exits 1 when nothing
+    matches. Read-only.
+    """
+    from .discovery.find_device import find_device as run_find_device
+
+    device = _run_analysis(lambda: run_find_device(identifier=query))
+    if as_json:
+        _emit_json(device.model_dump(mode='json'))
+        return
+    table = Table(title=f'Device matching {escape(query)}', show_header=False)
+    table.add_column('Field', style='cyan')
+    table.add_column('Value')
+    for field, value in device.model_dump().items():
+        if value is not None:
+            table.add_row(field, escape(str(value)))
+    console.print(table)
 
 
 @analyze_app.command('link-quality')
 def analyze_link_quality(
     device: Optional[str] = typer.Option(None, '--device', help='🖥️ Specific device to analyze'),
+    include_healthy: bool = typer.Option(
+        False, '--include-healthy', help='Also list ports with a health score of 90 or more'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
 ):
-    """📊 Analyze port statistics and error rates."""
+    """📊 Analyze port statistics and error rates.
+
+    Scores every switch port 0-100 from its error, drop and collision counters and
+    lists the degraded and critical ones, worst first. --device takes a device _id
+    or MAC. Read-only.
+    """
+    from .analysis.link_quality import analyze_link_quality as run_link_quality
+
+    report = _run_analysis(
+        lambda: run_link_quality(device_id=device, include_healthy=include_healthy)
+    )
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
     console.print('📊 [bold]Link Quality Analysis[/bold]')
     console.print(
-        '💡 Full implementation available via: [cyan]unifi-network-toolkit analyze link-quality[/cyan]'
+        f'Devices analyzed: [cyan]{report.devices_analyzed}[/cyan]  '
+        f'Ports analyzed: [cyan]{report.ports_analyzed}[/cyan]  '
+        f'Healthy: [green]{report.healthy_ports}[/green]  '
+        f'Degraded: [yellow]{report.degraded_ports}[/yellow]  '
+        f'Critical: [red]{report.critical_ports}[/red]'
     )
+    health_style = {'CRITICAL': 'red', 'DEGRADED': 'yellow'}.get(report.overall_health, 'green')
+    console.print(f'Overall: [{health_style}]{escape(report.overall_health)}[/]')
+    if report.port_metrics:
+        table = Table(title='Port Link Quality (worst first)', show_header=True)
+        table.add_column('Device', style='cyan')
+        table.add_column('Port', style='yellow')
+        table.add_column('Speed')
+        table.add_column('Score', style='bold')
+        table.add_column('RX/TX errors')
+        table.add_column('RX/TX dropped')
+        table.add_column('Issues', style='dim')
+        for m in report.port_metrics:
+            score_style = 'green' if m.health_score >= 90 else 'yellow'
+            if m.health_score < 70:
+                score_style = 'red'
+            table.add_row(
+                escape(m.device_name),
+                f'{m.port_idx} {escape(m.port_name)}',
+                escape(m.link_speed),
+                f'[{score_style}]{m.health_score}[/]',
+                f'{m.rx_errors}/{m.tx_errors}',
+                f'{m.rx_dropped}/{m.tx_dropped}',
+                escape(', '.join(m.issues)) or '—',
+            )
+        console.print(table)
+    else:
+        console.print('✅ No degraded or critical ports.')
+    for issue in report.top_issues:
+        console.print(f'  • {escape(issue)}')
 
 
 @analyze_app.command('port-profiles')
@@ -1386,12 +1454,47 @@ def _extract_status(report: object) -> str:
 @diagnose_app.command('health')
 def diagnose_health(
     detailed: bool = typer.Option(False, '--detailed', help='🔬 Include detailed device analysis'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
 ):
-    """🏥 Overall network health check."""
+    """🏥 Overall network health check.
+
+    Scores the network 0-100 from device state, adoption, CPU/memory/load, uplinks
+    and firmware, with critical issues, warnings and recommendations. --detailed
+    adds the per-device findings. Read-only.
+    """
+    from .diagnostics.network_health import network_health_check
+
+    report = _run_analysis(network_health_check)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
     console.print('🏥 [bold]Network Health Check[/bold]')
-    console.print(
-        '💡 Full implementation available via: [cyan]unifi-network-toolkit diagnose network-health[/cyan]'
-    )
+    status_style = {'healthy': 'green', 'warning': 'yellow'}.get(report.status, 'red')
+    table = Table(title='Network Health', show_header=False)
+    table.add_column('Metric', style='cyan')
+    table.add_column('Value')
+    table.add_row('Score', f'[{status_style}]{report.overall_score}/100 ({report.status})[/]')
+    table.add_row('Devices', str(report.total_devices))
+    table.add_row('Online / offline', f'{report.devices_online} / {report.devices_offline}')
+    table.add_row('Adopted', str(report.devices_adopted))
+    table.add_row('Clients connected', str(report.clients_connected))
+    if detailed:
+        sections = [
+            ('High CPU', report.high_cpu_devices),
+            ('High memory', report.high_memory_devices),
+            ('High load', report.high_load_devices),
+            ('Uplink issues', report.uplink_issues),
+            ('Firmware outdated', report.firmware_outdated),
+        ]
+        for label, devices in sections:
+            table.add_row(label, escape(', '.join(devices)) or '—')
+    console.print(table)
+    for issue in report.critical_issues:
+        console.print(f'[red]✖ {escape(issue)}[/red]')
+    for warning in report.warnings:
+        console.print(f'[yellow]⚠ {escape(warning)}[/yellow]')
+    for recommendation in report.recommendations:
+        console.print(f'  → {escape(recommendation)}')
 
 
 @diagnose_app.command('latency-matrix')

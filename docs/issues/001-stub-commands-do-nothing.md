@@ -1,7 +1,7 @@
 ---
 title: "`find device`, `analyze link-quality` and `diagnose health` are stubs"
 date: 2026-10-02
-status: open
+status: resolved
 severity: low
 components: [typer_cli]
 found_by: port diagnostics gap analysis (F3)
@@ -37,3 +37,20 @@ Wire each command to the read-only implementation that already exists:
 
 Add one CLI test per command using the in-memory transport in `tests/fixtures_unifi.py`.
 If they shouldn't be wired up, remove the commands and their README rows instead.
+
+## Resolution
+
+Applied the recommended fix in `typer_cli.py`; argument names and positions are unchanged:
+
+- `find device QUERY [--json]` calls `discovery.find_device.find_device(identifier=QUERY)`
+  and prints the matched device as a table, or its `model_dump` with `--json`.
+- `analyze link-quality [--device ID] [--include-healthy] [--json]` calls
+  `analysis.link_quality.analyze_link_quality(device_id=…, include_healthy=…)`. `--device`
+  matches a device `_id` or MAC, as the implementation does.
+- `diagnose health [--detailed] [--json]` calls
+  `diagnostics.network_health.network_health_check()`; `--detailed` adds the per-device
+  rows (high CPU, memory and load, uplink issues, outdated firmware) to the table.
+
+A domain `ToolError` (for example `DEVICE_NOT_FOUND`) prints its message in red on stderr
+and exits 1. Tests: `tests/test_cli_stub_commands.py` (implementations monkeypatched; the
+JSON equals `model_dump`; not found exits 1 with the message).
