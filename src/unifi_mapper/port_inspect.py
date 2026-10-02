@@ -795,6 +795,11 @@ def resolve_switch_match(
     """
     resp = client.get_devices(site)
     devices = (resp or {}).get('data', []) if isinstance(resp, dict) else []
+    if not devices:
+        raise LookupError(
+            f'The controller returned no devices for site {site!r}: check the site name and '
+            'that the account can read devices'
+        )
     pool = [
         d
         for d in devices

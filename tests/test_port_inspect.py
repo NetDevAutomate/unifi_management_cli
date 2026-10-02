@@ -69,6 +69,12 @@ def test_resolve_switch_not_found():
         resolve_switch(c, 'default', 'nonexistent')
 
 
+def test_resolve_switch_says_when_the_controller_returned_no_devices():
+    """An empty device list (wrong site, no permission) is not reported as 'no match'."""
+    with pytest.raises(LookupError, match='returned no devices'):
+        resolve_switch(_fake_client([]), 'default', 'Office')
+
+
 def test_resolve_switch_by_ip_or_mac():
     """resolve_switch also matches on IP and MAC substrings."""
     devices = [

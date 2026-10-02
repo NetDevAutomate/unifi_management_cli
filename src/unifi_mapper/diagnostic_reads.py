@@ -299,18 +299,24 @@ def epoch_ms(value: Any) -> Optional[int]:
 
 
 def iso_from_ms(value: Optional[int]) -> Optional[str]:
-    """Return an epoch in ms as an ISO-8601 UTC string, or None."""
+    """Return an epoch in ms as an ISO-8601 UTC string, or None (also when out of range)."""
     if value is None:
         return None
-    return datetime.fromtimestamp(value / 1000, tz=timezone.utc).isoformat()
+    try:
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def iso_from_seconds(value: Any) -> Optional[str]:
-    """Return an epoch in seconds as an ISO-8601 UTC string, or None."""
+    """Return an epoch in seconds as an ISO-8601 UTC string, or None (also when out of range)."""
     seconds = float_or_none(value)
     if seconds is None or seconds <= 0:
         return None
-    return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat()
+    try:
+        return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def local_iso(now: Callable[[], float] = time.time) -> str:
