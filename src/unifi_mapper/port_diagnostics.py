@@ -37,6 +37,7 @@ from importlib import metadata
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import Any, Callable, Iterable, Optional
+from unifi_mapper.analysis.link_settings import effective_profile_id, port_override
 from unifi_mapper.core.utils.readonly import (
     ReadOnlyViolation,
     assert_guarded,
@@ -642,11 +643,8 @@ def collect_port_detail(device: dict[str, Any], port_idx: int) -> PortDetail:
     )
 
 
-def _override_for(device: dict[str, Any], port_idx: int) -> Optional[dict[str, Any]]:
-    for override in device.get('port_overrides') or []:
-        if isinstance(override, dict) and int_or_none(override.get('port_idx')) == port_idx:
-            return override
-    return None
+# Kept as a name so nothing importing it breaks; the rule lives in analysis/link_settings.
+_override_for = port_override
 
 
 def collect_override(
@@ -662,10 +660,10 @@ def collect_override(
     profile has been configured but the device has not applied it yet.
     """
     entry = find_port_entry(device, port_idx)
-    override = _override_for(device, port_idx)
+    override = port_override(device, port_idx)
     override_id = str_or_none(override.get('portconf_id')) if override else None
     table_id = str_or_none(entry.get('portconf_id'))
-    assigned = override_id or table_id
+    assigned, source = effective_profile_id(device, entry, port_idx)
     profile = profiles.get(assigned or '')
     matches: Optional[str] = None
     if compare_ids and assigned:
@@ -679,7 +677,7 @@ def collect_override(
         profile_assigned=ProfileAssignment(
             id=assigned,
             name=str_or_none(profile.get('name')) if profile else None,
-            source='override' if override_id else ('port_table' if table_id else 'unknown'),
+            source=source,
             override_portconf_id=override_id,
             port_table_portconf_id=table_id,
             ids_disagree=bool(override_id and table_id and override_id != table_id),
@@ -732,10 +730,8 @@ def summarise_ports(
     summaries: list[PortSummary] = []
     for entry in sorted(port_entries(device), key=lambda p: int_or_none(p.get('port_idx')) or 0):
         idx = int_or_none(entry.get('port_idx'))
-        override = _override_for(device, idx) if idx is not None else None
-        profile_id = str_or_none((override or {}).get('portconf_id')) or str_or_none(
-            entry.get('portconf_id')
-        )
+        override = port_override(device, idx)
+        profile_id, _ = effective_profile_id(device, entry, idx)
         profile = profiles.get(profile_id or '') or {}
         lldp_summary = None
         lldp = lldp_by_port.get(idx) if idx is not None else None
@@ -888,9 +884,7 @@ def profile_usage(devices: Iterable[dict[str, Any]], profile_id: str) -> list[Pr
             idx = int_or_none(entry.get('port_idx'))
             if idx is None:
                 continue
-            override = _override_for(device, idx)
-            override_id = str_or_none((override or {}).get('portconf_id'))
-            effective = override_id or str_or_none(entry.get('portconf_id'))
+            effective, source = effective_profile_id(device, entry, idx)
             if effective != profile_id:
                 continue
             usage.append(
@@ -901,7 +895,7 @@ def profile_usage(devices: Iterable[dict[str, Any]], profile_id: str) -> list[Pr
                     up=entry.get('up'),
                     speed=entry.get('speed'),
                     media=entry.get('media'),
-                    source='override' if override_id else 'port_table',
+                    source=source,
                 )
             )
     return sorted(usage, key=lambda u: (u.switch or '', u.port_idx or 0))

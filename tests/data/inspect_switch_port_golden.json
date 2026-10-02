@@ -1,0 +1,378 @@
+{
+  "2": {
+    "addressing": {
+      "fixed_ip": null,
+      "in_dhcp_pool": null,
+      "ip": null,
+      "lease_expires_at": null,
+      "notes": [],
+      "summary": "no client on this port",
+      "uses_fixed_ip": null,
+      "verdict": "no_client"
+    },
+    "connected_device": {
+      "fingerprint_confidence": null,
+      "first_seen": null,
+      "hostname": null,
+      "ip": null,
+      "ipv6": [],
+      "is_unifi_device": false,
+      "last_seen": null,
+      "mac": null,
+      "model": null,
+      "name": null,
+      "network_name": null,
+      "uptime_seconds": null,
+      "vendor": null,
+      "vlan": null,
+      "wired_rate_mbps": null
+    },
+    "counters": {
+      "rx": {
+        "broadcast": 1,
+        "bytes": 2000,
+        "crc_errors": null,
+        "dropped": 0,
+        "errors": 0,
+        "multicast": 3,
+        "packets": 20
+      },
+      "tx": {
+        "broadcast": 2,
+        "bytes": 4000,
+        "dropped": 0,
+        "errors": 0,
+        "multicast": 4,
+        "packets": 40
+      }
+    },
+    "freshness": {
+      "is_suspicious": false,
+      "last_seen_age_seconds": null,
+      "reasons": []
+    },
+    "last_connection": null,
+    "link": {
+      "autoneg": true,
+      "enabled": true,
+      "flowctrl_rx": null,
+      "flowctrl_tx": null,
+      "forward": "all",
+      "full_duplex": true,
+      "is_uplink": true,
+      "jumbo": null,
+      "link_down_count": 0,
+      "media": "GE",
+      "name": "Port 2",
+      "op_mode": null,
+      "speed_caps": 1048623,
+      "speed_mbps": 10000,
+      "stp_state": "forwarding",
+      "up": true
+    },
+    "lldp": {
+      "neighbour": {
+        "chassis_id": "02:00:00:00:00:03",
+        "chassis_name": "",
+        "is_wired": true,
+        "local_port_name": "",
+        "port_id": "Port 9",
+        "port_idx": 2,
+        "remote_chassis_id": "02:00:00:00:00:03",
+        "remote_device_name": "Test Gateway",
+        "remote_port_name": "Port 9",
+        "system_name": ""
+      },
+      "resolved": {
+        "ip": "192.0.2.12",
+        "kind": "device",
+        "model": "UDMPROMAX",
+        "name": "Test Gateway"
+      }
+    },
+    "network": {
+      "dhcp_enabled": true,
+      "dhcp_relay_enabled": null,
+      "dhcp_start": "203.0.113.100",
+      "dhcp_stop": "203.0.113.200",
+      "enabled": true,
+      "gateway_ip": "203.0.113.1",
+      "id": "0000000000000000000000c1",
+      "name": "Management",
+      "subnet": "203.0.113.1/24",
+      "summary": "Management (VLAN 255)",
+      "vlan": 255,
+      "warnings": []
+    },
+    "override": {
+      "name": "Uplink",
+      "port_idx": 2,
+      "portconf_id": "0000000000000000000000b3"
+    },
+    "poe": {
+      "capable": false
+    },
+    "port_idx": 2,
+    "profile": {
+      "carries": "all VLANs (trunk)",
+      "forward": "all",
+      "id": "0000000000000000000000b3",
+      "name": "All",
+      "poe_mode": null,
+      "source": "override",
+      "tagged_vlans": null
+    },
+    "switch": {
+      "mac": "02:00:00:00:00:01",
+      "model": "USFXG",
+      "name": "USW Flex XG",
+      "uplink": {
+        "port_idx": 2,
+        "uplink_mac": "02:00:00:00:00:03",
+        "uplink_remote_port": 9
+      }
+    }
+  },
+  "3": {
+    "addressing": {
+      "fixed_ip": null,
+      "in_dhcp_pool": null,
+      "ip": null,
+      "lease_expires_at": null,
+      "notes": [],
+      "summary": "no client on this port",
+      "uses_fixed_ip": null,
+      "verdict": "no_client"
+    },
+    "connected_device": {
+      "fingerprint_confidence": null,
+      "first_seen": null,
+      "hostname": null,
+      "ip": null,
+      "ipv6": [],
+      "is_unifi_device": false,
+      "last_seen": null,
+      "mac": null,
+      "model": null,
+      "name": null,
+      "network_name": null,
+      "uptime_seconds": null,
+      "vendor": null,
+      "vlan": null,
+      "wired_rate_mbps": null
+    },
+    "counters": {
+      "rx": {
+        "broadcast": 1,
+        "bytes": 3000,
+        "crc_errors": null,
+        "dropped": 0,
+        "errors": 0,
+        "multicast": 3,
+        "packets": 30
+      },
+      "tx": {
+        "broadcast": 2,
+        "bytes": 6000,
+        "dropped": 0,
+        "errors": 0,
+        "multicast": 4,
+        "packets": 60
+      }
+    },
+    "freshness": {
+      "is_suspicious": false,
+      "last_seen_age_seconds": null,
+      "reasons": []
+    },
+    "last_connection": null,
+    "link": {
+      "autoneg": true,
+      "enabled": true,
+      "flowctrl_rx": null,
+      "flowctrl_tx": null,
+      "forward": "native",
+      "full_duplex": true,
+      "is_uplink": false,
+      "jumbo": null,
+      "link_down_count": 0,
+      "media": "GE",
+      "name": "Port 3",
+      "op_mode": null,
+      "speed_caps": 1048623,
+      "speed_mbps": 10000,
+      "stp_state": "forwarding",
+      "up": true
+    },
+    "lldp": {
+      "neighbour": null,
+      "resolved": null
+    },
+    "network": {
+      "dhcp_enabled": true,
+      "dhcp_relay_enabled": null,
+      "dhcp_start": "203.0.113.100",
+      "dhcp_stop": "203.0.113.200",
+      "enabled": true,
+      "gateway_ip": "203.0.113.1",
+      "id": "0000000000000000000000c1",
+      "name": "Management",
+      "subnet": "203.0.113.1/24",
+      "summary": "Management (VLAN 255)",
+      "vlan": 255,
+      "warnings": []
+    },
+    "override": null,
+    "poe": {
+      "capable": false
+    },
+    "port_idx": 3,
+    "profile": {
+      "carries": "untagged native VLAN only (access)",
+      "forward": "native",
+      "id": "0000000000000000000000b2",
+      "name": "Access Port VLAN 255 Management Auto",
+      "poe_mode": "off",
+      "source": "port_table",
+      "tagged_vlans": []
+    },
+    "switch": {
+      "mac": "02:00:00:00:00:01",
+      "model": "USFXG",
+      "name": "USW Flex XG",
+      "uplink": {
+        "port_idx": 2,
+        "uplink_mac": "02:00:00:00:00:03",
+        "uplink_remote_port": 9
+      }
+    }
+  },
+  "5": {
+    "addressing": {
+      "fixed_ip": null,
+      "in_dhcp_pool": false,
+      "ip": "203.0.113.51",
+      "lease_expires_at": null,
+      "notes": [
+        "no DHCP lease recorded, so this address is configured on the host itself",
+        "203.0.113.51 sits outside the DHCP pool 203.0.113.100\u2013203.0.113.200"
+      ],
+      "summary": "statically addressed 203.0.113.51",
+      "uses_fixed_ip": null,
+      "verdict": "static"
+    },
+    "connected_device": {
+      "fingerprint_confidence": null,
+      "first_seen": null,
+      "hostname": null,
+      "ip": "203.0.113.51",
+      "ipv6": [],
+      "is_unifi_device": false,
+      "last_seen": 1789999995,
+      "mac": "02:00:00:00:00:51",
+      "model": null,
+      "name": null,
+      "network_name": "Management",
+      "uptime_seconds": null,
+      "vendor": null,
+      "vlan": 255,
+      "wired_rate_mbps": 5000
+    },
+    "counters": {
+      "rx": {
+        "broadcast": 1,
+        "bytes": 5000,
+        "crc_errors": 3,
+        "dropped": 0,
+        "errors": 7,
+        "multicast": 3,
+        "packets": 50
+      },
+      "tx": {
+        "broadcast": 2,
+        "bytes": 10000,
+        "dropped": 0,
+        "errors": 0,
+        "multicast": 4,
+        "packets": 100
+      }
+    },
+    "freshness": {
+      "is_suspicious": false,
+      "last_seen_age_seconds": 10,
+      "reasons": []
+    },
+    "last_connection": {
+      "connected": true,
+      "connected_at": 1789996400,
+      "ip": "203.0.113.51",
+      "last_seen": 1789999990,
+      "mac": "02:00:00:00:00:51"
+    },
+    "link": {
+      "autoneg": true,
+      "enabled": true,
+      "flowctrl_rx": false,
+      "flowctrl_tx": false,
+      "forward": "native",
+      "full_duplex": true,
+      "is_uplink": false,
+      "jumbo": null,
+      "link_down_count": 2,
+      "media": "GE",
+      "name": "Port 5",
+      "op_mode": "switch",
+      "speed_caps": 1048623,
+      "speed_mbps": 5000,
+      "stp_state": "forwarding",
+      "up": true
+    },
+    "lldp": {
+      "neighbour": null,
+      "resolved": null
+    },
+    "network": {
+      "dhcp_enabled": true,
+      "dhcp_relay_enabled": null,
+      "dhcp_start": "203.0.113.100",
+      "dhcp_stop": "203.0.113.200",
+      "enabled": true,
+      "gateway_ip": "203.0.113.1",
+      "id": "0000000000000000000000c1",
+      "name": "Management",
+      "subnet": "203.0.113.1/24",
+      "summary": "Management (VLAN 255)",
+      "vlan": 255,
+      "warnings": []
+    },
+    "override": {
+      "name": "NAS 10G",
+      "port_idx": 5,
+      "portconf_id": "0000000000000000000000b1",
+      "setting_preference": "auto"
+    },
+    "poe": {
+      "capable": false
+    },
+    "port_idx": 5,
+    "profile": {
+      "carries": "untagged native VLAN only (access)",
+      "forward": "native",
+      "id": "0000000000000000000000b1",
+      "name": "Access Port VLAN 255 Management 10Gbps",
+      "poe_mode": "off",
+      "source": "override",
+      "tagged_vlans": []
+    },
+    "switch": {
+      "mac": "02:00:00:00:00:01",
+      "model": "USFXG",
+      "name": "USW Flex XG",
+      "uplink": {
+        "port_idx": 2,
+        "uplink_mac": "02:00:00:00:00:03",
+        "uplink_remote_port": 9
+      }
+    }
+  }
+}

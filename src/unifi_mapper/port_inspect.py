@@ -15,6 +15,7 @@ Example:
 from __future__ import annotations
 
 import logging
+from .analysis.link_settings import effective_port_settings
 from .api_client import UnifiApiClient
 from .core.utils.redact import strip_secrets
 from dataclasses import dataclass, field
@@ -1016,41 +1017,18 @@ def _resolve_profile(
 
     A port's configuration can come from a ``port_overrides`` entry or be
     inherited from the profile referenced in ``port_table``. The override wins
-    because that is what the controller pushes to the device.
+    because that is what the controller pushes to the device. The rule lives in
+    :func:`unifi_mapper.analysis.link_settings.effective_port_settings`.
     """
-    override = next(
-        (
-            o
-            for o in (switch.get('port_overrides') or [])
-            if isinstance(o, dict) and o.get('port_idx') == port_idx
-        ),
-        {},
-    )
-    profile_id = override.get('portconf_id') or port_table.get('portconf_id')
-    source = 'override' if override.get('portconf_id') else 'port_table'
-    profile = profiles.get(profile_id or '', {})
-
-    tagged_ids = profile.get('tagged_networkconf_ids')
-    tagged_vlans: Optional[list[int]] = None
-    if isinstance(tagged_ids, list):
-        tagged_vlans = [
-            networks[t]['vlan']
-            for t in tagged_ids
-            if t in networks and networks[t].get('vlan') is not None
-        ]
-
+    s = effective_port_settings(switch, port_table, port_idx, profiles, networks)
     return PortProfile(
-        profile_id=profile_id,
-        name=profile.get('name'),
-        forward=profile.get('forward') or override.get('forward'),
-        native_network_id=(
-            override.get('native_networkconf_id')
-            or profile.get('native_networkconf_id')
-            or port_table.get('native_networkconf_id')
-        ),
-        tagged_vlans=tagged_vlans,
-        poe_mode=override.get('poe_mode') or profile.get('poe_mode'),
-        source=source if profile_id else 'unknown',
+        profile_id=s.profile_id,
+        name=s.name,
+        forward=s.forward,
+        native_network_id=s.native_network_id,
+        tagged_vlans=s.tagged_vlans,
+        poe_mode=s.poe_mode,
+        source=s.source,
     )
 
 
