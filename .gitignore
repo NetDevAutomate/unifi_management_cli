@@ -47,6 +47,7 @@ htmlcov/
 *~
 
 # AI assistants
+.agents/
 .claude/
 CLAUDE.md
 .kiro/
