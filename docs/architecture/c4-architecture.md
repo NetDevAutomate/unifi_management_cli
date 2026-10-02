@@ -125,7 +125,7 @@ C4Container
         Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI. Subcommands: discover, find, analyze, diagnose, stp, inventory, verify. Rich terminal UI with tables and progress.")
         Container(network_toolkit_cli, "unifi-network-toolkit", "Python / argparse", "Script-friendly CLI. Subcommands: discover, analyze, find, diagnose. Designed for piping and automation.")
         Container(inventory_cli, "unifi-inventory", "Python / argparse", "Dedicated inventory report generator. Exports device and client inventory in structured formats.")
-        Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP discovery server. Runs over stdio. Backed by YAML manifests for 53 registered automation tools and lazy-loading tool proxies.")
+        Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server. Runs over stdio. Backed by YAML manifests for 76 registered tools, run read-only through ToolRunner.")
         Container(shared_lib, "unifi_mapper library", "Python 3.12 package", "Shared library providing API clients, domain models, analysis engines, diagnostic tools, discovery utilities, connectivity analysis, Protect integration, topology visualisation, and report generation.")
     }
 
@@ -159,7 +159,7 @@ System_Boundary(platform, "UniFi Management CLI") {
     Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI with Rich terminal UI")
     Container(network_toolkit_cli, "unifi-network-toolkit", "Python / argparse", "Script-friendly CLI for automation")
     Container(inventory_cli, "unifi-inventory", "Python / argparse", "Inventory report generator")
-    Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP discovery server backed by 53 YAML-registered tools")
+    Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server backed by 76 YAML-registered tools")
     Container(shared_lib, "unifi_mapper library", "Python 3.12 package", "Shared library: API clients, models, analysis, diagnostics, Protect, topology")
 }
 
@@ -312,7 +312,7 @@ Rel(toolkit_adapters_c, api_client_c, "Wraps")
 
 ### 3.3 Analysis and Diagnostic Components
 
-The intelligence layer contains the toolkit functions exposed to CLI workflows and the 53 YAML-registered MCP automation tools. Tools receive a client/config object, query the UniFi controller surface they belong to, and return structured results.
+The intelligence layer contains the toolkit functions exposed to CLI workflows and the 76 YAML-registered MCP tools. Tools receive a client/config object, query the UniFi controller surface they belong to, and return structured results.
 
 ```mermaid
 C4Component
@@ -461,7 +461,7 @@ C4Component
     title Component Diagram - MCP Server
 
     Container_Boundary(mcp_sub, "MCP Server Container") {
-        Component(mcp_server_c, "server.py / FastMCP app", "FastMCP", "FastMCP server named 'unifi-management'. Exposes three public meta-tools: search_tools, list_categories, get_tool_info. Acts as the coordination layer for progressive tool discovery.")
+        Component(mcp_server_c, "server.py / FastMCP app", "FastMCP", "FastMCP server named 'unifi-management'. Exposes four public meta-tools: search_tools, list_categories, get_tool_info, execute_tool (read-only tools through ToolRunner). Acts as the coordination layer for progressive tool discovery.")
         Component(registry_c, "registry.py / ToolRegistry", "Python", "Dynamic tool discovery from YAML manifests. Singleton with thread-safe lazy loading via ToolProxy. Supports search by query string, category, and tag list. Returns summary or full detail levels.")
         Component(tool_proxy_c, "registry.py / ToolProxy", "Python", "Lazy-loading proxy per tool. Defers importlib.import_module() until first execution. Thread-safe via Lock. Reduces startup time and memory when only a subset of tools is used.")
         Component(tool_metadata_c, "registry.py / ToolMetadata", "Python dataclass", "Per-tool metadata: name, module path, handler name, description, category, priority (P1/P2/P3), tags list, parameter schema.")
@@ -498,7 +498,7 @@ Container_Boundary(mcp_sub, "MCP Server") {
     Component(registry_c, "ToolRegistry", "Python", "Singleton: YAML manifest loading, search by query/category/tag")
     Component(tool_proxy_c, "ToolProxy", "Python", "Lazy-loading proxy with thread-safe importlib deferred load")
     Component(tool_metadata_c, "ToolMetadata", "Python dataclass", "name, module, handler, description, category, priority, tags")
-    Component(manifests_c, "manifests/ (6 YAML files)", "YAML", "Tool definitions for 53 analysis, diagnostics, discovery, connectivity, network, and protect tools")
+    Component(manifests_c, "manifests/ (7 YAML files)", "YAML", "Tool definitions for 76 analysis, connectivity, diagnostics, discovery, network, observability and protect tools")
     Component(network_tools_c, "tools/network.py", "Python", "Network tool handler implementations")
     Component(protect_tools_c, "tools/protect.py", "Python", "Protect tool handler implementations")
 }
@@ -1233,7 +1233,7 @@ sequenceDiagram
     Assistant->>Server: search_tools(query="stp")
     Server->>Registry: search(query, category, tags)
     Registry->>Manifest: load manifests on first access
-    Manifest-->>Registry: 53 tool metadata records
+    Manifest-->>Registry: 76 tool metadata records
     Registry-->>Server: matching summaries
     Server-->>Assistant: tool names and descriptions
     Assistant->>Server: get_tool_info("discover_stp_topology")
@@ -1260,7 +1260,7 @@ The exception hierarchy divides all errors into `UniFiRetryableError` and `UniFi
 
 ### Code Mode Pattern in the MCP Server
 
-The MCP server exposes `search_tools`, `list_categories`, and `get_tool_info` as first-class tools rather than relying on the MCP tool listing protocol alone. This is the Code Mode pattern: AI assistants are expected to call `search_tools(query="stp")` and `get_tool_info("discover_stp_topology")` before any host code resolves an executable tool proxy. This reduces hallucination of tool names and allows the assistant to inspect the full catalogue of 53 registered tools without receiving all tool definitions upfront.
+The MCP server exposes `search_tools`, `list_categories`, `get_tool_info` and `execute_tool` as first-class tools rather than relying on the MCP tool listing protocol alone. This is the Code Mode pattern: AI assistants are expected to call `search_tools(query="stp")` and `get_tool_info("discover_stp_topology")` before `execute_tool("discover_stp_topology", {})`. This reduces hallucination of tool names and allows the assistant to inspect the full catalogue of 76 registered tools without receiving all tool definitions upfront. Hosts that defer tool schemas can use the direct surface (`UNIFI_MCP_TOOL_SURFACE=direct`) instead.
 
 ### YAML Manifests as the Tool Contract
 

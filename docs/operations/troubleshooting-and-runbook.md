@@ -612,76 +612,69 @@ Run the Protect client as a persistent async service rather than a one-shot comm
 
 #### Symptom
 
-- Claude Desktop shows `unifi-management` as disconnected or not loading tools
-- Tool calls fail silently with no response
-- `uvx run unifi-mcp` exits immediately with no output
+- The MCP client shows the `unifi` server as disconnected or lists no tools
+- Tool calls return `[CONFIG_MISSING]`, `[AUTHENTICATION_FAILED]` or `[CONTROLLER_UNREACHABLE]`
+- `unifi-mcp` exits immediately
 
 #### Diagnostic Flowchart
 
 ```mermaid
 flowchart TD
-    A[MCP server not working] --> B{Does uvx run unifi-mcp start?}
-    B -->|No - exits immediately| C{Check stderr output}
-    C -->|UNIFI_URL missing| D[Set all required env vars in claude_desktop_config.json]
-    C -->|Import error| E[Run: uv sync to reinstall dependencies]
-    C -->|Port already in use| F[Kill existing unifi-mcp process]
-
-    B -->|Yes, starts but tools fail| G{Which tool is failing?}
-    G -->|Network tools| H[Verify UNIFI_URL and UNIFI_CONSOLE_API_TOKEN in MCP env config]
-    G -->|Protect tools| I[Verify PROTECT_HOST, PROTECT_USERNAME, PROTECT_PASSWORD]
-    G -->|All tools| J[Test API connectivity directly with unifi-mapper first]
-
-    B -->|Claude Desktop shows disconnected| K{Check Claude Desktop logs}
-    K -->|Connection refused| L[MCP server is not running - check command path]
-    K -->|Auth error| M[Check env vars passed to uvx command in config]
+    A[MCP server not working] --> B{"unifi-mcp --version prints unifi-management-cli?"}
+    B -->|No, or a different package| C["Launch with --from the repo path or git URL; never a bare uvx unifi-mcp"]
+    B -->|Yes| D{"unifi-mcp --check exits 0?"}
+    D -->|No - controller not ready| E{"check: source and tried"}
+    E -->|source none| F[Set UNIFI_CONFIG in the client env, or create ~/.config/unifi_management_cli/prod.env]
+    E -->|skipped_reason set| G[The client exports a different controller host than the file: set UNIFI_CONFIG to the file for this site]
+    D -->|Yes| H{Which tools fail?}
+    H -->|network category| I[network_api family: UNIFI_NETWORK_HOST, UNIFI_NETWORK_API_KEY, UNIFI_NETWORK_SITE_ID]
+    H -->|protect category| J[protect family: PROTECT_HOST, PROTECT_USERNAME, PROTECT_PASSWORD]
+    H -->|all controller tools| K["Test the same env file with unifi-mapper --config FILE"]
+    H -->|old behaviour after a code change| L["uvx --refresh, or uv tool install --reinstall"]
 ```
 
-#### Claude Desktop Configuration
+#### Client configuration
 
-The MCP server configuration must be in `claude_desktop_config.json` (typically `~/.config/Claude/claude_desktop_config.json` on Linux, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+Point `UNIFI_CONFIG` at an env file instead of putting credentials in the client config:
 
 ```json
 {
   "mcpServers": {
-    "unifi-management": {
+    "unifi": {
       "command": "uvx",
-      "args": ["--from", "unifi-management-cli", "unifi-mcp"],
+      "args": ["--python", "3.12", "--from", "/ABS/PATH/TO/unifi_management_cli", "unifi-mcp"],
       "env": {
-        "UNIFI_URL": "https://192.0.2.1",
-        "UNIFI_SITE": "default",
-        "UNIFI_CONSOLE_API_TOKEN": "your_token",
-        "UNIFI_VERIFY_SSL": "false",
-        "PROTECT_HOST": "192.0.2.1",
-        "PROTECT_USERNAME": "admin",
-        "PROTECT_PASSWORD": "your_password"
+        "UNIFI_CONFIG": "/Users/you/.config/unifi_management_cli/prod.env"
       }
     }
   }
 }
 ```
 
-If the `unifi-management-cli` package is not published to PyPI (local development), replace with a direct path:
-
-```json
-"command": "uv",
-"args": ["run", "--project", "/absolute/path/to/unifi_management_cli", "unifi-mcp"]
-```
+GUI hosts such as Claude Desktop start with a minimal `PATH`; use the absolute path of an
+installed `unifi-mcp` (`uv tool install --python 3.12 <repo>`) or `scripts/unifi-mcp-launch.sh`
+as the `command`. The [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md) has the kiro-cli,
+Claude Code and Codex configs.
 
 #### Resolution
 
 ```bash
-# Test the MCP entry point directly:
-uvx --from . unifi-mcp --help
-# or for local dev:
-uv run unifi-mcp --help
+# Confirm which package runs, then where its config comes from (key names only, no values)
+uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --version
+UNIFI_CONFIG=~/.config/unifi_management_cli/prod.env \
+  uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --check
 
-# Verify all 53 registered automation tools are discoverable by checking startup logs
-UNIFI_URL=https://192.0.2.1 UNIFI_CONSOLE_API_TOKEN=token uv run unifi-mcp 2>&1 | head -20
+# More detail on stderr while the client runs it
+UNIFI_MCP_LOG_LEVEL=DEBUG  # add to the client's env block
 ```
+
+The server never reads a `.env` in its working directory, so a file that works for the CLI
+from the repo root is not seen by the MCP server unless `UNIFI_CONFIG` names it.
 
 #### Prevention
 
-Test the MCP server with direct environment variables before configuring Claude Desktop. Confirm tools are loading with a simple Claude prompt: "List the available UniFi tools."
+Run `unifi-mcp --check` with the client's exact `env` before configuring the client, and launch
+only with `--from`.
 
 ---
 

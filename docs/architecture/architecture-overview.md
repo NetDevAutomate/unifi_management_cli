@@ -82,7 +82,7 @@ graph TB
     end
 
     subgraph AT["Layer 4 - Analysis Toolkit"]
-        AN["analysis/ (40 registered tools)"]
+        AN["analysis/ (46 registered tools)"]
         DG["diagnostics (8 registered tools)"]
         DS["discovery (5 registered tools)"]
         OB["observability (2 registered tools)"]
@@ -167,6 +167,8 @@ graph LR
         MCP_SEARCH["search_tools()"]
         MCP_LIST["list_categories()"]
         MCP_INFO["get_tool_info()"]
+        MCP_EXEC["execute_tool()"]
+        RUNNER["ToolRunner\nvalidate, gate, mask"]
         REGISTRY["ToolRegistry\nYAML manifests"]
     end
 
@@ -192,6 +194,8 @@ graph LR
     MCP_SEARCH --> REGISTRY
     MCP_LIST --> REGISTRY
     MCP_INFO --> REGISTRY
+    MCP_EXEC --> RUNNER
+    RUNNER --> REGISTRY
 ```
 
 ### typer_cli.py
@@ -224,15 +228,26 @@ The root callback intercepts `--connected-devices`, `--dry-run`, and `--verify-u
 
 ### MCP Server (mcp/server.py)
 
-The `unifi-mcp` server is built on FastMCP. It exposes three public discovery meta-tools that implement the Code Mode pattern (see [Section 12](#12-design-patterns)):
+The `unifi-mcp` server is built on the FastMCP bundled with the official MCP Python SDK (`mcp>=1.30,<1.31`). It exposes four public meta-tools that implement the Code Mode pattern (see [Section 12](#12-design-patterns)):
 
 | Tool | Purpose |
 | --- | --- |
 | `search_tools` | Discover tools by query, category, or tag |
 | `list_categories` | Enumerate all category groups |
-| `get_tool_info` | Fetch full parameter schema for a named tool |
+| `get_tool_info` | Fetch the parameters, JSON input/output schemas and annotations for a named tool |
+| `execute_tool` | Run a read-only catalog tool by name; mutating tools are refused with `MUTATION_REFUSED` |
 
-The MCP server does not hard-code any domain logic. It delegates discovery to the `ToolRegistry` and underlying YAML manifests. Executable `ToolProxy` objects are available through the registry for host code and tests; they are not currently a public FastMCP `execute_tool` surface.
+With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) the server also lists the 62 non-mutating, non-pipeline catalog tools directly. The server holds no domain logic. Its modules:
+
+| Module | Responsibility |
+| --- | --- |
+| `mcp/server.py` | `main()` (`--version`, `--help`, `--surface`, `--config`, `--check`), the meta-tools, the lifespan, `create_server(surface)`, the `unifi://catalog` and `unifi://config/status` resources and two prompts |
+| `mcp/config.py` | CWD-independent config discovery (`--config`, `UNIFI_CONFIG`, XDG, `~/.config`, legacy), per-family loading (`controller`, `network_api`, `protect`), the bounded Keychain/1Password pre-check and the `UNIFI_MCP_*` settings |
+| `mcp/registry.py` | `ToolRegistry`: validates and loads the YAML manifests (a bad file or entry is skipped and logged), search and metadata |
+| `mcp/catalog.py` | `ToolCatalog`: builds SDK tools (input/output schemas, titles, annotations) lazily; never builds mutating tools |
+| `mcp/runner.py` | `ToolRunner`: the one call path for `execute_tool` and direct tools: mutation gate, signature validation, credential gate, concurrency cap and optional deadline, error codes, secret masking, `isError: true` on failure |
+
+The lifespan resolves config once, installs one `SharedControllerClient` (from `core/utils/client.py`) behind a read-only HTTP transport, so a server process logs in to the controller once and every async tool borrows that session, and points `sys.stdout` at stderr so stray prints can't corrupt JSON-RPC. See the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md) for launch modes and client configuration.
 
 ### New CLI command groups (v1.1)
 
@@ -467,7 +482,7 @@ The toolkit is 42 individual async functions organised across four sub-packages 
 
 ```mermaid
 graph TD
-    subgraph analysis["analysis/ (40 registered tools)"]
+    subgraph analysis["analysis/ (46 registered tools)"]
         direction LR
         subgraph original["Original Tools"]
             A1["detect_ip_conflicts"]
@@ -1006,7 +1021,7 @@ class DeviceRepository(Generic[T]):
 
 ### Lazy Loading / Proxy Pattern (mcp/registry.py)
 
-`ToolProxy` defers importing a tool's implementation module until the first `execute()` call. This keeps MCP server startup fast even though 61 tools are registered -- only the YAML manifests are parsed at startup:
+`ToolProxy` defers importing a tool's implementation module until the first `execute()` call, and `ToolCatalog` (`mcp/catalog.py`) likewise builds a tool's SDK definition (schemas, annotations) only when it is first looked up or listed. This keeps MCP server startup fast even though 76 tools are registered -- only the YAML manifests are parsed at startup on the default discovery surface:
 
 ```python
 class ToolProxy:
@@ -1039,15 +1054,15 @@ async with UniFiProtectClient(config) as client:
 
 ### Code Mode Pattern (mcp/server.py + mcp/registry.py)
 
-The MCP server implements a progressive-disclosure pattern designed for AI agents. Rather than exposing 53 individual tool definitions to the AI's context window, it exposes three public discovery meta-tools. Host code can then execute selected tools through `ToolRegistry` / `ToolProxy`:
+The MCP server implements a progressive-disclosure pattern designed for AI agents. On the default discovery surface, rather than exposing 76 individual tool definitions to the AI's context window, it exposes four public meta-tools, and the agent runs the tool it chose through `execute_tool`:
 
 ```text
 1. search_tools(category="analysis") -> list of matching tools
-2. get_tool_info("detect_ip_conflicts") -> parameters and description
-3. ToolRegistry.get_tool("detect_ip_conflicts").execute() -> result
+2. get_tool_info("detect_ip_conflicts") -> parameters, input_schema and description
+3. execute_tool("detect_ip_conflicts", {}) -> {"ok": true, "result": ...}
 ```
 
-This keeps the AI's tool list short and avoids overwhelming the model with schema for all 61 tools at once. The agent requests detail only for tools it intends to use.
+This keeps the AI's tool list short (4 tools, about 6.4k characters of `tools/list`) and avoids overwhelming the model with schema for all 76 tools at once. The agent requests detail only for tools it intends to use. Hosts that defer tool schemas themselves can use the direct surface instead (66 tools listed).
 
 ---
 
@@ -1148,8 +1163,8 @@ sequenceDiagram
     participant AGENT as AI Agent (Claude)
     participant MCP as MCP Server
     participant REG as ToolRegistry
-    participant HOST as Host code / test
-    participant PROXY as ToolProxy
+    participant RUN as ToolRunner
+    participant CAT as ToolCatalog
     participant TOOL as Tool Module
 
     AGENT->>MCP: search_tools(category="analysis")
@@ -1161,19 +1176,18 @@ sequenceDiagram
     AGENT->>MCP: get_tool_info("detect_ip_conflicts")
     MCP->>REG: get_metadata("detect_ip_conflicts")
     REG-->>MCP: ToolMetadata {parameters, tags, ...}
-    MCP-->>AGENT: full schema with parameter definitions
+    MCP-->>AGENT: metadata + input_schema + output_schema
 
-    HOST->>REG: get_tool("detect_ip_conflicts")
-    REG-->>HOST: ToolProxy
-
-    HOST->>PROXY: execute()
-    PROXY->>PROXY: _load_implementation() [lazy import on first call]
-    PROXY->>TOOL: importlib.import_module("unifi_mapper.analysis.ip_conflicts")
-    TOOL-->>PROXY: module loaded
-
-    PROXY->>TOOL: detect_ip_conflicts()
-    TOOL-->>PROXY: IPConflictReport
-    PROXY-->>HOST: result
+    AGENT->>MCP: execute_tool("detect_ip_conflicts", {})
+    MCP->>RUN: run(name, params)
+    RUN->>CAT: get(name) [refuses mutating; lazy import + build]
+    CAT->>TOOL: importlib.import_module("unifi_mapper.analysis.ip_conflicts")
+    RUN->>RUN: validate params, credential gate
+    RUN->>TOOL: detect_ip_conflicts()
+    TOOL-->>RUN: IPConflictReport
+    RUN->>RUN: mask secrets, build envelope
+    RUN-->>MCP: CallToolResult {ok, result} (isError on failure)
+    MCP-->>AGENT: result
 ```
 
 ### 13.4 Protect Event Processing Flow
@@ -1434,10 +1448,12 @@ Commands executed: `ping` (latency matrix), `iperf3` (bandwidth test).
 
 ### 15.5 MCP Protocol
 
-The MCP server implements the Model Context Protocol (MCP) 1.0 specification using the FastMCP SDK. AI clients connect via stdio (for local use) or SSE (for remote deployment). The server exports:
+The MCP server implements the Model Context Protocol with the FastMCP bundled in the official MCP Python SDK (`mcp>=1.30,<1.31`). AI clients connect over stdio; no network transport is served. The server exports:
 
-- 3 public discovery meta-tools (search, list, info)
-- 61 registered automation tools in YAML manifests, executable through `ToolRegistry` / `ToolProxy` in host code
+- 4 public meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`); with `--surface direct`, also the 62 non-mutating, non-pipeline catalog tools
+- 76 registered tools in YAML manifests, of which 73 run through `execute_tool` (the 3 mutating tools are refused)
+- 2 resources (`unifi://catalog`, `unifi://config/status`) and 2 prompts (`troubleshoot_port_link`, `plan_stp_change`)
+- Server `instructions`, per-tool annotations, and `serverInfo.version` set to the package version
 
 ---
 
@@ -1477,7 +1493,9 @@ For the async toolkit and MCP server, credentials are resolved at runtime via `g
 2. **macOS Keychain**: Stored as JSON under service name `unifi-mcp`, account `controller`, via the `keyring` library.
 3. **1Password CLI**: Reads an item named `UniFi Controller` from the default 1Password vault using the `op` CLI.
 
-If all three sources fail, a `ToolError` with `error_code=AUTHENTICATION_FAILED` is raised with a structured suggestion.
+If all three sources fail, a `ToolError` with `error_code=AUTHENTICATION_FAILED` is raised with a structured suggestion. Under the MCP server the chain runs off the event loop, bounded by `UNIFI_MCP_CREDENTIAL_TIMEOUT` (default 15 s), and an exhausted or slow chain is reported as `CONFIG_MISSING`.
+
+The MCP server does **not** use the resolution order above: it never reads a `.env` in the working directory, and loads its file per credential family (`--config`, `UNIFI_CONFIG`, then the XDG/`~/.config` files, then the legacy `~/.config/unifi_network_mapper/prod.env`). See [Configuration](../mcp-server/MCP_SERVER_GUIDE.md#configuration) in the MCP server guide.
 
 ### UnifiConfig dataclass
 

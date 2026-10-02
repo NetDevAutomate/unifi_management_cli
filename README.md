@@ -9,7 +9,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **70 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
+- **76 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
 - **MCP Server**: AI-assisted network troubleshooting via Model Context Protocol
 
@@ -417,53 +417,57 @@ Schedules: link errors + roaming every 5 min, config drift + health + radio hour
 
 ### MCP Server (AI-Assisted Troubleshooting)
 
-The MCP Server enables AI assistants like Claude to directly query and troubleshoot your UniFi network infrastructure using the Model Context Protocol.
+The MCP Server enables AI assistants like Claude to directly query and troubleshoot your UniFi network infrastructure using the Model Context Protocol. It is read-only against the controller: tools that change it are refused, and changes go through this CLI.
 
-**Installation:**
+> [!WARNING]
+> **Never run a bare `uvx unifi-mcp`.** `unifi-mcp` on PyPI is an unrelated third-party package; a bare `uvx unifi-mcp` downloads and runs it and hands it any `UNIFI_*` credentials in your environment. Always launch with `--from <path>` or `--from git+https://github.com/NetDevAutomate/unifi_management_cli@<tag>`, and check with `unifi-mcp --version` (it prints `unifi-management-cli`).
+
+**Run it from a checkout:**
 
 ```bash
-# Run directly with uvx (recommended)
-uvx run unifi-mcp
+# Check the config it will use (key names only), then serve over stdio
+uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --check
+uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp
 
-# Or install and run
-uv tool install .
-unifi-mcp
+# After changing the checkout, refresh uvx's cached build
+uvx --refresh --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --version
+
+# Or install it as a tool
+uv tool install --python 3.12 /ABS/PATH/TO/unifi_management_cli
 ```
 
-**Claude Desktop Configuration:**
-
-Add to your `claude_desktop_config.json`:
+Credentials come from an env file, not the client config: `--config PATH`, else `UNIFI_CONFIG`, else `~/.config/unifi_management_cli/prod.env` (or `default.env`). A `.env` in the working directory is never read. Example client entry (`mcpServers` JSON, as used by kiro-cli, Claude Code and Claude Desktop):
 
 ```json
 {
   "mcpServers": {
-    "unifi-management": {
+    "unifi": {
       "command": "uvx",
-      "args": ["--from", "unifi-management-cli", "unifi-mcp"],
+      "args": ["--python", "3.12", "--from", "/ABS/PATH/TO/unifi_management_cli", "unifi-mcp"],
       "env": {
-        "UNIFI_URL": "https://192.0.2.1",
-        "UNIFI_SITE": "default",
-        "UNIFI_CONSOLE_API_TOKEN": "your_api_token",
-        "PROTECT_HOST": "192.0.2.1",
-        "PROTECT_USERNAME": "admin",
-        "PROTECT_PASSWORD": "your_password"
+        "UNIFI_CONFIG": "/Users/you/.config/unifi_management_cli/prod.env",
+        "UNIFI_MCP_TOOL_SURFACE": "direct"
       }
     }
   }
 }
 ```
 
-**Available Tools (70 total):**
+`UNIFI_MCP_TOOL_SURFACE=direct` lists every read-only tool to hosts that defer tool schemas; the default `discovery` surface lists four meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`). The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch mode, the Codex config, all environment variables, the error codes and the config discovery rules.
+
+**Available Tools (76 total):**
 
 | Category | Tools | Description |
 |----------|-------|-------------|
 | discovery | 5 | Device/IP/MAC location, client tracing and client history |
 | diagnostics | 8 | Health checks, performance analysis, security audit, single-port inspection, all-ports view, port profile diff, port evidence bundle |
-| observability | 2 | Event, alarm, system-log and admin-audit history; port counter rates |
+| observability | 2 | Event, alarm, system-log and admin-audit history; port counter rates and history |
 | connectivity | 4 | Firewall checks, path analysis, traceroute, inter-VLAN endpoint validation |
 | network | 6 | Firewall zones/policies, ACLs, DNS, clients, VLANs |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells |
-| analysis | 40 | Capacity, link quality, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, drift and change plans |
+| analysis | 46 | Capacity, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, drift and change plans |
+
+Three of the 76 change the controller and are never run over MCP.
 
 **Usage Example:**
 
@@ -505,10 +509,10 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (70 tools via FastMCP)
+└── MCP Server (76 tools via the MCP SDK's FastMCP)
 
 Analysis Toolkit
-├── Analysis Tools (40 tools)
+├── Analysis Tools (46 tools)
 ├── Diagnostics (8 tools)
 ├── Discovery (5 tools)
 ├── Observability (2 tools)

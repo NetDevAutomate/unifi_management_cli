@@ -1,7 +1,7 @@
 ---
 title: "The MCP guide and server docstrings miss the observability category and new counts"
 date: 2026-10-02
-status: open
+status: resolved
 severity: low
 components: [mcp/server, docs/mcp-server/MCP_SERVER_GUIDE.md]
 found_by: port diagnostics review (R3)
@@ -28,7 +28,8 @@ because they belong to an earlier change committed separately:
 
 The same guide has two more stale statements:
 
-- It gives `uvx install .` as the install command. The command is `uv tool install .`.
+- Its install command used an `install` subcommand of `uvx`, which doesn't exist. The
+  command is `uv tool install .`.
 - It says "MCP exposes Python validation and mutation tools". That contradicts
   `execute_tool`, which refuses controller writers with `MUTATION_REFUSED`.
 
@@ -50,7 +51,27 @@ or production.
   - discovery (4) → (5): add "client history".
   - Add "**observability** (2 tools): Event, alarm and system-log history; port counter
     rates".
-  - `uvx install .` → `uv tool install .`.
+  - Replace the install command with `uv tool install .`.
   - Reword the "mutation tools" sentence.
 
 `tests/mcp/test_port_diagnostic_tools.py::test_registry_totals` pins the registry counts.
+
+## Resolution
+
+Fixed by the MCP uvx standards work (branch `feat/mcp-uvx-standards`):
+
+- `server.py`: the module, `search_tools` and `list_categories` docstrings name all seven
+  categories, including `observability` (done with the server rework in plan item 9).
+- `docs/mcp-server/MCP_SERVER_GUIDE.md` was rewritten (plan item 20): the stack
+  (`mcp>=1.30,<1.31`, Python 3.12), every launch mode (uvx from a path or a git tag,
+  `uv tool install`, `uvx --refresh`, the legacy `uv --directory` + `UNIFI_CONFIG` launch and
+  `scripts/unifi-mcp-launch.sh`), the PyPI name-collision warning, config discovery and
+  credential families, both tool surfaces, every environment variable, `--version`,
+  `--help` and `--check`, the error envelope with `isError: true` and its codes, client
+  configs for kiro-cli, Claude Code and Codex, and per-category counts taken from
+  `ToolRegistry()` (76 tools: analysis 46, connectivity 4, diagnostics 8, discovery 5,
+  network 6, observability 2, protect 5). The control-boundary section now says no tool that
+  changes the controller runs over MCP.
+- `README.md`, `docs/architecture/architecture-overview.md`, `codemap.md`,
+  `providers/mcp-automation.md`, the MCP runbook section and the how-to guide were brought in
+  line; `IMPLEMENTATION_PROMPT.md` carries a "historical" banner.

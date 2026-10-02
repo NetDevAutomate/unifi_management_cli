@@ -4,13 +4,14 @@
 
 ## Scope
 
-The MCP interface lives under `src/unifi_mapper/mcp/` and exposes UniFi tooling to MCP-compatible assistants. The current public FastMCP server exposes three discovery meta-tools:
+The MCP interface lives under `src/unifi_mapper/mcp/` and exposes UniFi tooling to MCP-compatible assistants. The server (`unifi-mcp`, on the FastMCP bundled with the `mcp` SDK) exposes four public meta-tools:
 
 - `search_tools`
 - `list_categories`
 - `get_tool_info`
+- `execute_tool`, which runs any non-mutating catalog tool through `ToolRunner` (`mcp/runner.py`) and refuses mutating ones with `MUTATION_REFUSED`
 
-The registry also supports executable `ToolProxy` objects through `ToolRegistry.get_tool(name).execute(...)`. That execution path is available to host code/tests, but it is not currently exposed as a public `@mcp.tool()` in `server.py`.
+With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) it also lists the non-mutating, non-pipeline catalog tools directly, built by `ToolCatalog` (`mcp/catalog.py`) and run through the same `ToolRunner`. Config discovery is in `mcp/config.py`. Launch modes and client configs: [MCP Server Guide](../../mcp-server/MCP_SERVER_GUIDE.md). `ToolRegistry.get_tool(name).execute(...)` (`ToolProxy`) remains for host code and tests. The diagrams below show the registry and lazy-loading core; the runner, catalog and config modules are described in the guide and the [architecture overview](../architecture-overview.md#mcp-server-mcpserverpy).
 
 ## Component Diagram
 
@@ -25,7 +26,7 @@ C4Component
         Component(registry, "mcp/registry.py / ToolRegistry", "Python", "Loads manifests lazily, indexes metadata, supports category/tag/query search")
         Component(proxy, "mcp/registry.py / ToolProxy", "Python", "Thread-safe lazy import and sync/async handler execution")
         Component(metadata, "mcp/registry.py / ToolMetadata", "dataclass", "Tool contract: name, module, handler, description, category, priority, tags, parameters")
-        Component(manifests, "mcp/manifests/*.yaml", "YAML", "53 registered tool contracts across analysis, diagnostics, discovery, connectivity, network, and protect")
+        Component(manifests, "mcp/manifests/*.yaml", "YAML", "76 registered tool contracts across analysis, connectivity, diagnostics, discovery, network, observability and protect")
         Component(network_tools, "mcp/tools/network.py", "Python", "Network control tool handlers")
         Component(protect_tools, "mcp/tools/protect.py", "Python", "Protect inventory tool handlers")
     }
@@ -104,14 +105,15 @@ ToolProxy ..> "importlib" : imports handler module
 
 | Manifest | Category | Registered tools | Examples |
 | --- | --- | ---: | --- |
-| `analysis.yaml` | analysis | 30 | `discover_stp_topology`, `calculate_optimal_priorities`, `audit_mtu_consistency`, `validate_qos`, `analyze_traffic_matrix` |
-| `diagnostics.yaml` | diagnostics | 4 | `network_health_check`, `performance_analysis`, `security_audit`, `connectivity_analysis` |
-| `discovery.yaml` | discovery | 4 | `find_device`, `find_ip`, `find_mac`, `client_trace` |
+| `analysis.yaml` | analysis | 46 | `discover_stp_topology`, `audit_link_speeds`, `audit_port_profile_usage`, `check_poe_budget`, `audit_mtu_consistency`, `validate_qos` |
+| `diagnostics.yaml` | diagnostics | 8 | `network_health_check`, `inspect_switch_port`, `diagnose_switch_port`, `get_switch_ports`, `diff_port_profiles` |
+| `discovery.yaml` | discovery | 5 | `find_device`, `find_ip`, `find_mac`, `client_trace`, `get_client_history` |
+| `observability.yaml` | observability | 2 | `get_device_events`, `get_port_counter_rates` |
 | `connectivity.yaml` | connectivity | 4 | `firewall_check`, `path_analysis`, `check_inter_vlan_routing`, `traceroute` |
 | `network.yaml` | network | 6 | `get_firewall_zones`, `get_firewall_policies`, `get_acl_rules`, `get_dns_policies`, `get_clients`, `get_networks` |
 | `protect.yaml` | protect | 5 | `get_cameras`, `get_nvr_info`, `get_sensors`, `get_lights`, `get_doorbells` |
 
-Total registered automation tools: **53**.
+Total registered tools: **76** (3 mutating, never run over MCP; 11 pipeline tools, reachable only through `execute_tool`).
 
 ## Discovery Flow
 
@@ -163,4 +165,4 @@ sequenceDiagram
 - YAML manifests are the tool contract. Keep descriptions, tags, and parameters accurate whenever handler signatures change.
 - `ToolProxy.execute()` handles both synchronous and asynchronous handlers, which lets Network and Protect wrappers coexist behind the same registry.
 - The server entry point is `unifi_mapper.mcp.server:main`, installed as `unifi-mcp` in `pyproject.toml`.
-- If public MCP execution is added later, document it as a new server capability rather than implying it already exists.
+- Every call over MCP (`execute_tool` or a direct tool) goes through `ToolRunner`: mutation gate, signature validation, credential gate, error codes with `isError: true`, and secret masking.

@@ -1214,50 +1214,42 @@ sensor.back_door_sensor_battery
 
 ### Description
 
-The MCP (Model Context Protocol) server exposes 36 network tools to AI assistants. When connected to Claude Desktop, you can ask natural-language questions about your network and Claude will call the appropriate tools automatically. The server uses a tool discovery pattern: the AI calls `search_tools` first, then calls specific tools as needed.
+The MCP (Model Context Protocol) server exposes the toolkit's 76 tools to AI assistants (every one it runs is read-only against the controller). When connected to an MCP client such as kiro-cli, Claude Code or Claude Desktop, you can ask natural-language questions about your network and the assistant calls the appropriate tools. On the default discovery surface the AI calls `search_tools` first, then `execute_tool`; with `UNIFI_MCP_TOOL_SURFACE=direct` it calls tools by name.
 
 ### Prerequisites
 
-- UniFi Management CLI installed
-- Claude Desktop (or another MCP-compatible AI client)
-- Controller credentials configured as environment variables or in a config file
+- A checkout of this repository and [uv](https://docs.astral.sh/uv/)
+- An MCP-compatible AI client
+- Controller credentials in an env file such as `~/.config/unifi_management_cli/prod.env` (`chmod 600`)
 
 ### Step-by-Step Instructions
 
-**Step 1: Start the MCP server manually (for testing)**
+**Step 1: Check the server (never a bare `uvx unifi-mcp`: that name on PyPI is an unrelated package)**
 
 ```bash
-# Using uvx (recommended, no installation required)
-uvx --from . unifi-mcp
-
-# Or if installed as a uv tool
-uv tool install .
-unifi-mcp
+uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --version
+uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --check
 ```
 
-**Step 2: Configure Claude Desktop**
+**Step 2: Configure the client**
 
-Add the following to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+Point `UNIFI_CONFIG` at the env file rather than putting credentials in the client config. For Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS), use an absolute `command`, because GUI apps start with a minimal `PATH`:
 
 ```json
 {
   "mcpServers": {
-    "unifi-management": {
-      "command": "uvx",
-      "args": ["--from", "/path/to/unifi_management_cli", "unifi-mcp"],
+    "unifi": {
+      "command": "/Users/you/.local/bin/uvx",
+      "args": ["--python", "3.12", "--from", "/ABS/PATH/TO/unifi_management_cli", "unifi-mcp"],
       "env": {
-        "UNIFI_URL": "https://192.0.2.1",
-        "UNIFI_SITE": "default",
-        "UNIFI_CONSOLE_API_TOKEN": "your_api_token",
-        "UNIFI_VERIFY_SSL": "false",
-        "PROTECT_HOST": "192.0.2.1",
-        "PROTECT_USERNAME": "admin",
-        "PROTECT_PASSWORD": "your_password"
+        "UNIFI_CONFIG": "/Users/you/.config/unifi_management_cli/prod.env"
       }
     }
   }
 }
 ```
+
+The [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#client-configuration) has the kiro-cli, Claude Code and Codex configs.
 
 **Step 3: Restart Claude Desktop and verify the server is connected**
 
@@ -1285,32 +1277,34 @@ search_tools(query="ip conflict")
 → returns: [detect_ip_conflicts, find_ip, firewall_check, ...]
 
 get_tool_info("detect_ip_conflicts")
-→ returns: {description, parameters, category, tags}
+→ returns: {description, parameters, input_schema, output_schema, annotations, ...}
 
-detect_ip_conflicts()
-→ returns: conflict report
+execute_tool("detect_ip_conflicts", {})
+→ returns: {"ok": true, "result": <conflict report>}
 ```
 
-**The three meta-tools always available:**
+**The four meta-tools always available:**
 
 | Tool | Purpose |
 |------|---------|
 | `search_tools` | Find tools by query, category, or tags |
 | `list_categories` | Get all categories and their tool names |
 | `get_tool_info` | Get full parameter details for a specific tool |
+| `execute_tool` | Run a read-only tool by name (mutating tools are refused) |
 
-### Tool Categories Reference (53 registered automation tools)
+### Tool Categories Reference (76 registered tools)
 
 | Category | Count | Tools |
 |----------|-------|-------|
-| analysis | 30 | STP, VLAN, MTU, SFP, radio, traffic matrix, LAG, QoS, capacity, firmware, IP conflicts, storm detection, MAC table, change-plan, snapshot, drift, guard, preflight, and 10G validation tools |
-| diagnostics | 4 | `network_health_check`, `performance_analysis`, `security_audit`, `connectivity_analysis` |
-| discovery | 4 | `find_device`, `find_ip`, `find_mac`, `client_trace` |
+| analysis | 46 | STP, VLAN, MTU, SFP, radio, traffic matrix, LAG, QoS, capacity, firmware, IP conflicts, storm detection, MAC table, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, change-plan, snapshot, drift, guard, preflight, and 10G validation tools |
+| diagnostics | 8 | `network_health_check`, `performance_analysis`, `security_audit`, `connectivity_analysis`, `inspect_switch_port`, `get_switch_ports`, `diff_port_profiles`, `diagnose_switch_port` |
+| discovery | 5 | `find_device`, `find_ip`, `find_mac`, `client_trace`, `get_client_history` |
+| observability | 2 | `get_device_events`, `get_port_counter_rates` |
 | connectivity | 4 | `firewall_check`, `path_analysis`, `check_inter_vlan_routing`, `traceroute` |
 | network | 6 | `get_firewall_zones`, `get_firewall_policies`, `get_acl_rules`, `get_dns_policies`, `get_clients`, `get_networks` |
 | protect | 5 | `get_cameras`, `get_nvr_info`, `get_sensors`, `get_lights`, `get_doorbells` |
 
-Plus 3 meta-tools: `search_tools`, `list_categories`, `get_tool_info`.
+Plus 4 meta-tools: `search_tools`, `list_categories`, `get_tool_info`, `execute_tool`. See the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md) for the direct surface, errors and environment.
 
 ### Sequence Diagram: AI-Assisted Troubleshooting
 
@@ -1366,9 +1360,10 @@ flowchart TD
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | MCP server not visible in Claude | Config file path wrong | Verify `claude_desktop_config.json` path and syntax |
-| Tools return empty results | Controller not reachable from server process | Check `UNIFI_URL` and network access from the shell where uvx runs |
+| Tools return `[CONFIG_MISSING]` | The server found no env file, or a different controller's | Run `unifi-mcp --check` with the client's `env`; set `UNIFI_CONFIG` |
+| Tools return empty results | Controller not reachable from server process | Check `UNIFI_URL` and network access from the machine the client runs on |
 | `uvx` not found | uv not installed | Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh` |
-| Protect tools return errors | `PROTECT_HOST` not set | Add protect environment variables to the MCP server config |
+| Protect tools return `[CONFIG_MISSING]` | `PROTECT_HOST`, `PROTECT_USERNAME` or `PROTECT_PASSWORD` missing | Add them to the env file named by `UNIFI_CONFIG` |
 
 ---
 

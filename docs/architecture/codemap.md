@@ -1125,7 +1125,7 @@ The MCP server exposes all analysis, diagnostic, discovery, connectivity, networ
 
 ### 17.1 `mcp/server.py`
 
-**Purpose.** FastMCP server entry point. Registers three meta-tools and delegates all domain tool execution through the `ToolRegistry`.
+**Purpose.** MCP server entry point, on the FastMCP bundled with the `mcp` SDK. Registers four meta-tools, two resources and two prompts; every catalog tool call goes through `ToolRunner` (`mcp/runner.py`). With `--surface direct` it also lists the non-mutating, non-pipeline catalog tools built by `ToolCatalog` (`mcp/catalog.py`). Config discovery and credential families live in `mcp/config.py`.
 
 **Key tools registered directly.**
 
@@ -1133,9 +1133,10 @@ The MCP server exposes all analysis, diagnostic, discovery, connectivity, networ
 |---|---|
 | `search_tools(query, category, tags, detail_level)` | Progressive tool discovery; primary entry point for agents |
 | `list_categories()` | Returns dict mapping category names to tool name lists |
-| `get_tool_info(tool_name)` | Returns full metadata for a specific tool |
+| `get_tool_info(tool_name)` | Returns metadata, `input_schema`, `output_schema` and annotations for a tool |
+| `execute_tool(tool_name, params)` | Runs a read-only catalog tool through `ToolRunner`; refuses mutating tools |
 
-**Entry point.** `main()` calls `mcp.run()` for `uvx run unifi-mcp`.
+**Entry point.** `main()` (the `unifi-mcp` console script) parses `--version`, `--help`, `--surface`, `--config` and `--check`, then runs the stdio server; the lifespan resolves config and installs the shared read-only controller client. Launch it with `uvx --python 3.12 --from <repo path> unifi-mcp` (see the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md)).
 
 ---
 

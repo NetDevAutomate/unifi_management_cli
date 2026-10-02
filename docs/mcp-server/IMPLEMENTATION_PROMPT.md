@@ -1,5 +1,7 @@
 # UniFi Management MCP Server Implementation Prompt
 
+> **Historical:** the original design prompt, kept for history; it doesn't describe the current server. See [MCP_SERVER_GUIDE.md](MCP_SERVER_GUIDE.md).
+
 This document provides comprehensive instructions for implementing an MCP (Model Context Protocol) Server based on the Code Mode architecture pattern. The server will expose 30+ network management tools from the `unifi_management_cli` codebase for AI-assisted network troubleshooting and management.
 
 ## Project Goal
