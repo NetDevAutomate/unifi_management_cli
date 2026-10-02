@@ -1,18 +1,23 @@
 """Typer-based CLI for UniFi Network Mapper with automatic completions."""
 
+import json
 import logging
 import typer
 from .cli import get_default_config_path, load_env_from_config
 from .inventory_cli import inventory_app
+from contextlib import contextmanager
 from pathlib import Path
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.markup import escape
 from rich.table import Table
-from typing import Annotated, Any, Optional, cast
+from typing import Annotated, Any, Iterator, NoReturn, Optional, cast
 
 
 # Setup rich console
 console = Console()
+# Errors and progress go to stderr so `--json` output on stdout stays parseable.
+err_console = Console(stderr=True)
 JsonDict = dict[str, Any]
 
 
@@ -125,7 +130,7 @@ analyze_app = typer.Typer(help='📊 Network analysis and diagnostics')
 diagnose_app = typer.Typer(help='🏥 Network health and troubleshooting')
 stp_app = typer.Typer(help='🌳 STP topology analysis and optimization')
 radio_app = typer.Typer(help='📶 Wi-Fi radio configuration management')
-ports_app = typer.Typer(help='🔌 Switch port label management')
+ports_app = typer.Typer(help='🔌 Switch port labels and read-only port diagnostics')
 
 app.add_typer(find_app, name='find')
 app.add_typer(analyze_app, name='analyze')
@@ -2326,31 +2331,47 @@ def ports_refresh(
     console.print('\n💡 Re-run to verify; a clean run reports no changes needed.')
 
 
-@ports_app.command('inspect')
-def ports_inspect(
-    switch: str = typer.Argument(
-        ..., help="Switch name, model, IP or MAC (e.g. 'Office Desk Flex 5')"
-    ),
-    port: int = typer.Argument(..., help='Port index (1-based)'),
-):
-    """🔎 Inspect one switch port: link state, LLDP peer, client identity and counters.
+# ─── Read-only port diagnostics ──────────────────────────────────────────────
 
-    Gathers every fact the controller holds about a single port and flags when cached
-    controller state disagrees with ground truth, which is the usual cause of a port
-    that looks down but is actually carrying traffic.
 
-    Useful when a port misbehaves and the label alone is not enough — for example a
-    host that links up but never obtains DHCP.
+def _fail(message: object, code: int = 1) -> NoReturn:
+    """Print an error to stderr (unwrapped, so names and MACs stay intact) and exit."""
+    err_console.print(f'[red]❌ {escape(str(message))}[/red]', soft_wrap=True)
+    raise typer.Exit(code=code)
+
+
+def _emit_json(data: Any) -> None:
+    """Print ``data`` as JSON on stdout, with no Rich markup and secrets stripped."""
+    from .core.utils.redact import strip_secrets
+
+    clean, _ = strip_secrets(data)
+    typer.echo(json.dumps(clean, indent=2, default=str))
+
+
+@contextmanager
+def _readonly_client() -> Iterator[tuple[Any, str]]:
+    """Yield an authenticated ``UnifiApiClient`` behind the read-only guard, and its site.
+
+    Configuration comes only from ``--config`` (or the default config path).
+    The implicit ``./.env`` that ``UnifiConfig.from_env()`` would otherwise
+    read is never consulted, so a stray ``.env`` in the working directory
+    cannot redirect these commands to another controller. The guard refuses
+    any controller write before it reaches the network.
     """
     from .api_client import UnifiApiClient
     from .config import UnifiConfig
-    from .port_inspect import inspect_port, resolve_switch
+    from .core.utils.readonly import install_read_only_guard
+    from .core.utils.redact import redact_text
 
-    load_env_from_config(str(state.config_path))
+    config_path = str(state.config_path or get_default_config_path())
+    load_env_from_config(config_path)
     if not state.debug:
         setup_logging(debug=False)
+    try:
+        unifi_config = UnifiConfig.from_env(config_path)
+    except ValueError as e:
+        _fail(e)
 
-    unifi_config = UnifiConfig.from_env()
     client = UnifiApiClient(
         base_url=unifi_config.base_url,
         site=unifi_config.site,
@@ -2360,27 +2381,321 @@ def ports_inspect(
         api_token=unifi_config.api_token,
         timeout=unifi_config.timeout,
     )
-
-    if not client.login():
-        console.print('[red]❌ Could not authenticate to the controller[/red]')
-        raise typer.Exit(code=1)
-
     try:
-        try:
-            target = resolve_switch(client, unifi_config.site, switch)
-        except LookupError as e:
-            console.print(f'[red]❌ {e}[/red]')
-            raise typer.Exit(code=1)
+        authenticated = client.login()
+    except Exception as e:  # noqa: BLE001 - every login failure ends the command cleanly
+        _fail(f'Could not authenticate to the controller: {redact_text(e)}')
+    if not authenticated:
+        _fail('Could not authenticate to the controller')
 
-        try:
-            result = inspect_port(client, unifi_config.site, target, port)
-        except LookupError as e:
-            console.print(f'[red]❌ {e}[/red]')
-            raise typer.Exit(code=1)
-
-        result.render(console)
+    install_read_only_guard(client, unifi_config.site)
+    try:
+        yield client, unifi_config.site
     finally:
         client.logout()
+
+
+@contextmanager
+def _diagnostic_errors() -> Iterator[None]:
+    """Turn diagnostic failures into clean exits: 1 for not-found, 2 for bad input."""
+    from .core.utils.readonly import ReadOnlyViolation
+
+    try:
+        yield
+    except ReadOnlyViolation as e:
+        _fail(f'Refused a controller write. This is a bug, please report it: {e}')
+    except LookupError as e:
+        _fail(e)
+    except ValueError as e:
+        _fail(e, code=2)
+
+
+def _resolve(client: Any, site: str, query: str, *, any_device: bool = False) -> JsonDict:
+    """Resolve a switch (or any device) or exit 1 listing the candidates."""
+    from .diagnostic_reads import resolve_device
+
+    device, _, _ = resolve_device(
+        client, site, query, device_types=None if any_device else ('usw',)
+    )
+    return device
+
+
+def _slug(text: str) -> str:
+    return ''.join(ch if ch.isalnum() else '-' for ch in text.lower()).strip('-') or 'switch'
+
+
+@ports_app.command('inspect')
+def ports_inspect(
+    switch: str = typer.Argument(
+        ..., help="Switch name, model, IP or MAC (e.g. 'Office Desk Flex 5')"
+    ),
+    port: int = typer.Argument(..., help='Port index (1-based)'),
+    as_json: bool = typer.Option(
+        False, '--json', help='Print the inspection as JSON instead of tables'
+    ),
+):
+    """🔎 Inspect one switch port: link state, LLDP peer, client identity and counters.
+
+    Gathers every fact the controller holds about a single port and flags when cached
+    controller state disagrees with ground truth, which is the usual cause of a port
+    that looks down but is actually carrying traffic.
+
+    Useful when a port misbehaves and the label alone is not enough — for example a
+    host that links up but never obtains DHCP. Read-only.
+    """
+    from .port_inspect import inspect_port
+
+    with _diagnostic_errors(), _readonly_client() as (client, site):
+        target = _resolve(client, site, switch)
+        result = inspect_port(client, site, target, port)
+        if as_json:
+            _emit_json(result.to_dict())
+        else:
+            result.render(console)
+
+
+@ports_app.command('list')
+def ports_list(
+    switch: str = typer.Argument(..., help='Switch name, MAC or IP (an exact name or MAC wins)'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+    raw: bool = typer.Option(False, '--raw', help='Include the full sanitised stat/device record'),
+):
+    """📋 Every port on a switch: speed, duplex, autoneg, profile, LLDP peer and clients.
+
+    Also reports the switch's identity: model, firmware (and any pending upgrade,
+    recorded only), uptime, state and system stats. Read-only.
+    """
+    from .port_diagnostics import list_switch_ports
+    from .port_diagnostics_render import render_switch_ports
+
+    with _diagnostic_errors(), _readonly_client() as (client, site):
+        report = list_switch_ports(client, site, _resolve(client, site, switch), include_raw=raw)
+    if as_json:
+        _emit_json(report.to_json_dict())
+    else:
+        render_switch_ports(console, report)
+
+
+@ports_app.command('profile-diff')
+def ports_profile_diff(
+    profile_a: str = typer.Argument(..., help='First port profile name or _id'),
+    profile_b: str = typer.Argument(..., help='Second port profile name or _id'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🆚 Diff two port profiles key by key, and list every port using each one.
+
+    Settings are separated from bookkeeping keys (_id, name, site_id, attr_*), the
+    networks they reference are resolved to names and VLANs, and each profile's live
+    ports are listed with their negotiated speed. Read-only.
+    """
+    from .port_diagnostics import diff_port_profiles
+    from .port_diagnostics_render import render_profile_diff
+
+    with _diagnostic_errors(), _readonly_client() as (client, site):
+        diff = diff_port_profiles(client, site, profile_a, profile_b)
+    if as_json:
+        _emit_json(diff.to_json_dict())
+    else:
+        render_profile_diff(console, diff)
+
+
+@ports_app.command('client')
+def ports_client(
+    identifier: str = typer.Argument(
+        ..., metavar='CLIENT', help='Client MAC (any notation), IP, or a name/hostname substring'
+    ),
+    switch: Optional[str] = typer.Option(
+        None, '--switch', help='Check each record against this switch'
+    ),
+    port: Optional[int] = typer.Option(
+        None, '--port', min=1, help='Check against this port (needs --switch)'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🧭 Where does the controller place a client? Every client table, current and offline.
+
+    Reads stat/sta, v2 clients/active and clients/history, rest/user and stat/user. With
+    --switch/--port, each record is checked against that port from the record's own
+    location fields, independently of how the record was found. Read-only.
+    """
+    from .port_diagnostics import get_client_history
+    from .port_diagnostics_render import render_client_history
+
+    if port is not None and switch is None:
+        _fail('--port needs --switch', code=2)
+    with _diagnostic_errors(), _readonly_client() as (client, site):
+        target = _resolve(client, site, switch) if switch else None
+        history = get_client_history(client, site, identifier, switch=target, port_idx=port)
+    if as_json:
+        _emit_json(history.to_json_dict())
+    else:
+        render_client_history(console, history)
+
+
+@ports_app.command('events')
+def ports_events(
+    device: str = typer.Argument(..., metavar='SWITCH', help='Device name, MAC or IP'),
+    port: Optional[int] = typer.Argument(None, min=1, help='Only flag entries for this port'),
+    clients: Optional[list[str]] = typer.Option(
+        None, '--client', help='Also match entries for this client MAC (repeatable)'
+    ),
+    since_days: int = typer.Option(
+        365, '--since-days', min=1, max=3650, help='How far back to ask for history'
+    ),
+    max_events: int = typer.Option(
+        500, '--max-events', min=1, max=5000, help='Keep at most this many matches (newest)'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """📜 Events, alarms, system log and admin audit entries for a device, port or client.
+
+    Pages stat/event, reads list/alarm and pages the v2 system-log classes
+    (device-alert, admin-activity, update-alert, client-alert). Each source reports the
+    earliest entry it returned, which is the controller's observed retention. Read-only:
+    the POSTs are query endpoints on an allowlist.
+    """
+    from .port_diagnostics_render import render_event_history
+    from .port_history import collect_events
+
+    with _diagnostic_errors(), _readonly_client() as (client, site):
+        target = _resolve(client, site, device, any_device=True)
+        names = [
+            str(d.get('name'))
+            for d in (client.get_devices(site) or {}).get('data', [])
+            if d.get('name')
+        ]
+        history = collect_events(
+            client,
+            site,
+            target,
+            port_idx=port,
+            client_macs=clients or [],
+            since_days=since_days,
+            max_events=max_events,
+            known_device_names=names,
+        )
+    if as_json:
+        _emit_json(history.to_json_dict())
+    else:
+        render_event_history(console, history)
+
+
+@ports_app.command('counters')
+def ports_counters(
+    switch: str = typer.Argument(..., help='Switch name, MAC or IP'),
+    port: int = typer.Argument(..., min=1, help='Port index (1-based)'),
+    samples: int = typer.Option(2, '--samples', min=1, max=5, help='Number of samples'),
+    interval: int = typer.Option(
+        100,
+        '--interval',
+        min=30,
+        max=300,
+        help='Seconds between samples (devices inform every ~75-90 s)',
+    ),
+    link_error_baseline: str = typer.Option(
+        'reports/link-error-baseline.json',
+        '--link-error-baseline',
+        help='Baseline from `analyze link-errors --snapshot` to compare against (read only)',
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """📈 Sample one port's error counters and report per-minute rates with a trust verdict.
+
+    Blocks for (samples - 1) x interval seconds. Rates are withheld when the device did
+    not inform between samples (a stale snapshot would read as zero errors) or when a
+    counter or uptime went down. Existing baselines are compared, never overwritten.
+    """
+    from .port_diagnostics_render import render_counter_trend
+    from .port_history import sample_port_counters
+
+    with _diagnostic_errors(), _readonly_client() as (client, site):
+        target = _resolve(client, site, switch)
+        wait = (samples - 1) * interval
+        with err_console.status(f'Sampling port {port} ({wait}s)…'):
+            trend = sample_port_counters(
+                client,
+                site,
+                target,
+                port,
+                samples=samples,
+                interval_seconds=interval,
+                link_error_baseline_path=link_error_baseline,
+            )
+    if as_json:
+        _emit_json(trend.to_json_dict())
+    else:
+        render_counter_trend(console, trend)
+
+
+@ports_app.command('diagnose')
+def ports_diagnose(
+    switch: str = typer.Argument(..., help='Switch name, MAC or IP (an exact name or MAC wins)'),
+    port: int = typer.Argument(..., min=1, help='Port index (1-based)'),
+    clients: Optional[list[str]] = typer.Option(
+        None,
+        '--client',
+        help='Client MAC, IP or name to locate (repeatable; default: whatever is on the port)',
+    ),
+    compare_profiles: Optional[list[str]] = typer.Option(
+        None, '--compare-profile', help='Port profile to diff; give exactly twice'
+    ),
+    since_days: int = typer.Option(365, '--since-days', min=1, max=3650, help='History window'),
+    samples: int = typer.Option(2, '--samples', min=1, max=5, help='Counter samples'),
+    interval: int = typer.Option(
+        100, '--interval', min=30, max=300, help='Seconds between counter samples'
+    ),
+    max_events: int = typer.Option(500, '--max-events', min=1, max=5000, help='Event cap'),
+    output: Optional[Path] = typer.Option(
+        None,
+        '--output',
+        '-o',
+        help='Bundle path (default: reports/port-diagnostics-<switch>-p<N>-<timestamp>.json)',
+    ),
+    as_json: bool = typer.Option(
+        False, '--json', help='Also print the bundle JSON instead of the summary'
+    ),
+):
+    """🧾 Collect a read-only evidence bundle for one switch port (for vendor tickets).
+
+    One JSON file with the switch identity and application version, the raw port entry
+    and override, both profiles diffed, where the controller places each client, events
+    and system log, counter samples, every port on the switch and the Integration API
+    view. A transport guard refuses any controller write, secrets are stripped, and the
+    requests made are listed in request_audit as proof.
+    """
+    import time
+    from .port_diagnostics import BundleQuery, build_port_diagnostic_bundle
+    from .port_diagnostics_render import render_bundle_summary
+
+    if compare_profiles and len(compare_profiles) != 2:
+        _fail('--compare-profile must be given exactly twice (profile A and profile B)', code=2)
+    query = BundleQuery(
+        switch=switch,
+        port=port,
+        clients=clients or [],
+        compare_profiles=compare_profiles or [],
+        since_days=since_days,
+        counter_samples=samples,
+        interval_seconds=interval,
+        max_events=max_events,
+    )
+    with _diagnostic_errors(), _readonly_client() as (client, site):
+        wait = (samples - 1) * interval
+        with err_console.status(f'Collecting port {port} evidence (≈{wait}s of sampling)…'):
+            bundle = build_port_diagnostic_bundle(client, site, query)
+
+    data = bundle.to_json_dict()
+    if output is None:
+        name = (bundle.device.name if bundle.device else None) or switch
+        stamp = time.strftime('%Y%m%d-%H%M%S')
+        output = Path('reports') / f'port-diagnostics-{_slug(name)}-p{port}-{stamp}.json'
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(data, indent=2, default=str) + '\n', encoding='utf-8')
+    if as_json:
+        _emit_json(data)
+        err_console.print(f'💾 Evidence bundle written to {output}')
+    else:
+        render_bundle_summary(console, bundle, output)
 
 
 # ─── Radio Configuration Commands ────────────────────────────────────────────

@@ -174,6 +174,7 @@ unifi-mapper ports refresh --apply
 
 # Inspect a single port in depth (link state, LLDP peer, client identity, counters)
 unifi-mapper ports inspect "Hotel3 India3 USW Flex 2.5G 5" 2
+unifi-mapper ports inspect "Hotel3 India3 USW Flex 2.5G 5" 2 --json
 ```
 
 `ports inspect` resolves the switch by name, model, IP or MAC and reports everything the
@@ -216,6 +217,48 @@ Down ports are reverted to their default (`Port N`): a label naming hardware tha
 
 Labels are written through `port_overrides`, merged per port, so `poe_mode`, `port_profile` and speed overrides are preserved. Re-running after an apply reports no changes needed.
 
+### Port Diagnostics (read-only)
+
+```bash
+# Every port on a switch: speed, duplex, autoneg, profile, LLDP peer, clients, errors
+unifi-mapper ports list "Office Flex XG"
+
+# Key-by-key diff of two port profiles, plus every port that uses each one
+unifi-mapper ports profile-diff "Access 10G" "Access Auto"
+
+# Where does the controller place a client? Current, offline and historical records
+unifi-mapper ports client aa:bb:cc:dd:ee:ff --switch "Office Flex XG" --port 5
+
+# Events, alarms, system log and admin audit for a switch, a port, or a client
+unifi-mapper ports events "Office Flex XG" 5 --client aa:bb:cc:dd:ee:ff --since-days 365
+
+# Error counter rates for one port, sampled an inform interval apart
+unifi-mapper ports counters "Office Flex XG" 5 --samples 3 --interval 100
+
+# One JSON evidence bundle with all of the above, for a vendor ticket
+unifi-mapper ports diagnose "Office Flex XG" 5 --compare-profile "Access 10G" --compare-profile "Access Auto"
+```
+
+Every diagnostic command accepts `--json`, resolves the switch by exact name or MAC
+before trying a partial name (so `"USW Flex XG"` is not confused with
+`"Hotel3 USW Flex XG 10G"`), and takes any switch and any port index.
+
+They are read-only by construction, not by convention: after login the client's HTTP
+session is wrapped by a transport guard that allows `GET` (except `cmd/` and `upd/`
+paths) and `POST` only to the `stat/event`, `list/alarm` and v2 `system-log` query
+endpoints. Anything else, including every `PUT`/`DELETE`, is refused before it leaves
+the machine. Secret fields (`x_*`, passwords, tokens, PSKs, passphrases) are removed
+from every output, and only their key paths are listed in `sanitised_paths`. These
+commands read configuration only from `--config` (or the default config path), never
+from a stray `./.env` in the working directory; `ports inspect` follows the same rule.
+
+`ports diagnose` writes `reports/port-diagnostics-<switch>-p<N>-<timestamp>.json` (or
+`-o PATH`). The bundle includes `request_audit`, the method and path of every request
+made after login, as evidence that collection never wrote to the controller. Undocumented
+values such as `speed_caps` are reported raw, alongside the ports that share the same
+value, rather than decoded by guesswork. Counter rates are withheld when the device did
+not inform between samples, since a stale snapshot would read as zero errors.
+
 ### Analysis Tools
 
 ```bash
@@ -256,7 +299,13 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `install-completions` | Install shell completions |
 | `find device` | Find a device by name, IP or MAC |
 | `ports refresh` | Rewrite port labels from LLDP and wired clients (writes with `--apply`) |
-| `ports inspect` | Deep single-port inspection: VLAN, client, addressing, LLDP |
+| `ports inspect` | Deep single-port inspection: VLAN, client, addressing, LLDP (`--json` for raw fields) |
+| `ports list` | Every port on a switch: speed, negotiation, profile, LLDP peer, clients, errors |
+| `ports profile-diff` | Key-by-key diff of two port profiles and the ports using each |
+| `ports client` | Where the controller places a client, across current and offline client tables |
+| `ports events` | Events, alarms, system log and admin audit for a device, port or client |
+| `ports counters` | Sample a port's error counters: per-minute rates with a trust verdict |
+| `ports diagnose` | JSON evidence bundle for one port, with a request audit (for vendor tickets) |
 | `analyze link-quality` | Port statistics and error rates |
 | `analyze link-errors` | Error-rate baseline and delta comparison |
 | `analyze port-profiles` | Validate STP Edge, BPDU Guard and uplink safety |

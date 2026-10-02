@@ -151,7 +151,13 @@ def test_command_set_is_identical_for_both_invocation_paths():
 def test_documented_groups_expose_expected_command_counts():
     """Lock the subcommand counts that the mid-file guard silently reduced."""
     registered = _registered_commands(app)
-    for group, minimum in (('analyze', 14), ('radio', 5), ('diagnose', 5), ('stp', 11)):
+    for group, minimum in (
+        ('analyze', 14),
+        ('radio', 5),
+        ('diagnose', 5),
+        ('stp', 11),
+        ('ports', 8),
+    ):
         actual = len([r for r in registered if r.startswith(f'{group} ')])
         assert actual >= minimum, (
             f'group {group!r} exposes {actual} commands, expected at least {minimum}'
