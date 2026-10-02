@@ -5,6 +5,8 @@ tools:
   get_firewall_zones:
     module: unifi_mapper.mcp.tools.network
     handler: get_firewall_zones
+    title: Get Firewall Zones
+    credentials: network_api
     description: List all firewall zones and their configurations
     priority: P1
     tags: [firewall, zones, security, configuration]
@@ -12,6 +14,8 @@ tools:
   get_firewall_policies:
     module: unifi_mapper.mcp.tools.network
     handler: get_firewall_policies
+    title: Get Firewall Policies
+    credentials: network_api
     description: List firewall policies between zones
     priority: P1
     tags: [firewall, policies, rules, security]
@@ -19,6 +23,8 @@ tools:
   get_acl_rules:
     module: unifi_mapper.mcp.tools.network
     handler: get_acl_rules
+    title: Get ACL Rules
+    credentials: network_api
     description: List ACL rules and their configurations
     priority: P1
     tags: [acl, rules, access-control, security]
@@ -26,6 +32,8 @@ tools:
   get_dns_policies:
     module: unifi_mapper.mcp.tools.network
     handler: get_dns_policies
+    title: Get DNS Policies
+    credentials: network_api
     description: List DNS policies and configurations
     priority: P2
     tags: [dns, policies, filtering, security]
@@ -33,6 +41,8 @@ tools:
   get_clients:
     module: unifi_mapper.mcp.tools.network
     handler: get_clients
+    title: Get Clients
+    credentials: network_api
     description: List connected clients with fingerprinting data
     priority: P1
     tags: [clients, devices, fingerprint, inventory]
@@ -40,6 +50,8 @@ tools:
   get_networks:
     module: unifi_mapper.mcp.tools.network
     handler: get_networks
+    title: Get Networks
+    credentials: network_api
     description: List networks/VLANs and their configurations
     priority: P1
     tags: [networks, vlans, configuration, layer2]

@@ -62,7 +62,11 @@ READ_ONLY_SUGGESTION = 'This is a bug in the tool; nothing was written. Report i
 TIMEOUT_SUGGESTION = 'Narrow the request, or raise UNIFI_MCP_TOOL_TIMEOUT.'
 
 # Per-tool hints for unknown parameters: (tool, parameter) -> hint.
-UNKNOWN_PARAMETER_HINTS: dict[tuple[str, str], str] = {}
+UNKNOWN_PARAMETER_HINTS: dict[tuple[str, str], str] = {
+    ('traceroute', 'max_hops'): (
+        'max_hops is not supported (the path is computed from controller data); omit it'
+    ),
+}
 
 _FAMILY_SUGGESTIONS = {
     'network_api': (

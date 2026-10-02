@@ -5,6 +5,7 @@ tools:
   network_health_check:
     module: unifi_mapper.diagnostics.network_health
     handler: network_health_check
+    title: Network Health Check
     description: Overall infrastructure health monitoring and assessment
     priority: P1
     tags: [health, infrastructure, monitoring, diagnostic]
@@ -12,6 +13,7 @@ tools:
   performance_analysis:
     module: unifi_mapper.diagnostics.performance_analysis
     handler: performance_analysis
+    title: Performance Analysis
     description: Network performance analysis and bottleneck identification
     priority: P1
     tags: [performance, bottleneck, analysis, throughput]
@@ -19,6 +21,7 @@ tools:
   security_audit:
     module: unifi_mapper.diagnostics.security_audit
     handler: security_audit
+    title: Security Audit
     description: Security configuration review and vulnerability assessment
     priority: P1
     tags: [security, audit, vulnerability, compliance]
@@ -26,6 +29,7 @@ tools:
   connectivity_analysis:
     module: unifi_mapper.diagnostics.connectivity_analysis
     handler: connectivity_analysis
+    title: Connectivity Analysis
     description: Connection troubleshooting and path analysis
     priority: P2
     tags: [connectivity, troubleshooting, path, diagnostic]
@@ -33,6 +37,7 @@ tools:
   inspect_switch_port:
     module: unifi_mapper.diagnostics.inspect_port
     handler: inspect_switch_port
+    title: Inspect Switch Port
     description: >-
       Deep inspection of a single switch port: link state, effective VLAN and
       port profile, the connected device (UniFi or third-party, with fingerprint
@@ -53,6 +58,8 @@ tools:
   diagnose_switch_port:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: diagnose_switch_port
+    title: Diagnose Switch Port
+    idempotent: false
     description: >-
       Read-only evidence bundle for one switch port, for vendor tickets. Switch
       identity and Network application version, the raw port_table entry with
@@ -94,6 +101,7 @@ tools:
   get_switch_ports:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: get_switch_ports
+    title: Get Switch Ports
     description: >-
       Every port on one switch with the switch identity. Per port the name,
       media, speed, duplex, autoneg, up, STP state, effective profile and whether
@@ -114,6 +122,7 @@ tools:
   diff_port_profiles:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: diff_port_profiles
+    title: Diff Port Profiles
     description: >-
       Key-by-key diff of two port profiles (rest/portconf) with identity and
       attr_* metadata kept separate, referenced networks resolved to names and

@@ -5,6 +5,7 @@ tools:
   firewall_check:
     module: unifi_mapper.connectivity.firewall_check
     handler: firewall_check
+    title: Firewall Check
     description: Verify firewall rules and policies affecting traffic flow
     priority: P1
     tags: [firewall, rules, policy, security]
@@ -12,35 +13,41 @@ tools:
       source:
         type: string
         required: true
-        description: Source IP or network
+        description: Source IP, network, VLAN name or VLAN ID
       destination:
         type: string
         required: true
-        description: Destination IP or network
+        description: Destination IP, network, VLAN name or VLAN ID
+      protocol:
+        type: string
+        default: all
+        description: Protocol to check (tcp, udp, icmp, all)
       port:
-        type: integer
-        required: false
-        description: Destination port to check
+        type: string
+        description: Destination port or range, e.g. "443" or "1000-2000"
 
   path_analysis:
     module: unifi_mapper.connectivity.path_analysis
-    handler: path_analysis
+    handler: path_analysis_mcp
+    title: Path Analysis
     description: Network path analysis between two endpoints
     priority: P1
     tags: [path, analysis, routing, layer3]
     parameters:
+      path:
+        type: object
+        description: NetworkPath from traceroute; omit when giving source/destination
       source:
         type: string
-        required: true
-        description: Source IP address
+        description: Source endpoint (IP, MAC or name); needs destination
       destination:
         type: string
-        required: true
-        description: Destination IP address
+        description: Destination endpoint (IP, MAC or name); needs source
 
   check_inter_vlan_routing:
     module: unifi_mapper.connectivity.inter_vlan
     handler: check_inter_vlan_routing
+    title: Check Inter-VLAN Routing
     description: Check endpoint VLANs and firewall verdict for inter-VLAN routing
     priority: P1
     tags: [vlan, inter-vlan, routing, firewall, endpoint]
@@ -65,15 +72,24 @@ tools:
   traceroute:
     module: unifi_mapper.connectivity.traceroute
     handler: traceroute
+    title: Traceroute
     description: Layer 3 path tracing to destination
     priority: P2
     tags: [traceroute, path, hops, layer3]
     parameters:
+      source:
+        type: string
+        required: true
+        description: Source endpoint (IP, MAC, hostname or "gateway")
       destination:
         type: string
         required: true
-        description: Destination IP or hostname
-      max_hops:
-        type: integer
-        default: 30
-        description: Maximum number of hops to trace
+        description: Destination endpoint (IP, MAC, hostname or "internet")
+      include_firewall:
+        type: boolean
+        default: true
+        description: Check firewall rules along the path
+      verbosity:
+        type: string
+        default: guided
+        description: guided (plain English) or expert (technical detail)

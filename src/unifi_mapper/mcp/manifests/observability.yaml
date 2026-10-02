@@ -5,6 +5,7 @@ tools:
   get_device_events:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: get_device_events
+    title: Get Device Events
     description: >-
       Events, alarms, system log and admin audit entries that mention a device,
       one of its ports, or a client. Pages stat/event, reads list/alarm and pages
@@ -35,6 +36,8 @@ tools:
   get_port_counter_rates:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: get_port_counter_rates
+    title: Get Port Counter Rates
+    idempotent: false
     description: >-
       Sample one port's error, drop, CRC and link-down counters and report
       per-minute rates with a trust verdict that withholds rates when the device

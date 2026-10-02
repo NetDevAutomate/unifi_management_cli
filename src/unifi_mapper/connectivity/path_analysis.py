@@ -2,8 +2,9 @@
 
 from pydantic import Field
 from typing import Annotated, Any
+from unifi_mapper.connectivity.traceroute import traceroute
 from unifi_mapper.core.models import NetworkPath
-from unifi_mapper.core.utils.errors import ToolError
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 async def path_analysis(
@@ -80,6 +81,60 @@ async def path_analysis(
         'bottleneck_identification': bottlenecks,
         'recommendations': recommendations,
     }
+
+
+PATH_ANALYSIS_USAGE = (
+    'Pass either path (a NetworkPath from traceroute) or both source and destination, '
+    'e.g. {"source": "192.0.2.10", "destination": "203.0.113.5"}.'
+)
+
+
+async def path_analysis_mcp(
+    path: Annotated[
+        NetworkPath | None,
+        Field(description='A NetworkPath from traceroute(); omit when giving source/destination'),
+    ] = None,
+    source: Annotated[
+        str | None, Field(description='Source endpoint (IP, MAC or name); needs destination')
+    ] = None,
+    destination: Annotated[
+        str | None, Field(description='Destination endpoint (IP, MAC or name); needs source')
+    ] = None,
+) -> dict[str, Any]:
+    """Analyse a network path given either as a NetworkPath or as two endpoints.
+
+    The MCP entry point for :func:`path_analysis`. With ``source`` and ``destination``
+    it traces the path first (``traceroute(source, destination)``) and analyses the
+    result, so a model doesn't have to round-trip a full NetworkPath.
+
+    When to use this tool:
+    - Detailed per-hop analysis of the path between two endpoints
+    - Follow-up analysis of a path already returned by traceroute()
+
+    Args:
+        path: A NetworkPath from traceroute().
+        source: Source endpoint (IP, MAC, hostname or "gateway").
+        destination: Destination endpoint (IP, MAC, hostname or "internet").
+
+    Returns:
+        The :func:`path_analysis` result.
+
+    Raises:
+        ToolError: CONFIG_INVALID unless exactly ``path``, or both ``source`` and
+            ``destination``, are given; PATH_INCOMPLETE for an empty path.
+    """
+    endpoints = (source, destination)
+    if path is not None and endpoints == (None, None):
+        return await path_analysis(path)
+    if path is None and all(endpoints):
+        assert source is not None and destination is not None
+        return await path_analysis(await traceroute(source, destination))
+    raise ToolError(
+        message='path_analysis needs exactly one of: path, or source and destination',
+        error_code=ErrorCodes.CONFIG_INVALID,
+        suggestion=PATH_ANALYSIS_USAGE,
+        related_tools=['traceroute'],
+    )
 
 
 def _analyze_path_summary(path: NetworkPath) -> dict[str, Any]:
