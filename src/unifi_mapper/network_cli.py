@@ -230,7 +230,8 @@ def main():
         # Now create config from environment
         from .config import UnifiConfig
 
-        config = UnifiConfig.from_env()
+        # Re-read --config itself: a stray ./.env must never override it.
+        config = UnifiConfig.from_env(str(args.config))
     except Exception as e:
         log.error(f'Configuration error: {e}')
         log.error(f'Check your config file: {args.config}')

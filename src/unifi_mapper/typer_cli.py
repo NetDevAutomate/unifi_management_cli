@@ -187,7 +187,8 @@ def discover(
 
         console.print(f'📁 Config: [cyan]{config}[/cyan]')
         load_env_from_config(str(config))
-        unifi_config = UnifiConfig.from_env()
+        # Re-read the same file: a stray ./.env must never override --config.
+        unifi_config = UnifiConfig.from_env(str(config))
 
         # Set default paths
         output_path = output or Path.cwd() / 'reports' / 'port_mapping_report.md'
@@ -1669,7 +1670,8 @@ def diagram(
 
         console.print(f'📁 Config: [cyan]{config}[/cyan]')
         load_env_from_config(str(config))
-        unifi_config = UnifiConfig.from_env()
+        # Re-read the same file: a stray ./.env must never override --config.
+        unifi_config = UnifiConfig.from_env(str(config))
 
         # Set output path
         diagram_path = output or Path.cwd() / 'diagrams' / f'network_diagram.{format}'

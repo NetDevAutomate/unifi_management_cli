@@ -24,7 +24,7 @@ def main():
     # this works on any machine and does not bake one developer's username in.
     config_path = str(Path.home() / '.config' / 'unifi_management_cli' / 'prod.env')
     load_env_from_config(config_path)
-    config = UnifiConfig.from_env()
+    config = UnifiConfig.from_env(config_path)
 
     # Create API client
     api_client = UnifiApiClient(

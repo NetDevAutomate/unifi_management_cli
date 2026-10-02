@@ -95,7 +95,8 @@ def main():
 
         load_env_from_config(args.config)
 
-        config = UnifiConfig.from_env()
+        # Re-read --config itself: a stray ./.env must never override it.
+        config = UnifiConfig.from_env(str(args.config))
     except Exception as e:
         log.error(f'Configuration error: {e}')
         log.error(f'Check your config file: {args.config}')

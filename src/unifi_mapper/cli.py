@@ -175,7 +175,8 @@ def main():
 
     # Create config from environment
     try:
-        config = UnifiConfig.from_env()
+        # Re-read --config itself: a stray ./.env must never override it.
+        config = UnifiConfig.from_env(str(args.config))
     except ValueError as e:
         log.error(f'Configuration error: {e}')
         log.error(f'Check your config file: {args.config}')
