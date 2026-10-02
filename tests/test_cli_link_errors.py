@@ -19,6 +19,11 @@ pytestmark = pytest.mark.usefixtures('block_network')
 runner = CliRunner()
 
 
+def _plain(result) -> str:
+    """The output with Rich panel borders removed and whitespace collapsed."""
+    return ' '.join(result.output.replace('│', ' ').split())
+
+
 class Controller:
     """An in-memory ``UniFiClient`` stand-in that counts device reads."""
 
@@ -154,3 +159,38 @@ def test_retention_days_out_of_range_exits_2(controller, days):
 
     assert result.exit_code == 2
     assert controller.reads == 0 and not state_dir().exists()
+
+
+@pytest.mark.parametrize(
+    'args',
+    [
+        ('--baseline', '--snapshot'),
+        ('--baseline', '-t'),
+        ('--record', '--history', '--snapshot'),
+    ],
+)
+def test_a_flag_given_as_a_path_exits_2(controller, args):
+    result = runner.invoke(app, ['analyze', 'link-errors', *args])
+
+    assert result.exit_code == 2
+    assert 'expected a file path, got the option' in _plain(result)
+    assert controller.reads == 0 and not state_dir().exists()
+
+
+def test_snapshot_may_name_a_new_baseline_file(controller, tmp_path):
+    target = tmp_path / 'new' / 'baseline.json'
+    result = runner.invoke(
+        app, ['analyze', 'link-errors', '--snapshot', '--baseline', str(target)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(target.read_text())['devices'][0]['device_id'] == SWITCH_ID
+
+
+def test_compare_with_a_missing_explicit_baseline_exits_1_with_no_data(controller, tmp_path):
+    missing = tmp_path / 'missing.json'
+    result = runner.invoke(app, ['analyze', 'link-errors', '--baseline', str(missing)])
+
+    assert result.exit_code == 1
+    assert 'No baseline found' in _plain(result)
+    assert not missing.exists() and not state_dir().exists()

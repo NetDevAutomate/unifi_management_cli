@@ -2856,6 +2856,49 @@ def _fail(message: object, code: int = 1) -> NoReturn:
     raise typer.Exit(code=code)
 
 
+def _path_not_a_flag(
+    ctx: typer.Context, param: typer.CallbackParam, value: Optional[str]
+) -> Optional[str]:
+    """Reject a path option whose value is another option (``--baseline --json``).
+
+    Click consumes the next token as an option's value even when it looks like a
+    flag, so without this ``--link-error-baseline --json`` silently read ``--json``
+    as the path and dropped the JSON output.
+    """
+    if value is not None and value.startswith('-'):
+        # Click prefixes "Invalid value for '--option':", so the message need not repeat it.
+        raise typer.BadParameter(
+            f'expected a file path, got the option {value!r}', ctx=ctx, param=param
+        )
+    return value
+
+
+def _existing_read_only_path(
+    ctx: typer.Context, param: typer.CallbackParam, value: Optional[str]
+) -> Optional[str]:
+    """A read-only path option: not a flag, and an explicit path must exist.
+
+    Omitting the option keeps the resolved default, where a missing file is
+    reported as ``found: false`` rather than an error.
+    """
+    value = _path_not_a_flag(ctx, param, value)
+    if value is None or Path(value).exists():
+        return value
+    if param.name == 'history':
+        from .analysis.counter_history import default_history_path
+
+        kind, default = 'history', default_history_path()
+    else:
+        from .analysis.link_error_tracking import resolve_link_error_baseline
+
+        kind, default = 'baseline', resolve_link_error_baseline(None)[0]
+    raise typer.BadParameter(
+        f'{kind} file not found: {value}; omit the option to use {default}',
+        ctx=ctx,
+        param=param,
+    )
+
+
 def _emit_json(data: Any) -> None:
     """Print ``data`` as JSON on stdout, with no Rich markup and secrets stripped."""
     from .core.utils.redact import strip_secrets
@@ -3108,6 +3151,7 @@ def ports_counters(
     link_error_baseline: Optional[str] = typer.Option(
         None,
         '--link-error-baseline',
+        callback=_existing_read_only_path,
         help=(
             'Baseline from `analyze link-errors --snapshot` to compare against (read only; '
             'default: the XDG state baseline, else a legacy ./reports/ one)'
@@ -3116,6 +3160,7 @@ def ports_counters(
     history: Optional[str] = typer.Option(
         None,
         '--history',
+        callback=_existing_read_only_path,
         help=(
             'Counter history from `analyze link-errors --record` (read only; '
             'default: $XDG_STATE_HOME/unifi_mapper/port-counter-history.jsonl)'
@@ -3581,6 +3626,7 @@ def analyze_link_errors(
         None,
         '--baseline',
         '-b',
+        callback=_path_not_a_flag,
         help=(
             'Baseline file path (default: $XDG_STATE_HOME/unifi_mapper/link-error-baseline.json; '
             'a legacy ./reports/link-error-baseline.json is still read)'
@@ -3589,6 +3635,7 @@ def analyze_link_errors(
     history: Optional[str] = typer.Option(
         None,
         '--history',
+        callback=_path_not_a_flag,
         help='History file (default: $XDG_STATE_HOME/unifi_mapper/port-counter-history.jsonl)',
     ),
     retention_days: int = typer.Option(

@@ -30,6 +30,13 @@ from unifi_mapper.typer_cli import app
 pytestmark = pytest.mark.usefixtures('block_network')
 
 runner = CliRunner()
+
+
+def _plain(result) -> str:
+    """The output with Rich panel borders removed and whitespace collapsed."""
+    return ' '.join(result.output.replace('│', ' ').split())
+
+
 PORT_COMMANDS = ('refresh', 'inspect', 'list', 'profile-diff', 'client', 'events', 'counters')
 
 
@@ -142,7 +149,9 @@ def test_events_skips_device_rows_that_are_not_records(monkeypatch, tmp_path):
 
 
 def test_counters_single_sample_json(cli):
-    baseline = str(cli.tmp / 'baseline.json')
+    baseline = cli.tmp / 'baseline.json'
+    # An explicit read-only baseline must exist (item 19), so the test writes it.
+    baseline.write_text('{"timestamp": "2026-10-01T00:00:00", "devices": []}', encoding='utf-8')
     data = _json(
         cli.run(
             'ports',
@@ -152,12 +161,73 @@ def test_counters_single_sample_json(cli):
             '--samples',
             '1',
             '--link-error-baseline',
-            baseline,
+            str(baseline),
             '--json',
         )
     )
     assert data['verdict'] == 'single_sample'
-    assert data['baselines']['link_error_tracking']['found'] is False
+    link = data['baselines']['link_error_tracking']
+    assert link['found'] is True and link['device_present'] is False
+    assert link['path'] == str(baseline)
+
+
+def test_counters_rejects_a_flag_given_as_the_baseline_path(cli):
+    # Regression: Click read `--json` as the baseline path and printed tables instead.
+    result = cli.run('ports', 'counters', SWITCH_NAME, '5', '--link-error-baseline', '--json')
+    assert result.exit_code == 2
+    text = _plain(result)
+    assert "Invalid value for '--link-error-baseline'" in text
+    assert "expected a file path, got the option '--json'" in text
+    assert cli.opened == []
+
+
+@pytest.mark.parametrize('option', ['--link-error-baseline', '--history'])
+def test_counters_rejects_an_explicit_missing_file(cli, option):
+    missing = cli.tmp / 'missing.json'
+    result = cli.run('ports', 'counters', SWITCH_NAME, '5', option, str(missing), '--json')
+    assert result.exit_code == 2
+    # Rich wraps long paths mid-word inside the error panel, so compare without whitespace.
+    squashed = ''.join(_plain(result).split())
+    assert f'filenotfound:{missing};omittheoptiontouse' in squashed
+    assert cli.opened == []
+
+
+def test_counters_rejects_a_flag_given_as_the_history_path(cli):
+    result = cli.run('ports', 'counters', SWITCH_NAME, '5', '--history', '--json')
+    assert result.exit_code == 2
+    assert "'--history': expected a file path, got the option '--json'" in _plain(result)
+    assert cli.opened == []
+
+
+def test_counters_with_an_existing_history_file(cli):
+    from unifi_mapper.analysis.counter_history import append_history, build_history_records
+
+    history = cli.tmp / 'h.jsonl'
+    append_history(
+        build_history_records(fake_devices(), taken_at='T', epoch=1.0), path=history, now=1.0
+    )
+    data = _json(
+        cli.run(
+            'ports',
+            'counters',
+            SWITCH_NAME,
+            '5',
+            '--samples',
+            '1',
+            '--history',
+            str(history),
+            '--json',
+        )
+    )
+    assert data['baselines']['history']['path'] == str(history)
+    assert data['baselines']['history']['records'] == 1
+
+
+def test_counters_without_the_option_reports_found_false(cli):
+    data = _json(cli.run('ports', 'counters', SWITCH_NAME, '5', '--samples', '1', '--json'))
+    link = data['baselines']['link_error_tracking']
+    assert link['found'] is False and link['legacy'] is False
+    assert link['path'].endswith('unifi_mapper/link-error-baseline.json')
 
 
 def test_counters_json_includes_the_recorded_history(cli):
