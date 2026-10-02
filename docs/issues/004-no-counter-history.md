@@ -62,7 +62,10 @@ Applied the recommended fix (approved, design §10.5):
   reported as legacy.
 - `scripts/unifi-cron.sh`: the `link-error-snapshot` task (name kept, so `uninstall` still
   finds installed jobs) and `run-all` now run `analyze link-errors --record` instead of
-  overwriting the baseline every 5 minutes.
+  overwriting the baseline every 5 minutes. A schedule installed before this change keeps
+  running `--snapshot` (resetting both baselines every 5 minutes, recording no history)
+  until it is reinstalled: run `./scripts/unifi-cron.sh update` after upgrading; `status`
+  flags the stale entry.
 - Readers: `ports counters`, `ports diagnose`, `get_port_counter_rates` and
   `diagnose_switch_port` report `baselines.history` (`first_increase` per counter, deltas,
   resets, the newest 48 points). They never write; `ports counters --history PATH` reads

@@ -58,5 +58,9 @@ with issue 004, design §10.5):
 - `port_history.read_counter_baselines` still only reads it, so `port_counter_baseline` in
   `ports counters`, `ports diagnose`, `get_port_counter_rates` and `diagnose_switch_port`
   is now populated once a baseline has been set.
+- Upgrade note: a cron/launchd schedule installed before this change still runs
+  `analyze link-errors --snapshot` every 5 minutes, which now also overwrites this store, so
+  comparisons would be against a baseline at most 5 minutes old. Run
+  `./scripts/unifi-cron.sh update` after upgrading (see issue 004).
 
 Tests: `tests/test_cli_link_errors.py` (`--snapshot` writes both baselines and no history).

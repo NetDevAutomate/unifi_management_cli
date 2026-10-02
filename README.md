@@ -418,6 +418,14 @@ Run any command with `--help` for its options.
 
 Schedules: link errors + roaming every 5 min, config drift + health + radio hourly, port naming every 30 min.
 
+> [!IMPORTANT]
+> **Upgrading an installed schedule.** `install` copies each task's command line into the
+> launchd plist or crontab entry, and nothing re-reads the task list at run time. A schedule
+> installed before 0.2.0 keeps its old commands: port naming then only previews (no
+> `--apply`), and the 5-minute link-error job keeps overwriting both baselines instead of
+> recording history. After upgrading, run `./scripts/unifi-cron.sh update` (uninstall, then
+> install). `status` flags any installed command that differs from the current task list.
+
 ### MCP Server (AI-Assisted Troubleshooting)
 
 The MCP Server enables AI assistants like Claude to directly query and troubleshoot your UniFi network infrastructure using the Model Context Protocol. It is read-only against the controller: tools that change it are refused, and changes go through this CLI.

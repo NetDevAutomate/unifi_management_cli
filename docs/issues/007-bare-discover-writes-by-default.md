@@ -41,8 +41,12 @@ Approved (design §10.5) and applied in `typer_cli.py`:
 - The root shortcut fires on any of `--connected-devices`, `--verify-updates`, `--dry-run` or
   the new `--apply`, and forwards `--apply`. `--dry-run` is still accepted; `--apply` together
   with `--dry-run` exits 2 ("choose --apply or --dry-run").
-- `scripts/unifi-cron.sh`: the `port-naming` task and `run-all` now pass `--apply`, so an
-  installed schedule keeps writing port names, now explicitly.
+- `scripts/unifi-cron.sh`: the `port-naming` task and `run-all` now pass `--apply`, so a
+  schedule installed from this version keeps writing port names, now explicitly. A schedule
+  installed before it keeps its old command line (install copies the command into the plist
+  or crontab entry), so naming silently stops writing until it is reinstalled: run
+  `./scripts/unifi-cron.sh update` after upgrading. `status` flags the stale entry, and a
+  re-run of `install` on macOS now unloads each job before loading it (code-review F5).
 - The README, the operator runbook and the use-cases guide add `--apply` wherever they
   describe writing names.
 

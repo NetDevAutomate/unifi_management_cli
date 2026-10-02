@@ -77,6 +77,7 @@ install_launchd() {
         local full_cmd
         full_cmd=$(build_command "$cmd")
 
+        launchctl unload "$plist_path" 2>/dev/null || true  # so a re-install replaces the job
         cat > "$plist_path" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -129,15 +130,25 @@ uninstall_launchd() {
 
 status_launchd() {
     log "Scheduled tasks (launchd):"
+    local stale=0
     for i in "${!TASKS[@]}"; do
-        IFS='|' read -r name interval _ <<< "${TASKS[$i]}"
+        IFS='|' read -r name interval cmd <<< "${TASKS[$i]}"
         local plist_name="${LAUNCHD_PREFIX}.${name}"
+        local plist_path="${LAUNCHD_DIR}/${plist_name}.plist"
         if launchctl list "$plist_name" &>/dev/null; then
             echo "  ✅ $name (every ${interval}s) — running"
         else
             echo "  ❌ $name — not loaded"
         fi
+        # The command is copied into the plist at install time: flag one that predates TASKS.
+        if [[ -f "$plist_path" ]] && ! grep -qF "<string>$(build_command "$cmd")</string>" "$plist_path"; then
+            echo "     ⚠️  stale: installed command differs from: unifi-mapper $cmd"
+            stale=1
+        fi
     done
+    if (( stale )); then
+        echo "  Run '$0 update' to reinstall the current commands."
+    fi
 }
 
 # ─── Linux (crontab) ─────────────────────────────────────────────────────────
@@ -181,6 +192,21 @@ status_crontab() {
         echo "$entries" | while read -r line; do
             echo "  ✅ $line"
         done
+        # The command is copied into the crontab line at install time: flag one that
+        # predates TASKS.
+        local stale=0
+        for i in "${!TASKS[@]}"; do
+            IFS='|' read -r name _ cmd <<< "${TASKS[$i]}"
+            local expected
+            expected="${CRON_SCHEDULES[$i]} $(build_command "$cmd") >> ${LOG_DIR}/${name}.log 2>&1 ${CRON_MARKER}"
+            if ! grep -qxF -- "$expected" <<< "$entries"; then
+                echo "  ⚠️  $name: stale or missing; current command: unifi-mapper $cmd"
+                stale=1
+            fi
+        done
+        if (( stale )); then
+            echo "  Run '$0 update' to reinstall the current commands."
+        fi
     fi
 }
 
