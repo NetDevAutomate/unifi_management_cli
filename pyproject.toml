@@ -121,6 +121,8 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "live: marks tests that make live API calls (deselect with '-m \"not live\"')",
     "asyncio: marks tests that use asyncio",
+    "network: marks tests that need network access (skipped unless --run-slow or UNIFI_RUN_SLOW=1)",
+    "credential_chain: marks tests that exercise the credential fallback chain",
 ]
 
 [tool.coverage.run]

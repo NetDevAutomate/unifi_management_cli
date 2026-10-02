@@ -1,9 +1,35 @@
 """Simplified pytest configuration for foundation testing."""
 
 import httpx
+import os
 import pytest
 import requests
 import socket
+from pathlib import Path
+
+
+pytest_plugins = ['pytester']  # T13. Only this top-level conftest may define pytest_plugins.
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add --run-slow to opt in to slow/network tests."""
+    parser.addoption('--run-slow', action='store_true', help='run slow and network tests')
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip tests marked slow/network unless --run-slow or UNIFI_RUN_SLOW=1."""
+    if config.getoption('--run-slow') or os.environ.get('UNIFI_RUN_SLOW') == '1':
+        return
+    skip = pytest.mark.skip(reason='slow/network: pass --run-slow')
+    for item in items:
+        if any(item.iter_markers(name='slow')) or any(item.iter_markers(name='network')):
+            item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_xdg_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Point XDG_STATE_HOME at a per-test directory so no test touches ~/.local/state."""
+    monkeypatch.setenv('XDG_STATE_HOME', str(tmp_path / 'xdg-state'))
 
 
 @pytest.fixture
