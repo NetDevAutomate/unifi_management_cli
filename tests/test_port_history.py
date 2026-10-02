@@ -21,6 +21,15 @@ from tests.fixtures_unifi import (
     fake_switch,
     paged_events,
 )
+from unifi_mapper.analysis.counter_history import (
+    append_history,
+    build_history_records,
+    default_history_path,
+)
+from unifi_mapper.analysis.port_counter_baseline import (
+    PortCounterBaselineStore,
+    snapshots_from_devices,
+)
 from unifi_mapper.diagnostic_reads import PortNotFound
 from unifi_mapper.port_history import (
     EventMatcher,
@@ -414,3 +423,67 @@ def test_baseline_read_errors_are_redacted(tmp_path, monkeypatch):
     assert link_error is not None and link_error.startswith('OSError: cannot read baseline')
     assert store_error is not None and store_error.startswith('ValidationError: ')
     assert_no_secrets([link_error, store_error])
+
+
+def _record_history(path: Path, *crc_values: int) -> None:
+    for offset, crc in enumerate(crc_values):
+        switch = fake_switch()
+        for entry in switch['port_table']:
+            if entry['port_idx'] == 5:
+                entry['port_stats'] = {'rx_crc_errors': crc}
+        epoch = NOW + offset * 300
+        records = build_history_records([switch], taken_at=f'T{offset}', epoch=epoch)
+        append_history(records, path=path, now=epoch)
+
+
+def test_counter_history_view_reports_first_increase(tmp_path):
+    history = tmp_path / 'history.jsonl'
+    _record_history(history, 0, 0, 3, 5)
+
+    view = read_counter_baselines(
+        fake_switch(), 5, {}, None, str(tmp_path / 'x.json'), tmp_path / 's.json', history
+    ).history
+
+    assert view is not None and view.found and view.path == str(history)
+    assert view.records == 4 and view.earliest == 'T0' and view.latest == 'T3'
+    first = view.first_increase['rx_crc_errors']
+    assert first is not None and (first.taken_at, first.previous, first.value) == ('T2', 0, 3)
+    assert view.deltas['rx_crc_errors'] == 5 and view.resets == []
+    assert view.first_increase['rx_errors'] is None
+
+
+def test_counter_history_defaults_to_xdg_state_and_creates_nothing(tmp_path):
+    view = read_counter_baselines(fake_switch(), 5, {}, None, str(tmp_path / 'x.json')).history
+    assert view is not None and view.found is False and view.records == 0
+    assert view.path == str(default_history_path())
+    assert not default_history_path().parent.exists()
+
+
+def test_reading_baselines_and_history_never_changes_the_files(tmp_path):
+    link = tmp_path / 'link-error-baseline.json'
+    _write_link_baseline(link)
+    store = tmp_path / 'port-counters.json'
+    PortCounterBaselineStore(store).save(snapshots_from_devices([fake_switch()]))
+    history = tmp_path / 'history.jsonl'
+    _record_history(history, 0, 3)
+    files = (link, store, history, tmp_path / 'history.jsonl.lock')
+    before = [(f.read_bytes(), os.stat(f).st_mtime_ns) for f in files]
+
+    for _ in range(2):
+        read_counter_baselines(
+            fake_switch(), 5, {'rx_errors': 9}, 86400, str(link), store, history
+        )
+
+    assert [(f.read_bytes(), os.stat(f).st_mtime_ns) for f in files] == before
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(f.name for f in files)
+
+
+def test_sample_port_counters_passes_the_history_path_through(tmp_path):
+    history = tmp_path / 'history.jsonl'
+    _record_history(history, 1, 2)
+    client, _ = _client()
+
+    trend = _sample(client, tmp_path, _Clock(NOW), samples=1, history_path=history)
+
+    assert trend.baselines is not None and trend.baselines.history is not None
+    assert trend.baselines.history.records == 2

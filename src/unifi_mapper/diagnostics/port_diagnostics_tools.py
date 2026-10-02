@@ -393,8 +393,11 @@ async def get_port_counter_rates(
     - counter_reset: uptime or a counter went down (reboot or clear)
     - single_sample: one sample, no rate
 
-    Existing baselines (analyze link-errors, the port-counter store) are
-    compared, never written.
+    Existing baselines (analyze link-errors --snapshot, the port-counter store)
+    and the recorded counter history (analyze link-errors --record) are
+    compared, never written: baselines.history gives the recorded window,
+    deltas, resets and first_increase, the first sample in which each counter
+    rose.
 
     Args:
         switch: Switch name, MAC or IP.
@@ -443,7 +446,8 @@ async def diagnose_switch_port(
     full port override and both profile ids side by side, a diff of
     compare_profiles, where the controller places each client, events and
     system log, counter samples, every port on the switch and the Integration
-    API's documented port capability (maxSpeedMbps, connector). It includes
+    API's documented port capability (maxSpeedMbps, connector), and the
+    port's recorded counter history (counters.baselines.history). It includes
     request_audit (method and path of every request) as proof of read-only
     collection, and sanitised_paths listing the secret fields stripped. Only
     an unknown switch or port is fatal; any other source that fails (for

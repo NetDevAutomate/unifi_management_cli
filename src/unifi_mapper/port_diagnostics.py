@@ -65,7 +65,6 @@ from unifi_mapper.diagnostic_reads import (
     v2_path,
 )
 from unifi_mapper.port_history import (
-    DEFAULT_LINK_ERROR_BASELINE,
     CounterTrend,
     EventHistory,
     collect_events,
@@ -1513,8 +1512,9 @@ def build_port_diagnostic_bundle(
     command: str = 'unifi-mapper ports diagnose',
     sleep: Callable[[float], None] = time.sleep,
     now: Callable[[], float] = time.time,
-    link_error_baseline_path: str = DEFAULT_LINK_ERROR_BASELINE,
+    link_error_baseline_path: Optional[str] = None,
     port_counter_store_path: Optional[Path] = None,
+    history_path: Optional[Path] = None,
 ) -> PortDiagnosticBundle:
     """Collect every read-only fact about one switch port into one bundle.
 
@@ -1635,6 +1635,7 @@ def build_port_diagnostic_bundle(
             now=now,
             link_error_baseline_path=link_error_baseline_path,
             port_counter_store_path=port_counter_store_path,
+            history_path=history_path,
             ctx=ctx,
         ),
     )

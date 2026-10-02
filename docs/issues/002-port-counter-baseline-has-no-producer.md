@@ -1,7 +1,7 @@
 ---
 title: "The port counter baseline store has no producer"
 date: 2026-10-02
-status: open, decision needed
+status: resolved
 severity: low
 components: [analysis/port_counter_baseline, port_history]
 found_by: port diagnostics gap analysis (F4)
@@ -41,3 +41,21 @@ Choose one:
    the `port_counter_baseline` part of `port_history.CounterBaselines`.
 
 Option 1 overlaps issue 004 (no counter history).
+
+## Resolution
+
+Option 1, wired in through `analyze link-errors` rather than `stp validate-10g` (approved
+with issue 004, design §10.5):
+
+- `analysis/port_counter_baseline.py` gains `state_dir()` (the existing
+  `$XDG_STATE_HOME/unifi_mapper` root; `default_baseline_path()` is unchanged) and pure
+  `snapshots_from_devices(devices)` (switch-type devices with an `_id`; CRC from the same
+  source as the port diagnostics).
+- `analyze link-errors --snapshot` is the producer: `snapshot_link_errors` writes the
+  link-error baseline and `PortCounterBaselineStore().save(snapshots_from_devices(...))`
+  from one device read. Nothing else writes the store; plain runs stay read-only.
+- `port_history.read_counter_baselines` still only reads it, so `port_counter_baseline` in
+  `ports counters`, `ports diagnose`, `get_port_counter_rates` and `diagnose_switch_port`
+  is now populated once a baseline has been set.
+
+Tests: `tests/test_cli_link_errors.py` (`--snapshot` writes both baselines and no history).

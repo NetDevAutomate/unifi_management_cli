@@ -65,8 +65,9 @@ tools:
       identity and Network application version, the raw port_table entry with
       negotiation fields and raw speed_caps, the full port override with both
       profile ids side by side, an optional diff of two port profiles, where the
-      controller places each client, events and system log, counter samples,
-      every port on the switch and the Integration API port capability. Includes
+      controller places each client, events and system log, counter samples
+      with the recorded counter history, every port on the switch and the
+      Integration API port capability. Includes
       request_audit as proof that collection never wrote to the controller.
       counter_samples above 1 blocks for 100 s per extra sample.
     priority: P1

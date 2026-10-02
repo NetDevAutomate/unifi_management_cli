@@ -43,7 +43,8 @@ tools:
       per-minute rates with a trust verdict that withholds rates when the device
       did not inform between samples. BLOCKS for (samples - 1) x interval_seconds,
       about 100 s by default; use samples=1 for a single snapshot. Existing
-      baselines are compared, never written. Read-only.
+      baselines and the recorded counter history (baselines.history, with
+      first_increase per counter) are compared, never written. Read-only.
     priority: P2
     tags: [counters, errors, crc, trend, port, link-quality, read-only]
     parameters:

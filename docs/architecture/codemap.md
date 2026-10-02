@@ -1380,27 +1380,29 @@ flowchart LR
 
 ### 20.4 Port Counter Baseline Workflow
 
-`port_counter_baseline.py` can snapshot STP port counters (`snapshots_from_switches`), persist them (`PortCounterBaselineStore.save`) and diff against them (`diff_since_last`), but **nothing produces the store today**: no command, MCP tool or analysis module calls `save()` or `snapshots_from_switches()`, and `stp_optimizer.py` reads error counters from the topology without touching the store. The only consumer reads it:
+`port_counter_baseline.py` persists per-port counter snapshots (`PortCounterBaselineStore.save`) and diffs against them (`diff_since_last`). Its producer is `analyze link-errors --snapshot`: `link_error_tracking.snapshot_link_errors` writes the link-error baseline and `PortCounterBaselineStore().save(snapshots_from_devices(devices))` from one device read. `analyze link-errors --record` appends to a separate capped JSON Lines history (`analysis/counter_history.py`), so recording never moves a baseline. The readers only read:
 
 ```mermaid
 sequenceDiagram
     participant Cmd as ports counters, ports diagnose and their MCP tools
     participant Hist as port_history.read_counter_baselines
     participant Store as PortCounterBaselineStore
-    participant Disk as XDG state JSON
+    participant JL as counter_history.read_port_history
+    participant Disk as XDG state files
 
     Cmd->>Hist: current counters for device_id:port_idx
+    Hist->>Disk: read link-error-baseline.json (or a legacy ./reports/ one)
     Hist->>Store: load(), only if port-counters.json exists
     Store->>Disk: read port-counters.json
-    Disk-->>Store: prior snapshots, if anything ever wrote them
-    Store-->>Hist: snapshot for device_id:port_idx
-    Hist-->>Cmd: found, baseline_timestamp, non-negative delta
-    Note over Hist,Disk: Read only: never calls save() or a snapshot function
+    Hist->>JL: points for device_id:port_idx
+    JL->>Disk: read port-counter-history.jsonl
+    Hist-->>Cmd: baselines.link_error_tracking, .port_counter_baseline, .history (first_increase, deltas, resets)
+    Note over Hist,Disk: Read only: never calls save(), a snapshot function or append_history()
 ```
 
-So `port_counter_baseline.found` is false unless something outside this repo wrote the file. Whether to wire the store into `stp validate-10g` or delete it is open: [issue 002](../issues/002-port-counter-baseline-has-no-producer.md).
+Writers, all behind explicit flags of `analyze link-errors`: `--snapshot` (both baselines) and `--record` (`append_history`: `fcntl.flock` on `port-counter-history.jsonl.lock`, append, then compaction through a temp file and `os.replace` only when `--retention-days` (default 14) or the 64 MiB cap is exceeded). Issues [002](../issues/002-port-counter-baseline-has-no-producer.md) and [004](../issues/004-no-counter-history.md) record the decision.
 
-**State location.** `default_baseline_path()` uses `$XDG_STATE_HOME/unifi_mapper/port-counters.json` when set, otherwise `~/.local/state/unifi_mapper/port-counters.json`.
+**State location.** `port_counter_baseline.state_dir()` is `$XDG_STATE_HOME/unifi_mapper` when set, otherwise `~/.local/state/unifi_mapper`. It holds `port-counters.json` (`default_baseline_path()`), `link-error-baseline.json` (`default_link_error_baseline_path()`) and `port-counter-history.jsonl` (`default_history_path()`).
 
 **Counter semantics.** `diff_snapshots()` clamps negative deltas to zero. That prevents device reboot or counter reset noise from appearing as negative errors, but it also means reset detection must come from timestamps or surrounding device uptime rather than the delta value alone.
 

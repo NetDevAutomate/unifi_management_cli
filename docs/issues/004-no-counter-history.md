@@ -1,7 +1,7 @@
 ---
 title: "There is no on-disk history of port error counters"
 date: 2026-10-02
-status: open
+status: resolved
 severity: low
 components: [analysis/link_error_tracking, scripts/unifi-cron.sh]
 found_by: port diagnostics gap analysis (F6)
@@ -41,3 +41,29 @@ If long-term trends matter:
 
 Moving snapshot and baseline paths off the working-directory-relative `reports/` is also
 needed for the MCP server to run as an installed uv tool.
+
+## Resolution
+
+Applied the recommended fix (approved, design §10.5):
+
+- New `analysis/counter_history.py`: `analyze link-errors --record` appends one JSON line
+  per switch per run to `$XDG_STATE_HOME/unifi_mapper/port-counter-history.jsonl` (schema
+  version, time, device id/MAC/name, uptime, `last_seen`, and every port's state, error,
+  drop, CRC, link-down and byte counters). The append holds an `fcntl.flock` on a sibling
+  `.lock`; compaction (temp file + `os.replace`) runs only when `--retention-days`
+  (default 14, 1-365) or the 64 MiB cap is exceeded.
+- The comparison baseline stays separate: only `--snapshot` sets it. The link-error
+  baseline default moved off the working directory to
+  `$XDG_STATE_HOME/unifi_mapper/link-error-baseline.json`; a legacy
+  `./reports/link-error-baseline.json` is still read when the XDG file is absent, and is
+  reported as legacy.
+- `scripts/unifi-cron.sh`: the `link-error-snapshot` task (name kept, so `uninstall` still
+  finds installed jobs) and `run-all` now run `analyze link-errors --record` instead of
+  overwriting the baseline every 5 minutes.
+- Readers: `ports counters`, `ports diagnose`, `get_port_counter_rates` and
+  `diagnose_switch_port` report `baselines.history` (`first_increase` per counter, deltas,
+  resets, the newest 48 points). They never write; `ports counters --history PATH` reads
+  another file.
+
+Tests: `tests/analysis/test_counter_history.py`, `tests/test_cli_link_errors.py`, and
+additions to `tests/test_port_history.py` and `tests/test_ports_cli.py`.

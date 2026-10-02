@@ -7,8 +7,14 @@ import os
 from datetime import datetime
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import cast
+from typing import Any, cast
 from unifi_mapper.core.models.stp import STPPortConfig, SwitchSTPConfig
+
+
+# Device types whose port_table carries switch-port counters (switches and gateways
+# with built-in switch ports). Shared by the link-error baseline and counter history.
+SWITCH_DEVICE_TYPES = ('usw', 'udm', 'udmpro')
+STATE_DIR_NAME = 'unifi_mapper'
 
 
 class PortCounterSnapshot(BaseModel):
@@ -22,12 +28,21 @@ class PortCounterSnapshot(BaseModel):
     tx_dropped: int = 0
 
 
-def default_baseline_path() -> Path:
-    """Return the XDG state path used for persisted port counter baselines."""
+def state_dir() -> Path:
+    """Return the state root: ``$XDG_STATE_HOME/unifi_mapper`` or ``~/.local/state/unifi_mapper``.
+
+    Read at call time, so a changed ``XDG_STATE_HOME`` (tests isolate it per test)
+    takes effect immediately. Nothing is created here.
+    """
     state_home = os.environ.get('XDG_STATE_HOME')
     if state_home:
-        return Path(state_home) / 'unifi_mapper' / 'port-counters.json'
-    return Path.home() / '.local' / 'state' / 'unifi_mapper' / 'port-counters.json'
+        return Path(state_home) / STATE_DIR_NAME
+    return Path.home() / '.local' / 'state' / STATE_DIR_NAME
+
+
+def default_baseline_path() -> Path:
+    """Return the XDG state path used for persisted port counter baselines."""
+    return state_dir() / 'port-counters.json'
 
 
 def port_counter_key(device_id: str, port_idx: int) -> str:
@@ -55,6 +70,62 @@ def snapshots_from_switches(
         for switch in switches
         for port in switch.port_states
     }
+
+
+def _count(value: Any) -> int:
+    """Return ``value`` as a non-negative counter, or 0 when it is missing or not a number."""
+    if isinstance(value, bool) or value is None:
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def snapshots_from_devices(
+    devices: list[dict[str, Any]],
+    *,
+    timestamp: str | None = None,
+) -> dict[str, PortCounterSnapshot]:
+    """Build baseline snapshots for every port of every switch-type device with an ``_id``.
+
+    A device without ``_id`` (pending adoption) has no stable key and is skipped, as
+    are ports without an integer ``port_idx``. CRC errors use the same source as the
+    port diagnostics (``port_stats.rx_crc_errors``, then ``rx_crc_errors``).
+
+    Args:
+        devices: Raw ``stat/device`` rows.
+        timestamp: ISO timestamp for every snapshot; defaults to now.
+
+    Returns:
+        Snapshots keyed by :func:`port_counter_key`.
+    """
+    # Imported here: diagnostic_reads imports port_inspect, which imports this package.
+    from unifi_mapper.diagnostic_reads import crc_errors
+
+    stamp = timestamp or datetime.now().isoformat()
+    snapshots: dict[str, PortCounterSnapshot] = {}
+    for device in devices:
+        if not isinstance(device, dict) or device.get('type') not in SWITCH_DEVICE_TYPES:
+            continue
+        device_id = device.get('_id')
+        if not device_id:
+            continue
+        for port in device.get('port_table') or []:
+            if not isinstance(port, dict):
+                continue
+            port_idx = port.get('port_idx')
+            if isinstance(port_idx, bool) or not isinstance(port_idx, int):
+                continue
+            snapshots[port_counter_key(str(device_id), port_idx)] = PortCounterSnapshot(
+                timestamp=stamp,
+                rx_errors=_count(port.get('rx_errors')),
+                tx_errors=_count(port.get('tx_errors')),
+                crc_errors=_count(crc_errors(port)[0]),
+                rx_dropped=_count(port.get('rx_dropped')),
+                tx_dropped=_count(port.get('tx_dropped')),
+            )
+    return snapshots
 
 
 def diff_snapshots(

@@ -11,6 +11,7 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from typing import Any, Iterable, Optional
+from unifi_mapper.analysis.counter_history import PortCounterHistoryView
 from unifi_mapper.diagnostic_reads import SectionError
 from unifi_mapper.port_diagnostics import (
     ClientHistory,
@@ -261,6 +262,30 @@ def render_event_history(console: Console, history: EventHistory, limit: int = 5
     render_errors(console, history.errors)
 
 
+def history_line(history: Optional[PortCounterHistoryView]) -> str:
+    """Return one line describing the recorded counter history for a port."""
+    if history is None:
+        return 'counter history: not read'
+    where = f'counter history {escape(history.path)}: '
+    if history.error:
+        return where + f'unreadable ({escape(history.error)})'
+    if not history.found:
+        return where + 'not found (record with `analyze link-errors --record`)'
+    if not history.records:
+        return where + 'no records for this port'
+    started = [
+        f'{key} since {first.taken_at or first.epoch}'
+        for key, first in history.first_increase.items()
+        if first is not None and not key.endswith('_bytes')
+    ]
+    return where + (
+        f'{history.records} records {escape(str(history.earliest))} → '
+        f'{escape(str(history.latest))}; '
+        + (f'increasing: {escape(", ".join(started))}' if started else 'no error increase')
+        + (f'; {len(history.resets)} reset(s)' if history.resets else '')
+    )
+
+
 def render_counter_trend(console: Console, trend: CounterTrend) -> None:
     """Print counter samples, rates, the verdict and baseline comparisons."""
     samples = Table(title=f'Port {trend.port_idx} counter samples')
@@ -293,7 +318,9 @@ def render_counter_trend(console: Console, trend: CounterTrend) -> None:
         link = trend.baselines.link_error_tracking
         store = trend.baselines.port_counter_baseline
         console.print(
-            f'link-error baseline {escape(link.path)}: '
+            f'link-error baseline {escape(link.path)}'
+            + (' (legacy reports/ path)' if link.legacy else '')
+            + ': '
             + (
                 f'device {"present" if link.device_present else "absent"}, '
                 f'port {"present" if link.port_present else "absent"}, deltas {link.deltas}'
@@ -305,6 +332,7 @@ def render_counter_trend(console: Console, trend: CounterTrend) -> None:
             f'port-counter store {escape(store.path)}: '
             + (f'delta {store.delta}' if store.found else 'not found')
         )
+        console.print(history_line(trend.baselines.history), soft_wrap=True)
     render_errors(console, trend.errors)
 
 
@@ -346,6 +374,8 @@ def render_bundle_summary(console: Console, bundle: PortDiagnosticBundle, path: 
         )
     if bundle.counters:
         console.print(f'Counters: {bundle.counters.verdict}')
+        if bundle.counters.baselines:
+            console.print(history_line(bundle.counters.baselines.history), soft_wrap=True)
     gets = sum(1 for r in bundle.request_audit if r['method'] == 'GET')
     posts = len(bundle.request_audit) - gets
     console.print(

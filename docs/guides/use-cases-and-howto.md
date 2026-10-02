@@ -1727,14 +1727,23 @@ Expected success criteria:
 UniFi exposes cumulative counters. In most cases the API does not provide a safe per-port counter reset operation, so the practical pattern is to keep local baselines and compare deltas between runs.
 
 ```bash
-# Snapshot/delta support lives in the Python baseline module and is used by 10G validation.
-uv run unifi-mapper stp validate-10g --planned-switches 2 --drops-threshold 100000
+# Set the baselines after a known-good physical state (link-error + per-port counters)
+uv run unifi-mapper analyze link-errors --snapshot
+
+# Record counter history (the cron task does this every 5 minutes)
+uv run unifi-mapper analyze link-errors --record
+
+# Compare: deltas since the baseline, plus the history's first_increase per counter
+uv run unifi-mapper analyze link-errors
+uv run unifi-mapper ports counters "Office Flex XG" 5 --samples 1 --json
 ```
 
-The local baseline path is:
+The files live under the XDG state directory:
 
 ```text
+${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/link-error-baseline.json
 ${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/port-counters.json
+${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/port-counter-history.jsonl
 ```
 
 Use a new baseline after a known-good physical state, then treat new CRC/errors as actionable. Drops-only findings are lower confidence because multicast/broadcast filtering can increment drops without a bad cable.

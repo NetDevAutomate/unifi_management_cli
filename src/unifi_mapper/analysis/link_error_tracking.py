@@ -2,33 +2,78 @@
 
 Takes periodic snapshots of port error/drop counters and compares deltas
 to distinguish active degradation from cumulative historical errors.
+
+The comparison baseline lives at ``$XDG_STATE_HOME/unifi_mapper/link-error-baseline.json``
+(see :func:`default_link_error_baseline_path`) and is written only by
+``analyze link-errors --snapshot``, which also writes the port-counter baseline store.
+A baseline left at the old working-directory path ``reports/link-error-baseline.json``
+is still read when the XDG file does not exist, and is reported as legacy.
 """
 
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Optional
+from unifi_mapper.analysis.port_counter_baseline import (
+    SWITCH_DEVICE_TYPES,
+    PortCounterBaselineStore,
+    snapshots_from_devices,
+    state_dir,
+)
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
-DEFAULT_BASELINE_PATH = 'reports/link-error-baseline.json'
+LINK_ERROR_BASELINE_FILENAME = 'link-error-baseline.json'
+# The pre-XDG default, relative to the working directory. Still read when the XDG
+# baseline does not exist; never written by default.
+LEGACY_LINK_ERROR_BASELINE = 'reports/link-error-baseline.json'
+# Kept importable for callers of the old constant; it names the legacy path.
+DEFAULT_BASELINE_PATH = LEGACY_LINK_ERROR_BASELINE
 
 
-async def snapshot_link_errors(output_path: str = DEFAULT_BASELINE_PATH) -> dict:
-    """Capture current error counters for all ports as a baseline."""
+def default_link_error_baseline_path() -> Path:
+    """Return ``state_dir() / 'link-error-baseline.json'`` (nothing is created)."""
+    return state_dir() / LINK_ERROR_BASELINE_FILENAME
+
+
+def resolve_link_error_baseline(explicit: Optional[str | Path] = None) -> tuple[Path, bool]:
+    """Return ``(path, is_legacy)`` for the link-error baseline to read.
+
+    An explicit path always wins. Otherwise the XDG baseline is used when it
+    exists, then a legacy ``reports/link-error-baseline.json`` in the working
+    directory (flagged as legacy). With neither, the XDG path is returned, so a
+    missing baseline is reported where ``--snapshot`` would write it.
+    """
+    if explicit:
+        return Path(explicit), False
+    xdg = default_link_error_baseline_path()
+    if xdg.exists():
+        return xdg, False
+    legacy = Path.cwd() / LEGACY_LINK_ERROR_BASELINE
+    if legacy.exists():
+        return legacy, True
+    return xdg, False
+
+
+async def fetch_devices() -> list[dict[str, Any]]:
+    """Read every device once (``stat/device``) for a snapshot or a history record."""
     async with UniFiClient() as client:
-        devices = await client.get_devices()
+        return await client.get_devices()
 
-    snapshot = {'timestamp': datetime.now().isoformat(), 'devices': []}
+
+def build_link_error_snapshot(devices: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
+    """Return the link-error baseline document for ``devices``. Pure."""
+    snapshot: dict[str, Any] = {'timestamp': now.isoformat(), 'devices': []}
 
     for d in devices:
-        if d.get('type') not in ('usw', 'udm', 'udmpro'):
+        if d.get('type') not in SWITCH_DEVICE_TYPES:
             continue
         # A factory-reset / pending-adoption device has no '_id'. There is no stable key
         # to anchor a baseline to, so it is skipped rather than crashing the snapshot.
         if not d.get('_id'):
             continue
-        dev_entry = {
+        dev_entry: dict[str, Any] = {
             'device_id': d['_id'],
             'name': d.get('name', 'Unknown'),
             'uptime': d.get('uptime', 0),
@@ -48,30 +93,61 @@ async def snapshot_link_errors(output_path: str = DEFAULT_BASELINE_PATH) -> dict
                 }
             )
         snapshot['devices'].append(dev_entry)
+    return snapshot
 
-    path = Path(output_path)
+
+async def snapshot_link_errors(
+    output_path: Optional[str | Path] = None,
+    *,
+    store_path: Optional[Path] = None,
+    devices: Optional[list[dict[str, Any]]] = None,
+) -> dict:
+    """Set the comparison baselines: the link-error baseline and the port-counter store.
+
+    Args:
+        output_path: Link-error baseline file; defaults to
+            :func:`default_link_error_baseline_path`.
+        store_path: Port-counter baseline store; defaults to its XDG path.
+        devices: Already-fetched ``stat/device`` rows; fetched when None.
+
+    Returns:
+        The link-error baseline document that was written.
+    """
+    if devices is None:
+        devices = await fetch_devices()
+    now = datetime.now()
+    snapshot = build_link_error_snapshot(devices, now)
+
+    path = Path(output_path) if output_path else default_link_error_baseline_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(snapshot, indent=2))
+    PortCounterBaselineStore(store_path).save(
+        snapshots_from_devices(devices, timestamp=now.isoformat())
+    )
     return snapshot
 
 
 async def compare_link_errors(
-    baseline_path: str = DEFAULT_BASELINE_PATH,
+    baseline_path: Optional[str | Path] = None,
     threshold_errors_per_min: float = 10.0,
 ) -> dict:
     """Compare current error counters against baseline to find active degradation.
 
+    Read only: never writes a baseline or the history.
+
     Args:
-        baseline_path: Path to baseline snapshot JSON
+        baseline_path: Path to baseline snapshot JSON; None resolves the default
+            with :func:`resolve_link_error_baseline`.
         threshold_errors_per_min: Flag ports exceeding this error rate
 
     Returns:
-        Report with deltas and flagged ports
+        Report with deltas and flagged ports, plus ``baseline_path`` and
+        ``legacy_baseline``.
     """
-    path = Path(baseline_path)
+    path, legacy = resolve_link_error_baseline(baseline_path)
     if not path.exists():
         raise ToolError(
-            message=f'No baseline found at {baseline_path}. Run snapshot first.',
+            message=f'No baseline found at {path}. Run snapshot first.',
             error_code=ErrorCodes.NO_DATA,
             suggestion='Run: unifi-mapper analyze link-errors --snapshot',
         )
@@ -99,7 +175,7 @@ async def compare_link_errors(
     # A reboot is: current uptime < baseline uptime (counter reset to 0 on boot)
     rebooted_devices: dict[str, dict] = {}
     for d in devices:
-        if d.get('type') not in ('usw', 'udm', 'udmpro'):
+        if d.get('type') not in SWITCH_DEVICE_TYPES:
             continue
         dev_id = d.get('_id')
         if not dev_id:
@@ -117,7 +193,7 @@ async def compare_link_errors(
     all_deltas = []
 
     for d in devices:
-        if d.get('type') not in ('usw', 'udm', 'udmpro'):
+        if d.get('type') not in SWITCH_DEVICE_TYPES:
             continue
         dev_id = d.get('_id')
         if not dev_id:
@@ -168,6 +244,8 @@ async def compare_link_errors(
 
     return {
         'timestamp': now.isoformat(),
+        'baseline_path': str(path),
+        'legacy_baseline': legacy,
         'baseline_timestamp': baseline['timestamp'],
         'elapsed_minutes': round(elapsed_minutes, 1),
         'threshold_errors_per_min': threshold_errors_per_min,

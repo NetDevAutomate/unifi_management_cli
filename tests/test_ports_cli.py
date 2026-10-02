@@ -160,6 +160,33 @@ def test_counters_single_sample_json(cli):
     assert data['baselines']['link_error_tracking']['found'] is False
 
 
+def test_counters_json_includes_the_recorded_history(cli):
+    from unifi_mapper.analysis.counter_history import (
+        append_history,
+        build_history_records,
+        default_history_path,
+    )
+
+    without = _json(cli.run('ports', 'counters', SWITCH_NAME, '5', '--samples', '1', '--json'))
+    assert without['baselines']['history']['found'] is False
+    assert without['baselines']['history']['path'] == str(default_history_path())
+    assert not default_history_path().exists()  # reading created nothing
+
+    append_history(build_history_records(fake_devices(), taken_at='T', epoch=1.0), now=1.0)
+    data = _json(cli.run('ports', 'counters', SWITCH_NAME, '5', '--samples', '1', '--json'))
+
+    history = data['baselines']['history']
+    assert history['found'] is True and history['records'] == 1
+    assert history['points'][0]['rx_crc_errors'] == 3
+    assert set(history['first_increase']) >= {'rx_errors', 'rx_crc_errors', 'link_down_count'}
+
+
+def test_counters_table_prints_a_history_line(cli):
+    result = cli.run('ports', 'counters', SWITCH_NAME, '5', '--samples', '1')
+    assert result.exit_code == 0, result.output
+    assert 'counter history' in result.stdout and 'analyze link-errors --record' in result.stdout
+
+
 @pytest.mark.parametrize('args', [('--samples', '9'), ('--interval', '5')])
 def test_counters_rejects_out_of_range_sampling(cli, args):
     result = cli.run('ports', 'counters', SWITCH_NAME, '5', *args)

@@ -25,9 +25,12 @@ LOG_DIR="${LOG_DIR:-$PROJECT_DIR/logs}"
 
 # Schedule definitions: "name|interval|command"
 # port-naming writes port names, so it passes --apply explicitly (discover previews by default).
+# link-error-snapshot keeps its name (so uninstall still finds installed jobs) but now appends
+# to the counter history (--record) instead of overwriting the comparison baseline; set the
+# baseline deliberately with `unifi-mapper analyze link-errors --snapshot`.
 # Intervals: for cron = cron expression, for launchd = seconds
 TASKS=(
-    "link-error-snapshot|300|analyze link-errors --snapshot"
+    "link-error-snapshot|300|analyze link-errors --record"
     "client-roaming-snapshot|300|analyze roaming --snapshot"
     "config-drift-check|3600|analyze config-drift"
     "diagnose-all|3600|diagnose all"
@@ -188,7 +191,7 @@ run_all() {
     log "Running all audit tasks..."
 
     cd "$PROJECT_DIR"
-    $UV_BIN run unifi-mapper analyze link-errors --snapshot
+    $UV_BIN run unifi-mapper analyze link-errors --record
     $UV_BIN run unifi-mapper analyze roaming --snapshot
     $UV_BIN run unifi-mapper analyze config-drift
     $UV_BIN run unifi-mapper diagnose all

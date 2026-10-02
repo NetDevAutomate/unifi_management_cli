@@ -239,7 +239,8 @@ unifi-mapper ports client aa:bb:cc:dd:ee:ff --switch "Office Flex XG" --port 5
 # Events, alarms, system log and admin audit for a switch, a port, or a client
 unifi-mapper ports events "Office Flex XG" 5 --client aa:bb:cc:dd:ee:ff --since-days 365
 
-# Error counter rates for one port, sampled an inform interval apart
+# Error counter rates for one port, sampled an inform interval apart, compared with the
+# baselines and the recorded counter history (see "Link error baselines and history")
 unifi-mapper ports counters "Office Flex XG" 5 --samples 3 --interval 100
 
 # One JSON evidence bundle with all of the above, for a vendor ticket
@@ -271,9 +272,12 @@ would read as zero errors.
 ### Analysis Tools
 
 ```bash
-# Link error rate tracking — baseline snapshot then delta comparison
+# Link error rate tracking — set a baseline, then compare against it (read only)
 unifi-mapper analyze link-errors --snapshot
 unifi-mapper analyze link-errors --threshold 100
+
+# Append one counter snapshot of every switch port to the history (the 5-minute cron task)
+unifi-mapper analyze link-errors --record --retention-days 14
 
 
 # Client roaming analysis — identify sticky clients and frequent roamers
@@ -294,6 +298,32 @@ unifi-mapper analyze neighbours --diff
 unifi-mapper analyze neighbours --diff --signal-delta 15
 ```
 
+#### Link error baselines and history
+
+`analyze link-errors` keeps its files under the XDG state directory,
+`${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/`, never in the working directory:
+
+| File | Written by | Purpose |
+|---|---|---|
+| `link-error-baseline.json` | `--snapshot` | The comparison baseline for a plain `analyze link-errors` |
+| `port-counters.json` | `--snapshot` | The per-port counter baseline compared by `ports counters`, `ports diagnose` and the MCP port tools |
+| `port-counter-history.jsonl` | `--record` | One JSON line per switch per run: every port's error, drop, CRC, link-down and byte counters |
+
+- A plain run only reads. Nothing writes a file unless `--snapshot` or `--record` is given;
+  the two can be combined and share one controller read.
+- Recording never moves the baseline. Set the baseline deliberately with `--snapshot`
+  after a known-good physical state.
+- The history keeps `--retention-days` days (default 14, 1-365) and at most 64 MiB; older
+  lines are dropped when a run exceeds either cap.
+- `ports counters`, `ports diagnose`, `get_port_counter_rates` and `diagnose_switch_port`
+  report `baselines.history` for the port: the recorded window, deltas, resets (reboots or
+  cleared counters) and `first_increase`, the first sample in which each counter rose.
+  They only read it; `ports counters --history PATH` reads another file.
+- A baseline left at the old `./reports/link-error-baseline.json` is still read when the
+  XDG one does not exist, and is reported as legacy.
+- `scripts/unifi-cron.sh` runs `analyze link-errors --record` every 5 minutes (the task is
+  still named `link-error-snapshot`).
+
 ### Command Reference
 
 Every command on the `unifi-mapper` entry point. All are read-only unless noted.
@@ -313,10 +343,10 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `ports profile-diff` | Key-by-key diff of two port profiles and the ports using each |
 | `ports client` | Where the controller places a client, across current and offline client tables |
 | `ports events` | Events, alarms, system log and admin audit for a device, port or client |
-| `ports counters` | Sample a port's error counters: per-minute rates with a trust verdict |
+| `ports counters` | Sample a port's error counters: per-minute rates with a trust verdict, baselines and recorded history |
 | `ports diagnose` | JSON evidence bundle for one port, with a request audit (for vendor tickets) |
 | `analyze link-quality` | Port statistics and error rates |
-| `analyze link-errors` | Error-rate baseline and delta comparison |
+| `analyze link-errors` | Error-rate baseline (`--snapshot`), counter history (`--record`) and read-only delta comparison |
 | `analyze port-profiles` | Validate STP Edge, BPDU Guard and uplink safety |
 | `analyze vlan-coverage` | VLAN coverage on trunk and planned uplink ports |
 | `analyze uplink-transparency` | Whether each elected uplink can carry tagged VLANs |

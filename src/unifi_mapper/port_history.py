@@ -12,8 +12,9 @@ with read-only queries:
 * :func:`sample_port_counters` takes N samples of a port's counters an inform
   interval apart and reports per-minute rates with a verdict that refuses to
   report false zeros from a device that has stopped informing.
-* :func:`read_counter_baselines` compares against existing baselines on disk.
-  It only reads them; it never writes or replaces a baseline.
+* :func:`read_counter_baselines` compares against existing baselines on disk and
+  summarises the recorded counter history (``analyze link-errors --record``). It
+  only reads them; it never writes or replaces a baseline or the history.
 """
 
 import json
@@ -22,6 +23,14 @@ import time
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import Any, Callable, Iterable, Iterator, Optional
+from unifi_mapper.analysis.counter_history import (
+    HISTORY_POINTS_LIMIT,
+    PortCounterHistoryView,
+    default_history_path,
+    read_port_history,
+    summarise_port_history,
+)
+from unifi_mapper.analysis.link_error_tracking import resolve_link_error_baseline
 from unifi_mapper.analysis.port_counter_baseline import (
     PortCounterBaselineStore,
     PortCounterSnapshot,
@@ -56,7 +65,8 @@ SYSTEM_LOG_PAGE_SIZE = 100
 MAX_SINCE_DAYS = 3650
 MAX_EVENTS_LIMIT = 5000
 
-# Same default as `unifi-mapper analyze link-errors`.
+# The legacy working-directory baseline path. Kept importable; readers now resolve the
+# default with analysis.link_error_tracking.resolve_link_error_baseline (XDG first).
 DEFAULT_LINK_ERROR_BASELINE = 'reports/link-error-baseline.json'
 
 # Devices inform roughly every 75-90 s (see analysis/device_freshness.py). Sampling
@@ -242,6 +252,7 @@ class LinkErrorBaselineView(BaseModel):
 
     path: str
     found: bool = False
+    legacy: bool = False  # read from the old working-directory reports/ path
     baseline_timestamp: Optional[str] = None
     device_present: bool = False
     port_present: bool = False
@@ -262,10 +273,11 @@ class PortCounterBaselineView(BaseModel):
 
 
 class CounterBaselines(BaseModel):
-    """Both on-disk baselines."""
+    """Both on-disk baselines and the recorded counter history."""
 
     link_error_tracking: LinkErrorBaselineView
     port_counter_baseline: PortCounterBaselineView
+    history: Optional[PortCounterHistoryView] = None
 
 
 class CounterTrend(DiagnosticModel):
@@ -762,17 +774,29 @@ def read_counter_baselines(
     port_idx: int,
     current: dict[str, Any],
     current_uptime: Optional[int],
-    link_error_baseline_path: str = DEFAULT_LINK_ERROR_BASELINE,
+    link_error_baseline_path: Optional[str] = None,
     port_counter_store_path: Optional[Path] = None,
+    history_path: Optional[Path] = None,
 ) -> CounterBaselines:
     """Compare current counters with the baselines on disk, reading them only.
 
-    Never calls a ``snapshot_*`` function or ``PortCounterBaselineStore.save``:
-    reading a baseline must not replace it.
+    Never calls a ``snapshot_*`` function, ``PortCounterBaselineStore.save`` or
+    the history writer: reading a baseline must not replace it, and reading the
+    history must not change it.
+
+    Args:
+        switch: The switch row.
+        port_idx: Port index.
+        current: The port's current counters.
+        current_uptime: The switch's current uptime.
+        link_error_baseline_path: Explicit link-error baseline; None resolves the
+            XDG default, then a legacy ``reports/`` file in the working directory.
+        port_counter_store_path: Port-counter store; None uses its XDG default.
+        history_path: Counter history; None uses its XDG default.
     """
     device_id = str(switch.get('_id') or '')
-    link = LinkErrorBaselineView(path=str(link_error_baseline_path))
-    path = Path(link_error_baseline_path)
+    path, legacy = resolve_link_error_baseline(link_error_baseline_path)
+    link = LinkErrorBaselineView(path=str(path), legacy=legacy)
     if path.exists():
         link.found = True
         try:
@@ -823,7 +847,27 @@ def read_counter_baselines(
         except (OSError, ValueError) as e:
             # Pydantic validation errors quote the offending input from the file.
             stored.error = redact_text(f'{type(e).__name__}: {e}')
-    return CounterBaselines(link_error_tracking=link, port_counter_baseline=stored)
+    return CounterBaselines(
+        link_error_tracking=link,
+        port_counter_baseline=stored,
+        history=read_history_view(device_id, port_idx, history_path),
+    )
+
+
+def read_history_view(
+    device_id: str, port_idx: int, history_path: Optional[Path] = None
+) -> PortCounterHistoryView:
+    """Summarise the recorded counter history for one port, reading it only."""
+    target = history_path or default_history_path()
+    try:
+        points = read_port_history(device_id, port_idx, path=target)
+    except OSError as e:
+        return PortCounterHistoryView(
+            path=str(target), found=True, error=redact_text(f'{type(e).__name__}: {e}')
+        )
+    return summarise_port_history(
+        points, limit=HISTORY_POINTS_LIMIT, path=str(target), found=target.exists()
+    )
 
 
 def sample_port_counters(
@@ -836,8 +880,9 @@ def sample_port_counters(
     interval_seconds: int = 100,
     sleep: Callable[[float], None] = time.sleep,
     now: Callable[[], float] = time.time,
-    link_error_baseline_path: str = DEFAULT_LINK_ERROR_BASELINE,
+    link_error_baseline_path: Optional[str] = None,
     port_counter_store_path: Optional[Path] = None,
+    history_path: Optional[Path] = None,
     ctx: Optional[Collection] = None,
 ) -> CounterTrend:
     """Sample one port's counters ``samples`` times, ``interval_seconds`` apart.
@@ -883,6 +928,7 @@ def sample_port_counters(
         last.device_uptime,
         link_error_baseline_path,
         port_counter_store_path,
+        history_path,
     )
     return CounterTrend(
         port_idx=port_idx,

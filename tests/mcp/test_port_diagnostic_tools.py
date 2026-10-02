@@ -135,6 +135,36 @@ async def test_execute_tool_runs_each_tool_read_only(fake_controller, name, para
     assert {c['method'] for c in session.calls} <= {'GET', 'POST'}
 
 
+async def test_counter_tools_report_the_recorded_history_and_write_nothing(fake_controller):
+    from tests.fixtures_unifi import fake_devices
+    from unifi_mapper.analysis.counter_history import (
+        append_history,
+        build_history_records,
+        default_history_path,
+    )
+
+    append_history(build_history_records(fake_devices(), taken_at='T', epoch=1.0), now=1.0)
+    state = default_history_path().parent
+    before = {p.name: p.read_bytes() for p in state.iterdir()}
+
+    rates = _envelope(
+        await server.execute_tool(
+            'get_port_counter_rates', {'switch': SWITCH_NAME, 'port': 5, 'samples': 1}
+        )
+    )
+    bundle = _envelope(
+        await server.execute_tool('diagnose_switch_port', {'switch': SWITCH_NAME, 'port': 5})
+    )
+
+    for history in (
+        rates['result']['baselines']['history'],
+        bundle['result']['counters']['baselines']['history'],
+    ):
+        assert history['found'] is True and history['records'] == 1
+        assert 'rx_crc_errors' in history['first_increase']
+    assert {p.name: p.read_bytes() for p in state.iterdir()} == before
+
+
 async def test_client_history_confirms_the_target_port(fake_controller):
     out = _envelope(
         await server.execute_tool(

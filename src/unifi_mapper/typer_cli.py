@@ -3105,10 +3105,21 @@ def ports_counters(
         max=300,
         help='Seconds between samples (devices inform every ~75-90 s)',
     ),
-    link_error_baseline: str = typer.Option(
-        'reports/link-error-baseline.json',
+    link_error_baseline: Optional[str] = typer.Option(
+        None,
         '--link-error-baseline',
-        help='Baseline from `analyze link-errors --snapshot` to compare against (read only)',
+        help=(
+            'Baseline from `analyze link-errors --snapshot` to compare against (read only; '
+            'default: the XDG state baseline, else a legacy ./reports/ one)'
+        ),
+    ),
+    history: Optional[str] = typer.Option(
+        None,
+        '--history',
+        help=(
+            'Counter history from `analyze link-errors --record` (read only; '
+            'default: $XDG_STATE_HOME/unifi_mapper/port-counter-history.jsonl)'
+        ),
     ),
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
 ):
@@ -3116,7 +3127,8 @@ def ports_counters(
 
     Blocks for (samples - 1) x interval seconds. Rates are withheld when the device did
     not inform between samples (a stale snapshot would read as zero errors) or when a
-    counter or uptime went down. Existing baselines are compared, never overwritten.
+    counter or uptime went down. Existing baselines and the recorded counter history
+    are compared, never written.
     """
     from .port_diagnostics_render import render_counter_trend
     from .port_history import sample_port_counters
@@ -3133,6 +3145,7 @@ def ports_counters(
                 samples=samples,
                 interval_seconds=interval,
                 link_error_baseline_path=link_error_baseline,
+                history_path=Path(history) if history else None,
             )
     if as_json:
         _emit_json(trend.to_json_dict())
@@ -3554,31 +3567,99 @@ def radio_report(
 
 @analyze_app.command('link-errors')
 def analyze_link_errors(
-    snapshot: bool = typer.Option(False, '--snapshot', help='Take a baseline snapshot'),
-    baseline: str = typer.Option(
-        'reports/link-error-baseline.json', '--baseline', '-b', help='Baseline file path'
+    snapshot: bool = typer.Option(
+        False,
+        '--snapshot',
+        help='Set the comparison baseline: writes the link-error and port-counter baselines',
+    ),
+    record: bool = typer.Option(
+        False,
+        '--record',
+        help='Append one counter snapshot of every switch port to the history',
+    ),
+    baseline: Optional[str] = typer.Option(
+        None,
+        '--baseline',
+        '-b',
+        help=(
+            'Baseline file path (default: $XDG_STATE_HOME/unifi_mapper/link-error-baseline.json; '
+            'a legacy ./reports/link-error-baseline.json is still read)'
+        ),
+    ),
+    history: Optional[str] = typer.Option(
+        None,
+        '--history',
+        help='History file (default: $XDG_STATE_HOME/unifi_mapper/port-counter-history.jsonl)',
+    ),
+    retention_days: int = typer.Option(
+        14, '--retention-days', min=1, max=365, help='Days of history to keep when recording'
     ),
     threshold: float = typer.Option(
         10.0, '--threshold', '-t', help='Error rate threshold (errors/min)'
     ),
 ):
-    """📈 Track link error rates between snapshots to detect active degradation."""
+    """📈 Track link error rates between snapshots to detect active degradation.
+
+    A plain run only compares against the baseline (read only). --snapshot sets the
+    baseline; --record appends to the counter history read by `ports counters`,
+    `ports diagnose` and the MCP port tools. Both write only under the XDG state
+    directory and can be combined (one controller read).
+    """
     import asyncio
+    import time
+    from datetime import datetime
     from rich.table import Table
-    from unifi_mapper.analysis.link_error_tracking import compare_link_errors, snapshot_link_errors
+    from unifi_mapper.analysis.counter_history import append_history, build_history_records
+    from unifi_mapper.analysis.link_error_tracking import (
+        compare_link_errors,
+        default_link_error_baseline_path,
+        fetch_devices,
+        snapshot_link_errors,
+    )
+    from unifi_mapper.analysis.port_counter_baseline import default_baseline_path
 
     load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
 
-    if snapshot:
-        console.print('📸 [bold]Link Error Baseline Snapshot[/bold]\n')
-        result = asyncio.run(snapshot_link_errors(baseline))
-        dev_count = len(result['devices'])
-        port_count = sum(len(d['ports']) for d in result['devices'])
-        console.print(f'Captured: {dev_count} devices, {port_count} ports')
-        console.print(f'Saved to: [green]{baseline}[/green]')
-        console.print('\n💡 Run again without --snapshot to compare against this baseline')
+    if snapshot or record:
+        try:
+            devices = asyncio.run(fetch_devices())
+        except Exception as e:  # noqa: BLE001 - any read failure ends the command cleanly
+            _fail(f'Error: {e}')
+        if snapshot:
+            console.print('📸 [bold]Link Error Baseline Snapshot[/bold]\n')
+            target = Path(baseline) if baseline else default_link_error_baseline_path()
+            result = asyncio.run(snapshot_link_errors(target, devices=devices))
+            dev_count = len(result['devices'])
+            port_count = sum(len(d['ports']) for d in result['devices'])
+            console.print(f'Captured: {dev_count} devices, {port_count} ports')
+            console.print(f'Saved to: [green]{escape(str(target))}[/green]')
+            console.print(
+                f'Port-counter baseline: [green]{escape(str(default_baseline_path()))}[/green]'
+            )
+            console.print('\n💡 Run again without --snapshot to compare against this baseline')
+        if record:
+            epoch = time.time()
+            taken_at = datetime.fromtimestamp(epoch).astimezone().isoformat()
+            records = build_history_records(devices, taken_at=taken_at, epoch=epoch)
+            written = append_history(
+                records,
+                path=Path(history) if history else None,
+                retention_days=retention_days,
+                now=epoch,
+            )
+            console.print(
+                f'🗂️ Recorded {written.records_written} switch(es) to '
+                f'[green]{escape(written.path)}[/green] '
+                f'(retention {written.retention_days} days, {written.bytes} bytes)'
+            )
+            if written.compacted:
+                console.print(
+                    f'[dim]   Compacted: dropped {written.dropped_by_age} by age, '
+                    f'{written.dropped_by_size} by size, '
+                    f'{written.dropped_unparsable} unparsable[/dim]'
+                )
         return
 
     console.print('📈 [bold]Link Error Rate Analysis[/bold]\n')
@@ -3588,7 +3669,19 @@ def analyze_link_errors(
         console.print(f'[red]Error:[/red] {e}')
         raise typer.Exit(1)
 
-    console.print(f'Baseline: {report["baseline_timestamp"]}')
+    if report.get('legacy_baseline'):
+        err_console.print(
+            f'[yellow]Using the legacy baseline {escape(report["baseline_path"])}; '
+            f'run --snapshot to set one at {escape(str(default_link_error_baseline_path()))}'
+            '[/yellow]',
+            soft_wrap=True,
+        )
+
+    console.print(
+        f'Baseline: {report["baseline_timestamp"]} '
+        f'([dim]{escape(str(report.get("baseline_path", "")))}[/dim])',
+        soft_wrap=True,
+    )
     console.print(f'Elapsed: {report["elapsed_minutes"]} minutes')
     console.print(f'Ports with new errors: {report["ports_with_new_errors"]}')
     console.print(

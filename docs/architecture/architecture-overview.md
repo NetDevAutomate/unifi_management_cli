@@ -258,7 +258,7 @@ The MCP server does not hard-code any domain logic. It delegates discovery to th
 
 | Command | Module | Purpose |
 | --- | --- | --- |
-| `analyze link-errors` | `analysis/link_error_tracking.py` | Baseline snapshot + delta comparison |
+| `analyze link-errors` | `analysis/link_error_tracking.py`, `analysis/counter_history.py` | Baseline snapshot, counter history + delta comparison |
 | `analyze roaming` | `analysis/roaming_analysis.py` | Client-to-AP association tracking |
 | `analyze config-drift` | `analysis/config_drift.py` | Device config snapshot + diff |
 | `analyze neighbours` | `analysis/neighbour_scan.py` | RF spectrum scan for external networks |
@@ -931,12 +931,12 @@ graph TD
 
 | Task | Interval | CLI command |
 | --- | --- | --- |
-| Link error snapshot | 5 min | `analyze link-errors --snapshot` |
+| Link error snapshot (records history) | 5 min | `analyze link-errors --record` |
 | Client roaming snapshot | 5 min | `analyze roaming --snapshot` |
 | Config drift check | 1 hour | `analyze config-drift` |
 | Full diagnostics | 1 hour | `diagnose all` |
 | Radio report | 1 hour | `radio report -o reports/channel-report.md` |
-| Port naming | 30 min | `--verify-updates --connected-devices` |
+| Port naming | 30 min | `--verify-updates --connected-devices --apply` |
 
 The scheduler writes logs to `$PROJECT_DIR/logs/` with one log file per task. On macOS, each task is a launchd plist under `~/Library/LaunchAgents/com.unifi-management.{name}.plist`. On Linux, entries are appended to the user's crontab with a `# UNIFI-MANAGEMENT-CLI` marker for clean uninstall.
 
