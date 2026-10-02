@@ -1,6 +1,28 @@
 """Simplified pytest configuration for foundation testing."""
 
+import httpx
 import pytest
+import requests
+import socket
+
+
+@pytest.fixture
+def block_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail any test that tries to reach a real network (opt-in).
+
+    Patches the requests and httpx send paths and raw socket connects, so a
+    unit test that accidentally builds a live client fails loudly instead of
+    talking to a controller.
+    """
+
+    def _blocked(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError('live network access in a unit test')
+
+    monkeypatch.setattr(requests.Session, 'request', _blocked)
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, 'send', _blocked)
+    monkeypatch.setattr(httpx.Client, 'send', _blocked)
+    monkeypatch.setattr(httpx.AsyncClient, 'send', _blocked)
+    monkeypatch.setattr(socket.socket, 'connect', _blocked)
 
 
 @pytest.fixture
