@@ -717,46 +717,123 @@ class PortInspectionResult:
 # ---------------------------------------------------------------------------
 
 
+def _normalise_mac(value: Any) -> Optional[str]:
+    """Return a MAC as lower-case colon-separated hex, or None if it is not a full MAC.
+
+    Accepts ``aa:bb:cc:dd:ee:ff``, ``AA-BB-CC-DD-EE-FF``, ``aabb.ccdd.eeff`` and
+    ``aabbccddeeff``. Partial MACs return None so they fall through to the
+    substring match.
+    """
+    if not isinstance(value, str):
+        return None
+    digits = ''.join(ch for ch in value.strip().lower() if ch not in ':-.')
+    if len(digits) != 12 or any(ch not in '0123456789abcdef' for ch in digits):
+        return None
+    return ':'.join(digits[i : i + 2] for i in range(0, 12, 2))
+
+
+def _describe_candidates(devices: list[dict[str, Any]]) -> str:
+    """Render candidate devices as ``'name' (mac, model)`` for error messages."""
+    return ', '.join(
+        f'{d.get("name")!r} ({d.get("mac") or "?"}, {d.get("model") or "?"})' for d in devices
+    )
+
+
+def resolve_switch_match(
+    client: UnifiApiClient,
+    site: str,
+    query: str,
+    *,
+    device_types: Optional[tuple[str, ...]] = ('usw',),
+) -> tuple[dict[str, Any], str, list[dict[str, Any]]]:
+    """Find one device and report how it matched.
+
+    Tiers are tried in order and the first non-empty tier wins:
+
+      1. ``exact_name``: the whole query equals the device name (case-insensitive).
+      2. ``mac``: the query is a full MAC equal to the device MAC, in any notation.
+      3. ``ip``: the query equals the device IP.
+      4. ``tokens``: every whitespace-separated token appears in the name
+         (multi-token queries only), so 'Lounge Flex 8' finds
+         'Mike2 USW Flex 2.5G 8 PoE'.
+      5. ``substring``: the query appears in name, model, IP or MAC.
+
+    An exact name therefore beats a token match: 'USW Flex XG' resolves to the
+    switch named exactly that even when 'Hotel3 USW Flex XG 10G' also exists.
+
+    Args:
+        client: Authenticated API client.
+        site: Site name.
+        query: Device name, MAC, IP, or a partial name.
+        device_types: Device ``type`` values to consider. None considers every
+            adopted device. Defaults to switches only.
+
+    Returns:
+        ``(device, matched_by, candidates)`` where ``candidates`` is the winning
+        tier's match list (a single entry on success).
+
+    Raises:
+        LookupError: Nothing matched, or the winning tier matched more than one
+            device. The message lists the name, MAC and model of every candidate.
+    """
+    resp = client.get_devices(site)
+    devices = (resp or {}).get('data', []) if isinstance(resp, dict) else []
+    pool = [
+        d
+        for d in devices
+        if isinstance(d, dict) and (device_types is None or d.get('type') in device_types)
+    ]
+    raw_query = query.strip()
+    q = raw_query.lower()
+    tokens = [t for t in q.split() if t]
+    query_mac = _normalise_mac(raw_query)
+
+    def _all_tokens_in_name(d: dict) -> bool:
+        name = (d.get('name') or '').lower()
+        return len(tokens) > 1 and all(t in name for t in tokens)
+
+    def _substring_hit(d: dict) -> bool:
+        return bool(q) and any(
+            q in (str(d.get(k) or '')).lower() for k in ('name', 'model', 'ip', 'mac')
+        )
+
+    tiers: list[tuple[str, Any]] = [
+        ('exact_name', lambda d: bool(q) and (d.get('name') or '').strip().lower() == q),
+        ('mac', lambda d: query_mac is not None and _normalise_mac(d.get('mac')) == query_mac),
+        ('ip', lambda d: bool(raw_query) and str(d.get('ip') or '').strip() == raw_query),
+        ('tokens', _all_tokens_in_name),
+        ('substring', _substring_hit),
+    ]
+    for matched_by, predicate in tiers:
+        matches = [d for d in pool if predicate(d)]
+        if len(matches) == 1:
+            return matches[0], matched_by, matches
+        if len(matches) > 1:
+            raise LookupError(
+                f'Ambiguous match for {query!r} ({matched_by}): {_describe_candidates(matches)}. '
+                'Pass the exact name or the MAC address.'
+            )
+
+    kind, plural = ('switch', 'switches') if device_types == ('usw',) else ('device', 'devices')
+    available = ', '.join(sorted({(d.get('name') or '?') for d in pool}))
+    raise LookupError(f'No {kind} matched {query!r}. Known {plural}: {available}')
+
+
 def resolve_switch(
     client: UnifiApiClient,
     site: str,
     query: str,
 ) -> dict[str, Any]:
-    """Find a switch by case-insensitive match on name / model / ip / mac.
+    """Find a switch by name, MAC, IP or a partial name.
 
-    Matches in this order of preference (first non-empty set wins):
-      1. All whitespace-separated tokens in ``query`` appear in the switch name
-         (e.g. 'Lounge Flex 8' finds 'Mike2 USW Flex 2.5G 8 PoE').
-      2. ``query`` appears as a substring in name / model / ip / mac.
+    Prefers an exact name, then an exact MAC, then an exact IP, then a
+    match on every token, then a substring of name / model / ip / mac. See
+    :func:`resolve_switch_match` for the full rules.
 
     Raises LookupError if nothing matches or the match is ambiguous.
     """
-    resp = client.get_devices(site)
-    devices = (resp or {}).get('data', []) if isinstance(resp, dict) else []
-    switches = [d for d in devices if d.get('type') == 'usw']
-    q = query.lower().strip()
-    tokens = [t for t in q.split() if t]
-
-    def _all_tokens_in_name(d: dict) -> bool:
-        name = (d.get('name') or '').lower()
-        return bool(tokens) and all(t in name for t in tokens)
-
-    def _substring_hit(d: dict) -> bool:
-        return any(q in (str(d.get(k) or '')).lower() for k in ('name', 'model', 'ip', 'mac'))
-
-    matches: list[dict] = []
-    if len(tokens) > 1:
-        matches = [d for d in switches if _all_tokens_in_name(d)]
-    if not matches:
-        matches = [d for d in switches if _substring_hit(d)]
-
-    if not matches:
-        available = ', '.join(sorted({(d.get('name') or '?') for d in switches}))
-        raise LookupError(f'No switch matched {query!r}. Known switches: {available}')
-    if len(matches) > 1:
-        names = ', '.join(f'{d.get("name")!r}' for d in matches)
-        raise LookupError(f'Ambiguous match for {query!r}: {names}')
-    return matches[0]
+    switch, _, _ = resolve_switch_match(client, site, query)
+    return switch
 
 
 def _build_mac_index(client: UnifiApiClient, site: str) -> tuple[dict[str, dict], dict[str, dict]]:

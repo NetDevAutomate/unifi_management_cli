@@ -10,6 +10,7 @@ from unifi_mapper.port_inspect import (
     _resolve_mac,
     inspect_port,
     resolve_switch,
+    resolve_switch_match,
 )
 from unittest.mock import MagicMock
 
@@ -76,6 +77,85 @@ def test_resolve_switch_by_ip_or_mac():
     c = _fake_client(devices)
     assert resolve_switch(c, 'default', '192.0.2.50')['_id'] == '1'
     assert resolve_switch(c, 'default', 'AA:BB:CC')['_id'] == '1'
+
+
+# The three-switch set that made 'USW Flex XG' ambiguous before exact matching existed.
+FLEX_XG_SWITCHES = [
+    {
+        '_id': '0000000000000000000000a1',
+        'type': 'usw',
+        'name': 'USW Flex XG',
+        'model': 'USFXG',
+        'mac': '02:00:00:00:00:01',
+        'ip': '192.0.2.5',
+    },
+    {
+        '_id': '0000000000000000000000a2',
+        'type': 'usw',
+        'name': 'Hotel3 USW Flex XG 10G',
+        'model': 'USFXG',
+        'mac': '02:00:00:00:00:02',
+        'ip': '192.0.2.50',
+    },
+    {
+        '_id': '0000000000000000000000a3',
+        'type': 'usw',
+        'name': 'Xray3 USW Flex XG 10G',
+        'model': 'USFXG',
+        'mac': '02:00:00:00:00:03',
+        'ip': '192.0.2.51',
+    },
+    {'_id': '0000000000000000000000a4', 'type': 'uap', 'name': 'USW Flex XG AP', 'ip': '1'},
+]
+
+
+def test_resolve_switch_exact_name_beats_token_match():
+    """An exact name wins even though two other names contain every token."""
+    c = _fake_client(FLEX_XG_SWITCHES)
+    switch, matched_by, candidates = resolve_switch_match(c, 'default', 'usw flex xg')
+    assert switch['_id'] == '0000000000000000000000a1'
+    assert matched_by == 'exact_name'
+    assert candidates == [switch]
+    assert resolve_switch(c, 'default', 'USW Flex XG')['_id'] == '0000000000000000000000a1'
+
+
+@pytest.mark.parametrize('query', ['02:00:00:00:00:02', '02-00-00-00-00-02', '0200.0000.0002'])
+def test_resolve_switch_exact_mac_in_any_notation_wins(query):
+    """A full MAC resolves directly, whatever separator style is used."""
+    c = _fake_client(FLEX_XG_SWITCHES)
+    switch, matched_by, _ = resolve_switch_match(c, 'default', query)
+    assert switch['name'] == 'Hotel3 USW Flex XG 10G'
+    assert matched_by == 'mac'
+
+
+def test_resolve_switch_exact_ip_beats_substring():
+    """'192.0.2.5' is a substring of '192.0.2.50' and '.51', but the exact IP wins."""
+    c = _fake_client(FLEX_XG_SWITCHES)
+    switch, matched_by, _ = resolve_switch_match(c, 'default', '192.0.2.5')
+    assert switch['name'] == 'USW Flex XG'
+    assert matched_by == 'ip'
+
+
+def test_resolve_switch_partial_name_stays_ambiguous_and_lists_candidates():
+    """'Flex XG' matches all three switches; the error names each with MAC and model."""
+    c = _fake_client(FLEX_XG_SWITCHES)
+    with pytest.raises(LookupError, match='Ambiguous') as excinfo:
+        resolve_switch(c, 'default', 'Flex XG')
+    message = str(excinfo.value)
+    for mac in ('02:00:00:00:00:01', '02:00:00:00:00:02', '02:00:00:00:00:03'):
+        assert mac in message
+    assert 'USFXG' in message
+    assert 'USW Flex XG AP' not in message  # the AP is not a switch
+
+
+def test_resolve_switch_match_can_consider_every_device_type():
+    """device_types=None lets callers resolve APs and gateways too."""
+    c = _fake_client(FLEX_XG_SWITCHES)
+    device, matched_by, _ = resolve_switch_match(c, 'default', 'USW Flex XG AP', device_types=None)
+    assert device['type'] == 'uap'
+    assert matched_by == 'exact_name'
+    with pytest.raises(LookupError, match='No switch matched'):
+        resolve_switch(c, 'default', 'USW Flex XG AP 2')
 
 
 # ---------------------------------------------------------------------------
