@@ -227,13 +227,14 @@ Discover the full network topology using LLDP data, automatically name switch po
 **Scenario A: Preview what would change (dry run)**
 
 ```bash
+# discover previews by default; --dry-run is accepted and says so explicitly
 uv run unifi-mapper discover --dry-run
 ```
 
 **Scenario B: Discover topology and apply port names**
 
 ```bash
-uv run unifi-mapper discover --verify-updates
+uv run unifi-mapper discover --verify-updates --apply
 ```
 
 The `--verify-updates` flag uses the SmartPortMapper, which applies LLDP-based naming decisions independently of the API's cached state, then confirms that the names actually persisted. This is the recommended approach.
@@ -241,7 +242,7 @@ The `--verify-updates` flag uses the SmartPortMapper, which applies LLDP-based n
 **Scenario C: Include non-UniFi connected devices**
 
 ```bash
-uv run unifi-mapper discover --verify-updates --connected-devices
+uv run unifi-mapper discover --verify-updates --connected-devices --apply
 ```
 
 **Scenario D: Generate diagram only (no port renaming)**
@@ -1424,8 +1425,9 @@ uv run python -m unifi_mapper.verify_cli --consistency-check --reads 8
 **Run discovery with built-in verification**
 
 ```bash
-uv run unifi-mapper discover --verify-updates
-# --verify-updates activates SmartPortMapper which includes consistency checking
+uv run unifi-mapper discover --verify-updates --apply
+# --verify-updates activates SmartPortMapper which includes consistency checking;
+# without --apply it only previews
 ```
 
 ### Understanding the API Cache Problem
@@ -1549,14 +1551,15 @@ discover options:
   --output, -o PATH    Output path for markdown report
   --diagram, -d PATH   Output path for diagram
   --format TEXT        png, svg, html, mermaid, dot [default: png]
-  --dry-run            Preview without applying changes
+  --apply / --dry-run  Write port names (default: --dry-run, preview only)
   --verify-updates     Use SmartPortMapper with consistency verification
   --connected-devices  Include non-UniFi connected devices
 
-Top-level shortcuts (invoke discover without subcommand):
+Top-level shortcuts (invoke discover without subcommand; preview unless --apply):
   unifi-mapper --dry-run
   unifi-mapper --verify-updates
   unifi-mapper --connected-devices
+  unifi-mapper --connected-devices --apply
 ```
 
 ### unifi-network-toolkit Command Reference

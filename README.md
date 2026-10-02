@@ -58,16 +58,22 @@ UNIFI_SSH_PASSWORD=your_ssh_password     # SSH password for gateway
 ### Port Mapping
 
 ```bash
-# Discover the network, generate reports AND write port names to the controller
-# (add --dry-run to preview without writing)
+# Discover the network and generate reports; port names are only previewed
 unifi-mapper --connected-devices
 
-# Apply port name updates with verification
-unifi-mapper --verify-updates --connected-devices
+# Write the proposed port names to the controller (explicit opt-in)
+unifi-mapper --connected-devices --apply
 
-# Dry run - preview changes
+# Write port name updates and verify that they persisted
+unifi-mapper --verify-updates --connected-devices --apply
+
+# Preview with the smart (device-aware) mapper; --dry-run is the default and still accepted
 unifi-mapper --dry-run --verify-updates
 ```
+
+`discover` and its root shortcuts (`--connected-devices`, `--verify-updates`, `--dry-run`)
+preview by default, like `ports refresh`: only `--apply` writes port names. Passing both
+`--apply` and `--dry-run` is an error (exit 2).
 
 ### Network Toolkit
 
@@ -294,7 +300,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 
 | Command | Purpose |
 |---------|---------|
-| `discover` | Discover topology and update port names with LLDP intelligence (writes) |
+| `discover` | Discover topology and propose port names with LLDP intelligence (preview by default; `--apply` writes) |
 | `diagram` | Generate a topology diagram only, no port renaming |
 | `verify` | Port name verification with ground truth checking |
 | `capabilities` | Analyze device capabilities for port naming support |
@@ -677,7 +683,7 @@ Older devices (NVR S3008, speakers, legacy cameras) continue to work with full a
 
 **Port names not persisting:**
 1. Check device compatibility with `python -m unifi_mapper.analyze_network_capabilities`
-2. Use verification: `unifi-mapper --verify-updates`
+2. Use verification: `unifi-mapper --verify-updates --apply`
 3. Upgrade to UniFi Network Application 10.0.162+
 
 **API authentication failures:**

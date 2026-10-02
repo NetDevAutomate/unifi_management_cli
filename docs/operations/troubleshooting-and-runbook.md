@@ -342,7 +342,7 @@ Zero (`0`) and any other value will be stripped from `port_overrides` before sub
 ```bash
 # Step 1: Enable debug logging to see full payload
 export UNIFI_LOGLEVEL=DEBUG
-uv run unifi-mapper --verify-updates 2>&1 | grep -E "PORT OVERRIDE|API RESPONSE|config_version"
+uv run unifi-mapper --verify-updates --apply 2>&1 | grep -E "PORT OVERRIDE|API RESPONSE|config_version"
 
 # Step 2: Check the response meta.rc - should be 'ok'
 # Look for: Response meta.rc: ok
@@ -405,7 +405,7 @@ flowchart TD
 
 ```bash
 # Run with full verification (triggers multi-read consistency checking)
-uv run unifi-mapper --verify-updates --connected-devices
+uv run unifi-mapper --verify-updates --connected-devices --apply
 
 # If verification is consistently failing on a specific device,
 # run the advanced verification CLI:
@@ -810,7 +810,7 @@ uv run unifi-mapper --dry-run --connected-devices
 | Device offline (state != "connected") | Physical connectivity, PoE power, adoption status |
 | Firmware update available | Schedule update during next maintenance window |
 | High error rate on interface | Check cable, SFP, or connected device |
-| New devices in LLDP not in port names | Run `unifi-mapper --verify-updates` to apply names |
+| New devices in LLDP not in port names | Run `unifi-mapper --verify-updates --apply` to apply names |
 
 ---
 
@@ -829,7 +829,7 @@ uv run unifi-mapper inventory list --filter switch --show-upgrade
 #    - 6.5.59: Adoption failures on various models
 
 # 3. After firmware update, verify port names persisted:
-uv run unifi-mapper --verify-updates --connected-devices
+uv run unifi-mapper --verify-updates --connected-devices --apply
 ```
 
 **Firmware update sequence**:
@@ -907,6 +907,7 @@ flowchart TD
 uv run unifi-mapper discover \
   --connected-devices \
   --verify-updates \
+  --apply \
   --output reports/port-naming-verify-$(date +%Y%m%d).md \
   --diagram reports/topology-port-naming-verify-$(date +%Y%m%d).mermaid \
   --format mermaid
@@ -1087,7 +1088,7 @@ This indicates either a firmware issue (see Section 6) or a controller-level con
 
 ```bash
 # 1. Identify affected devices
-uv run unifi-mapper --verify-updates --connected-devices 2>&1 | grep -E "FAILED|mismatch"
+uv run unifi-mapper --verify-updates --connected-devices --apply 2>&1 | grep -E "FAILED|mismatch"
 
 # 2. Check if firmware version changed on affected devices
 uv run unifi-mapper inventory list --filter switch
@@ -1096,7 +1097,7 @@ uv run unifi-mapper inventory list --filter switch
 #    (see Section 6 - auto-reset behaviour)
 
 # 4. For other devices, re-apply port names
-uv run unifi-mapper --verify-updates --connected-devices
+uv run unifi-mapper --verify-updates --connected-devices --apply
 
 # 5. Confirm with ground truth verification
 uv run python -m unifi_mapper.verify_cli --verify-all --consistency-check
@@ -1137,7 +1138,7 @@ There is no built-in undo command. Recovery options in order of preference:
 ```bash
 # LLDP-based naming uses actual network topology, not stored state
 # Simply re-run the mapper - it will re-derive names from LLDP discovery
-uv run unifi-mapper --verify-updates --connected-devices
+uv run unifi-mapper --verify-updates --connected-devices --apply
 ```
 
 **Option 2: Manual UI reset**
@@ -1210,7 +1211,7 @@ curl -k -X PUT \
   https://YOUR_CONTROLLER/proxy/network/api/s/default/rest/device/DEVICE_ID
 
 # 3. Re-run mapper to re-apply names from LLDP
-uv run unifi-mapper --verify-updates
+uv run unifi-mapper --verify-updates --apply
 ```
 
 ---

@@ -24,6 +24,7 @@ UV_BIN="${UV_BIN:-$(command -v uv 2>/dev/null || echo "$HOME/.local/bin/uv")}"
 LOG_DIR="${LOG_DIR:-$PROJECT_DIR/logs}"
 
 # Schedule definitions: "name|interval|command"
+# port-naming writes port names, so it passes --apply explicitly (discover previews by default).
 # Intervals: for cron = cron expression, for launchd = seconds
 TASKS=(
     "link-error-snapshot|300|analyze link-errors --snapshot"
@@ -31,7 +32,7 @@ TASKS=(
     "config-drift-check|3600|analyze config-drift"
     "diagnose-all|3600|diagnose all"
     "radio-report|3600|radio report -o reports/channel-report.md"
-    "port-naming|1800|--verify-updates --connected-devices"
+    "port-naming|1800|--verify-updates --connected-devices --apply"
 )
 
 # Cron expressions matching the intervals above
@@ -192,7 +193,7 @@ run_all() {
     $UV_BIN run unifi-mapper analyze config-drift
     $UV_BIN run unifi-mapper diagnose all
     $UV_BIN run unifi-mapper radio report -o reports/channel-report.md
-    $UV_BIN run unifi-mapper --verify-updates --connected-devices
+    $UV_BIN run unifi-mapper --verify-updates --connected-devices --apply
 
     log "✅ All tasks complete"
 }

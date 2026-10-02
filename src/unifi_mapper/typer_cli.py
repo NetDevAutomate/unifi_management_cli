@@ -84,7 +84,14 @@ def main(
         bool,
         typer.Option(
             '--dry-run',
-            help='🔍 Dry run mode (runs discover)',
+            help='🔍 Preview port names without writing (runs discover; the default)',
+        ),
+    ] = False,
+    apply: Annotated[
+        bool,
+        typer.Option(
+            '--apply',
+            help='⚡ Write port names to the controller (runs discover; default: preview only)',
         ),
     ] = False,
     verify_updates: Annotated[
@@ -97,8 +104,9 @@ def main(
 ):
     """🚀 Enterprise UniFi Network Automation Platform.
 
-    Global options apply to all commands. Use --connected-devices, --dry-run,
-    or --verify-updates as shortcuts to run the discover command.
+    Global options apply to all commands. Use --connected-devices, --verify-updates,
+    --dry-run or --apply as shortcuts to run the discover command. Discover previews
+    by default; only --apply writes port names to the controller.
     """
     # Set global state
     state.config_path = config if config else get_default_config_path()
@@ -107,15 +115,18 @@ def main(
     if debug:
         setup_logging(debug=True)
 
+    if apply and dry_run:
+        _fail('choose --apply or --dry-run', code=2)
+
     # If no subcommand but discover-related flags provided, run discover
     if ctx.invoked_subcommand is None:
-        if connected_devices or dry_run or verify_updates:
-            # Run discover with the provided flags
+        if connected_devices or dry_run or verify_updates or apply:
+            # Run discover with the provided flags (a preview unless --apply)
             discover(
                 output=None,
                 diagram=None,
                 format='png',
-                dry_run=dry_run,
+                apply=apply,
                 verify_updates=verify_updates,
                 connected_devices=connected_devices,
             )
@@ -152,8 +163,12 @@ def discover(
     format: Annotated[
         str, typer.Option('--format', help='🎨 Diagram format (png, svg, html, mermaid, dot)')
     ] = 'png',
-    dry_run: Annotated[
-        bool, typer.Option('--dry-run', help='🔍 Show what would be changed without applying')
+    apply: Annotated[
+        bool,
+        typer.Option(
+            '--apply/--dry-run',
+            help='⚡ Write port names to the controller (default: preview only)',
+        ),
     ] = False,
     verify_updates: Annotated[
         bool, typer.Option('--verify-updates', help='✅ Verify that port name updates persist')
@@ -162,10 +177,15 @@ def discover(
         bool, typer.Option('--connected-devices', help='📱 Include non-UniFi connected devices')
     ] = False,
 ):
-    """🔍 Discover network topology and update port names with LLDP intelligence."""
+    """🔍 Discover network topology and propose port names with LLDP intelligence.
+
+    Previews by default: the report and diagram are written locally, but no port
+    name reaches the controller unless --apply is given.
+    """
     # Use global state
     config = state.config_path
     debug = state.debug
+    dry_run = not apply
 
     if not state.debug:
         setup_logging(debug=False)
@@ -174,7 +194,7 @@ def discover(
         console.print('🐛 [bold yellow]Debug logging enabled[/bold yellow]')
 
     if dry_run:
-        console.print('🔍 [bold cyan]Dry run mode - no changes will be applied[/bold cyan]')
+        console.print('🔍 [bold cyan]Preview mode - no port names will be written[/bold cyan]')
 
     if verify_updates:
         console.print(
@@ -265,6 +285,8 @@ def discover(
         console.print(
             f'📊 Devices: [cyan]{len(devices)}[/cyan], Connections: [cyan]{len(connections)}[/cyan]'
         )
+        if dry_run:
+            console.print('[yellow]DRY RUN[/yellow] — run with [cyan]--apply[/cyan] to write')
 
     except KeyboardInterrupt:
         console.print('\n⚠️ [bold yellow]Operation cancelled by user[/bold yellow]')
