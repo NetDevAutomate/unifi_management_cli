@@ -5,6 +5,8 @@ import os
 import pytest
 from pathlib import Path
 from tests.fixtures_unifi import (
+    FAKE_PW,
+    FAKE_TOKEN,
     NAS_MAC,
     NOW,
     OTHER_SWITCH_NAME,
@@ -390,3 +392,25 @@ def test_port_counter_store_delta_is_computed_from_the_saved_snapshot(tmp_path):
     assert store.read_bytes() == before
     assert view.found and view.baseline_timestamp == '2026-09-01T00:00:00'
     assert view.delta['rx_errors'] == 5 and view.delta['crc_errors'] == 3
+
+
+def test_baseline_read_errors_are_redacted(tmp_path, monkeypatch):
+    link_path = tmp_path / 'link-error-baseline.json'
+    link_path.write_text('{}')
+    store = tmp_path / 'port-counters.json'
+    # Pydantic echoes the offending input value in its error message.
+    store.write_text(json.dumps({f'{SWITCH_ID}:5': {'rx_errors': f'password={FAKE_PW}'}}))
+    read_text = Path.read_text
+
+    def unreadable_link_baseline(self: Path, *args: object, **kwargs: object) -> str:
+        if self == link_path:
+            raise OSError(f'cannot read baseline: token={FAKE_TOKEN}')
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'read_text', unreadable_link_baseline)
+    view = read_counter_baselines(fake_switch(), 5, {}, None, str(link_path), store)
+    link_error = view.link_error_tracking.error
+    store_error = view.port_counter_baseline.error
+    assert link_error is not None and link_error.startswith('OSError: cannot read baseline')
+    assert store_error is not None and store_error.startswith('ValidationError: ')
+    assert_no_secrets([link_error, store_error])

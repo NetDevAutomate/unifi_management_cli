@@ -29,7 +29,7 @@ from unifi_mapper.analysis.port_counter_baseline import (
     diff_snapshots,
     port_counter_key,
 )
-from unifi_mapper.core.utils.redact import strip_secrets
+from unifi_mapper.core.utils.redact import redact_text, strip_secrets
 from unifi_mapper.diagnostic_reads import (
     Collection,
     DiagnosticModel,
@@ -799,7 +799,7 @@ def read_counter_baselines(
                             else None
                         )
         except (OSError, ValueError, AttributeError, TypeError) as e:
-            link.error = f'{type(e).__name__}: {e}'
+            link.error = redact_text(f'{type(e).__name__}: {e}')
 
     key = port_counter_key(device_id, port_idx)
     store = PortCounterBaselineStore(port_counter_store_path or default_baseline_path())
@@ -821,7 +821,8 @@ def read_counter_baselines(
                 delta.pop('timestamp', None)
                 stored.delta = delta
         except (OSError, ValueError) as e:
-            stored.error = f'{type(e).__name__}: {e}'
+            # Pydantic validation errors quote the offending input from the file.
+            stored.error = redact_text(f'{type(e).__name__}: {e}')
     return CounterBaselines(link_error_tracking=link, port_counter_baseline=stored)
 
 
