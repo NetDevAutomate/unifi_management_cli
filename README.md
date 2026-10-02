@@ -319,6 +319,10 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `analyze radio` | Wi-Fi channel and transmit power optimisation |
 | `analyze lag-candidates` | Parallel links that may be LACP candidates |
 | `analyze power-budget` | Switch *input* power headroom, distinct from PoE output |
+| `analyze poe-budget` | PoE *output* budget per switch: drawn vs budget, high-draw ports |
+| `analyze uplink-redundancy` | Uplinks per switch; single-uplink switches (single points of failure) |
+| `analyze client-density` | Wireless clients per access point, with average signal |
+| `analyze dhcp-pools` | DHCP pool utilisation per network (near-exhaustion warnings) |
 | `analyze link-speeds` | Fleet-wide ports below their capability, forced-speed traps and half duplex (exit 2 on HIGH) |
 | `analyze port-profile-usage` | Where each port profile is used; forced-speed, shadowing, dangling, duplicate and unused profiles |
 | `analyze traffic-matrix` | Top flows and top talkers |

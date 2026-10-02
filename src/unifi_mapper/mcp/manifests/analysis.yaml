@@ -201,6 +201,52 @@ tools:
     priority: P1
     tags: [power, psu, poe-input, watts, reboot-loop, brownout, phy, capacity]
 
+  check_poe_budget:
+    module: unifi_mapper.analysis.poe_budget
+    handler: check_poe_budget
+    title: Check PoE Budget
+    credentials: controller
+    description: >-
+      PoE OUTPUT budget per switch - watts drawn by powered devices against the
+      switch's PoE budget, headroom and high-draw ports (over 5 W). WARNING at 80%,
+      CRITICAL at 90%. Distinct from audit_power_budget, which audits the switch's
+      own input power. Read-only.
+    priority: P2
+    tags: [poe, power, budget, watts, switch, capacity, read-only]
+
+  check_uplink_redundancy:
+    module: unifi_mapper.analysis.uplink_redundancy
+    handler: check_uplink_redundancy
+    title: Check Uplink Redundancy
+    credentials: controller
+    description: >-
+      Count the uplink ports of every switch with their speed and state, and flag
+      switches with a single uplink (a single point of failure) or none. Read-only.
+    priority: P2
+    tags: [uplink, redundancy, spof, switch, topology, read-only]
+
+  analyze_client_density:
+    module: unifi_mapper.analysis.client_density
+    handler: analyze_client_density
+    title: Analyze Client Density
+    credentials: controller
+    description: >-
+      Wireless clients per access point with average signal strength. WARNING above
+      30 clients on one AP, CRITICAL above 50. Read-only.
+    priority: P2
+    tags: [wifi, clients, density, access-point, capacity, read-only]
+
+  check_dhcp_pool_utilization:
+    module: unifi_mapper.analysis.dhcp_pool
+    handler: check_dhcp_pool_utilization
+    title: Check DHCP Pool Utilization
+    credentials: controller
+    description: >-
+      DHCP pool utilisation per DHCP-enabled network - active clients against the
+      configured range. WARNING at 80%, CRITICAL at 90% (near exhaustion). Read-only.
+    priority: P2
+    tags: [dhcp, pool, ip, exhaustion, layer3, capacity, read-only]
+
   audit_uplink_transparency:
     module: unifi_mapper.analysis.uplink_transparency
     handler: audit_uplink_transparency

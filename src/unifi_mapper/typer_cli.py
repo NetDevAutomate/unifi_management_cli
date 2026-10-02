@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.markup import escape
 from rich.table import Table
-from typing import Annotated, Any, Iterator, NoReturn, Optional, cast
+from typing import Annotated, Any, Callable, Coroutine, Iterator, NoReturn, Optional, cast
 
 
 # Setup rich console
@@ -983,6 +983,225 @@ def _render_port_profile_usage(report: Any) -> None:
         )
     for error in report.errors:
         err_console.print(f'[yellow]⚠ {escape(error.section)}: {escape(error.error)}[/yellow]')
+
+
+def _run_analysis[T](load: Callable[[], Coroutine[Any, Any, T]]) -> T:
+    """Load the config, run one async read-only analysis and return its report.
+
+    A domain ``ToolError`` (or any other failure) prints its message in red on
+    stderr and exits 1, so ``--json`` output on stdout stays parseable.
+    """
+    import asyncio
+    from .core.utils.errors import ToolError
+    from .core.utils.redact import redact_text
+
+    load_env_from_config(str(state.config_path or get_default_config_path()))
+    try:
+        return asyncio.run(load())
+    except ToolError as e:
+        _fail(e.message)
+    except Exception as e:  # noqa: BLE001 - every failure ends the command cleanly
+        if state.debug:
+            err_console.print_exception(show_locals=False)
+        _fail(f'Error: {redact_text(e)}')
+
+
+def _status_cell(status: str) -> str:
+    """Colour an OK/WARNING/CRITICAL status for a Rich table."""
+    style = {'CRITICAL': 'red', 'WARNING': 'yellow', 'OK': 'green'}.get(status, 'white')
+    return f'[{style}]{escape(status)}[/]'
+
+
+def _print_notes(report: Any) -> None:
+    """Print a report's warnings and recommendations lists."""
+    for warning in report.warnings:
+        console.print(f'[yellow]⚠ {escape(warning)}[/yellow]')
+    for recommendation in report.recommendations:
+        console.print(f'  → {escape(recommendation)}')
+
+
+@analyze_app.command('poe-budget')
+def analyze_poe_budget(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """⚡ PoE OUTPUT budget per switch: watts drawn by powered devices vs the PoE budget.
+
+    Reports each PoE switch's budget, consumption, headroom and high-draw ports (over
+    5 W), WARNING at 80% and CRITICAL at 90%. Distinct from `analyze power-budget`,
+    which audits the switch's own INPUT power (adapter or PoE-in) against its PHYs.
+    Read-only.
+    """
+    from .analysis.poe_budget import check_poe_budget
+
+    report = _run_analysis(check_poe_budget)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('⚡ [bold]PoE Output Budget[/bold]')
+    console.print(
+        f'Devices analyzed: [cyan]{report.devices_analyzed}[/cyan]  '
+        f'Budget: [cyan]{report.total_budget:.1f}W[/cyan]  '
+        f'Consumption: [cyan]{report.total_consumption:.1f}W[/cyan]'
+    )
+    if report.devices:
+        table = Table(title='PoE Budget per Switch', show_header=True)
+        table.add_column('Device', style='cyan')
+        table.add_column('Model')
+        table.add_column('Budget')
+        table.add_column('Drawn')
+        table.add_column('Available')
+        table.add_column('% used', style='yellow')
+        table.add_column('High-draw ports', style='dim')
+        table.add_column('Status', style='bold')
+        for d in report.devices:
+            ports = ', '.join(f'{p.port_idx} ({p.poe_power:.1f}W)' for p in d.high_draw_ports)
+            table.add_row(
+                escape(d.device_name),
+                escape(d.model),
+                f'{d.poe_budget:.1f}W',
+                f'{d.poe_consumption:.1f}W',
+                f'{d.poe_available:.1f}W',
+                f'{d.utilization_percent:.1f}%',
+                ports or '—',
+                _status_cell(d.status),
+            )
+        console.print(table)
+    else:
+        console.print('No switch reports a PoE budget.')
+    _print_notes(report)
+
+
+@analyze_app.command('uplink-redundancy')
+def analyze_uplink_redundancy(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🔀 Uplink count per switch: single-uplink switches are single points of failure.
+
+    Counts the ports each switch reports as uplinks, with speed and state. Read-only.
+    """
+    from .analysis.uplink_redundancy import check_uplink_redundancy
+
+    report = _run_analysis(check_uplink_redundancy)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🔀 [bold]Uplink Redundancy[/bold]')
+    console.print(
+        f'Switches analyzed: [cyan]{report.devices_analyzed}[/cyan]  '
+        f'Redundant: [green]{report.redundant_devices}[/green]  '
+        f'Single uplink: [yellow]{report.single_uplink_devices}[/yellow]'
+    )
+    if report.devices:
+        table = Table(title='Uplinks per Switch', show_header=True)
+        table.add_column('Device', style='cyan')
+        table.add_column('Model')
+        table.add_column('Uplinks', style='yellow')
+        table.add_column('Ports (speed, state)')
+        table.add_column('Total speed')
+        table.add_column('Status', style='bold')
+        for d in report.devices:
+            ports = ', '.join(
+                f'{u.port_idx} ({u.speed_mbps} Mbps, {"up" if u.is_up else "down"})'
+                for u in d.uplinks
+            )
+            table.add_row(
+                escape(d.device_name),
+                escape(d.model),
+                str(d.uplink_count),
+                ports or '—',
+                f'{d.total_uplink_speed_mbps} Mbps',
+                _status_cell(d.status),
+            )
+        console.print(table)
+    else:
+        console.print('No switches found.')
+    _print_notes(report)
+
+
+@analyze_app.command('client-density')
+def analyze_client_density(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """📡 Wireless clients per access point, with average signal.
+
+    WARNING above 30 clients on one AP and CRITICAL above 50. Read-only.
+    """
+    from .analysis.client_density import analyze_client_density as run_client_density
+
+    report = _run_analysis(run_client_density)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('📡 [bold]Client Density[/bold]')
+    console.print(
+        f'APs with clients: [cyan]{report.aps_analyzed}[/cyan]  '
+        f'Wireless clients: [cyan]{report.total_wireless_clients}[/cyan]'
+    )
+    if report.access_points:
+        table = Table(title='Clients per Access Point', show_header=True)
+        table.add_column('Access point', style='cyan')
+        table.add_column('Model')
+        table.add_column('Clients', style='yellow')
+        table.add_column('Avg signal')
+        table.add_column('Status', style='bold')
+        for ap in report.access_points:
+            signal = '—' if ap.avg_signal_dbm is None else f'{ap.avg_signal_dbm:.1f} dBm'
+            table.add_row(
+                escape(ap.device_name),
+                escape(ap.model),
+                str(ap.client_count),
+                signal,
+                _status_cell(ap.status),
+            )
+        console.print(table)
+    else:
+        console.print('No wireless clients associated.')
+    _print_notes(report)
+
+
+@analyze_app.command('dhcp-pools')
+def analyze_dhcp_pools(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🧮 DHCP pool utilisation per network: active clients vs the configured range.
+
+    WARNING at 80% and CRITICAL at 90% of the pool. Read-only.
+    """
+    from .analysis.dhcp_pool import check_dhcp_pool_utilization
+
+    report = _run_analysis(check_dhcp_pool_utilization)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🧮 [bold]DHCP Pool Utilisation[/bold]')
+    console.print(
+        f'Networks analyzed: [cyan]{report.networks_analyzed}[/cyan]  '
+        f'Addresses: [cyan]{report.total_pool_size}[/cyan]  '
+        f'Active clients: [cyan]{report.total_active_clients}[/cyan]'
+    )
+    if report.pools:
+        table = Table(title='DHCP Pools', show_header=True)
+        table.add_column('Network', style='cyan')
+        table.add_column('VLAN')
+        table.add_column('Range')
+        table.add_column('Size')
+        table.add_column('Clients', style='yellow')
+        table.add_column('% used')
+        table.add_column('Status', style='bold')
+        for p in report.pools:
+            table.add_row(
+                escape(p.network_name),
+                '—' if p.vlan_id is None else str(p.vlan_id),
+                f'{p.pool_start} – {p.pool_stop}',
+                str(p.pool_size),
+                str(p.active_clients),
+                f'{p.utilization_percent:.1f}%',
+                _status_cell(p.status),
+            )
+        console.print(table)
+    else:
+        console.print('No DHCP-enabled network with a pool range.')
+    _print_notes(report)
 
 
 @analyze_app.command('traffic-matrix')
