@@ -17,6 +17,7 @@ from tests.fixtures_unifi import (
     assert_no_secrets,
     default_routes,
     fake_client,
+    fake_devices,
 )
 from typer.testing import CliRunner
 from types import SimpleNamespace
@@ -35,8 +36,12 @@ PORT_COMMANDS = ('refresh', 'inspect', 'list', 'profile-diff', 'client', 'events
 @pytest.fixture
 def cli(monkeypatch, tmp_path):
     """Run `unifi-mapper` against an in-memory controller, from a temp working dir."""
+    return _fake_cli(monkeypatch, tmp_path, default_routes())
+
+
+def _fake_cli(monkeypatch, tmp_path, routes) -> SimpleNamespace:
     monkeypatch.chdir(tmp_path)
-    session = FakeSession(default_routes())
+    session = FakeSession(routes)
     client = fake_client(session)
     install_read_only_guard(client)
     opened: list[bool] = []
@@ -127,6 +132,13 @@ def test_events_json(cli):
         'update-alert',
         'client-alert',
     }
+
+
+def test_events_skips_device_rows_that_are_not_records(monkeypatch, tmp_path):
+    devices = {'data': [*fake_devices(), 'not-a-record', None]}
+    cli = _fake_cli(monkeypatch, tmp_path, default_routes(devices=devices))
+    data = _json(cli.run('ports', 'events', SWITCH_NAME, '5', '--json'))
+    assert data['matched_total'] >= 1
 
 
 def test_counters_single_sample_json(cli):

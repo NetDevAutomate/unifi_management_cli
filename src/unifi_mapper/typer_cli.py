@@ -2554,16 +2554,13 @@ def ports_events(
     earliest entry it returned, which is the controller's observed retention. Read-only:
     the POSTs are query endpoints on an allowlist.
     """
+    from .diagnostic_reads import rows
     from .port_diagnostics_render import render_event_history
     from .port_history import collect_events
 
     with _diagnostic_errors(), _readonly_client() as (client, site):
         target = _resolve(client, site, device, any_device=True)
-        names = [
-            str(d.get('name'))
-            for d in (client.get_devices(site) or {}).get('data', [])
-            if d.get('name')
-        ]
+        names = [str(d.get('name')) for d in rows(client.get_devices(site)) if d.get('name')]
         history = collect_events(
             client,
             site,
