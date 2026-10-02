@@ -889,7 +889,7 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 | `link_quality.py` | `analyze_link_quality` | Analyses port error rates and link stability |
 | `mac_analyzer.py` | `analyze_mac_table` | MAC address table analysis including aging and conflicts |
 | `mtu_audit.py` | `audit_mtu_consistency` | Checks MTU and jumbo-frame consistency across inter-switch links |
-| `port_counter_baseline.py` | `snapshots_from_switches`, `diff_since_last` | Persists and diffs port error/drop counters |
+| `port_counter_baseline.py` | `snapshots_from_switches`, `diff_since_last` | Persists and diffs port error/drop counters; nothing produces the store yet (§20.4) |
 | `port_profile_validation.py` | `validate_port_profiles` | Validates STP Edge, BPDU Guard, uplink, and client access profile safety |
 | `qos_validation.py` | `validate_qos` | Validates QoS policy consistency across devices |
 | `radio_optimization.py` | `analyze_radio_optimization` | Reviews Wi-Fi channel reuse and transmit power |
@@ -1380,29 +1380,25 @@ flowchart LR
 
 ### 20.4 Port Counter Baseline Workflow
 
+`port_counter_baseline.py` can snapshot STP port counters (`snapshots_from_switches`), persist them (`PortCounterBaselineStore.save`) and diff against them (`diff_since_last`), but **nothing produces the store today**: no command, MCP tool or analysis module calls `save()` or `snapshots_from_switches()`, and `stp_optimizer.py` reads error counters from the topology without touching the store. The only consumer reads it:
+
 ```mermaid
 sequenceDiagram
-    participant STP as stp_optimizer.py
-    participant Model as core/models/stp.py
-    participant Base as port_counter_baseline.py
+    participant Cmd as ports counters, ports diagnose and their MCP tools
+    participant Hist as port_history.read_counter_baselines
     participant Store as PortCounterBaselineStore
     participant Disk as XDG state JSON
-    participant Report as Validation report
 
-    STP->>Model: build STPTopology with STPPortConfig counters
-    Model-->>STP: rx_errors, tx_errors, crc_errors, drops
-    STP->>Base: snapshots_from_switches(topology.switches)
-    Base-->>STP: keyed snapshots by device_id:port_idx
-    STP->>Store: diff_since_last(current)
-    Store->>Disk: load port-counters.json
-    Disk-->>Store: prior snapshots
-    Store-->>STP: non-negative deltas
-    STP->>Report: include current errors + deltas in readiness findings
-    opt Establish or refresh baseline
-        STP->>Store: save(current)
-        Store->>Disk: write sorted JSON snapshots
-    end
+    Cmd->>Hist: current counters for device_id:port_idx
+    Hist->>Store: load(), only if port-counters.json exists
+    Store->>Disk: read port-counters.json
+    Disk-->>Store: prior snapshots, if anything ever wrote them
+    Store-->>Hist: snapshot for device_id:port_idx
+    Hist-->>Cmd: found, baseline_timestamp, non-negative delta
+    Note over Hist,Disk: Read only: never calls save() or a snapshot function
 ```
+
+So `port_counter_baseline.found` is false unless something outside this repo wrote the file. Whether to wire the store into `stp validate-10g` or delete it is open: [issue 002](../issues/002-port-counter-baseline-has-no-producer.md).
 
 **State location.** `default_baseline_path()` uses `$XDG_STATE_HOME/unifi_mapper/port-counters.json` when set, otherwise `~/.local/state/unifi_mapper/port-counters.json`.
 
