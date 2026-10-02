@@ -75,6 +75,15 @@ flowchart LR
     Assistant --> User
 ```
 
+### Executing tools over MCP
+
+`execute_tool(tool_name, params)` runs any **read-only** tool and returns
+`{"ok": true, "result": ...}` or `{"ok": false, "error_code": ..., "message": ..., "suggestion": ...}`.
+Tools whose manifest entry sets `mutates: true` (currently `apply_stp_changes`,
+`apply_radio_optimization`, `restore_radio_config`) are refused with `MUTATION_REFUSED`.
+Any new tool that writes controller state **must** declare `mutates: true`;
+`tests/mcp/test_execute.py` fails if an `apply_*` / `restore_*` tool ships without it.
+
 For configuration changes, the preferred flow is: generate a plan, review the plan, apply through a specific tool or CLI command, then verify with independent read-only tools. Avoid asking the assistant to invent live STP priorities, VLAN mutations, or rollback steps without using the Python change-plan modules.
 
 ## Source Dependency

@@ -9,9 +9,11 @@ Implements the Code Mode architecture pattern with:
 from __future__ import annotations
 
 from .registry import ToolRegistry
+from dataclasses import asdict, is_dataclass
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from typing import Any
+from unifi_mapper.core.utils.errors import ToolError
 
 
 # Initialize the MCP server
@@ -113,7 +115,77 @@ async def get_tool_info(tool_name: str) -> dict[str, Any] | None:
         'parameters': metadata.parameters,
         'module': metadata.module,
         'handler': metadata.handler,
+        'mutates': metadata.mutates,
     }
+
+
+def _to_jsonable(value: Any) -> Any:
+    """Convert tool results (pydantic models, dataclasses, nested) to JSON-safe data."""
+    if hasattr(value, 'model_dump'):
+        return value.model_dump(mode='json')
+    if is_dataclass(value) and not isinstance(value, type):
+        return _to_jsonable(asdict(value))
+    if isinstance(value, dict):
+        return {str(k): _to_jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_to_jsonable(v) for v in value]
+    return value
+
+
+@mcp.tool()
+async def execute_tool(tool_name: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Run a READ-ONLY UniFi tool found via search_tools / get_tool_info.
+
+    Tools whose manifest declares ``mutates: true`` (STP and radio apply/restore) are
+    refused: changes go through the CLI's plan -> review -> apply flow, never directly
+    from an AI assistant.
+
+    Args:
+        tool_name: Name of the tool (e.g. "inspect_switch_port").
+        params: Keyword arguments, as listed by get_tool_info (e.g. {"switch": "Office", "port": 5}).
+
+    Returns:
+        {"ok": True, "result": ...} on success, or
+        {"ok": False, "error_code": ..., "message": ..., "suggestion": ...} on failure.
+    """
+    registry = get_registry()
+    try:
+        result = await registry.execute(tool_name, params)
+    except KeyError:
+        return {
+            'ok': False,
+            'error_code': 'TOOL_NOT_FOUND',
+            'message': f'No tool named {tool_name!r}',
+            'suggestion': 'Use search_tools or list_categories to find the right name.',
+        }
+    except PermissionError:
+        return {
+            'ok': False,
+            'error_code': 'MUTATION_REFUSED',
+            'message': f'{tool_name} changes live controller configuration and is not '
+            'executable over MCP.',
+            'suggestion': 'Generate a plan with the read-only tools, review it, then apply it '
+            'with the unifi-mapper CLI.',
+        }
+    except ValueError as e:
+        meta = registry.get_metadata(tool_name)
+        return {
+            'ok': False,
+            'error_code': 'INVALID_PARAMETERS',
+            'message': str(e),
+            'suggestion': 'Check get_tool_info for the parameter list.',
+            'parameters': meta.parameters if meta else {},
+        }
+    except ToolError as e:
+        return {'ok': False, **e.to_dict()}
+    except Exception as e:  # noqa: BLE001 - surface any tool failure to the client, don't crash the server
+        return {
+            'ok': False,
+            'error_code': 'TOOL_FAILED',
+            'message': f'{type(e).__name__}: {e}',
+            'suggestion': 'Run the equivalent unifi-mapper CLI command for a full traceback.',
+        }
+    return {'ok': True, 'result': _to_jsonable(result)}
 
 
 def main() -> None:

@@ -191,6 +191,7 @@ tools:
   apply_stp_changes:
     module: unifi_mapper.analysis.stp_optimizer
     handler: apply_stp_changes
+    mutates: true   # writes live controller config - CLI only, never via MCP execute_tool
     description: Apply STP priority changes via API (supports dry-run mode)
     priority: P2
     tags: [stp, spanning-tree, configuration, apply]
@@ -303,6 +304,7 @@ tools:
   apply_radio_optimization:
     module: unifi_mapper.analysis.radio_config
     handler: apply_radio_optimization_mcp
+    mutates: true   # writes live controller config - CLI only, never via MCP execute_tool
     description: Apply recommended radio optimisations (80MHz 5GHz, reduced 2.4GHz power, min RSSI). Auto-snapshots before applying.
     priority: P2
     tags: [wifi, radio, optimization, apply, configuration]
@@ -310,6 +312,7 @@ tools:
   restore_radio_config:
     module: unifi_mapper.analysis.radio_config
     handler: restore_radio_config_mcp
+    mutates: true   # writes live controller config - CLI only, never via MCP execute_tool
     description: Restore radio configuration from a previously saved snapshot file.
     priority: P2
     tags: [wifi, radio, restore, rollback, configuration]

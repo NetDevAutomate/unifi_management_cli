@@ -26,6 +26,10 @@ class ToolMetadata:
     priority: str = 'P2'
     tags: list[str] = field(default_factory=lambda: [])
     parameters: dict[str, Any] = field(default_factory=lambda: {})
+    # True for tools that change live controller state (STP priorities, radio config, ...).
+    # The MCP execute_tool meta-tool refuses these; they must go through the CLI's
+    # plan -> review -> apply flow. Declared per tool in the YAML manifests.
+    mutates: bool = False
 
 
 class ToolProxy:
@@ -126,6 +130,7 @@ class ToolRegistry:
                 priority=tool_data.get('priority', 'P2'),
                 tags=tool_data.get('tags', []),
                 parameters=tool_data.get('parameters', {}),
+                mutates=bool(tool_data.get('mutates', False)),
             )
             self._metadata[tool_name] = metadata
             self._categories.setdefault(category, []).append(tool_name)
@@ -178,6 +183,7 @@ class ToolRegistry:
                         'priority': meta.priority,
                         'tags': meta.tags,
                         'parameters': meta.parameters,
+                        'mutates': meta.mutates,
                     }
                 )
 
@@ -201,6 +207,50 @@ class ToolRegistry:
                     self._proxies[name] = ToolProxy(self._metadata[name])
 
         return self._proxies[name]
+
+    async def execute(
+        self, name: str, params: dict[str, Any] | None = None, *, allow_mutation: bool = False
+    ) -> Any:
+        """Validate and run a registered tool.
+
+        This is the single choke point for running tools, so the safety policy lives
+        here rather than in each caller.
+
+        Args:
+            name: Registered tool name.
+            params: Keyword arguments for the tool handler.
+            allow_mutation: Must be True to run a tool whose manifest sets
+                ``mutates: true``. The MCP server never passes True.
+
+        Raises:
+            KeyError: Unknown tool name.
+            PermissionError: Tool mutates controller state and allow_mutation is False.
+            ValueError: A parameter marked ``required`` in the manifest is missing, or an
+                unknown parameter was supplied.
+        """
+        params = dict(params or {})
+        meta = self.get_metadata(name)
+        if meta is None:
+            raise KeyError(name)
+        if meta.mutates and not allow_mutation:
+            raise PermissionError(name)
+
+        declared = meta.parameters or {}
+        if declared:
+            unknown = sorted(set(params) - set(declared))
+            if unknown:
+                raise ValueError(f'unknown parameter(s): {", ".join(unknown)}')
+        missing = sorted(
+            p
+            for p, spec in declared.items()
+            if isinstance(spec, dict) and spec.get('required') and p not in params
+        )
+        if missing:
+            raise ValueError(f'missing required parameter(s): {", ".join(missing)}')
+
+        proxy = self.get_tool(name)
+        assert proxy is not None  # metadata exists, so the proxy does too
+        return await proxy.execute(**params)
 
     def get_metadata(self, name: str) -> ToolMetadata | None:
         """Get metadata for a specific tool."""
