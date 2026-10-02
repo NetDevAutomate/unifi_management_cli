@@ -7,21 +7,43 @@ Implements the Code Mode architecture pattern with:
 
 Launch it with the ``unifi-mcp`` console script, for example
 ``uvx --from <path-or-git-url> unifi-mcp`` or after ``uv tool install <path>``.
+
+The server's lifespan resolves its config once (never from a CWD ``.env``), installs
+one shared, read-only-guarded controller client that every tool borrows, and points
+``sys.stdout`` at stderr so a stray ``print()`` can't corrupt the JSON-RPC stream.
 """
 
 from __future__ import annotations
 
+import anyio
 import argparse
 import importlib.metadata
+import json
+import os
 import sys
+from .config import (
+    ConfigFileError,
+    ResolvedConfig,
+    ServerSettings,
+    load_server_settings,
+    resolve_mcp_config,
+)
 from .registry import ToolRegistry
-from dataclasses import asdict, is_dataclass
+from collections.abc import AsyncIterator
+from contextlib import ExitStack, asynccontextmanager
+from dataclasses import asdict, dataclass, is_dataclass
+from loguru import logger
 from mcp.server.fastmcp import FastMCP
+from pathlib import Path
 from typing import Any
+from unifi_mapper.core.utils.client import SharedControllerClient, use_shared_controller_client
 from unifi_mapper.core.utils.errors import ToolError
+from unifi_mapper.core.utils.readonly import configure_request_audit
 
 
 DIST_NAME = 'unifi-management-cli'
+REQUEST_AUDIT_ENV = 'UNIFI_MCP_REQUEST_AUDIT'
+SHUTDOWN_TIMEOUT_S = 3.0
 
 
 def package_version() -> str:
@@ -53,8 +75,64 @@ def version_string() -> str:
     return f'unifi-mcp ({DIST_NAME} {package_version()}; mcp SDK {_mcp_sdk_version()})'
 
 
+@dataclass(frozen=True)
+class AppState:
+    """What the lifespan hands to request handlers (``ctx.request_context.lifespan_context``)."""
+
+    config: ResolvedConfig
+    shared_client: SharedControllerClient
+    settings: ServerSettings
+
+
+# Set by main() before mcp.run(); the lifespan reads them. None = not given / not loaded.
+_config_path: Path | None = None
+_settings: ServerSettings | None = None
+
+
+def current_settings() -> ServerSettings:
+    """Return the validated server settings, loading them from the environment once."""
+    global _settings
+    if _settings is None:
+        _settings = load_server_settings()
+    return _settings
+
+
+@asynccontextmanager
+async def lifespan(server: FastMCP[Any]) -> AsyncIterator[AppState]:
+    """Per-process server state: config, shared guarded client, stdout guard.
+
+    Runs after ``stdio_server()`` has wrapped the real stdout, so redirecting
+    ``sys.stdout`` to stderr here leaves the protocol stream untouched while any handler
+    ``print()`` goes to stderr. Everything is undone on exit.
+
+    Args:
+        server: The FastMCP server (unused).
+
+    Yields:
+        The :class:`AppState` for this run.
+    """
+    config = resolve_mcp_config(_config_path)
+    settings = current_settings()
+    shared = SharedControllerClient()
+    original_stdout = sys.stdout
+    with ExitStack() as stack:
+        audit_path = os.environ.get(REQUEST_AUDIT_ENV)
+        if audit_path:
+            configure_request_audit(Path(audit_path))
+            stack.callback(configure_request_audit, None)
+        stack.enter_context(use_shared_controller_client(shared))
+        sys.stdout = sys.stderr
+        try:
+            yield AppState(config=config, shared_client=shared, settings=settings)
+        finally:
+            sys.stdout = original_stdout
+            # Bounded and shielded: a slow logout must never hold the process after EOF.
+            with anyio.move_on_after(SHUTDOWN_TIMEOUT_S, shield=True):
+                await shared.aclose()
+
+
 # Initialize the MCP server
-mcp = FastMCP('unifi-management')
+mcp = FastMCP('unifi-management', lifespan=lifespan)
 # FastMCP has no version kwarg; without this, serverInfo.version reports the SDK's version.
 mcp._mcp_server.version = package_version()
 
@@ -237,21 +315,87 @@ def _arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument('--version', action='version', version=version_string())
+    parser.add_argument(
+        '--config',
+        metavar='PATH',
+        type=Path,
+        help=(
+            'env file with controller settings (default: UNIFI_CONFIG, then '
+            '$XDG_CONFIG_HOME or ~/.config/unifi_management_cli/{prod,default}.env; '
+            'a .env in the working directory is never read)'
+        ),
+    )
+    parser.add_argument(
+        '--check',
+        action='store_true',
+        help=(
+            'print where config comes from and which credential families are ready '
+            '(key names only), then exit 0 if the controller is configured, else 1. '
+            'Never contacts the controller, Keychain or 1Password'
+        ),
+    )
     return parser
+
+
+def _configure_logging(level: str) -> None:
+    """Send loguru output to stderr only, at ``level`` (stdout carries JSON-RPC)."""
+    logger.remove()
+    logger.add(sys.stderr, level=level)
+
+
+def check_report(config: ResolvedConfig) -> dict[str, Any]:
+    """Return the ``--check`` JSON: config source and per-family readiness, no values.
+
+    Args:
+        config: The resolved configuration.
+
+    Returns:
+        A JSON-safe dict naming keys only.
+    """
+    report = config.to_json_dict()
+    controller = report['families'].get('controller')
+    if controller is not None and not controller['ready']:
+        # --check never runs the Keychain/1Password chain.
+        controller['fallback_chain'] = 'not probed'
+    report['tool_count'] = len(ToolRegistry())
+    return report
 
 
 def main(argv: list[str] | None = None) -> None:
     """Entry point for the ``unifi-mcp`` console script.
 
     ``--version`` and ``-h/--help`` print to stdout and exit 0 without starting the server.
+    ``--check`` prints the resolved config (key names only) and exits 0 if the controller
+    is configured, else 1. ``--config PATH`` must name a readable file (else exit 2).
     Unknown arguments are reported on stderr and ignored. Otherwise the stdio server runs.
 
     Args:
         argv: Arguments to parse; ``None`` means ``sys.argv[1:]``.
     """
-    _, unknown = _arg_parser().parse_known_args(argv)
+    global _config_path, _settings
+    args, unknown = _arg_parser().parse_known_args(argv)
     if unknown:
         print(f'unifi-mcp: ignoring unknown arguments: {" ".join(unknown)}', file=sys.stderr)
+    settings = load_server_settings()
+
+    explicit: Path | None = args.config
+    if explicit is not None:
+        explicit = explicit.expanduser()
+        if not (explicit.is_file() and os.access(explicit, os.R_OK)):
+            print(f'unifi-mcp: --config {explicit} is missing or unreadable', file=sys.stderr)
+            sys.exit(2)
+
+    if args.check:
+        try:
+            config = resolve_mcp_config(explicit)
+        except ConfigFileError as e:
+            print(f'unifi-mcp: {e}', file=sys.stderr)
+            sys.exit(2)
+        print(json.dumps(check_report(config), indent=2))
+        sys.exit(0 if config.families['controller'].ready else 1)
+
+    _config_path, _settings = explicit, settings
+    _configure_logging(settings.log_level)
     mcp.run()
 
 

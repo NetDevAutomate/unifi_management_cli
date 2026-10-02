@@ -6,36 +6,34 @@ hatchling under build isolation. The resolve test needs network access to PyPI: 
 ``uv.lock`` the way uvx does, so the SDK pins run against what a fresh uvx install gets.
 """
 
-import os
 import pytest
 import shutil
 import subprocess
 import zipfile
 from pathlib import Path
+from tests.mcp.conftest import ORIGINAL_ENVIRON
 
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFESTS_SRC = ROOT / 'src' / 'unifi_mapper' / 'mcp' / 'manifests'
 ENTRY_POINT = 'unifi-mcp = unifi_mapper.mcp.server:main'
-# Captured at import, before any test fixture can change the environment.
-_ENVIRON = dict(os.environ)
 # The interpreter the suite is tested on (plan P13); an unpinned resolve could pick 3.13/3.14.
 PYTHON = '3.12'
 ISOLATED_TESTS = ['tests/mcp/test_cli_entry.py', 'tests/mcp/test_registry.py']
 
 
 def _uv() -> str:
-    """Return the uv executable found on the pre-test PATH."""
-    uv = shutil.which('uv', path=_ENVIRON.get('PATH'))
+    """Return the uv executable found on the real (pre-isolation) PATH."""
+    uv = shutil.which('uv', path=ORIGINAL_ENVIRON.get('PATH'))
     assert uv, 'uv is not on PATH'
     return uv
 
 
 def _clean_env() -> dict[str, str]:
-    """Return the pre-test environment without controller/Protect credentials or venv."""
+    """Return the real environment without controller/Protect credentials or venv."""
     return {
         k: v
-        for k, v in _ENVIRON.items()
+        for k, v in ORIGINAL_ENVIRON.items()
         if not k.startswith(('UNIFI_', 'PROTECT_')) and k != 'VIRTUAL_ENV'
     }
 

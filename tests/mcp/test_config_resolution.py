@@ -457,3 +457,178 @@ def test_family_keys_cover_every_credential_env_read() -> None:
         k for k in credential_like if not any(member(k) for member in FAMILY_KEYS.values())
     )
     assert unplaced == []
+
+
+# --- bounded controller credential pre-check (item 5) -----------------------------------
+
+TOKEN_CREDS = Credentials(host='192.0.2.1', api_token=FAKE_TOKEN, site='lab', verify_ssl=True)
+PASSWORD_CREDS = Credentials(host='192.0.2.1', port=8443, username='admin', password=FAKE_PW)
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.mark.credential_chain
+async def test_failed_lookup_is_retried_only_after_60s(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = _Clock()
+    monkeypatch.setattr(config, '_now', clock)
+    calls: list[int] = []
+
+    async def _chain() -> Credentials:
+        calls.append(1)
+        if len(calls) == 1:
+            raise ToolError(config.NO_CREDENTIALS_MESSAGE, ErrorCodes.AUTHENTICATION_FAILED)
+        return TOKEN_CREDS
+
+    monkeypatch.setattr(config.auth, 'get_credentials', _chain)
+    tried = (Path('/cfg/prod.env'),)
+    for _ in range(2):
+        with pytest.raises(config.CredentialsMissingError) as exc:
+            await config.ensure_controller_credentials(5, tried=tried)
+        assert exc.value.error_code == ErrorCodes.CONFIG_MISSING == 'CONFIG_MISSING'
+        assert '/cfg/prod.env' in exc.value.message
+        assert exc.value.suggestion == config.CONFIG_MISSING_SUGGESTION
+    assert len(calls) == 1  # not re-submitted within 60 s
+
+    clock.now += config.RETRY_AFTER_S
+    await config.ensure_controller_credentials(5)
+    assert len(calls) == 2
+    assert Credentials.from_env() == TOKEN_CREDS
+
+
+@pytest.mark.credential_chain
+async def test_timed_out_lookup_keeps_running_and_a_late_success_is_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    release = threading.Event()
+    calls: list[int] = []
+
+    async def _slow_chain() -> Credentials:
+        calls.append(1)
+        assert release.wait(10)
+        return TOKEN_CREDS
+
+    monkeypatch.setattr(config.auth, 'get_credentials', _slow_chain)
+    with pytest.raises(config.CredentialsMissingError, match='still running'):
+        await config.ensure_controller_credentials(0.05)
+    assert not controller_ready(os.environ)
+    release.set()
+    await config.ensure_controller_credentials(5)
+    assert len(calls) == 1
+    assert controller_ready(os.environ)
+
+
+async def test_ready_environment_skips_the_lookup() -> None:
+    os.environ.update({'UNIFI_URL': PROD, 'UNIFI_CONSOLE_API_TOKEN': FAKE_TOKEN})
+    await config.ensure_controller_credentials(5)  # the unmarked chain would raise
+    assert config._pending is None
+
+
+@pytest.mark.credential_chain
+async def test_other_domain_errors_pass_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _chain() -> Credentials:
+        raise ToolError('Invalid keychain data: x', ErrorCodes.AUTHENTICATION_FAILED)
+
+    monkeypatch.setattr(config.auth, 'get_credentials', _chain)
+    with pytest.raises(ToolError) as exc:
+        await config.ensure_controller_credentials(5)
+    assert not isinstance(exc.value, config.CredentialsMissingError)
+    assert exc.value.error_code == ErrorCodes.AUTHENTICATION_FAILED
+
+
+@pytest.mark.parametrize('creds', [TOKEN_CREDS, PASSWORD_CREDS], ids=['token', 'password'])
+def test_apply_credentials_round_trip(monkeypatch: pytest.MonkeyPatch, creds: Credentials) -> None:
+    env: dict[str, str] = {}
+    config.apply_credentials_to_env(creds, env)
+    monkeypatch.setattr(os, 'environ', env)
+    assert Credentials.from_env() == creds
+
+
+def test_apply_credentials_fills_a_matching_exported_host() -> None:
+    env = {'UNIFI_URL': 'https://192.0.2.1/'}
+    config.apply_credentials_to_env(TOKEN_CREDS, env)
+    assert env['UNIFI_URL'] == 'https://192.0.2.1/'
+    assert env['UNIFI_CONSOLE_API_TOKEN'] == FAKE_TOKEN
+    assert controller_ready(env)
+
+
+def test_apply_credentials_refuses_a_different_controller() -> None:
+    env = {'UNIFI_URL': LAB}
+    with pytest.raises(config.CredentialsMissingError) as exc:
+        config.apply_credentials_to_env(TOKEN_CREDS, env)
+    assert exc.value.error_code == ErrorCodes.CONFIG_MISSING
+    assert 'different controller' in exc.value.message
+    assert env == {'UNIFI_URL': LAB}
+    assert FAKE_TOKEN not in str(exc.value)
+
+
+@pytest.mark.credential_chain
+async def test_op_is_spawned_with_stdin_from_devnull(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+    from unifi_mapper.core.utils import auth
+
+    seen: list[dict[str, object]] = []
+
+    class _Proc:
+        returncode = 1
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return b'', b''
+
+    async def _spawn(*args: object, **kwargs: object) -> _Proc:
+        seen.append({'args': args, **kwargs})
+        return _Proc()
+
+    monkeypatch.setattr(auth.asyncio, 'create_subprocess_exec', _spawn)
+    with pytest.raises(ToolError, match='No credentials found'):
+        await auth.get_credentials()
+    [call] = seen
+    assert call['args'][0] == 'op'  # type: ignore[index]
+    assert call['stdin'] is asyncio.subprocess.DEVNULL
+
+
+# --- ServerSettings (design §2.12) ------------------------------------------------------
+
+
+def test_server_settings_defaults() -> None:
+    assert config.load_server_settings({}, warn=pytest.fail) == config.ServerSettings(
+        log_level='WARNING', credential_timeout=15.0, max_concurrency=4, tool_timeout=None
+    )
+
+
+def test_server_settings_valid_values() -> None:
+    env = {
+        'UNIFI_MCP_LOG_LEVEL': 'debug',
+        'UNIFI_MCP_CREDENTIAL_TIMEOUT': '30',
+        'UNIFI_MCP_MAX_CONCURRENCY': '8',
+        'UNIFI_MCP_TOOL_TIMEOUT': '300',
+    }
+    settings = config.load_server_settings(env, warn=pytest.fail)
+    assert settings == config.ServerSettings('DEBUG', 30.0, 8, 300.0)
+    with pytest.raises(AttributeError):
+        settings.max_concurrency = 1  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ('key', 'value'),
+    [
+        ('UNIFI_MCP_LOG_LEVEL', 'LOUD'),
+        ('UNIFI_MCP_CREDENTIAL_TIMEOUT', '0.5'),
+        ('UNIFI_MCP_CREDENTIAL_TIMEOUT', 'nan'),
+        ('UNIFI_MCP_MAX_CONCURRENCY', '33'),
+        ('UNIFI_MCP_MAX_CONCURRENCY', '2.5'),
+        ('UNIFI_MCP_TOOL_TIMEOUT', '4'),
+        ('UNIFI_MCP_TOOL_TIMEOUT', 'inf'),
+    ],
+)
+def test_server_settings_invalid_values_warn_and_default(key: str, value: str) -> None:
+    messages, warn = _collect()
+    assert config.load_server_settings({key: value}, warn=warn) == config.ServerSettings()
+    assert len(messages) == 1 and key in messages[0]

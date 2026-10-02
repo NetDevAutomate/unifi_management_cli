@@ -22,6 +22,11 @@ Every request that is sent is appended to an audit list as ``{method, path}``:
 no host, query string, headers, cookies or body. Diagnostic output ships that
 list as proof that collection was read-only.
 
+The same policy, as the pure :func:`request_allowed`, backs
+:class:`ReadOnlyAsyncTransport`, the httpx twin used by the MCP server's shared
+async client. Both guards also append ``{"t", "method", "path"}`` JSON lines to
+an opt-in file sink set with :func:`configure_request_audit`.
+
 The guard must be installed *after* ``login()``, because ``_perform_login``
 replaces ``client.session`` and would silently discard it. Once installed it
 survives a later login (for example after ``logout()``): the client's
@@ -31,7 +36,14 @@ failed or raised. Login traffic itself runs on the fresh session before it is
 wrapped, so it is never audited, exactly as for the first login.
 """
 
+import functools
+import httpx
+import json
 import re
+import threading
+from datetime import UTC, datetime
+from loguru import logger
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import unquote, urlsplit
 
@@ -42,12 +54,19 @@ _SYSTEM_LOG_CLASSES = ('device-alert', 'admin-activity', 'update-alert', 'client
 # re-install find the original method instead of stacking wrappers.
 _LOGIN_METHODS = ('login', '_perform_login')
 _ORIGINAL_LOGIN_ATTR = '_read_only_original_login'
+# The async client's own login, allowed by ReadOnlyAsyncTransport and never audited
+# (the sync guard is installed after login, so its login is never audited either).
+_LOGIN_PATH_RE = re.compile(r'^/api/(?:auth/)?login/?$')
+
+_audit_lock = threading.Lock()
+_audit_path: Path | None = None
 
 
 class ReadOnlyViolation(PermissionError):
     """A request that could change controller state was refused before any I/O."""
 
 
+@functools.lru_cache(maxsize=32)
 def _post_allowlist(site: str) -> tuple[re.Pattern[str], ...]:
     """Return the anchored POST allowlist for one site."""
     s = re.escape(site)
@@ -75,6 +94,79 @@ def _normalised_path(method: str, url: object) -> tuple[str, str]:
     return path, parts.query
 
 
+def request_allowed(method: str, url: object, site: str) -> tuple[bool, str]:
+    """Decide whether one request is read-only under the guard's policy. Pure.
+
+    Args:
+        method: HTTP method, any case.
+        url: Absolute or relative URL (a query string is allowed except on POST).
+        site: Site the POST allowlist is anchored to.
+
+    Returns:
+        ``(True, decoded_path)`` when allowed, else ``(False, refusal_message)``.
+    """
+    verb = str(method).upper()
+    try:
+        path, query = _normalised_path(verb, url)
+    except ReadOnlyViolation as e:
+        return False, str(e)
+    if verb in ('GET', 'HEAD'):
+        segments = {seg.lower() for seg in path.split('/') if seg}
+        if segments & _FORBIDDEN_GET_SEGMENTS:
+            return False, f'refused {verb} {path!r}: cmd/upd endpoints are writes'
+    elif verb == 'POST':
+        if query or not any(p.match(path) for p in _post_allowlist(site)):
+            return False, f'refused POST {path!r}: not on the read-only query allowlist'
+    else:
+        return False, f'refused {verb} {path!r}: method can change controller state'
+    return True, path
+
+
+def configure_request_audit(path: Path | None) -> None:
+    """Set (or clear, with ``None``) the opt-in request audit file for both guards.
+
+    When set, every request a guard lets through is appended as one JSON line
+    ``{"t": <UTC ISO time>, "method": ..., "path": ...}``: no host, query string,
+    headers, cookies or body.
+
+    Args:
+        path: The JSON-lines file to append to, or ``None`` to stop auditing.
+    """
+    global _audit_path
+    if path is not None:
+        path = Path(path).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+    with _audit_lock:
+        _audit_path = path
+
+
+def audit_request(method: str, path: str) -> None:
+    """Append one request to the configured audit file, if any.
+
+    A write failure is logged and never fails the request.
+
+    Args:
+        method: Upper-case HTTP method.
+        path: Decoded request path (no host or query).
+    """
+    with _audit_lock:
+        target = _audit_path
+        if target is None:
+            return
+        line = json.dumps(
+            {
+                't': datetime.now(UTC).isoformat(timespec='milliseconds'),
+                'method': method,
+                'path': path,
+            }
+        )
+        try:
+            with target.open('a', encoding='utf-8') as f:
+                f.write(line + '\n')
+        except OSError as e:
+            logger.warning(f'request audit write to {target} failed: {type(e).__name__}')
+
+
 class ReadOnlySession:
     """A session wrapper that only lets read-only requests through.
 
@@ -89,7 +181,6 @@ class ReadOnlySession:
         self._inner = inner
         self._site = site
         self._audit = audit
-        self._post_allowed = _post_allowlist(site)
 
     # --- pass-through session state ----------------------------------------
     @property
@@ -141,20 +232,12 @@ class ReadOnlySession:
             ReadOnlyViolation: The request could change controller state.
         """
         verb = str(method).upper()
-        path, query = _normalised_path(verb, url)
-        if verb in ('GET', 'HEAD'):
-            segments = {seg.lower() for seg in path.split('/') if seg}
-            if segments & _FORBIDDEN_GET_SEGMENTS:
-                raise ReadOnlyViolation(f'refused {verb} {path!r}: cmd/upd endpoints are writes')
-        elif verb == 'POST':
-            if query or not any(p.match(path) for p in self._post_allowed):
-                raise ReadOnlyViolation(
-                    f'refused POST {path!r}: not on the read-only query allowlist'
-                )
-        else:
-            raise ReadOnlyViolation(f'refused {verb} {path!r}: method can change controller state')
-        self._audit.append({'method': verb, 'path': path})
-        return path
+        allowed, detail = request_allowed(verb, url, self._site)
+        if not allowed:
+            raise ReadOnlyViolation(detail)
+        self._audit.append({'method': verb, 'path': detail})
+        audit_request(verb, detail)
+        return detail
 
     # --- verbs ----------------------------------------------------------------
     def get(self, url: Any, **kwargs: Any) -> Any:
@@ -273,3 +356,44 @@ def assert_guarded(client: Any) -> None:
     """
     if not isinstance(getattr(client, 'session', None), ReadOnlySession):
         raise ReadOnlyViolation('the read-only guard is no longer installed on this client')
+
+
+class ReadOnlyAsyncTransport(httpx.AsyncBaseTransport):
+    """An httpx transport that only lets read-only requests reach the controller.
+
+    Allows what :func:`request_allowed` allows, plus ``POST /api/auth/login`` and
+    ``POST /api/login`` (the async client's own login, which is not audited). Anything
+    else raises :class:`ReadOnlyViolation` before the inner transport sees it, so no
+    I/O happens. Allowed requests (other than login) go to the opt-in audit sink.
+    """
+
+    def __init__(self, inner: httpx.AsyncBaseTransport, site: str) -> None:
+        """Wrap ``inner`` for ``site``.
+
+        Args:
+            inner: The transport that performs the I/O.
+            site: Site the POST allowlist is anchored to.
+        """
+        self._inner = inner
+        self._site = site
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        """Check the request against the policy, then forward it to the inner transport.
+
+        Raises:
+            ReadOnlyViolation: The request could change controller state.
+        """
+        verb = request.method.upper()
+        raw = request.url.raw_path.decode('ascii', errors='replace')
+        path_only, _, query = raw.partition('?')
+        if verb == 'POST' and not query and _LOGIN_PATH_RE.match(path_only):
+            return await self._inner.handle_async_request(request)
+        allowed, detail = request_allowed(verb, raw, self._site)
+        if not allowed:
+            raise ReadOnlyViolation(detail)
+        audit_request(verb, detail)
+        return await self._inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        """Close the inner transport."""
+        await self._inner.aclose()

@@ -11,12 +11,21 @@ The functions above :func:`resolve_mcp_config` are pure; the wrapper does the I/
 Nothing here holds or reports secret values: statuses carry key names only.
 """
 
+import asyncio
+import concurrent.futures
+import math
 import os
 import sys
-from collections.abc import Callable, Mapping, MutableMapping
+import threading
+import time
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
+from loguru import logger
 from pathlib import Path
 from typing import Any, Literal
+from unifi_mapper.core.utils import auth
+from unifi_mapper.core.utils.auth import Credentials
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 CredentialFamily = Literal['controller', 'network_api', 'protect', 'none']
@@ -458,3 +467,255 @@ def resolve_mcp_config(
         families=families,
         settings_from_file=settings,
     )
+
+
+# --- server settings (design §2.12) ---------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ServerSettings:
+    """Validated ``UNIFI_MCP_*`` settings. An invalid value falls back to its default."""
+
+    log_level: str = 'WARNING'
+    credential_timeout: float = 15.0
+    max_concurrency: int = 4
+    tool_timeout: float | None = None  # unset = no per-call deadline
+
+
+def _bounded_number(
+    env: Mapping[str, str],
+    key: str,
+    parse: Callable[[str], float],
+    low: float,
+    high: float,
+    warn: Callable[[str], None],
+) -> float | None:
+    """Return ``env[key]`` parsed and within ``[low, high]``, or None (warned) if invalid."""
+    raw = env.get(key)
+    if raw is None or raw.strip() == '':
+        return None
+    try:
+        value = parse(raw.strip())
+    except ValueError:
+        value = math.nan
+    if math.isfinite(value) and low <= value <= high:
+        return value
+    warn(f'{key}={raw!r} is not a number in {low:g}-{high:g}; using the default')
+    return None
+
+
+def load_server_settings(
+    env: Mapping[str, str] | None = None, warn: Callable[[str], None] | None = None
+) -> ServerSettings:
+    """Read and validate the server's ``UNIFI_MCP_*`` settings.
+
+    Args:
+        env: The environment; ``None`` means ``os.environ`` at call time.
+        warn: Receives one message per invalid value; defaults to a stderr line.
+
+    Returns:
+        The settings, with defaults for unset or invalid values.
+    """
+    env = os.environ if env is None else env
+    warn = warn or _stderr_warning
+    defaults = ServerSettings()
+
+    log_level = defaults.log_level
+    raw_level = env.get('UNIFI_MCP_LOG_LEVEL')
+    if raw_level and raw_level.strip():
+        candidate = raw_level.strip().upper()
+        try:
+            logger.level(candidate)
+        except ValueError:
+            warn(f'UNIFI_MCP_LOG_LEVEL={raw_level!r} is not a log level; using WARNING')
+        else:
+            log_level = candidate
+
+    credential_timeout = _bounded_number(env, 'UNIFI_MCP_CREDENTIAL_TIMEOUT', float, 1, 120, warn)
+    tool_timeout = _bounded_number(env, 'UNIFI_MCP_TOOL_TIMEOUT', float, 5, 3600, warn)
+    max_concurrency = _bounded_number(env, 'UNIFI_MCP_MAX_CONCURRENCY', int, 1, 32, warn)
+    return ServerSettings(
+        log_level=log_level,
+        credential_timeout=(
+            defaults.credential_timeout if credential_timeout is None else credential_timeout
+        ),
+        max_concurrency=(
+            defaults.max_concurrency if max_concurrency is None else int(max_concurrency)
+        ),
+        tool_timeout=tool_timeout,
+    )
+
+
+# --- bounded controller credential lookup (design §2.8) -------------------------------
+
+RETRY_AFTER_S = 60.0
+NO_CREDENTIALS_MESSAGE = 'No credentials found from any source'
+CONFIG_MISSING_SUGGESTION = (
+    'set UNIFI_CONFIG=/path/prod.env or export UNIFI_URL + UNIFI_CONSOLE_API_TOKEN'
+)
+
+
+class CredentialsMissingError(ToolError):
+    """Controller credentials are not configured, or the lookup did not finish in time."""
+
+    def __init__(
+        self,
+        message: str,
+        suggestion: str | None = CONFIG_MISSING_SUGGESTION,
+        tried: Sequence[Path] = (),
+    ) -> None:
+        """Build a ``CONFIG_MISSING`` error naming the files tried (paths, never values).
+
+        Args:
+            message: What is missing.
+            suggestion: How to fix it.
+            tried: Config files that were looked for.
+        """
+        if tried:
+            message = f'{message} (tried {", ".join(str(p) for p in tried)})'
+        super().__init__(
+            message=message, error_code=ErrorCodes.CONFIG_MISSING, suggestion=suggestion
+        )
+
+
+class _Lookup(concurrent.futures.Future[Credentials]):
+    """A future that records when its lookup finished (for the retry interval)."""
+
+    finished_at: float | None = None
+
+
+_pending: concurrent.futures.Future[Credentials] | None = None
+
+
+def _now() -> float:
+    """Return a monotonic clock reading (a seam for tests)."""
+    return time.monotonic()
+
+
+def _submit_daemon(fn: Callable[[], Credentials]) -> concurrent.futures.Future[Credentials]:
+    """Run fn on a daemon thread so a pending Keychain prompt never blocks process exit.
+
+    Args:
+        fn: The blocking lookup.
+
+    Returns:
+        A future that receives fn's result or exception.
+    """
+    fut = _Lookup()
+
+    def _run() -> None:
+        if not fut.set_running_or_notify_cancel():
+            return
+        try:
+            result = fn()
+        except BaseException as e:  # noqa: BLE001 - delivered to the awaiting caller
+            fut.finished_at = _now()
+            fut.set_exception(e)
+        else:
+            fut.finished_at = _now()
+            fut.set_result(result)
+
+    threading.Thread(target=_run, name='unifi-cred', daemon=True).start()
+    return fut
+
+
+def _resolve_blocking() -> Credentials:
+    """Run the credential chain on its own event loop (called on the daemon thread)."""
+    # Module-attribute call (auth.get_credentials), so the test guard patches one name.
+    return asyncio.run(auth.get_credentials())
+
+
+def _should_retry(fut: concurrent.futures.Future[Credentials]) -> bool:
+    """Return True if a finished, failed lookup is old enough to be re-submitted."""
+    if fut.cancelled():
+        return True
+    if not fut.done() or fut.exception() is None:
+        return False
+    finished = getattr(fut, 'finished_at', None)
+    return finished is None or _now() - finished >= RETRY_AFTER_S
+
+
+async def ensure_controller_credentials(timeout: float, tried: Sequence[Path] = ()) -> None:
+    """Raise CredentialsMissingError unless controller credentials resolve within timeout.
+
+    Returns at once when the environment already holds controller credentials. Otherwise
+    the credential chain (Keychain, then 1Password) runs on a daemon thread, at most one
+    at a time; the event loop stays responsive while it waits. A lookup that times out
+    keeps running, so a later call can use its result. On success the credentials are
+    written to ``os.environ`` (:func:`apply_credentials_to_env`).
+
+    Args:
+        timeout: Seconds to wait for the lookup.
+        tried: Config files that were looked for, named in the error.
+
+    Raises:
+        CredentialsMissingError: Nothing found, the lookup is still running, or the
+            credentials found are for a different controller than the one exported.
+        ToolError: Any other domain error from the credential chain, unchanged.
+    """
+    global _pending
+    if controller_ready(os.environ):
+        return
+    if _pending is None or _should_retry(_pending):
+        _pending = _submit_daemon(_resolve_blocking)
+    try:
+        creds = await asyncio.wait_for(asyncio.shield(asyncio.wrap_future(_pending)), timeout)
+    except TimeoutError:
+        raise CredentialsMissingError(
+            f'credential lookup still running after {timeout:g}s '
+            '(Keychain/1Password may be waiting for approval); retry shortly',
+            suggestion=None,
+        ) from None
+    except ToolError as e:
+        if e.message == NO_CREDENTIALS_MESSAGE:
+            raise CredentialsMissingError(
+                'no controller credentials in the environment, the config file, the '
+                'Keychain or 1Password',
+                tried=tried,
+            ) from None
+        raise
+    apply_credentials_to_env(creds)  # controller family, atomically
+
+
+def apply_credentials_to_env(
+    creds: Credentials, env: MutableMapping[str, str] | None = None
+) -> None:
+    """Write resolved controller credentials under the keys ``Credentials.from_env`` reads.
+
+    Never mixes controllers: with no controller key exported, every resolved key is
+    written. With some exported, the credentials are applied only when their host
+    equals the exported host (normalised); missing keys are then filled and exported
+    ones kept. Otherwise nothing is written.
+
+    Args:
+        creds: Credentials from the Keychain or 1Password.
+        env: The environment to update; ``None`` means ``os.environ`` at call time.
+
+    Raises:
+        CredentialsMissingError: The credentials are for a different controller.
+    """
+    env = os.environ if env is None else env
+    resolved = {
+        'UNIFI_HOST': creds.host,
+        'UNIFI_PORT': str(creds.port),
+        'UNIFI_SITE': creds.site,
+        'UNIFI_VERIFY_SSL': 'true' if creds.verify_ssl else 'false',
+    }
+    if creds.api_token:
+        resolved['UNIFI_CONSOLE_API_TOKEN'] = creds.api_token
+    if creds.username:
+        resolved['UNIFI_USERNAME'] = creds.username
+    if creds.password:
+        resolved['UNIFI_PASSWORD'] = creds.password
+
+    if not any(k in CONTROLLER_KEYS for k in env):
+        env.update(resolved)
+        return
+    if family_host('controller', env) != normalise_host(creds.host):
+        raise CredentialsMissingError(
+            'Keychain/1Password credentials are for a different controller than UNIFI_URL',
+            suggestion='set UNIFI_CONFIG or export a token',
+        )
+    for key, value in resolved.items():
+        if not env.get(key):
+            env[key] = value

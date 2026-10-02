@@ -170,6 +170,8 @@ async def get_credentials() -> Credentials:
             'UniFi Controller',
             '--format',
             'json',
+            # Never inherit stdin: under the MCP server it is the JSON-RPC pipe.
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

@@ -9,13 +9,28 @@ Provides authenticated access to UniFi Controller API with support for:
 Supports both UniFi OS (UDM/UDR) and legacy controllers with:
 - Token-based authentication (X-API-KEY header) - preferred
 - Username/password authentication - fallback
+
+A long-running process (the MCP server) can install one
+:class:`SharedControllerClient` with :func:`use_shared_controller_client`. Every
+``UniFiClient()`` created without explicit credentials then borrows that one
+logged-in, read-only-guarded connection instead of logging in per use. With no
+holder installed (the CLI), each ``UniFiClient`` connects and logs in itself.
 """
 
+import anyio
 import httpx
+from collections.abc import Iterator
+from contextlib import contextmanager
 from loguru import logger
 from typing import Any
 from unifi_mapper.core.utils.auth import Credentials, get_credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.readonly import ReadOnlyAsyncTransport
+
+
+DEFAULT_TIMEOUT = httpx.Timeout(30.0)
+SHARED_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+DEFAULT_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
 
 
 class UniFiClient:
@@ -25,19 +40,31 @@ class UniFiClient:
     detection and endpoint routing.
     """
 
-    def __init__(self, credentials: Credentials | None = None):
+    def __init__(
+        self,
+        credentials: Credentials | None = None,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        timeout: httpx.Timeout | None = None,
+    ):
         """Initialize UniFi client.
 
         Args:
             credentials: Optional credentials (will auto-fetch if not provided)
+            transport: Optional httpx transport (e.g. a read-only guard); default httpx's.
+            timeout: Optional request timeout; default 30 s.
         """
         self._credentials = credentials
+        self._explicit_credentials = credentials is not None
+        self._transport = transport
+        self._timeout = timeout or DEFAULT_TIMEOUT
         self._client: httpx.AsyncClient | None = None
         self._session_token: str | None = None
         self._site_name: str = 'default'
         self._authenticated = False
         self._is_unifi_os: bool = False
         self._auth_method: str | None = None
+        self._borrowed = False
 
     async def __aenter__(self) -> 'UniFiClient':
         """Async context manager entry."""
@@ -49,8 +76,17 @@ class UniFiClient:
         await self.disconnect()
 
     async def connect(self) -> None:
-        """Establish connection to UniFi controller."""
+        """Establish connection to UniFi controller.
+
+        Without explicit credentials, and with a :class:`SharedControllerClient`
+        installed, this borrows the shared connection instead of logging in.
+        """
         if self._authenticated:
+            return
+
+        if not self._explicit_credentials and _shared_holder is not None:
+            owner = await _shared_holder.acquire()
+            self._borrow(owner)
             return
 
         # Get credentials if not provided
@@ -62,8 +98,9 @@ class UniFiClient:
         self._client = httpx.AsyncClient(
             base_url=base_url,
             verify=self._credentials.verify_ssl,
-            timeout=httpx.Timeout(30.0),
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            timeout=self._timeout,
+            limits=DEFAULT_LIMITS,
+            transport=self._transport,
         )
 
         # Detect UniFi OS type first
@@ -84,7 +121,19 @@ class UniFiClient:
         )
 
     async def disconnect(self) -> None:
-        """Disconnect from UniFi controller."""
+        """Disconnect from UniFi controller.
+
+        A borrowed connection is only released: the shared client stays open and
+        logged in for the next borrower.
+        """
+        if self._borrowed:
+            self._client = None
+            self._credentials = None
+            self._authenticated = False
+            self._session_token = None
+            self._auth_method = None
+            self._borrowed = False
+            return
         if self._client:
             try:
                 if self._authenticated and self._auth_method == 'password':
@@ -99,6 +148,17 @@ class UniFiClient:
                 self._authenticated = False
                 self._session_token = None
                 self._auth_method = None
+
+    def _borrow(self, owner: 'UniFiClient') -> None:
+        """Share ``owner``'s connected, authenticated state without logging in."""
+        self._client = owner._client
+        self._credentials = owner._credentials
+        self._site_name = owner._site_name
+        self._is_unifi_os = owner._is_unifi_os
+        self._auth_method = owner._auth_method
+        self._session_token = owner._session_token
+        self._authenticated = True
+        self._borrowed = True
 
     async def _detect_unifi_os(self) -> None:
         """Detect if controller is UniFi OS device (UDM/UDR).
@@ -653,3 +713,95 @@ class UniFiClient:
     def is_connected(self) -> bool:
         """Check if client is connected and authenticated."""
         return self._authenticated and self._client is not None
+
+
+class SharedControllerClient:
+    """One logged-in, read-only-guarded controller connection for a whole process.
+
+    The first :meth:`acquire` resolves credentials, builds a :class:`UniFiClient` on
+    ``httpx.Timeout(30.0, connect=10.0)`` behind :class:`ReadOnlyAsyncTransport` and
+    connects it once, under a lock. A failed connect is not cached, so the next call
+    retries. :meth:`aclose` disconnects.
+    """
+
+    def __init__(
+        self,
+        credentials: Credentials | None = None,
+        *,
+        inner_transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        """Create an unconnected holder.
+
+        Args:
+            credentials: Explicit credentials; default: the credential chain at first use.
+            inner_transport: The transport doing the I/O inside the read-only guard;
+                default an ``httpx.AsyncHTTPTransport`` honouring ``verify_ssl``.
+        """
+        self._credentials = credentials
+        self._inner_transport = inner_transport
+        self._client: UniFiClient | None = None
+        self._lock: anyio.Lock | None = None
+
+    @property
+    def is_connected(self) -> bool:
+        """Return True once a connection has been established and not closed."""
+        return self._client is not None and self._client.is_connected
+
+    async def acquire(self) -> UniFiClient:
+        """Return the connected shared client, connecting it on first use.
+
+        Raises:
+            ToolError: Credentials could not be resolved or the controller rejected them.
+        """
+        if self._lock is None:
+            self._lock = anyio.Lock()
+        async with self._lock:
+            if self._client is not None and self._client.is_connected:
+                return self._client
+            if self._client is not None:  # lost its session: close it before reconnecting
+                stale, self._client = self._client, None
+                await stale.disconnect()
+            credentials = self._credentials or await get_credentials()
+            inner = self._inner_transport or httpx.AsyncHTTPTransport(
+                verify=credentials.verify_ssl, limits=DEFAULT_LIMITS
+            )
+            client = UniFiClient(
+                credentials,
+                transport=ReadOnlyAsyncTransport(inner, site=credentials.site),
+                timeout=SHARED_TIMEOUT,
+            )
+            try:
+                await client.connect()
+            except BaseException:
+                await client.disconnect()
+                raise
+            self._client = client
+            return client
+
+    async def aclose(self) -> None:
+        """Disconnect the shared client (logging out a password session)."""
+        client, self._client = self._client, None
+        if client is not None:
+            await client.disconnect()
+
+
+_shared_holder: SharedControllerClient | None = None
+
+
+@contextmanager
+def use_shared_controller_client(shared: SharedControllerClient | None) -> Iterator[None]:
+    """Install ``shared`` as the process-wide holder for the duration of the block.
+
+    Every ``UniFiClient()`` created without explicit credentials borrows it. The
+    previous holder (normally none) is restored on exit.
+
+    Args:
+        shared: The holder to install, or ``None`` to disable borrowing in the block.
+    """
+    global _shared_holder
+    previous = _shared_holder
+    _shared_holder = shared
+    try:
+        yield
+    finally:
+        _shared_holder = previous
