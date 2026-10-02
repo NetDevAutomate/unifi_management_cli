@@ -425,3 +425,48 @@ def test_to_dict_includes_poe_detail_when_capable():
     poe = result.to_dict()['poe']
     assert poe['capable'] is True
     assert poe['power_w'] == '6.5'
+
+
+def test_to_dict_adds_negotiation_fields_override_and_extra_counters():
+    """New keys are additive: raw speed_caps, op_mode, flow control, override and CRC."""
+    result = PortInspectionResult(
+        switch_name='SW',
+        switch_model='M',
+        switch_mac='02:00:00:00:00:01',
+        port_idx=5,
+        port_table={
+            'speed': 5000,
+            'speed_caps': 1048623,
+            'op_mode': 'switch',
+            'forward': 'native',
+            'flowctrl_rx': False,
+            'flowctrl_tx': True,
+            'rx_broadcast': 11,
+            'tx_broadcast': 12,
+            'rx_multicast': 13,
+            'tx_multicast': 14,
+            'port_stats': {'rx_crc_errors': 3},
+        },
+        port_override={
+            'port_idx': 5,
+            'portconf_id': 'prof-10g',
+            'x_port_secret': 'FAKE-MUST-NOT-APPEAR',  # pragma: allowlist secret
+        },
+    )
+    d = result.to_dict()
+    assert d['link']['speed_caps'] == 1048623
+    assert d['link']['op_mode'] == 'switch'
+    assert d['link']['forward'] == 'native'
+    assert (d['link']['flowctrl_rx'], d['link']['flowctrl_tx']) == (False, True)
+    assert d['counters']['rx']['broadcast'] == 11 and d['counters']['tx']['multicast'] == 14
+    assert d['counters']['rx']['crc_errors'] == 3
+    assert d['override'] == {'port_idx': 5, 'portconf_id': 'prof-10g'}
+    assert d['link']['speed_mbps'] == 5000  # existing keys unchanged
+
+
+def test_to_dict_override_is_none_without_one():
+    """A port with no port_overrides entry reports override as None."""
+    result = PortInspectionResult(switch_name='SW', switch_model='M', switch_mac='a', port_idx=1)
+    d = result.to_dict()
+    assert d['override'] is None
+    assert d['counters']['rx']['crc_errors'] is None

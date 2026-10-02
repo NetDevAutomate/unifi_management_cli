@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from .api_client import UnifiApiClient
+from .core.utils.redact import strip_secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from rich.console import Console
@@ -284,6 +285,7 @@ class PortInspectionResult:
     connected: ConnectedDevice = field(default_factory=ConnectedDevice)
     lldp_identity: Optional[IdentityMatch] = None
     switch_uplink: dict[str, Any] = field(default_factory=dict)
+    port_override: dict[str, Any] = field(default_factory=dict)
 
     # --- Convenience views -------------------------------------------------
     @property
@@ -301,8 +303,12 @@ class PortInspectionResult:
         """Return a JSON-serialisable view for API and MCP consumers.
 
         Rich markup is stripped from label strings so the output is safe for
-        non-terminal consumers.
+        non-terminal consumers. ``override`` is the port's full
+        ``port_overrides`` entry with secret keys removed. ``link.speed_caps``
+        is the controller's raw, undocumented value and is never decoded.
         """
+        pt = self.port_table
+        override, _ = strip_secrets(self.port_override)
         return {
             'switch': {
                 'name': self.switch_name,
@@ -311,18 +317,24 @@ class PortInspectionResult:
                 'uplink': self.switch_uplink or None,
             },
             'port_idx': self.port_idx,
+            'override': override or None,
             'link': {
                 'up': self.up,
-                'enabled': self.port_table.get('enable'),
-                'media': self.port_table.get('media'),
-                'speed_mbps': self.port_table.get('speed'),
-                'full_duplex': self.port_table.get('full_duplex'),
-                'autoneg': self.port_table.get('autoneg'),
-                'jumbo': self.port_table.get('jumbo'),
-                'is_uplink': self.port_table.get('is_uplink'),
-                'stp_state': self.port_table.get('stp_state'),
-                'link_down_count': self.port_table.get('link_down_count'),
-                'name': self.port_table.get('name'),
+                'enabled': pt.get('enable'),
+                'media': pt.get('media'),
+                'speed_mbps': pt.get('speed'),
+                'full_duplex': pt.get('full_duplex'),
+                'autoneg': pt.get('autoneg'),
+                'speed_caps': pt.get('speed_caps'),
+                'op_mode': pt.get('op_mode'),
+                'forward': pt.get('forward'),
+                'flowctrl_rx': pt.get('flowctrl_rx'),
+                'flowctrl_tx': pt.get('flowctrl_tx'),
+                'jumbo': pt.get('jumbo'),
+                'is_uplink': pt.get('is_uplink'),
+                'stp_state': pt.get('stp_state'),
+                'link_down_count': pt.get('link_down_count'),
+                'name': pt.get('name'),
             },
             'profile': {
                 'id': self.profile.profile_id,
@@ -390,16 +402,21 @@ class PortInspectionResult:
             'last_connection': self.last_connection or None,
             'counters': {
                 'tx': {
-                    'bytes': self.port_table.get('tx_bytes'),
-                    'packets': self.port_table.get('tx_packets'),
-                    'errors': self.port_table.get('tx_errors'),
-                    'dropped': self.port_table.get('tx_dropped'),
+                    'bytes': pt.get('tx_bytes'),
+                    'packets': pt.get('tx_packets'),
+                    'errors': pt.get('tx_errors'),
+                    'dropped': pt.get('tx_dropped'),
+                    'broadcast': pt.get('tx_broadcast'),
+                    'multicast': pt.get('tx_multicast'),
                 },
                 'rx': {
-                    'bytes': self.port_table.get('rx_bytes'),
-                    'packets': self.port_table.get('rx_packets'),
-                    'errors': self.port_table.get('rx_errors'),
-                    'dropped': self.port_table.get('rx_dropped'),
+                    'bytes': pt.get('rx_bytes'),
+                    'packets': pt.get('rx_packets'),
+                    'errors': pt.get('rx_errors'),
+                    'dropped': pt.get('rx_dropped'),
+                    'broadcast': pt.get('rx_broadcast'),
+                    'multicast': pt.get('rx_multicast'),
+                    'crc_errors': _rx_crc_errors(pt),
                 },
             },
             'poe': (
@@ -1273,6 +1290,12 @@ def inspect_port(
         peer_mac = lldp.get('chassis_id') or lldp.get('mac')
         lldp_identity = _resolve_mac(peer_mac, mac_to_dev, mac_to_user)
 
+    overrides = details.get('port_overrides') or switch.get('port_overrides') or []
+    port_override = next(
+        (o for o in overrides if isinstance(o, dict) and o.get('port_idx') == port_idx),
+        {},
+    )
+
     return PortInspectionResult(
         switch_name=switch.get('name', '?'),
         switch_model=switch.get('model', '?'),
@@ -1289,12 +1312,24 @@ def inspect_port(
         connected=connected,
         lldp_identity=lldp_identity,
         switch_uplink=switch.get('uplink') or {},
+        port_override=port_override,
     )
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _rx_crc_errors(port_table: dict[str, Any]) -> Any:
+    """Return the receive CRC counter: ``port_stats.rx_crc_errors``, then ``rx_crc_errors``.
+
+    Same precedence as ``analysis/link_quality``. None when neither is reported.
+    """
+    stats = port_table.get('port_stats')
+    if isinstance(stats, dict) and 'rx_crc_errors' in stats:
+        return stats['rx_crc_errors']
+    return port_table.get('rx_crc_errors')
 
 
 def _fmt_ts(ts: Any) -> str:
