@@ -1,4 +1,4 @@
-"""T5 part 1: the stdio server as an MCP client sees it.
+"""T5: the stdio server as an MCP client sees it.
 
 Subprocesses get an environment built from scratch (``isolated_env``), so they can't see
 the real ~/.config, Keychain or 1Password; they run from ``tmp_path`` with a decoy CWD
@@ -8,6 +8,7 @@ the real ~/.config, Keychain or 1Password; they run from ``tmp_path`` with a dec
 
 import anyio
 import json
+import pytest
 import queue
 import subprocess
 import sys
@@ -172,7 +173,7 @@ async def test_print_in_a_handler_goes_to_stderr_not_the_protocol(
     manifests.mkdir()
     (manifests / 'fake.yaml').write_text(
         'category: fake\ntools:\n  shout:\n    module: tests.mcp.test_stdio_smoke\n'
-        '    handler: printing_handler\n    description: prints\n'
+        '    handler: printing_handler\n    description: prints\n    credentials: none\n'
     )
     monkeypatch.setattr(server, 'get_registry', lambda: ToolRegistry(manifests))
     stdout_before = sys.stdout
@@ -217,3 +218,132 @@ async def test_print_in_a_handler_goes_to_stderr_not_the_protocol(
     for line in protocol_lines:
         assert PRINTED not in line
         assert json.loads(line)['jsonrpc'] == '2.0'
+
+
+# ---------------------------------------------------------------------------
+# T5 part 2: the credential gate over stdio
+# ---------------------------------------------------------------------------
+
+SLOW_KEYRING = '''
+import time
+
+from keyring.backend import KeyringBackend
+
+
+class SlowKeyring(KeyringBackend):
+    """A Keychain stand-in that takes 30 s to answer (an approval prompt left open)."""
+
+    priority = 1
+
+    def get_password(self, service, username):
+        time.sleep(30)
+        return None
+
+    def set_password(self, service, username, password):
+        raise NotImplementedError
+
+    def delete_password(self, service, username):
+        raise NotImplementedError
+'''
+
+
+class _Session:
+    """A spawned ``unifi-mcp`` stdio session, read line by line on a thread."""
+
+    def __init__(self, tmp_path: Path, env: dict[str, str]) -> None:
+        self.proc = subprocess.Popen(
+            [sys.executable, '-m', 'unifi_mapper.mcp.server'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=tmp_path,
+            env=env,
+        )
+        assert self.proc.stdin and self.proc.stdout
+        self.lines: queue.Queue[str | None] = queue.Queue()
+        threading.Thread(target=_reader, args=(self.proc.stdout, self.lines), daemon=True).start()
+
+    def send(self, text: str) -> None:
+        assert self.proc.stdin
+        self.proc.stdin.write(text)
+        self.proc.stdin.flush()
+
+    def reply(self, timeout: float = 30) -> dict[str, Any]:
+        line = _next_line(self.lines, timeout)
+        message = json.loads(line)
+        assert message['jsonrpc'] == '2.0'
+        return message
+
+    def initialize(self) -> None:
+        self.send(INITIALIZE)
+        assert self.reply()['id'] == 1
+        self.send(INITIALIZED)
+
+    def close(self) -> None:
+        if self.proc.poll() is None:
+            self.proc.kill()
+            self.proc.wait()
+
+
+def _execute(msg_id: int, tool: str, params: dict[str, Any] | None = None) -> str:
+    return _request(
+        msg_id,
+        'tools/call',
+        {'name': 'execute_tool', 'arguments': {'tool_name': tool, 'params': params or {}}},
+    )
+
+
+def test_controller_tool_without_credentials_is_config_missing(tmp_path: Path) -> None:
+    session = _Session(tmp_path, _server_env(tmp_path))
+    try:
+        session.initialize()
+        session.send(_execute(3, 'get_capacity_report'))
+        reply = session.reply()
+    finally:
+        session.close()
+    result = reply['result']
+    assert result['isError'] is True
+    assert result['structuredContent']['error_code'] == 'CONFIG_MISSING'
+    assert json.loads(result['content'][0]['text']) == result['structuredContent']
+    assert FAKE_TOKEN not in json.dumps(reply)  # the decoy CWD .env was never read
+
+
+@pytest.mark.credential_chain
+def test_slow_keychain_is_bounded_and_eof_still_exits(tmp_path: Path) -> None:
+    ring = tmp_path / 'ring'
+    ring.mkdir()
+    (ring / 'slowring.py').write_text(SLOW_KEYRING)
+    env = isolated_env(
+        tmp_path,
+        PYTHONPATH=str(ring),
+        PYTHON_KEYRING_BACKEND='slowring.SlowKeyring',
+        UNIFI_MCP_CREDENTIAL_TIMEOUT='1',
+    )
+    session = _Session(tmp_path, env)
+    try:
+        session.initialize()
+        sent = time.monotonic()
+        session.send(_execute(3, 'get_capacity_report'))
+        session.send(
+            _request(4, 'tools/call', {'name': 'search_tools', 'arguments': {'query': 'port'}})
+        )
+        first = session.reply()
+        assert first['id'] == 4, 'search_tools must answer while the lookup waits'
+        assert first['result']['isError'] is False
+        second = session.reply()
+        elapsed = time.monotonic() - sent
+        assert second['id'] == 3
+        assert second['result']['isError'] is True
+        assert second['result']['structuredContent']['error_code'] == 'CONFIG_MISSING'
+        assert 'still running' in second['result']['structuredContent']['message']
+        assert elapsed < 3, elapsed
+
+        # The 30 s Keychain lookup is still sleeping on its daemon thread.
+        closed_at = time.monotonic()
+        assert session.proc.stdin
+        session.proc.stdin.close()
+        session.proc.wait(timeout=5)
+        assert time.monotonic() - closed_at < 5
+    finally:
+        session.close()

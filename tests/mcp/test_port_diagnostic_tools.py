@@ -42,9 +42,17 @@ def registry() -> ToolRegistry:
     return ToolRegistry(MANIFESTS)
 
 
+def _envelope(out):
+    """Return execute_tool's envelope (its structuredContent)."""
+    return out.structuredContent
+
+
 @pytest.fixture
 def fake_controller(monkeypatch):
     """Point every tool at an in-memory controller instead of the env credentials."""
+    # Fake controller env so the MCP credential gate passes before the patched client.
+    monkeypatch.setenv('UNIFI_URL', 'https://192.0.2.1')
+    monkeypatch.setenv('UNIFI_CONSOLE_API_TOKEN', 'FAKE-GATE-TOKEN')  # pragma: allowlist secret
     session = FakeSession(default_routes())
     client = fake_client(session)
     install_read_only_guard(client)
@@ -115,18 +123,21 @@ def test_registry_totals(registry):
 )
 async def test_execute_tool_runs_each_tool_read_only(fake_controller, name, params, key):
     client, session = fake_controller
-    out = await server.execute_tool(name, params)
+    raw = await server.execute_tool(name, params)
+    out = _envelope(raw)
     assert out['ok'] is True, out
     assert key in out['result']
     assert out['result']['schema_version'] == 1
-    assert_no_secrets(out)
+    assert_no_secrets(raw.model_dump(mode='json'))
     assert isinstance(client.session, ReadOnlySession)
     assert {c['method'] for c in session.calls} <= {'GET', 'POST'}
 
 
 async def test_client_history_confirms_the_target_port(fake_controller):
-    out = await server.execute_tool(
-        'get_client_history', {'client': NAS_MAC, 'switch': SWITCH_NAME, 'port': 5}
+    out = _envelope(
+        await server.execute_tool(
+            'get_client_history', {'client': NAS_MAC, 'switch': SWITCH_NAME, 'port': 5}
+        )
     )
     assert out['result']['records'][0]['matches_target'] is True
 
@@ -162,7 +173,7 @@ async def test_client_history_confirms_the_target_port(fake_controller):
     ],
 )
 async def test_failures_come_back_as_specific_error_envelopes(fake_controller, name, params, code):
-    out = await server.execute_tool(name, params)
+    out = _envelope(await server.execute_tool(name, params))
     assert out['ok'] is False
     assert out['error_code'] == code, out
 
@@ -174,13 +185,17 @@ async def test_a_refused_write_is_reported_as_read_only_violation(fake_controlle
         client.session.put(f'{client.base_url}{API}/rest/device/x', json={})
 
     monkeypatch.setattr(module, 'collect_controller_info', writer)
-    out = await server.execute_tool('diagnose_switch_port', {'switch': SWITCH_NAME, 'port': 5})
+    out = _envelope(
+        await server.execute_tool('diagnose_switch_port', {'switch': SWITCH_NAME, 'port': 5})
+    )
     assert out['ok'] is False
     assert out['error_code'] == 'READ_ONLY_VIOLATION'  # not mislabelled MUTATION_REFUSED
 
 
 async def test_unknown_parameters_are_rejected_by_the_manifest(fake_controller):
-    out = await server.execute_tool('get_switch_ports', {'switch': SWITCH_NAME, 'colour': 'red'})
+    out = _envelope(
+        await server.execute_tool('get_switch_ports', {'switch': SWITCH_NAME, 'colour': 'red'})
+    )
     assert out['error_code'] == 'INVALID_PARAMETERS'
 
 
@@ -188,5 +203,5 @@ async def test_login_failure_is_controller_unreachable(monkeypatch):
     monkeypatch.setenv('UNIFI_URL', 'https://192.0.2.1')
     monkeypatch.setenv('UNIFI_CONSOLE_API_TOKEN', 'FAKE-TOKEN')  # pragma: allowlist secret
     monkeypatch.setattr('unifi_mapper.api_client.UnifiApiClient.login', lambda self: False)
-    out = await server.execute_tool('get_switch_ports', {'switch': SWITCH_NAME})
+    out = _envelope(await server.execute_tool('get_switch_ports', {'switch': SWITCH_NAME}))
     assert out['ok'] is False and out['error_code'] == 'CONTROLLER_UNREACHABLE'

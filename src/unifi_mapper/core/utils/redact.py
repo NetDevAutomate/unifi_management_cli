@@ -22,6 +22,7 @@ Example:
 """
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -115,3 +116,100 @@ def redact_text(text: object, limit: int = DEFAULT_TEXT_LIMIT) -> str:
     if len(redacted) > limit:
         redacted = redacted[: max(0, limit - 1)] + '…'
     return redacted
+
+
+# --- MCP masking (added for the MCP server; nothing above changes) ---------------------
+
+MIN_SECRET_VALUE_LENGTH = 8
+_SECRET_ENV_PREFIXES = ('UNIFI_', 'PROTECT_')
+
+
+def _replace_values(text: str, ordered: tuple[str, ...]) -> str:
+    """Replace every occurrence of each value in ``ordered`` (longest first) in ``text``."""
+    for secret in ordered:
+        if secret in text:
+            text = text.replace(secret, REDACTED)
+    return text
+
+
+def _ordered(secret_values: frozenset[str]) -> tuple[str, ...]:
+    """Return the non-empty secret values, longest first, so no fragment survives."""
+    return tuple(sorted((v for v in secret_values if v), key=len, reverse=True))
+
+
+def mask_secrets(value: Any, secret_values: frozenset[str]) -> Any:
+    """Mask (not strip) secrets in a JSON-compatible value.
+
+    A ``str`` under a key for which :func:`is_secret_key` is true becomes
+    :data:`REDACTED`, at any depth (dicts inside lists included); strings nested inside a
+    container under such a key are masked the same way. Non-string values (booleans
+    such as ``x_has_ssh_hostkey``, numbers, ``None``) are left as they are, and keys
+    are never removed, so a masked result stays valid against its output schema. Every
+    occurrence of a value in ``secret_values`` inside any other string is replaced
+    with :data:`REDACTED`. :func:`strip_secrets` stays the choice for evidence bundles.
+
+    Args:
+        value: Dicts, lists, tuples and scalars (the output of a JSON conversion).
+        secret_values: Known secret values to mask wherever they appear.
+
+    Returns:
+        A new structure; the input is never mutated. Tuples come back as lists.
+    """
+    return _mask(value, _ordered(secret_values), under_secret_key=False)
+
+
+def _mask(value: Any, ordered: tuple[str, ...], *, under_secret_key: bool) -> Any:
+    """Recursively copy ``value`` with secret strings masked."""
+    if isinstance(value, dict):
+        return {
+            key: _mask(item, ordered, under_secret_key=under_secret_key or is_secret_key(key))
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_mask(item, ordered, under_secret_key=under_secret_key) for item in value]
+    if isinstance(value, str):
+        return REDACTED if under_secret_key else _replace_values(value, ordered)
+    return value
+
+
+def mask_secret_values(text: str, secret_values: frozenset[str], limit: int = 500) -> str:
+    """Replace known secret values in free text with ``REDACTED``, then ``redact_text``.
+
+    Values are replaced on the full text *before* :func:`redact_text` truncates, so a
+    secret that straddles the truncation point can't survive as a fragment. ``limit``
+    defaults to the strict 500-character cap, so a call site that doesn't choose gets
+    the tighter bound.
+
+    Args:
+        text: Error message, suggestion or other free text.
+        secret_values: Known secret values to mask.
+        limit: Maximum length of the returned string.
+
+    Returns:
+        The masked text, at most ``limit`` characters long.
+    """
+    return redact_text(_replace_values(str(text), _ordered(secret_values)), limit=limit)
+
+
+def mcp_secret_values(env: Mapping[str, str]) -> frozenset[str]:
+    """Return the values to mask by value: credential keys only, length >= 8.
+
+    Drawn from every ``UNIFI_*`` / ``PROTECT_*`` key that :func:`is_secret_key` accepts.
+    That covers every credential-family key (controller, ``UNIFI_NETWORK_*``,
+    ``PROTECT_*``) and never an unrelated variable, so a host's ``FOO_TOKEN=true`` can't
+    turn every ``true`` in a result into a mask.
+
+    Args:
+        env: The environment, e.g. ``os.environ``.
+
+    Returns:
+        The secret values.
+    """
+    return frozenset(
+        value
+        for key, value in env.items()
+        if key.startswith(_SECRET_ENV_PREFIXES)
+        and is_secret_key(key)
+        and isinstance(value, str)
+        and len(value) >= MIN_SECRET_VALUE_LENGTH
+    )

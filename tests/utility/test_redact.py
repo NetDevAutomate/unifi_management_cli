@@ -2,7 +2,15 @@
 
 import json
 import pytest
-from unifi_mapper.core.utils.redact import REDACTED, is_secret_key, redact_text, strip_secrets
+from unifi_mapper.core.utils.redact import (
+    REDACTED,
+    is_secret_key,
+    mask_secret_values,
+    mask_secrets,
+    mcp_secret_values,
+    redact_text,
+    strip_secrets,
+)
 
 
 FAKE = 'FAKE-SECRET-MUST-NOT-APPEAR'  # pragma: allowlist secret
@@ -100,3 +108,109 @@ def test_redact_text_masks_a_secret_straddling_the_truncation_point():
     out = redact_text(text, limit=300)
     assert len(out) <= 300
     assert 'FAKE' not in out
+
+
+# ---------------------------------------------------------------------------
+# T9 module cases: MCP masking (mask_secrets, mask_secret_values, mcp_secret_values)
+# ---------------------------------------------------------------------------
+
+KEY_TABLE = [
+    'admin_password',
+    'Radius_Secret',
+    'csrf_token',
+    'device_authkey',
+    'wpa_psk',
+    'x_passphrase',
+    'PASSPHRASE',
+    'api_key',
+    'apiKey',
+    'private-key',
+    'X_SSH_KEYS',
+    'key',
+    'name',
+    'id',
+    '_id',
+    'monkey',
+    'max_rate',
+    'mac',
+    'x_iapp_key',
+    'x_has_ssh_hostkey',
+]
+
+
+@pytest.mark.parametrize('key', KEY_TABLE)
+def test_one_predicate_for_strip_and_mask(key):
+    clean, removed = strip_secrets({key: FAKE})
+    masked = mask_secrets({key: FAKE}, frozenset())
+    assert is_secret_key(key) is bool(removed)
+    assert (masked[key] == REDACTED) is is_secret_key(key)
+    assert clean == ({} if removed else {key: FAKE})
+
+
+def test_mask_secrets_masks_x_strings_in_dicts_and_lists_and_keeps_keys():
+    payload = {
+        'name': 'USW Flex XG',
+        'x_authkey': FAKE,
+        'x_has_ssh_hostkey': True,
+        'wlans': [{'name': 'home', 'x_passphrase': FAKE, 'x_iapp_key': FAKE, 'vlan': 10}],
+        'nested': {'deeper': [{'x_authkey': FAKE}]},
+    }
+    masked = mask_secrets(payload, frozenset())
+    assert masked == {
+        'name': 'USW Flex XG',
+        'x_authkey': REDACTED,
+        'x_has_ssh_hostkey': True,
+        'wlans': [{'name': 'home', 'x_passphrase': REDACTED, 'x_iapp_key': REDACTED, 'vlan': 10}],
+        'nested': {'deeper': [{'x_authkey': REDACTED}]},
+    }
+    assert payload['x_authkey'] == FAKE  # input not mutated
+    assert FAKE not in json.dumps(masked)
+
+
+def test_mask_secrets_leaves_non_string_values_under_secret_keys():
+    masked = mask_secrets({'x_count': 3, 'token_ttl': None, 'x_flag': False}, frozenset())
+    assert masked == {'x_count': 3, 'token_ttl': None, 'x_flag': False}
+
+
+def test_mask_secrets_replaces_known_values_inside_other_strings():
+    secret = 'FAKE-VALUE-12345678'  # pragma: allowlist secret
+    masked = mask_secrets(
+        {'msg': f'auth with {secret} failed', 'list': [secret, 'ok'], 'n': 1},
+        frozenset({secret}),
+    )
+    assert masked == {'msg': f'auth with {REDACTED} failed', 'list': [REDACTED, 'ok'], 'n': 1}
+
+
+def test_mask_secret_values_replaces_a_value_straddling_the_limit_before_truncating():
+    secret = 'S' * 40
+    text = 'x' * 480 + secret + 'y' * 100
+    out = mask_secret_values(text, frozenset({secret}), limit=500)
+    assert len(out) == 500 and out.endswith('…')
+    assert 'SSSS' not in out
+
+
+def test_mask_secret_values_defaults_to_500_and_applies_redact_text():
+    out = mask_secret_values('token=abc12345 ' + 'z' * 900, frozenset())
+    assert out.startswith(f'token={REDACTED} ')
+    assert len(out) == 500
+
+
+def test_mcp_secret_values_takes_credential_keys_only():
+    env = {
+        'UNIFI_CONSOLE_API_TOKEN': 'console-token-123',
+        'UNIFI_NETWORK_API_KEY': 'network-key-456',
+        'PROTECT_PASSWORD': 'protect-pass-789',
+        'UNIFI_PASSWORD': 'short',  # < 8 characters: never masked by value
+        'UNIFI_URL': 'https://192.0.2.1',
+        'FOO_TOKEN': 'true',
+        'HOME': '/Users/someone',
+    }
+    assert mcp_secret_values(env) == frozenset(
+        {'console-token-123', 'network-key-456', 'protect-pass-789'}
+    )
+
+
+def test_unrelated_true_survives_masking():
+    secrets = mcp_secret_values({'FOO_TOKEN': 'true', 'UNIFI_API_TOKEN': 'abc'})
+    assert secrets == frozenset()
+    assert mask_secrets({'enabled': 'true'}, secrets) == {'enabled': 'true'}

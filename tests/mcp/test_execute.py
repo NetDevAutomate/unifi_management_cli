@@ -121,19 +121,19 @@ async def test_tool_without_declared_params_skips_unknown_check(registry: ToolRe
 
 
 @pytest.fixture
-def server(registry: ToolRegistry):
+def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The real server module, its registry pointing at tests/mcp/fakes.py handlers."""
+    from tests.mcp import fakes
     from unifi_mapper.mcp import server as srv
 
-    with patch.object(srv, 'get_registry', return_value=registry):
-        yield srv
+    fake = fakes.fake_registry(tmp_path)
+    monkeypatch.setattr(srv, 'get_registry', lambda: fake)
+    return srv
 
 
 async def test_execute_tool_success_envelope(server) -> None:
-    with patch(
-        'unifi_mapper.mcp.registry.ToolProxy.execute', new=AsyncMock(return_value={'a': 1})
-    ):
-        out = await server.execute_tool('read_port', {'switch': 'S', 'port': 1})
-    assert out == {'ok': True, 'result': {'a': 1}}
+    out = await server.execute_tool('read_port', {'switch': 'S', 'port': 1})
+    assert out.structuredContent == {'ok': True, 'result': {'a': 1}}
 
 
 @pytest.mark.parametrize(
@@ -145,27 +145,21 @@ async def test_execute_tool_success_envelope(server) -> None:
     ],
 )
 async def test_execute_tool_error_envelopes(server, tool, params, code) -> None:
-    out = await server.execute_tool(tool, params)
+    out = (await server.execute_tool(tool, params)).structuredContent
     assert out['ok'] is False
     assert out['error_code'] == code
 
 
 async def test_execute_tool_wraps_tool_error(server) -> None:
-    from unifi_mapper.core.utils.errors import ToolError
-
-    err = ToolError(message='switch not found', error_code='DEVICE_NOT_FOUND', suggestion='x')
-    with patch('unifi_mapper.mcp.registry.ToolProxy.execute', new=AsyncMock(side_effect=err)):
-        out = await server.execute_tool('read_port', {'switch': 'S', 'port': 1})
+    params = {'code': 'DEVICE_NOT_FOUND', 'message': 'switch not found', 'suggestion': 'x'}
+    out = (await server.execute_tool('raise_domain', params)).structuredContent
     assert out['ok'] is False and out['error_code'] == 'DEVICE_NOT_FOUND'
 
 
 async def test_execute_tool_never_raises_on_unexpected_error(server) -> None:
-    with patch(
-        'unifi_mapper.mcp.registry.ToolProxy.execute',
-        new=AsyncMock(side_effect=RuntimeError('boom')),
-    ):
-        out = await server.execute_tool('read_port', {'switch': 'S', 'port': 1})
-    assert out == {
+    params = {'kind': 'RuntimeError', 'text': 'boom'}
+    out = await server.execute_tool('raise_exc', params)
+    assert out.structuredContent == {
         'ok': False,
         'error_code': 'TOOL_FAILED',
         'message': 'RuntimeError: boom',

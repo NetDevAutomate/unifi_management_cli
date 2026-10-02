@@ -29,15 +29,16 @@ from .config import (
     resolve_mcp_config,
 )
 from .registry import ToolRegistry
+from .runner import ExecuteResult, ToolRunner
 from collections.abc import AsyncIterator
 from contextlib import ExitStack, asynccontextmanager
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import dataclass
 from loguru import logger
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from unifi_mapper.core.utils.client import SharedControllerClient, use_shared_controller_client
-from unifi_mapper.core.utils.errors import ToolError
 from unifi_mapper.core.utils.readonly import configure_request_audit
 
 
@@ -87,6 +88,8 @@ class AppState:
 # Set by main() before mcp.run(); the lifespan reads them. None = not given / not loaded.
 _config_path: Path | None = None
 _settings: ServerSettings | None = None
+# The config the running lifespan resolved (the runner names its paths in CONFIG_MISSING).
+_active_config: ResolvedConfig | None = None
 
 
 def current_settings() -> ServerSettings:
@@ -111,11 +114,14 @@ async def lifespan(server: FastMCP[Any]) -> AsyncIterator[AppState]:
     Yields:
         The :class:`AppState` for this run.
     """
+    global _active_config
     config = resolve_mcp_config(_config_path)
     settings = current_settings()
     shared = SharedControllerClient()
     original_stdout = sys.stdout
+    _active_config = config
     with ExitStack() as stack:
+        stack.callback(_clear_active_config)
         audit_path = os.environ.get(REQUEST_AUDIT_ENV)
         if audit_path:
             configure_request_audit(Path(audit_path))
@@ -129,6 +135,12 @@ async def lifespan(server: FastMCP[Any]) -> AsyncIterator[AppState]:
             # Bounded and shielded: a slow logout must never hold the process after EOF.
             with anyio.move_on_after(SHUTDOWN_TIMEOUT_S, shield=True):
                 await shared.aclose()
+
+
+def _clear_active_config() -> None:
+    """Forget the lifespan's resolved config when the server stops."""
+    global _active_config
+    _active_config = None
 
 
 # Initialize the MCP server
@@ -146,6 +158,19 @@ def get_registry() -> ToolRegistry:
     if _registry is None:
         _registry = ToolRegistry()
     return _registry
+
+
+# One runner per registry object, so monkeypatching get_registry() redirects it.
+_runner: ToolRunner | None = None
+
+
+def get_runner() -> ToolRunner:
+    """Return the ToolRunner for the current registry (cached per registry object)."""
+    global _runner
+    registry = get_registry()
+    if _runner is None or _runner.registry is not registry:
+        _runner = ToolRunner(registry, settings=current_settings(), config=lambda: _active_config)
+    return _runner
 
 
 @mcp.tool()
@@ -182,7 +207,13 @@ async def search_tools(
         search_tools(tags=["vlan", "layer2"])
     """
     registry = get_registry()
-    return registry.search(query, category, tags, detail_level)
+    results = registry.search(query, category, tags, detail_level)
+    if detail_level != 'summary':
+        catalog = get_runner().catalog
+        for result in results:
+            tool = catalog.find(result['name'])
+            result['input_schema'] = tool.parameters if tool is not None else None
+    return results
 
 
 @mcp.tool()
@@ -215,13 +246,16 @@ async def get_tool_info(tool_name: str) -> dict[str, Any] | None:
         tool_name: The name of the tool to look up
 
     Returns:
-        Tool metadata including description, parameters, category, and tags.
+        Tool metadata including description, parameters, category, and tags, plus the
+        JSON ``input_schema`` execute_tool validates against and the ``output_schema``
+        (null for mutating, unloadable or untyped tools).
         Returns None if the tool is not found.
     """
     registry = get_registry()
     metadata = registry.get_metadata(tool_name)
     if metadata is None:
         return None
+    tool = get_runner().catalog.find(tool_name)
 
     return {
         'name': metadata.name,
@@ -233,29 +267,21 @@ async def get_tool_info(tool_name: str) -> dict[str, Any] | None:
         'module': metadata.module,
         'handler': metadata.handler,
         'mutates': metadata.mutates,
+        'input_schema': tool.parameters if tool is not None else None,
+        'output_schema': tool.output_schema if tool is not None else None,
     }
 
 
-def _to_jsonable(value: Any) -> Any:
-    """Convert tool results (pydantic models, dataclasses, nested) to JSON-safe data."""
-    if hasattr(value, 'model_dump'):
-        return value.model_dump(mode='json')
-    if is_dataclass(value) and not isinstance(value, type):
-        return _to_jsonable(asdict(value))
-    if isinstance(value, dict):
-        return {str(k): _to_jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_to_jsonable(v) for v in value]
-    return value
-
-
 @mcp.tool()
-async def execute_tool(tool_name: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+async def execute_tool(
+    tool_name: str, params: dict[str, Any] | None = None
+) -> Annotated[CallToolResult, ExecuteResult]:
     """Run a READ-ONLY UniFi tool found via search_tools / get_tool_info.
 
     Tools whose manifest declares ``mutates: true`` (STP and radio apply/restore) are
     refused: changes go through the CLI's plan -> review -> apply flow, never directly
-    from an AI assistant.
+    from an AI assistant. Arguments are validated against the tool's input_schema
+    (see get_tool_info); results and error text are masked for secrets.
 
     Args:
         tool_name: Name of the tool (e.g. "inspect_switch_port").
@@ -263,46 +289,10 @@ async def execute_tool(tool_name: str, params: dict[str, Any] | None = None) -> 
 
     Returns:
         {"ok": True, "result": ...} on success, or
-        {"ok": False, "error_code": ..., "message": ..., "suggestion": ...} on failure.
+        {"ok": False, "error_code": ..., "message": ..., "suggestion": ...} on failure
+        (with isError set).
     """
-    registry = get_registry()
-    try:
-        result = await registry.execute(tool_name, params)
-    except KeyError:
-        return {
-            'ok': False,
-            'error_code': 'TOOL_NOT_FOUND',
-            'message': f'No tool named {tool_name!r}',
-            'suggestion': 'Use search_tools or list_categories to find the right name.',
-        }
-    except PermissionError:
-        return {
-            'ok': False,
-            'error_code': 'MUTATION_REFUSED',
-            'message': f'{tool_name} changes live controller configuration and is not '
-            'executable over MCP.',
-            'suggestion': 'Generate a plan with the read-only tools, review it, then apply it '
-            'with the unifi-mapper CLI.',
-        }
-    except ValueError as e:
-        meta = registry.get_metadata(tool_name)
-        return {
-            'ok': False,
-            'error_code': 'INVALID_PARAMETERS',
-            'message': str(e),
-            'suggestion': 'Check get_tool_info for the parameter list.',
-            'parameters': meta.parameters if meta else {},
-        }
-    except ToolError as e:
-        return {'ok': False, **e.to_dict()}
-    except Exception as e:  # noqa: BLE001 - surface any tool failure to the client, don't crash the server
-        return {
-            'ok': False,
-            'error_code': 'TOOL_FAILED',
-            'message': f'{type(e).__name__}: {e}',
-            'suggestion': 'Run the equivalent unifi-mapper CLI command for a full traceback.',
-        }
-    return {'ok': True, 'result': _to_jsonable(result)}
+    return await get_runner().run(tool_name, params, surface='execute_tool')
 
 
 def _arg_parser() -> argparse.ArgumentParser:
