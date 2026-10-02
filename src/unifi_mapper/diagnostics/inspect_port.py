@@ -16,8 +16,14 @@ from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 def _inspect_sync(switch: str, port: int) -> dict[str, Any]:
-    """Run the blocking inspection and return a JSON-serialisable result."""
+    """Run the blocking inspection behind the read-only guard and return a JSON-serialisable result.
+
+    The guard is the one the CLI's ``ports inspect`` and the sibling port-diagnostics
+    tools install: it refuses any controller write before it is sent, and records each
+    request it lets through in the opt-in ``UNIFI_MCP_REQUEST_AUDIT`` file.
+    """
     from unifi_mapper.api_client import UnifiApiClient
+    from unifi_mapper.core.utils.readonly import ReadOnlyViolation, install_read_only_guard
     from unifi_mapper.port_inspect import inspect_port, resolve_switch
 
     creds = Credentials.from_env()
@@ -45,6 +51,7 @@ def _inspect_sync(switch: str, port: int) -> dict[str, Any]:
         )
 
     try:
+        install_read_only_guard(client, creds.site)
         try:
             target = resolve_switch(client, creds.site, switch)
         except LookupError as e:
@@ -69,6 +76,12 @@ def _inspect_sync(switch: str, port: int) -> dict[str, Any]:
             )
 
         return result.to_dict()
+    except ReadOnlyViolation as e:
+        raise ToolError(
+            message=f'A controller write was refused by the read-only guard: {e}',
+            error_code=ErrorCodes.READ_ONLY_VIOLATION,
+            suggestion='This is a bug in the diagnostic tool; nothing was written. Report it.',
+        ) from e
     finally:
         client.logout()
 
@@ -135,5 +148,7 @@ async def inspect_switch_port(
         ToolError: DEVICE_NOT_FOUND if the switch cannot be resolved uniquely.
         ToolError: INVALID_PARAMETER if the port does not exist on the switch.
         ToolError: CONTROLLER_UNREACHABLE if authentication fails.
+        ToolError: READ_ONLY_VIOLATION if the inspection attempted a controller
+            write (a bug; the read-only guard refuses it before it is sent).
     """
     return await asyncio.to_thread(_inspect_sync, switch, port)

@@ -48,3 +48,14 @@ anything today.
    `asyncio.to_thread`, which copies the context), keep the read-only guard installed on the
    shared session, and re-login on a 401. Add a test that two concurrent calls each record
    only their own requests. Until then, keep the per-call login.
+
+## Partial resolution
+
+Step 1's goal, guarding `inspect_switch_port`, is done: `_inspect_sync` now calls
+`install_read_only_guard` straight after login, so its requests are refused if they would
+write (`READ_ONLY_VIOLATION`) and are recorded by `UNIFI_MCP_REQUEST_AUDIT`. It keeps its own
+client rather than `_readonly_sync_client()`/`_mapped`, so its login failure message, its
+`DEVICE_NOT_FOUND`/`INVALID_PORT` messages and its result (the golden) are unchanged.
+`tests/mcp/test_inspect_port_guard.py` covers the guard, the audit sink, a refused write and
+the kept error codes. Step 2 (one shared sync session) is still open, so this issue stays
+open.
