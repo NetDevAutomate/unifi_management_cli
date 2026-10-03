@@ -702,6 +702,8 @@ def main(argv: list[str] | None = None) -> None:
     ``--check`` prints the resolved config (key names only) and exits 0 if the controller
     is configured, else 1. ``--config PATH`` must name a readable file (else exit 2).
     Unknown arguments are reported on stderr and ignored. Otherwise the stdio server runs.
+    Every mode but ``--version`` and ``--help`` logs to stderr at ``UNIFI_MCP_LOG_LEVEL``
+    (default ``WARNING``), set before anything that can log runs.
 
     Args:
         argv: Arguments to parse; ``None`` means ``sys.argv[1:]``.
@@ -711,6 +713,8 @@ def main(argv: list[str] | None = None) -> None:
     if unknown:
         print(f'unifi-mcp: ignoring unknown arguments: {" ".join(unknown)}', file=sys.stderr)
     settings = load_server_settings()
+    # Before --check or the direct surface builds the catalog: building it logs DEBUG notes.
+    _configure_logging(settings.log_level)
     surface = resolve_surface(args.surface)
 
     explicit: Path | None = args.config
@@ -730,7 +734,6 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(0 if config.families['controller'].ready else 1)
 
     _config_path, _settings = explicit, settings
-    _configure_logging(settings.log_level)
     server = mcp if surface == 'discovery' else create_server(surface)
     server.run()
 
