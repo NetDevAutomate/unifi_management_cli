@@ -1,4 +1,4 @@
-"""`scripts/unifi-cron.sh` upgrades: installed commands that predate TASKS are flagged and replaced.
+"""`scripts/unifi-cron.sh` upgrades: stale installed commands are flagged and replaced.
 
 Regression (code-review F5): install copies each TASKS command into a plist or crontab
 line, so a schedule installed before `--apply`/`--record` keeps its old command line.
@@ -86,9 +86,10 @@ def test_linux_status_flags_lines_installed_before_the_current_tasks(cron):
     run, root, env = cron('Linux')
     log_dir = env['LOG_DIR']
     marker = '# UNIFI-MANAGEMENT-CLI'
+    snapshot_line = f'{_command(OLD_SNAPSHOT)} >> {log_dir}/link-error-snapshot.log 2>&1'
     (root / 'crontab.txt').write_text(
         '0 0 * * * echo unrelated\n'
-        f'*/5 * * * * {_command(OLD_SNAPSHOT)} >> {log_dir}/link-error-snapshot.log 2>&1 {marker}\n'
+        f'*/5 * * * * {snapshot_line} {marker}\n'
         f'*/30 * * * * {_command(OLD_NAMING)} >> {log_dir}/port-naming.log 2>&1 {marker}\n'
     )
 

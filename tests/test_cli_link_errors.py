@@ -1,4 +1,7 @@
-"""`analyze link-errors`: --snapshot sets the baselines, --record appends history, a plain run only reads."""
+"""`analyze link-errors`.
+
+--snapshot sets the baselines, --record appends history, a plain run only reads.
+"""
 
 import asyncio
 import json

@@ -326,7 +326,8 @@ def test_collect_without_unifi_os_skips_the_integration_api():
     report = collect_link_speed_audit(client, SITE, now=lambda: NOW)
     assert report.integration.status == 'skipped'
     assert not any('/v1/' in p for p in session.paths())
-    assert _on(report, SWITCH_MAC, 5).capability_source == 'unavailable'  # type: ignore[union-attr]
+    finding = _on(report, SWITCH_MAC, 5)
+    assert finding.capability_source == 'unavailable'  # type: ignore[union-attr]
 
 
 def test_collect_records_an_empty_device_list():

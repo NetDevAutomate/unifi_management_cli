@@ -16,7 +16,7 @@ from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 def _inspect_sync(switch: str, port: int) -> dict[str, Any]:
-    """Run the blocking inspection behind the read-only guard and return a JSON-serialisable result.
+    """Run the blocking inspection behind the read-only guard; return a JSON-serialisable result.
 
     The guard is the one the CLI's ``ports inspect`` and the sibling port-diagnostics
     tools install: it refuses any controller write before it is sent, and records each
