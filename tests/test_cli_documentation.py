@@ -16,9 +16,11 @@ Both are cheap to assert and expensive to rediscover.
 
 from __future__ import annotations
 
+import click
 import pytest
 import re
 import typer
+from collections.abc import Iterator
 from pathlib import Path
 from unifi_mapper.typer_cli import app
 
@@ -193,3 +195,29 @@ def test_command_reference_table_has_no_phantom_commands():
         f'{len(phantom)} command(s) in the README Command Reference table are not '
         f'registered: {phantom}'
     )
+
+
+# ---------------------------------------------------------------------------
+# Help text is for users
+# ---------------------------------------------------------------------------
+
+# Internal tracker references: docs/issues numbers and review findings.
+TRACKER_REFERENCE = re.compile(r'\bissue \d+|\bcode-review F\d+', re.IGNORECASE)
+
+
+def _help_texts(command: click.Command, path: str) -> Iterator[tuple[str, str]]:
+    """Yield ``(where, text)`` for a command's help and each parameter's help, recursively."""
+    yield path, ' '.join(filter(None, (command.help, command.short_help, command.epilog)))
+    for param in command.params:
+        yield f'{path} {param.name}', getattr(param, 'help', None) or ''
+    if isinstance(command, click.Group):
+        for name, sub in command.commands.items():
+            yield from _help_texts(sub, f'{path} {name}')
+
+
+def test_help_text_names_no_internal_tracker_reference():
+    """Code-review F34: ``discover --help`` ended with "(issue 027)", which users can't use."""
+    texts = list(_help_texts(typer.main.get_command(app), TYPER_ENTRY_POINT))
+    assert len(texts) > 100, f'the walk found only {len(texts)} help texts: has the CLI moved?'
+    leaks = [f'{where}: {text}' for where, text in texts if TRACKER_REFERENCE.search(text)]
+    assert not leaks, leaks

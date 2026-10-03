@@ -56,8 +56,10 @@ _ROOT_APPLY_HINT = (
 )
 _ROOT_SHORTCUT_HINTS = {
     '--dry-run': (
-        "--dry-run before a subcommand only reaches discover: put the subcommand's own "
-        'flag after its arguments (e.g. unifi-mapper ports refresh --dry-run)'
+        '--dry-run before a subcommand only reaches discover: '
+        'read-only subcommands need no flag, '
+        'and those with their own --dry-run take it after their arguments '
+        '(e.g. unifi-mapper ports refresh --dry-run)'
     ),
     '--connected-devices': (
         '--connected-devices only applies to discover (unifi-mapper discover --connected-devices)'
@@ -239,7 +241,7 @@ def discover(
     Previews by default: the report and diagram are written locally, but no port
     name reaches the controller unless --apply is given. A root --dry-run,
     --connected-devices or --verify-updates given before ``discover`` is passed on to
-    it, and a root --dry-run with ``discover --apply`` exits 2 (issue 027).
+    it, and a root --dry-run with ``discover --apply`` exits 2.
     """
     root_dry_run, root_connected_devices, root_verify_updates = state.take_root_shortcuts()
     if root_dry_run and apply:

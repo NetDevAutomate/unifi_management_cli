@@ -76,10 +76,13 @@ production-safety defect in the area issue 007 fixed.
   mapper. `--dry-run discover` still previews.
 - A root `--dry-run` with `discover --apply` exits 2 (`choose --apply or --dry-run`) before
   any config read or client.
-- Before any other subcommand, each of the three exits 2 with a hint that names the flag to
-  use instead: `--dry-run before a subcommand only reaches discover: put the subcommand's
-  own flag after its arguments (e.g. unifi-mapper ports refresh --dry-run)`, and for the
-  other two the `discover` option itself. A root `--apply` still exits 2 before any
+- Before any other subcommand, each of the three exits 2 with a hint. For `--dry-run` it is
+  `--dry-run before a subcommand only reaches discover: read-only subcommands need no flag,
+  and those with their own --dry-run take it after their arguments (e.g. unifi-mapper ports
+  refresh --dry-run)`. Code-review F33 reworded it: the first wording told every subcommand
+  to use its own flag, and `ports list` and `analyze link-errors` have none
+  (`test_the_dry_run_hint_suggests_no_flag_a_read_only_subcommand_lacks`). For the other
+  two the hint names the `discover` option itself. A root `--apply` still exits 2 before any
   subcommand (code-review F11); its hint now names `unifi-mapper discover --apply` and
   `unifi-mapper ports refresh --apply`.
 - All four write forms in the Problem section now exit 2 with no I/O. Meaningless forms

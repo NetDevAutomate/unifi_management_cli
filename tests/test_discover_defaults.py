@@ -236,10 +236,15 @@ OTHER_SUBCOMMANDS = [
     ['analyze', 'link-errors'],
 ]
 SHORTCUT_HINTS = {
-    '--dry-run': "put the subcommand's own flag after its arguments",
+    '--dry-run': (
+        'read-only subcommands need no flag, '
+        'and those with their own --dry-run take it after their arguments'
+    ),
     '--connected-devices': 'unifi-mapper discover --connected-devices',
     '--verify-updates': 'unifi-mapper discover --verify-updates',
 }
+# Code-review F33: subcommands with no --dry-run of their own.
+READ_ONLY_SUBCOMMANDS = [['ports', 'list', 'X'], ['analyze', 'link-errors']]
 
 
 def _assert_nothing_ran(rec: Recorder) -> None:
@@ -271,6 +276,27 @@ def test_the_dry_run_hint_names_a_subcommand_dry_run(rec: Recorder) -> None:
 
     assert result.exit_code == 2
     assert 'unifi-mapper ports refresh --dry-run' in re.sub(r'\s+', ' ', result.output)
+    _assert_nothing_ran(rec)
+
+
+@pytest.mark.parametrize('read_only', READ_ONLY_SUBCOMMANDS, ids=' '.join)
+def test_the_dry_run_hint_suggests_no_flag_a_read_only_subcommand_lacks(
+    rec: Recorder, read_only: list[str]
+) -> None:
+    """Code-review F33: following the hint must never give 'No such option: --dry-run'."""
+    result = runner.invoke(app, ['--dry-run', *read_only])
+
+    assert result.exit_code == 2, result.output
+    hint = re.sub(r'\s+', ' ', result.output)
+    assert 'read-only subcommands need no flag' in hint, hint
+    # The premise: the subcommand has no --dry-run (the parse fails before --help runs).
+    lacks = runner.invoke(app, [*read_only, '--dry-run', '--help'])
+    assert lacks.exit_code == 2, lacks.output
+    assert 'No such option: --dry-run' in lacks.output, lacks.output
+    # The one --dry-run the hint suggests is a real option of the subcommand it names.
+    [example] = re.findall(r'\(e\.g\. unifi-mapper ([^)]+)\)', hint)
+    named = runner.invoke(app, [*example.split(), '--help'])
+    assert named.exit_code == 0, named.output
     _assert_nothing_ran(rec)
 
 
