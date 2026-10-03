@@ -53,7 +53,8 @@ so library callers of `UniFiNetworkClient`, the `unifi_mapper.network` managers 
 `UniFiProtectClient` keep their write methods by default.
 
 - `core/utils/readonly.py`: new pure `get_only_request_allowed(method, url)` (GET and HEAD
-  only, the same path checks as `request_allowed`) and `is_login_request(method, url)` (the
+  only, the same path checks as `request_allowed`; its refusal of a GET with a `cmd` or `upd`
+  segment was added after code-review F23) and `is_login_request(method, url)` (the
   exact login test the async guard already made). `ReadOnlyAsyncTransport(inner, site=None,
   *, policy=None)` takes exactly one of `site` (the controller policy and its login
   exemption, unchanged) or `policy` (that policy only, no login exemption).

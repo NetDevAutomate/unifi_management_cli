@@ -28,11 +28,11 @@ async client. Both guards also append ``{"t", "method", "path"}`` JSON lines to
 an opt-in file sink set with :func:`configure_request_audit`.
 
 APIs with no read-only POST use the stricter pure :func:`get_only_request_allowed`
-(``GET`` and ``HEAD`` only, the same path checks): the MCP ``network_api`` tools
-through ``ReadOnlyAsyncTransport(inner, policy=get_only_request_allowed)`` (the
-Network Integration API's POSTs create objects or run actions), and
-``ReadOnlyProtectApiClient`` in ``protect/client.py``, which overrides uiprotect's
-``request``. A custom policy gets no login exemption; the Protect client exempts
+(``GET`` and ``HEAD`` only, with the same path checks, ``cmd``/``upd`` GETs included): the
+MCP ``network_api`` tools through ``ReadOnlyAsyncTransport(inner,
+policy=get_only_request_allowed)`` (the Network Integration API's POSTs create objects or
+run actions), and ``ReadOnlyProtectApiClient`` in ``protect/client.py``, which overrides
+uiprotect's ``request``. A custom policy gets no login exemption; the Protect client exempts
 its own session login (:func:`is_login_request`) itself, unaudited.
 
 The guard must be installed *after* ``login()``, because ``_perform_login``
@@ -135,11 +135,12 @@ RequestPolicy = Callable[[str, object], tuple[bool, str]]
 
 
 def get_only_request_allowed(method: str, url: object) -> tuple[bool, str]:
-    """Allow only GET and HEAD, with the same path checks. Pure.
+    """Allow only GET and HEAD, with the same path checks as :func:`request_allowed`. Pure.
 
     For APIs with no read-only POST, such as the Network Integration API
     (``/proxy/network/integrations/v1/...``), whose POST endpoints create objects or run
-    device and client actions.
+    device and client actions. As in the controller policy, a GET or HEAD on a path with a
+    ``cmd`` or ``upd`` segment is refused too.
 
     Args:
         method: HTTP method, any case.
@@ -155,6 +156,8 @@ def get_only_request_allowed(method: str, url: object) -> tuple[bool, str]:
         return False, str(e)
     if verb not in ('GET', 'HEAD'):
         return False, f'refused {verb} {path!r}: only GET and HEAD are allowed'
+    if {seg.lower() for seg in path.split('/') if seg} & _FORBIDDEN_GET_SEGMENTS:
+        return False, f'refused {verb} {path!r}: cmd/upd endpoints are writes'
     return True, path
 
 

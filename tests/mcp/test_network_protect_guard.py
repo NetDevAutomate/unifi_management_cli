@@ -29,6 +29,7 @@ from unifi_mapper.core.utils.readonly import (
     ReadOnlyViolation,
     configure_request_audit,
     get_only_request_allowed,
+    request_allowed,
 )
 from unifi_mapper.mcp.config import ServerSettings
 from unifi_mapper.mcp.registry import ToolRegistry
@@ -109,6 +110,19 @@ def test_get_only_policy_allows_reads_and_refuses_writes() -> None:
     for tricky in (f'{INTEGRATION}../../../api/s/default/rest/x', f'{INTEGRATION}%2e%2e/x'):
         allowed, reason = get_only_request_allowed('GET', tricky)
         assert not allowed and reason.startswith('refused GET'), reason
+
+
+@pytest.mark.parametrize('verb', ['GET', 'head'])
+@pytest.mark.parametrize('segment', ['cmd', 'upd', 'CMD'])
+def test_get_only_policy_refuses_cmd_and_upd_reads_like_the_controller_policy(
+    verb: str, segment: str
+) -> None:
+    """Code-review F23: "the same path checks" as request_allowed, cmd/upd GETs included."""
+    path = f'{INTEGRATION}{segment}/devmgr'
+    allowed, reason = get_only_request_allowed(verb, path)
+    assert not allowed
+    assert reason == f'refused {verb.upper()} {path!r}: cmd/upd endpoints are writes'
+    assert (allowed, reason) == request_allowed(verb, path, 'default')
 
 
 def test_transport_takes_exactly_one_of_site_or_policy() -> None:
