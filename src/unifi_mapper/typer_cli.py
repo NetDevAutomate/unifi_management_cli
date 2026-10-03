@@ -91,7 +91,7 @@ def main(
         bool,
         typer.Option(
             '--apply',
-            help='⚡ Write port names (runs discover; with a subcommand use discover --apply)',
+            help='⚡ Write port names (runs discover); after a subcommand use discover --apply',
         ),
     ] = False,
     verify_updates: Annotated[

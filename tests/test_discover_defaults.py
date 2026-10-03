@@ -208,6 +208,19 @@ def test_help_says_preview_by_default() -> None:
     assert 'preview only' in text
 
 
+@pytest.mark.parametrize('width', [70, 80, 100, 120])
+def test_root_apply_help_points_at_discover_apply_without_truncation(width: int) -> None:
+    """Rich cuts a help line short (with an ellipsis) when the emoji's width trips its wrap."""
+    result = runner.invoke(app, ['--help'], env={'COLUMNS': str(width)}, terminal_width=width)
+
+    assert result.exit_code == 0
+    lines = result.output.splitlines()
+    start = next(i for i, line in enumerate(lines) if '--apply' in line)
+    block = lines[start : start + 3]
+    assert not any('…' in line for line in block), block
+    assert 'discover --apply' in re.sub(r'\s+', ' ', ' '.join(block).replace('│', ' '))
+
+
 def test_cron_port_naming_task_passes_apply() -> None:
     script = CRON_SCRIPT.read_text(encoding='utf-8')
     task = re.search(r'"port-naming\|\d+\|([^"]*)"', script)
