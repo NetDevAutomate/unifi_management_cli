@@ -49,11 +49,17 @@ class ClientType(str, Enum):
 
 
 class ClientAccessType(str, Enum):
-    """Client access authorization type."""
+    """Client access authorization type.
+
+    Network 10.6 sends ``GUEST`` for guest clients and ``DEFAULT`` (a placeholder Ubiquiti
+    says it may refine) for every other client. ``ClientAccess.type`` keeps a value this
+    enum doesn't know as its string, so a new type can't fail the whole client list.
+    """
 
     GUEST = 'GUEST'
     USER = 'USER'
     HOTSPOT = 'HOTSPOT'
+    DEFAULT = 'DEFAULT'
 
 
 class FirewallActionType(str, Enum):
@@ -458,7 +464,11 @@ class ClientFingerprint(BaseModel):
 class ClientAccess(BaseModel):
     """Client access information."""
 
-    type: ClientAccessType = ClientAccessType.USER
+    # left_to_right: a known value becomes the enum member, an unknown one stays a str. The
+    # default smart union would match every str input to ``str`` and drop the members.
+    type: Annotated[ClientAccessType | str, Field(union_mode='left_to_right')] = (
+        ClientAccessType.USER
+    )
     authorized: bool = True
     authorized_at: Annotated[datetime | None, Field(alias='authorizedAt')] = None
     expires_at: Annotated[datetime | None, Field(alias='expiresAt')] = None

@@ -1,7 +1,7 @@
 ---
 title: "`get_clients` returns no clients: `access.type: DEFAULT` fails validation"
 date: 2026-10-03
-status: open
+status: resolved
 severity: medium
 components: [network/models]
 found_by: review follow-ups live checks at 7ef13c2 (L3)
@@ -40,3 +40,24 @@ the enum member and an unknown one is kept as sent. A plain `ClientAccessType | 
 not do: pydantic's default smart union matches every string input to `str`, so known values
 would come back as plain strings. That settles L3's open question (keep an unknown value,
 or map it to `UNKNOWN`) in favour of keeping it.
+
+## Resolution
+
+Fixed as recommended. `ClientAccessType` gains `DEFAULT`, and `ClientAccess.type` is
+`Annotated[ClientAccessType | str, Field(union_mode='left_to_right')]`: `GUEST`, `USER`,
+`HOTSPOT` and `DEFAULT` validate to the enum member, and any other string is kept as sent,
+so one new value can no longer empty the list. The default stays `USER`, and
+`ClientInfo.is_guest` is unchanged (an unknown type is not a guest).
+
+Tests: `tests/network/test_models.py::TestClientAccess` (`DEFAULT` is the member, an unknown
+type is kept as its `str`, `GUEST` is still the member) and
+`tests/mcp/test_network_tool_payloads.py::test_get_clients_returns_default_and_user_clients`
+(a `MockTransport` page with one `DEFAULT` and one `USER` client, behind the tools' guard,
+returns both). Three of the four failed on the old code; the `GUEST` test passes there by
+design and fails on a plain `ClientAccessType | str` (checked by swapping that in).
+
+Live (read-only: the `get_clients` tool in-process, behind its GET-only guard, request
+audit on): 98 clients returned (31 wired, 67 wireless), every `access.type` the `DEFAULT`
+member, and no other `ClientInfo` field rejected a live value; 11 audited GETs (the site
+lookup and the six network tools), 0 violations. Evidence:
+`.kiro/review-followups/iter2/network-api/f16-wip/result.json` (git-ignored).

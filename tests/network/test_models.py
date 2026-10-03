@@ -8,6 +8,8 @@ from unifi_mapper.network.models import (
     ACLProtocol,
     ACLRule,
     ACLTrafficFilter,
+    ClientAccess,
+    ClientAccessType,
     ClientFingerprint,
     ClientInfo,
     ClientType,
@@ -217,6 +219,30 @@ class TestClientInfo:
         # ID as last resort
         client = ClientInfo(id='123')
         assert client.display_name == '123'
+
+
+class TestClientAccess:
+    """Issue 033: the access types Network 10.6 sends, and the ones a later release may add."""
+
+    def test_default_access_type_validates(self) -> None:
+        """The controller sends DEFAULT for every client that isn't a guest."""
+        access = ClientAccess.model_validate({'type': 'DEFAULT'})
+        assert access.type is ClientAccessType.DEFAULT
+
+    def test_unknown_access_type_is_kept_as_sent(self) -> None:
+        """A type this model doesn't know is kept as its string instead of failing."""
+        access = ClientAccess.model_validate({'type': 'SOMETHING_NEW'})
+        assert access.type == 'SOMETHING_NEW'
+        assert type(access.type) is str
+        client = ClientInfo.model_validate({'id': 'c-1', 'access': {'type': 'SOMETHING_NEW'}})
+        assert client.is_guest is False
+
+    def test_known_access_type_is_the_enum_member(self) -> None:
+        """A smart-mode union would return the plain str 'GUEST' here, not the member."""
+        access = ClientAccess.model_validate({'type': 'GUEST'})
+        assert access.type is ClientAccessType.GUEST
+        client = ClientInfo.model_validate({'id': 'c-1', 'access': {'type': 'GUEST'}})
+        assert client.is_guest is True
 
 
 class TestClientFingerprint:
