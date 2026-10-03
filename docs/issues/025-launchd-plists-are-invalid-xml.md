@@ -42,6 +42,15 @@ drop the shell wrapper and write `ProgramArguments` as the argv array with
 `plutil -lint` on each plist before loading it. Add a test that every generated plist passes
 `plutil -lint` (skipped off macOS).
 
+Either fix changes the text that `status_launchd`'s stale check looks for: it greps each
+plist for the raw `<string>$(build_command "$cmd")</string>`. Switch that comparison to the
+same encoding the writer uses (the escaped string, or the argv array), or every task is
+reported stale after the fix. Extend `tests/test_unifi_cron.py` to match:
+`test_macos_status_accepts_every_plist_that_install_writes` already fails if the two sides
+disagree, and the literal `<string>…</string>` assertions in
+`test_macos_status_flags_a_stale_plist_and_install_replaces_a_loaded_job` need the new
+encoding.
+
 ## Decision needed
 
 Fixing this makes macOS schedules start running for the first time, including the

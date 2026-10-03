@@ -133,3 +133,22 @@ def test_macos_status_flags_a_stale_plist_and_install_replaces_a_loaded_job(cron
     assert f'<string>{_command(f"{OLD_NAMING} --apply")}</string>' in plist.read_text()
 
     assert 'stale' not in run('status').stdout
+
+
+def test_macos_status_accepts_every_plist_that_install_writes(cron):
+    """Code-review F10: the stale check must use install's encoding, whatever it becomes.
+
+    Issue 025's fix changes how install writes the command (XML-escaped, or an argv
+    ProgramArguments). This round trip doesn't pin the encoding, only that status reads back
+    what install wrote, so a fix that changes one side but not the other fails here.
+    """
+    run, root, _ = cron('Darwin')
+
+    install = run('install')
+    assert install.returncode == 0, install.stderr
+    plists = sorted((root / 'home' / 'Library' / 'LaunchAgents').glob('*.plist'))
+    assert plists, 'install wrote no plists'
+
+    status = run('status')
+    assert status.returncode == 0, status.stderr
+    assert 'stale' not in status.stdout and 'to reinstall' not in status.stdout

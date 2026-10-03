@@ -426,6 +426,12 @@ Schedules: link errors + roaming every 5 min, config drift + health + radio hour
 > recording history. After upgrading, run `./scripts/unifi-cron.sh update` (uninstall, then
 > install). `status` flags any installed command that differs from the current task list.
 
+> [!WARNING]
+> **macOS: `install` and `update` currently load nothing.** The generated launchd plists are
+> invalid XML, so `launchctl` rejects them even though the script reports success; `status`
+> shows `❌ not loaded` for every task. Linux crontab installs are unaffected. See
+> [issue 025](docs/issues/025-launchd-plists-are-invalid-xml.md) (open, decision needed).
+
 ### MCP Server (AI-Assisted Troubleshooting)
 
 The MCP Server enables AI assistants like Claude to directly query and troubleshoot your UniFi network infrastructure using the Model Context Protocol. It is read-only against the controller: tools that change it are refused, and changes go through this CLI.
