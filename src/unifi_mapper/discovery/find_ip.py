@@ -22,13 +22,13 @@ async def find_ip(
     1. Use find_ip() to identify the device at this IP
     2. Use find_device() or find_mac() for more detailed device info
     3. Use traceroute() to test connectivity to this IP
-    4. Use vlan_info() to check VLAN configuration for this IP range
+    4. Use diagnose_vlans() to check VLAN configuration for this IP range
 
     What to do next:
     - If device found: Use traceroute() to test connectivity
     - If IP not found: Check if it's in the correct subnet, verify device is online
-    - If IP conflict: Use get_network_topology() to see all devices with IPs
-    - For DHCP issues: Use vlan_info() to check DHCP configuration
+    - If IP conflict: Use detect_ip_conflicts() to find every device claiming the IP
+    - For DHCP issues: Use check_dhcp_pool_utilization() to check DHCP pool usage
 
     Args:
         ip: IP address to search for (IPv4 format like 192.0.2.100)
@@ -90,7 +90,7 @@ async def find_ip(
                     f'IP is in VLAN "{vlan_context["vlan_name"]}" range but no device found. '
                     'Device may be offline or IP may be unassigned.'
                 ),
-                related_tools=['get_network_topology', 'vlan_info'],
+                related_tools=['get_client_history', 'diagnose_vlans'],
             )
 
         # IP not found and not in any known VLAN range
@@ -110,7 +110,7 @@ async def find_ip(
             message=f'IP address {ip} not found on network',
             error_code=ErrorCodes.DEVICE_NOT_FOUND,
             suggestion=suggestion,
-            related_tools=['get_network_topology', 'vlan_info', 'traceroute'],
+            related_tools=['diagnose_vlans', 'check_dhcp_pool_utilization', 'traceroute'],
         )
 
 

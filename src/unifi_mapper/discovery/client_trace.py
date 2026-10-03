@@ -29,7 +29,7 @@ async def client_trace(
     What to do next:
     - If path incomplete: Check if client is online and authenticated
     - If wireless issues: Check AP placement and channel conflicts
-    - If VLAN issues: Use vlan_info() to verify VLAN configuration
+    - If VLAN issues: Use diagnose_vlans() to verify VLAN configuration
     - If firewall blocks client: Use firewall_check() for rule analysis
 
     Args:
@@ -60,7 +60,7 @@ async def client_trace(
                     'Client may be offline, disconnected, or identifier is incorrect. '
                     'Verify client is connected and try find_device() for more search options.'
                 ),
-                related_tools=['find_device', 'find_mac', 'get_network_topology'],
+                related_tools=['find_device', 'find_mac', 'get_client_history'],
             )
 
         # Get network infrastructure to build path

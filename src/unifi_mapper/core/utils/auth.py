@@ -197,7 +197,6 @@ async def get_credentials() -> Credentials:
             '2. Keychain: Use keyring.set_password("unifi-mcp", "controller", json_data)\n'
             '3. 1Password: Create item named "UniFi Controller" with host, username, password fields'
         ),
-        related_tools=['find_device', 'get_network_topology'],
     )
 
 

@@ -26,7 +26,7 @@ async def path_analysis(
 
     What to do next:
     - For high latency hops: Use link_quality() and system_load()
-    - For VLAN crossing issues: Use vlan_info() and firewall_check()
+    - For VLAN crossing issues: Use check_inter_vlan_routing() and firewall_check()
     - For duplex problems: Use get_port_map() to check port settings
     - For routing issues: Use best_practice_check() for configuration review
 

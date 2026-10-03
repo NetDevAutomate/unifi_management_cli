@@ -69,7 +69,7 @@ async def find_device(
                 'Verify the identifier is correct. Device may be offline or disconnected. '
                 'Try a different identifier (MAC, IP, or name).'
             ),
-            related_tools=['get_network_topology', 'find_mac', 'find_ip'],
+            related_tools=['find_mac', 'find_ip', 'get_client_history'],
         )
 
 

@@ -44,7 +44,7 @@ async def traceroute(
     - If path shows FIREWALL BLOCKED: Use firewall_check() for specific blocking rules
     - If path incomplete: Check if destination device is online with find_device()
     - If high latency: Use link_quality() on interfaces showing slow response
-    - If crosses VLANs: Verify inter-VLAN routing with vlan_info()
+    - If crosses VLANs: Verify inter-VLAN routing with check_inter_vlan_routing()
 
     Args:
         source: Starting endpoint - can be:
@@ -133,7 +133,7 @@ async def _resolve_endpoint(
                 message='Gateway device not found',
                 error_code=ErrorCodes.ENDPOINT_NOT_FOUND,
                 suggestion='Network may not have a configured gateway device',
-                related_tools=['get_network_topology'],
+                related_tools=['find_device', 'network_health_check'],
             )
         return gateways[0]
 
@@ -145,7 +145,7 @@ async def _resolve_endpoint(
                 message='Gateway device not found for internet routing',
                 error_code=ErrorCodes.ENDPOINT_NOT_FOUND,
                 suggestion='Network gateway required for internet tracing',
-                related_tools=['get_network_topology'],
+                related_tools=['find_device', 'network_health_check'],
             )
         # Create virtual internet endpoint
         return {

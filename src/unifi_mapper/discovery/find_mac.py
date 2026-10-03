@@ -21,7 +21,7 @@ async def find_mac(
     Common workflow:
     1. Use find_mac() to locate the device's switch and port
     2. Use port_config() to check port settings if needed
-    3. Use vlan_info() to verify VLAN assignment
+    3. Use diagnose_vlans() to verify VLAN assignment
     4. Use get_device_tree() to see device's position in network hierarchy
 
     What to do next:
@@ -94,7 +94,7 @@ async def find_mac(
                 'Device may be offline or never connected to this network. '
                 'Check if device is powered on and connected.'
             ),
-            related_tools=['get_network_topology', 'find_device'],
+            related_tools=['find_device', 'get_client_history'],
         )
 
 

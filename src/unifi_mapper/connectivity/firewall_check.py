@@ -23,14 +23,14 @@ async def firewall_check(
     Common workflow:
     1. Run traceroute() first to identify where traffic is blocked
     2. Use firewall_check() to see specific rules affecting the traffic
-    3. Use vlan_info() to understand VLAN network segmentation
+    3. Use diagnose_vlans() to understand VLAN network segmentation
     4. Review best_practice_check() for firewall configuration recommendations
 
     What to do next:
     - If traffic DENIED: Review blocking rule and determine if intentional
     - If traffic ALLOWED: Verify the path with traceroute()
     - If rules conflict: Use config_validator() to check rule consistency
-    - For VLAN issues: Use vlan_info() to verify network configuration
+    - For VLAN issues: Use diagnose_vlans() to verify network configuration
 
     Args:
         source: Source specification - can be:

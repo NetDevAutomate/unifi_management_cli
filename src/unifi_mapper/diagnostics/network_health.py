@@ -83,7 +83,6 @@ async def network_health_check() -> NetworkHealthReport:
                     message='Cannot connect to UniFi controller for health check',
                     error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
                     suggestion='Verify controller IP, credentials, and network connectivity',
-                    related_tools=['find_device', 'get_network_topology'],
                 )
             raise ToolError(
                 message=f'Error performing health check: {str(e)}',

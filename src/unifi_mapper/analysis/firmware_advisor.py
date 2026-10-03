@@ -238,7 +238,7 @@ async def get_firmware_report(
                     message=f'Device with ID {device_id} not found',
                     error_code=ErrorCodes.DEVICE_NOT_FOUND,
                     suggestion='Use find_device to search for the correct device ID',
-                    related_tools=['find_device', 'get_network_topology'],
+                    related_tools=['find_device'],
                 )
 
             # Check family consistency

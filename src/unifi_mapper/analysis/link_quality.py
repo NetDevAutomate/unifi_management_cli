@@ -130,7 +130,7 @@ async def analyze_link_quality(
                     message=f'Device with ID {device_id} not found',
                     error_code=ErrorCodes.DEVICE_NOT_FOUND,
                     suggestion='Use find_device to search for the correct device ID',
-                    related_tools=['find_device', 'get_network_topology'],
+                    related_tools=['find_device'],
                 )
 
             # Sort by health score (worst first)
