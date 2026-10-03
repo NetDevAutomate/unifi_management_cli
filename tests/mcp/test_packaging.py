@@ -112,13 +112,51 @@ def test_unlocked_isolated_resolve_passes_entry_and_registry_tests() -> None:
     assert ' failed' not in proc.stdout
 
 
+def _git_tracked(prefix: str) -> list[str]:
+    """Return the git-tracked files under ``prefix``, as POSIX paths relative to ROOT.
+
+    ``GIT_*`` variables are dropped so a git hook's ``GIT_DIR`` or ``GIT_INDEX_FILE`` can't
+    point the listing at another index.
+    """
+    git = shutil.which('git', path=ORIGINAL_ENVIRON.get('PATH'))
+    assert git, 'git is not on PATH'
+    proc = subprocess.run(
+        [git, '-C', str(ROOT), 'ls-files', '-z', '--', prefix],
+        capture_output=True,
+        text=True,
+        env={k: v for k, v in _clean_env().items() if not k.startswith('GIT_')},
+        check=True,
+        timeout=60,
+    )
+    return [p for p in proc.stdout.split('\0') if p]
+
+
+def _uncovered_by_cache_keys(paths: list[str], globs: list[str]) -> list[str]:
+    """Return the ``paths`` (relative to ROOT) that no ``globs`` file key matches, sorted."""
+    covered = {p.relative_to(ROOT).as_posix() for g in globs for p in ROOT.glob(g) if p.is_file()}
+    return sorted(set(paths) - covered)
+
+
 def test_uv_cache_keys_cover_the_source_and_manifests() -> None:
-    """Code-review F1: without these keys, uvx keeps serving a stale build of a checkout."""
+    """Code-review F1 and F12: the cache keys decide when uvx rebuilds a checkout.
+
+    Every git-tracked file under src/unifi_mapper must match a file key, or uvx serves it stale.
+    """
     config = tomllib.loads((ROOT / 'pyproject.toml').read_text())
     keys = config['tool']['uv']['cache-keys']
     files = {k['file'] for k in keys if isinstance(k, dict) and 'file' in k}
     # cache-keys replaces uv's default list, so pyproject.toml must be named explicitly.
     assert set(REQUIRED_CACHE_KEYS) <= files, files
+
+    tracked = _git_tracked('src/unifi_mapper')
+    assert tracked, 'git ls-files found nothing under src/unifi_mapper'
+    assert any(p.endswith('.yaml') for p in tracked), 'no tracked manifest: the check is vacuous'
+    uncovered = _uncovered_by_cache_keys(tracked, sorted(files))
+    assert uncovered == [], f'not covered by any [tool.uv] cache-keys file glob: {uncovered}'
+    # The helper reports a file outside the globs, so an empty result above means something.
+    assert _uncovered_by_cache_keys(['src/unifi_mapper/__init__.py'], ['src/**/*.yaml']) == [
+        'src/unifi_mapper/__init__.py'
+    ]
 
 
 def _uvx() -> str:
