@@ -60,6 +60,15 @@ dev = [
 requires = ["hatchling>=1.32,<2"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+# uv rebuilds a local-directory source (`uvx --from <checkout>`, `uv tool install <checkout>`)
+# only when a cache key changes. The default keys are pyproject.toml, setup.py and setup.cfg,
+# so a code-only edit kept serving the old build, even with `uvx --refresh`. Setting
+# cache-keys replaces the default list, so pyproject.toml must stay in it; the YAML glob
+# covers the MCP manifests shipped in the wheel. File keys (not a git-commit key) so that
+# uncommitted edits in a checkout are picked up too. tests/mcp/test_packaging.py proves it.
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.py" }, { file = "src/**/*.yaml" }]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/unifi_mapper"]
 

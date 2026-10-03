@@ -1,14 +1,18 @@
-"""T7: what a wheel / uvx install actually contains and resolves.
+"""T7: what a wheel / uvx install actually contains, resolves and rebuilds.
 
-Both tests are skipped unless ``--run-slow`` or ``UNIFI_RUN_SLOW=1`` (hook in
+The slow tests are skipped unless ``--run-slow`` or ``UNIFI_RUN_SLOW=1`` (hook in
 ``tests/conftest.py``). The build test needs network access or a warm uv cache for
 hatchling under build isolation. The resolve test needs network access to PyPI: it ignores
-``uv.lock`` the way uvx does, so the SDK pins run against what a fresh uvx install gets.
+``uv.lock`` the way uvx does, so the SDK pins run against what a fresh uvx install gets. The
+rebuild test also needs PyPI: it fills an empty uv cache in ``tmp_path``.
+
+The cache-key test is offline and always runs.
 """
 
 import pytest
 import shutil
 import subprocess
+import tomllib
 import zipfile
 from pathlib import Path
 from tests.mcp.conftest import ORIGINAL_ENVIRON
@@ -17,6 +21,8 @@ from tests.mcp.conftest import ORIGINAL_ENVIRON
 ROOT = Path(__file__).resolve().parents[2]
 MANIFESTS_SRC = ROOT / 'src' / 'unifi_mapper' / 'mcp' / 'manifests'
 ENTRY_POINT = 'unifi-mcp = unifi_mapper.mcp.server:main'
+# What a local-path uvx build must be keyed on, so a source edit reaches the next launch.
+REQUIRED_CACHE_KEYS = ('pyproject.toml', 'src/**/*.py', 'src/**/*.yaml')
 # The interpreter the suite is tested on (plan P13); an unpinned resolve could pick 3.13/3.14.
 PYTHON = '3.12'
 ISOLATED_TESTS = [
@@ -104,3 +110,83 @@ def test_unlocked_isolated_resolve_passes_entry_and_registry_tests() -> None:
     assert line.removeprefix('MCP_VERSION=').startswith('1.30.'), line
     assert ' passed' in proc.stdout
     assert ' failed' not in proc.stdout
+
+
+def test_uv_cache_keys_cover_the_source_and_manifests() -> None:
+    """Code-review F1: without these keys, uvx keeps serving a stale build of a checkout."""
+    config = tomllib.loads((ROOT / 'pyproject.toml').read_text())
+    keys = config['tool']['uv']['cache-keys']
+    files = {k['file'] for k in keys if isinstance(k, dict) and 'file' in k}
+    # cache-keys replaces uv's default list, so pyproject.toml must be named explicitly.
+    assert set(REQUIRED_CACHE_KEYS) <= files, files
+
+
+def _uvx() -> str:
+    """Return the uvx executable found on the real (pre-isolation) PATH."""
+    uvx = shutil.which('uvx', path=ORIGINAL_ENVIRON.get('PATH'))
+    assert uvx, 'uvx is not on PATH'
+    return uvx
+
+
+def _uvx_probe(project: Path, probe: str, env: dict[str, str]) -> list[str]:
+    """Run the documented local-path launch with ``python -c`` and return stdout lines."""
+    proc = subprocess.run(
+        [_uvx(), '--python', PYTHON, '--from', str(project), 'python', '-c', probe],
+        capture_output=True,
+        text=True,
+        cwd=project.parent,
+        env=env,
+        timeout=900,
+    )
+    assert proc.returncode == 0, proc.stdout[-4000:] + proc.stderr[-4000:]
+    return proc.stdout.strip().splitlines()
+
+
+@pytest.mark.slow
+@pytest.mark.network
+def test_local_path_uvx_launch_serves_source_edits(tmp_path: Path) -> None:
+    """Code-review F1: a plain ``uvx --from <checkout>`` serves an edited .py and .yaml.
+
+    Works on a copy under an empty uv cache, so the user's cache and the worktree are never
+    touched. ``unifi-mcp --version`` can't be the probe: it reads importlib.metadata, which a
+    source edit doesn't change.
+    """
+    project = tmp_path / 'checkout'
+    project.mkdir()
+    for name in ('pyproject.toml', 'README.md'):  # hatchling reads README.md (project.readme)
+        shutil.copy2(ROOT / name, project / name)
+    shutil.copytree(
+        ROOT / 'src', project / 'src', ignore=shutil.ignore_patterns('__pycache__', '*.pyc')
+    )
+    env = {
+        **_clean_env(),
+        'UV_CACHE_DIR': str(tmp_path / 'uv-cache'),
+        'UV_TOOL_DIR': str(tmp_path / 'uv-tools'),
+        'UV_TOOL_BIN_DIR': str(tmp_path / 'uv-bin'),
+    }
+    py_probe = (
+        'import unifi_mapper.core.utils.coerce as m; '
+        "print(m.__file__); print(getattr(m, 'CACHE_KEY_PROBE', 'absent'))"
+    )
+    yaml_probe = (
+        'import importlib.resources as r; '
+        "t = r.files('unifi_mapper.mcp').joinpath('manifests/analysis.yaml').read_text(); "
+        "print('# cache-key-probe' in t)"
+    )
+
+    first_file, first_marker = _uvx_probe(project, py_probe, env)
+    assert first_marker == 'absent'
+    # A build, not the copy's source tree: otherwise the test proves nothing about the cache.
+    assert Path(first_file).resolve().is_relative_to((tmp_path / 'uv-cache').resolve())
+    # No edit: the cached build is reused rather than rebuilt on every launch.
+    again_file, _ = _uvx_probe(project, py_probe, env)
+    assert Path(again_file).resolve() == Path(first_file).resolve()
+
+    with (project / 'src/unifi_mapper/core/utils/coerce.py').open('a') as fh:
+        fh.write("\nCACHE_KEY_PROBE = 'edited'\n")
+    assert _uvx_probe(project, py_probe, env)[1] == 'edited'
+
+    assert _uvx_probe(project, yaml_probe, env) == ['False']
+    with (project / 'src/unifi_mapper/mcp/manifests/analysis.yaml').open('a') as fh:
+        fh.write('# cache-key-probe\n')
+    assert _uvx_probe(project, yaml_probe, env) == ['True']

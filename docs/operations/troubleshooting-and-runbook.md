@@ -630,7 +630,7 @@ flowchart TD
     H -->|network category| I[network_api family: UNIFI_NETWORK_HOST, UNIFI_NETWORK_API_KEY, UNIFI_NETWORK_SITE_ID]
     H -->|protect category| J[protect family: PROTECT_HOST, PROTECT_USERNAME, PROTECT_PASSWORD]
     H -->|all controller tools| K["Test the same env file with unifi-mapper --config FILE"]
-    H -->|old behaviour after a code change| L["uvx --refresh, or uv tool install --reinstall"]
+    H -->|old behaviour after a code change| L["Restart the client so uvx relaunches (cache-keys rebuild on edits); for an installed tool, uv tool install --reinstall"]
 ```
 
 #### Client configuration

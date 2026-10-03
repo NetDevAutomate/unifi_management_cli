@@ -65,7 +65,9 @@ Fixed by the MCP uvx standards work (branch `feat/mcp-uvx-standards`):
   categories, including `observability` (done with the server rework in plan item 9).
 - `docs/mcp-server/MCP_SERVER_GUIDE.md` was rewritten (plan item 20): the stack
   (`mcp>=1.30,<1.31`, Python 3.12), every launch mode (uvx from a path or a git tag,
-  `uv tool install`, `uvx --refresh`, the legacy `uv --directory` + `UNIFI_CONFIG` launch and
+  `uv tool install`, the update step after a checkout change (originally `uvx --refresh`,
+  which doesn't rebuild a local path; corrected to `[tool.uv] cache-keys` in the convergence
+  fix iteration 3), the legacy `uv --directory` + `UNIFI_CONFIG` launch and
   `scripts/unifi-mcp-launch.sh`), the PyPI name-collision warning, config discovery and
   credential families, both tool surfaces, every environment variable, `--version`,
   `--help` and `--check`, the error envelope with `isError: true` and its codes, client

@@ -51,14 +51,21 @@ src/unifi_mapper/mcp/
 Only the two legacy modes read `uv.lock`. The uvx and installed-tool modes resolve from the
 dependency bounds in `pyproject.toml`.
 
-**After changing the checkout.** uvx caches tool environments, so a local-path launch keeps
-running the old build until you refresh it:
+**After changing the checkout.** uvx caches the build of a local path and rebuilds it only
+when a cache key changes. `pyproject.toml` sets `[tool.uv] cache-keys` to `pyproject.toml`,
+`src/**/*.py` and `src/**/*.yaml`, so the next plain launch picks up any code or manifest
+edit, committed or not, and reuses the cached build otherwise:
 
 ```bash
-uvx --refresh --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --version
-# or, for an installed tool:
+uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp
+# an installed tool doesn't rebuild on its own; reinstall it:
 uv tool install --python 3.12 --reinstall /ABS/PATH/TO/unifi_management_cli
 ```
+
+Restart the MCP client (or reconnect the server) so it relaunches. `uvx --refresh` and
+`uvx --reinstall` don't force a rebuild of a local path (uv 0.11.8); without the cache keys
+both kept serving the old build. `tests/mcp/test_packaging.py` checks the keys offline and,
+with `--run-slow`, proves that an edit reaches the next launch.
 
 ### Command-line flags
 

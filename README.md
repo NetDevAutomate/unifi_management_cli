@@ -440,10 +440,11 @@ The MCP Server enables AI assistants like Claude to directly query and troublesh
 uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --check
 uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp
 
-# After changing the checkout, refresh uvx's cached build
-uvx --refresh --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --version
+# A code change in the checkout reaches the next launch: pyproject.toml's [tool.uv]
+# cache-keys make uvx rebuild when any src/**/*.py or src/**/*.yaml file changes.
+# `uvx --refresh` does not force that rebuild, so don't rely on it.
 
-# Or install it as a tool
+# Or install it as a tool (rerun with --reinstall after changing the checkout)
 uv tool install --python 3.12 /ABS/PATH/TO/unifi_management_cli
 ```
 
