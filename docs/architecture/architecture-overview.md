@@ -901,7 +901,7 @@ graph TD
 
 **Why SSH?** The UniFi REST API provides no endpoint for active probing (ping, traceroute, iperf3). SSH to the gateway is the only way to measure real latency and throughput from the network's vantage point — analogous to running `show ip route` or `ping` from a router's CLI in traditional networking.
 
-**Connection pattern**: Both tools use `asyncssh.connect()` with `known_hosts=None` (self-signed UDM certs) and `preferred_auth='keyboard-interactive,password'`. The login comes from `gateway_ssh.ssh_login()`: the username from `UNIFI_SSH_USERNAME` (default `root`) and the password only from `UNIFI_SSH_PASSWORD`. Without it both tools stop with `CONFIG_MISSING` before any request; `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH, because it isn't the console's SSH password and a wrong password leaves failed root logins on the gateway.
+**Connection pattern**: Both tools use `asyncssh.connect()` with `known_hosts=None`, which turns off SSH host-key verification (see [issue 038](../issues/038-ssh-host-key-verification-disabled.md); TLS certificates are a separate setting), and `preferred_auth='keyboard-interactive,password'`. The login comes from `gateway_ssh.ssh_login()`: the username from `UNIFI_SSH_USERNAME` (default `root`) and the password only from `UNIFI_SSH_PASSWORD`. Without it both tools stop with `CONFIG_MISSING` before any request; `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH, because it isn't the console's SSH password and a wrong password leaves failed root logins on the gateway.
 
 **Command lines**: every value is checked before it goes on a command line run on the gateway, normally as root (`analysis/gateway_ssh.py`). Each address must parse with `ipaddress` and carry no IPv6 zone id (`ipaddress` accepts any text after `%`); `--count` must be 1–100, `--timeout` 1–60 s, `--duration` 1–86400 s and `--parallel` 1–128 (iperf3's own limits). The line itself is built with `shlex.join`.
 
@@ -1434,7 +1434,7 @@ Used by `analysis/latency_matrix.py` and `analysis/bandwidth_test.py` to execute
 
 | Interface | Protocol | Auth | Notes |
 | --- | --- | --- | --- |
-| UDM SSH | SSH (port 22) | Password (`UNIFI_SSH_USERNAME` / `UNIFI_SSH_PASSWORD`) | `known_hosts=None` for self-signed |
+| UDM SSH | SSH (port 22) | Password (`UNIFI_SSH_USERNAME` / `UNIFI_SSH_PASSWORD`) | `known_hosts=None`: the host key isn't verified ([issue 038](../issues/038-ssh-host-key-verification-disabled.md)) |
 
 Commands executed: `ping` (latency matrix), `iperf3` (bandwidth test).
 

@@ -48,3 +48,4 @@ the reasoning stays next to the code it explains.
 | [035](035-device-statistics-and-port-action-paths.md) | The Integration API client's device-statistics and port-action paths aren't served | open |
 | [036](036-integration-api-models-drift-from-the-reference.md) | Integration API models disagree with the v10.6 reference, so some fields are lost | open |
 | [037](037-launch-config-network-family-incomplete.md) | With the legacy config file, the six network_api tools return CONFIG_MISSING | open, decision needed |
+| [038](038-ssh-host-key-verification-disabled.md) | The gateway SSH commands don't verify the gateway's host key (`known_hosts=None`) | open, decision needed |
