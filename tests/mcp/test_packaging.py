@@ -132,9 +132,14 @@ def _git_tracked(prefix: str) -> list[str]:
 
 
 def _uncovered_by_cache_keys(paths: list[str], globs: list[str]) -> list[str]:
-    """Return the ``paths`` (relative to ROOT) that no ``globs`` file key matches, sorted."""
+    """Return the ``paths`` (relative to ROOT) that exist but match no ``globs`` file key, sorted.
+
+    A tracked file deleted without ``git rm`` isn't packaged, so it is left out rather than
+    reported as uncovered.
+    """
+    existing = [p for p in paths if (ROOT / p).is_file()]
     covered = {p.relative_to(ROOT).as_posix() for g in globs for p in ROOT.glob(g) if p.is_file()}
-    return sorted(set(paths) - covered)
+    return sorted(set(existing) - covered)
 
 
 def test_uv_cache_keys_cover_the_source_and_manifests() -> None:
@@ -157,6 +162,10 @@ def test_uv_cache_keys_cover_the_source_and_manifests() -> None:
     assert _uncovered_by_cache_keys(['src/unifi_mapper/__init__.py'], ['src/**/*.yaml']) == [
         'src/unifi_mapper/__init__.py'
     ]
+    # Code-review F35: a tracked file deleted without `git rm` is skipped, not misreported.
+    deleted = 'src/unifi_mapper/_deleted_but_still_tracked.py'
+    assert not (ROOT / deleted).exists()
+    assert _uncovered_by_cache_keys([deleted], ['src/**/*.yaml']) == []
 
 
 def _uvx() -> str:
