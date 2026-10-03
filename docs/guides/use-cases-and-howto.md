@@ -1555,6 +1555,11 @@ Top-level shortcuts (invoke discover without subcommand; preview unless --apply)
   unifi-mapper --verify-updates
   unifi-mapper --connected-devices
   unifi-mapper --connected-devices --apply
+
+Before discover, --dry-run, --connected-devices and --verify-updates are passed on to it
+(unifi-mapper --dry-run discover --apply exits 2). Before any other subcommand they exit 2,
+and a root --apply exits 2 before any subcommand: put the flag after the subcommand
+(unifi-mapper discover --apply, unifi-mapper ports refresh --apply).
 ```
 
 ### unifi-network-toolkit Command Reference

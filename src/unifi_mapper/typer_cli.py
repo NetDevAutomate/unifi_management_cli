@@ -27,9 +27,45 @@ class State:
 
     config_path: Optional[Path] = None
     debug: bool = False
+    # Root discover shortcuts given before the ``discover`` subcommand (issue 027). The root
+    # callback clears them on every invocation and ``discover`` takes them, so they never
+    # leak into a later in-process invocation.
+    root_dry_run: bool = False
+    root_connected_devices: bool = False
+    root_verify_updates: bool = False
+
+    def take_root_shortcuts(self) -> tuple[bool, bool, bool]:
+        """Return and clear the root ``--dry-run``, ``--connected-devices``, ``--verify-updates``.
+
+        Returns:
+            The three flags as the root callback stored them for ``discover``.
+        """
+        taken = (self.root_dry_run, self.root_connected_devices, self.root_verify_updates)
+        self.root_dry_run = self.root_connected_devices = self.root_verify_updates = False
+        return taken
 
 
 state = State()
+
+# Before a subcommand, Typer parses each level on its own, so a root flag never reaches the
+# subcommand. --apply is refused before any subcommand (code-review F11); the other discover
+# shortcuts are passed on to discover and refused before anything else (issue 027).
+_ROOT_APPLY_HINT = (
+    '--apply must follow the subcommand and its arguments '
+    '(e.g. unifi-mapper discover --apply, unifi-mapper ports refresh --apply)'
+)
+_ROOT_SHORTCUT_HINTS = {
+    '--dry-run': (
+        "--dry-run before a subcommand only reaches discover: put the subcommand's own "
+        'flag after its arguments (e.g. unifi-mapper ports refresh --dry-run)'
+    ),
+    '--connected-devices': (
+        '--connected-devices only applies to discover (unifi-mapper discover --connected-devices)'
+    ),
+    '--verify-updates': (
+        '--verify-updates only applies to discover (unifi-mapper discover --verify-updates)'
+    ),
+}
 
 
 def setup_logging(debug: bool = False):
@@ -106,26 +142,38 @@ def main(
 
     Global options apply to all commands. Use --connected-devices, --verify-updates,
     --dry-run or --apply as shortcuts to run the discover command. Discover previews
-    by default; only --apply writes port names to the controller. Given before a
-    subcommand, --apply exits 2: use the subcommand's own flag (``discover --apply``).
+    by default; only --apply writes port names to the controller. Before the discover
+    subcommand, --dry-run, --connected-devices and --verify-updates are passed on to it.
+    Before any other subcommand they exit 2, and so does --apply before any subcommand:
+    put a subcommand's own flags after it (``discover --apply``).
     """
     # Set global state
     state.config_path = config if config else get_default_config_path()
     state.debug = debug
+    state.take_root_shortcuts()  # clear whatever an earlier in-process invocation left
 
     if debug:
         setup_logging(debug=True)
 
     if apply and dry_run:
         _fail('choose --apply or --dry-run', code=2)
-    # Typer parses each command level on its own, so a root --apply never reaches a
-    # subcommand. Refuse it rather than preview (or run another command) after a write request.
-    if apply and ctx.invoked_subcommand is not None:
-        _fail(
-            '--apply must follow the subcommand and its arguments '
-            '(e.g. unifi-mapper discover --apply)',
-            code=2,
-        )
+    subcommand = ctx.invoked_subcommand
+    if apply and subcommand is not None:
+        # Refuse rather than preview (or run another command) after a write request.
+        _fail(_ROOT_APPLY_HINT, code=2)
+    if subcommand is not None and subcommand != 'discover':
+        given = {
+            '--dry-run': dry_run,
+            '--connected-devices': connected_devices,
+            '--verify-updates': verify_updates,
+        }
+        for flag, on in given.items():
+            if on:
+                _fail(_ROOT_SHORTCUT_HINTS[flag], code=2)
+    if subcommand == 'discover':
+        state.root_dry_run = dry_run
+        state.root_connected_devices = connected_devices
+        state.root_verify_updates = verify_updates
 
     # If no subcommand but discover-related flags provided, run discover
     if ctx.invoked_subcommand is None:
@@ -189,8 +237,16 @@ def discover(
     """🔍 Discover network topology and propose port names with LLDP intelligence.
 
     Previews by default: the report and diagram are written locally, but no port
-    name reaches the controller unless --apply is given.
+    name reaches the controller unless --apply is given. A root --dry-run,
+    --connected-devices or --verify-updates given before ``discover`` is passed on to
+    it, and a root --dry-run with ``discover --apply`` exits 2 (issue 027).
     """
+    root_dry_run, root_connected_devices, root_verify_updates = state.take_root_shortcuts()
+    if root_dry_run and apply:
+        _fail('choose --apply or --dry-run (a root --dry-run was given before discover)', code=2)
+    connected_devices = connected_devices or root_connected_devices
+    verify_updates = verify_updates or root_verify_updates
+
     # Use global state
     config = state.config_path
     debug = state.debug

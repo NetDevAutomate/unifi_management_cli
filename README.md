@@ -75,6 +75,13 @@ unifi-mapper --dry-run --verify-updates
 preview by default, like `ports refresh`: only `--apply` writes port names. Passing both
 `--apply` and `--dry-run` is an error (exit 2).
 
+Before the `discover` subcommand, the root `--dry-run`, `--connected-devices` and
+`--verify-updates` are passed on to it, so `unifi-mapper --connected-devices discover`
+includes connected devices and `unifi-mapper --dry-run discover --apply` is an error. Before
+any other subcommand they exit 2, as a root `--apply` does before any subcommand: give a
+subcommand its own flags after it (`unifi-mapper discover --apply`,
+`unifi-mapper ports refresh --apply`).
+
 ### Network Toolkit
 
 ```bash

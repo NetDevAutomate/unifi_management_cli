@@ -1,7 +1,7 @@
 ---
 title: "Root `--connected-devices`, `--verify-updates` and `--dry-run` are silently dropped before a subcommand"
 date: 2026-10-03
-status: open, decision needed
+status: resolved
 severity: medium
 components: [typer_cli]
 found_by: review follow-ups (code-review F11)
@@ -31,8 +31,9 @@ follow from the code: each reads only its own flags.
 
 Root `--apply` before a subcommand no longer has this problem: since code-review F11 it
 exits 2 with `--apply must follow the subcommand and its arguments (e.g. unifi-mapper
-discover --apply)` (`test_root_apply_before_a_subcommand_is_rejected`; code-review F26 made
-the hint generic, so it also fits `ports refresh` and `stp`).
+discover --apply, unifi-mapper ports refresh --apply)`
+(`test_root_apply_before_a_subcommand_is_rejected`; code-review F26 made the hint generic,
+and this issue's fix added the `ports refresh` example).
 
 ## Impact
 
@@ -60,3 +61,40 @@ precedes another subcommand, which never reads them. That keeps `--dry-run disco
 `--connected-devices discover` working and closes all four write forms; the cost is that
 meaningless forms such as `unifi-mapper --dry-run ports list X` (exit 0 today) start to
 fail. Extend `tests/test_discover_defaults.py` with every form above.
+
+## Resolution
+
+Decided on 2026-10-03 (review follow-ups, iteration 2) by the review orchestrator on the
+user's behalf: implement the recommendation, because a typed `--dry-run` that writes is a
+production-safety defect in the area issue 007 fixed.
+
+- Before `discover`, the root `--dry-run`, `--connected-devices` and `--verify-updates` are
+  passed on to it through `state` (`State.take_root_shortcuts`; the root callback clears
+  them on every invocation, so they never leak into the next one). `--connected-devices
+  discover` now includes connected devices and `--verify-updates discover` uses the smart
+  mapper. `--dry-run discover` still previews.
+- A root `--dry-run` with `discover --apply` exits 2 (`choose --apply or --dry-run`) before
+  any config read or client.
+- Before any other subcommand, each of the three exits 2 with a hint that names the flag to
+  use instead: `--dry-run before a subcommand only reaches discover: put the subcommand's
+  own flag after its arguments (e.g. unifi-mapper ports refresh --dry-run)`, and for the
+  other two the `discover` option itself. A root `--apply` still exits 2 before any
+  subcommand (code-review F11); its hint now names `unifi-mapper discover --apply` and
+  `unifi-mapper ports refresh --apply`.
+- All four write forms in the Problem section now exit 2 with no I/O. Meaningless forms
+  such as `unifi-mapper --dry-run ports list X` (exit 0 before) exit 2 too, as accepted.
+- `--config` and `--debug` are global options and still precede any subcommand.
+- Invocations checked: `scripts/unifi-cron.sh` (the port-naming task and `run_all` use the
+  bare root form, with no subcommand), the README and every guide. None put a root shortcut
+  before a subcommand, so none changed. The README and `docs/guides/use-cases-and-howto.md`
+  now state the rule.
+
+Tests: `tests/test_discover_defaults.py` runs every root shortcut before eight other
+subcommand forms (`ports list`, `ports refresh` with and without `--apply`, `stp optimize`
+with and without `--apply`, `stp apply --no-dry-run`, `radio optimize --apply`, `analyze
+link-errors`): exit 2, the hint, no config read, no client, no write. It also covers a root
+`--apply` before seven subcommand forms, the three `--dry-run … discover --apply`
+conflicts, each shortcut passed on to `discover` (previewing, and with its own `--apply`),
+global options before a subcommand, and no state leak between invocations. On the old code
+41 of the module's 60 tests failed. Every case runs under CliRunner with fakes, with
+`block_network` and the credential chain forbidden.
