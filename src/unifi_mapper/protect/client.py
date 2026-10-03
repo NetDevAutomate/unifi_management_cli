@@ -90,9 +90,12 @@ class ReadOnlyProtectApiClient(ProtectApiClient):
     ``authenticate``) through ``BaseApiClient.request``, so this override sees them all:
 
     * GET and HEAD pass :func:`get_only_request_allowed`, go to the opt-in request audit
-      (``{t, method, path}``: no host, query or body) and are sent.
-    * The session login (``POST /api/auth/login``, :func:`is_login_request`) is sent
-      unaudited, as the controller guards treat their own login.
+      (``{t, method, path}``: no host, query or body) and are sent. A read is recorded
+      before uiprotect's lazy login runs inside ``super().request()``, so a GET whose login
+      then fails is still recorded: reads can be over-recorded, writes never are.
+    * The session login (``POST /api/auth/login`` or ``POST /api/login``,
+      :func:`is_login_request`) is sent unaudited, as the controller guards treat their own
+      login.
     * Anything else raises :class:`ReadOnlyViolation` before any I/O, the login included.
 
     Not covered, because they bypass ``request``: the websocket subscriptions

@@ -170,10 +170,14 @@ family goes through a guard:
   diagnostics client (`inspect_switch_port` included). GET and HEAD (no `cmd`/`upd`
   segment), the few read-only query POSTs (`stat/event`, `list/alarm`, v2 `system-log`) and
   logout; the client's own login is sent but not recorded.
-- `network_api`: the same transport with a GET-only policy, since every Integration API POST
-  creates an object or runs an action. Nothing else is sent.
+- `network_api`: the same transport with a GET-only policy (GET and HEAD, no `cmd`/`upd`
+  segment), since every Integration API POST creates an object or runs an action. Nothing
+  else is sent.
 - `protect`: `ReadOnlyProtectApiClient`, which overrides uiprotect's `request()`: GET and
-  HEAD, plus its session login (`POST /api/auth/login`), sent but not recorded.
+  HEAD (recorded; no `cmd`/`upd` segment), plus its session login (`POST /api/auth/login`
+  or `/api/login`; sent, not recorded). A read is recorded before uiprotect's lazy login,
+  so a GET whose login then fails is still recorded: reads can be over-recorded, writes
+  never are.
 
 Two uiprotect paths bypass `request()` and so aren't covered: websocket subscriptions and
 the private `_get_versions_from_api`. No tool uses either.
