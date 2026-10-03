@@ -49,7 +49,9 @@ src/unifi_mapper/mcp/
 | Legacy wrapper | `scripts/unifi-mcp-launch.sh` | Sources `$UNIFI_MCP_ENV` (default `${XDG_CONFIG_HOME:-~/.config}/unifi_management_cli/prod.env`), exports every key, then runs the legacy dev command. Still supported, unchanged |
 
 Only the two legacy modes read `uv.lock`. The uvx and installed-tool modes resolve from the
-dependency bounds in `pyproject.toml`.
+dependency bounds in `pyproject.toml`. The cache keys below also apply to the legacy modes'
+editable install: the first launch or `uv run` after a source edit rebuilds it, which takes a
+second or less and is reported on stderr, never on the stdout JSON-RPC stream.
 
 **After changing the checkout.** uvx caches the build of a local path and rebuilds it only
 when a cache key changes. `pyproject.toml` sets `[tool.uv] cache-keys` to `pyproject.toml`,

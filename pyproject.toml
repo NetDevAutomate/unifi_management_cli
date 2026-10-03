@@ -67,6 +67,8 @@ build-backend = "hatchling.build"
 # cache-keys replaces the default list, so pyproject.toml must stay in it; the YAML glob
 # covers the MCP manifests shipped in the wheel. File keys (not a git-commit key) so that
 # uncommitted edits in a checkout are picked up too. tests/mcp/test_packaging.py proves it.
+# uv applies the same keys to the editable install, so the first `uv run` after an edit also
+# rebuilds it (a second or less, reported on stderr); that is expected, so keep the keys.
 cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.py" }, { file = "src/**/*.yaml" }]
 
 [tool.hatch.build.targets.wheel]
