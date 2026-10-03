@@ -144,7 +144,8 @@ changed in the file still needs a server restart (issue 020). The sync port-diag
 `diff_port_profiles`, `get_client_history`, `get_device_events`, `get_port_counter_rates`,
 `audit_link_speeds`, `audit_port_profile_usage`) keep one guarded login per call.
 `inspect_switch_port` also logs in per call, through its own sync client behind the same
-read-only guard.
+read-only guard. The `network_api` and `protect` tools open their own guarded client per call
+(the Integration API's GET-only transport, and `ReadOnlyProtectApiClient`).
 
 ### Environment variables
 
@@ -160,12 +161,22 @@ read-only guard.
 | `UNIFI_MCP_ENV` | `…/unifi_management_cli/prod.env` | path; read only by `scripts/unifi-mcp-launch.sh` | the script exits 1 |
 | `XDG_CONFIG_HOME` | `~/.config` | directory | — |
 
-`UNIFI_MCP_REQUEST_AUDIT=<file>` appends one line per controller request the read-only guards
-let through: `{"t": <UTC time>, "method": …, "path": …}`. No host, query string, headers or
-body is recorded. It's how you can show that a session sent nothing but reads: every
-`controller`-family tool, `inspect_switch_port` included, goes through one of the two guards.
-The `network_api` and `protect` tools use their own clients and aren't recorded here
-(issue 024).
+`UNIFI_MCP_REQUEST_AUDIT=<file>` appends one line per request the read-only guards let
+through: `{"t": <UTC time>, "method": …, "path": …}`. No host, query string, headers or body
+is recorded. It's how you can show that a session sent nothing but reads, because every tool
+family goes through a guard:
+
+- `controller`: the shared client's read-only transport, or the guard on the sync
+  diagnostics client (`inspect_switch_port` included). GET and HEAD (no `cmd`/`upd`
+  segment), the few read-only query POSTs (`stat/event`, `list/alarm`, v2 `system-log`) and
+  logout; the client's own login is sent but not recorded.
+- `network_api`: the same transport with a GET-only policy, since every Integration API POST
+  creates an object or runs an action. Nothing else is sent.
+- `protect`: `ReadOnlyProtectApiClient`, which overrides uiprotect's `request()`: GET and
+  HEAD, plus its session login (`POST /api/auth/login`), sent but not recorded.
+
+Two uiprotect paths bypass `request()` and so aren't covered: websocket subscriptions and
+the private `_get_versions_from_api`. No tool uses either.
 
 ## Tool Surfaces
 
@@ -247,7 +258,7 @@ failed call. On the direct surface a failure is a single text block,
 | `INVALID_PARAMETERS` | Unknown key or a type/range error; the envelope adds `parameters` and `input_schema` |
 | `CONFIG_MISSING` | The tool's credential family isn't ready, or the Keychain/1Password lookup didn't finish in time; names the files tried |
 | `TIMEOUT` | The call exceeded `UNIFI_MCP_TOOL_TIMEOUT` (only when set) |
-| `READ_ONLY_VIOLATION` | A tool tried a controller write and the guard refused it (a bug; nothing was written) |
+| `READ_ONLY_VIOLATION` | A tool tried a write and a read-only guard refused it (a bug; nothing was written) |
 | `TOOL_FAILED` | Any other exception, as `ExceptionClass: text` |
 | domain codes | Raised by the tool itself, e.g. `DEVICE_NOT_FOUND`, `PROFILE_NOT_FOUND`, `CONTROLLER_UNREACHABLE`, `AUTHENTICATION_FAILED`, `CONFIG_INVALID`, `NO_DATA` |
 
@@ -255,7 +266,8 @@ Results and error text are masked: the value of any secret-looking `UNIFI_*`/`PR
 variable is replaced wherever it appears, and values under secret-named keys are redacted.
 Error messages are capped at 2,000 characters (`TOOL_FAILED` at 500). The Network and Protect
 wrappers still return `{"error": …}` inside an `ok: true` result on failure; issue 011 tracks
-turning that into `TOOL_FAILED`.
+turning that into `TOOL_FAILED`. A write their read-only guard refuses is the exception: it is
+reported as `READ_ONLY_VIOLATION`.
 
 ## Client Configuration
 
@@ -335,8 +347,9 @@ as the `command`, because GUI apps start with a minimal `PATH`.
 No tool that changes the controller runs over MCP. Mutating manifest entries
 (`mutates: true`: `apply_stp_changes`, `apply_radio_optimization`, `restore_radio_config`) are
 never listed and `execute_tool` refuses them with `MUTATION_REFUSED`; the shared async client's
-transport and the sync diagnostics client's guard refuse any controller write a read-only tool
-might attempt (`READ_ONLY_VIOLATION`). Any new tool that writes controller state must declare
+transport, the sync diagnostics client's guard, the `network_api` tools' GET-only transport and
+the `protect` tools' `ReadOnlyProtectApiClient` refuse any write a read-only tool might attempt
+(`READ_ONLY_VIOLATION`). Any new tool that writes controller state must declare
 `mutates: true`; `tests/mcp/test_execute.py` fails if an `apply_*` / `restore_*` tool ships
 without it. One catalog tool writes a **local** file: `snapshot_radio_config`.
 

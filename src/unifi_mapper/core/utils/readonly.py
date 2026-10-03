@@ -27,6 +27,14 @@ The same policy, as the pure :func:`request_allowed`, backs
 async client. Both guards also append ``{"t", "method", "path"}`` JSON lines to
 an opt-in file sink set with :func:`configure_request_audit`.
 
+APIs with no read-only POST use the stricter pure :func:`get_only_request_allowed`
+(``GET`` and ``HEAD`` only, the same path checks): the MCP ``network_api`` tools
+through ``ReadOnlyAsyncTransport(inner, policy=get_only_request_allowed)`` (the
+Network Integration API's POSTs create objects or run actions), and
+``ReadOnlyProtectApiClient`` in ``protect/client.py``, which overrides uiprotect's
+``request``. A custom policy gets no login exemption; the Protect client exempts
+its own session login (:func:`is_login_request`) itself, unaudited.
+
 The guard must be installed *after* ``login()``, because ``_perform_login``
 replaces ``client.session`` and would silently discard it. Once installed it
 survives a later login (for example after ``logout()``): the client's
@@ -120,6 +128,52 @@ def request_allowed(method: str, url: object, site: str) -> tuple[bool, str]:
     else:
         return False, f'refused {verb} {path!r}: method can change controller state'
     return True, path
+
+
+# A pure (method, url) -> (allowed, decoded path or refusal message) decision.
+RequestPolicy = Callable[[str, object], tuple[bool, str]]
+
+
+def get_only_request_allowed(method: str, url: object) -> tuple[bool, str]:
+    """Allow only GET and HEAD, with the same path checks. Pure.
+
+    For APIs with no read-only POST, such as the Network Integration API
+    (``/proxy/network/integrations/v1/...``), whose POST endpoints create objects or run
+    device and client actions.
+
+    Args:
+        method: HTTP method, any case.
+        url: Absolute or relative URL (a query string is allowed).
+
+    Returns:
+        ``(True, decoded_path)`` for a GET or HEAD, else ``(False, refusal_message)``.
+    """
+    verb = str(method).upper()
+    try:
+        path, _query = _normalised_path(verb, url)
+    except ReadOnlyViolation as e:
+        return False, str(e)
+    if verb not in ('GET', 'HEAD'):
+        return False, f'refused {verb} {path!r}: only GET and HEAD are allowed'
+    return True, path
+
+
+def is_login_request(method: str, url: object) -> bool:
+    """Return True for a session login: ``POST /api/auth/login`` or ``POST /api/login``.
+
+    The test the async guard has always made: split the raw path at the first ``?`` (any
+    query disqualifies it), then match the anchored login pattern. There is deliberately no
+    ``urlsplit``, so nothing can widen what counts as a login.
+
+    Args:
+        method: HTTP method, any case.
+        url: The raw request path (``/api/auth/login``), not a full URL.
+
+    Returns:
+        True if the request is the login POST, which the guards send unaudited.
+    """
+    path_only, _, query = str(url).partition('?')
+    return str(method).upper() == 'POST' and not query and bool(_LOGIN_PATH_RE.match(path_only))
 
 
 def configure_request_audit(path: Path | None) -> None:
@@ -361,21 +415,40 @@ def assert_guarded(client: Any) -> None:
 class ReadOnlyAsyncTransport(httpx.AsyncBaseTransport):
     """An httpx transport that only lets read-only requests reach the controller.
 
-    Allows what :func:`request_allowed` allows, plus ``POST /api/auth/login`` and
-    ``POST /api/login`` (the async client's own login, which is not audited). Anything
-    else raises :class:`ReadOnlyViolation` before the inner transport sees it, so no
-    I/O happens. Allowed requests (other than login) go to the opt-in audit sink.
+    Built with ``site=``, it allows what :func:`request_allowed` allows, plus ``POST
+    /api/auth/login`` and ``POST /api/login`` (the async client's own login, which is not
+    audited). Built with ``policy=``, it allows exactly what that policy allows, with no login
+    exemption (``policy=get_only_request_allowed`` for the Network Integration API). Anything
+    else raises :class:`ReadOnlyViolation` before the inner transport sees it, so no I/O
+    happens. Allowed requests (other than login) go to the opt-in audit sink.
     """
 
-    def __init__(self, inner: httpx.AsyncBaseTransport, site: str) -> None:
-        """Wrap ``inner`` for ``site``.
+    def __init__(
+        self,
+        inner: httpx.AsyncBaseTransport,
+        site: str | None = None,
+        *,
+        policy: RequestPolicy | None = None,
+    ) -> None:
+        """Wrap ``inner`` with the controller policy for ``site``, or with ``policy``.
 
         Args:
             inner: The transport that performs the I/O.
-            site: Site the POST allowlist is anchored to.
+            site: Site the controller policy's POST allowlist is anchored to.
+            policy: A pure ``(method, url) -> (allowed, detail)`` policy to use instead.
+
+        Raises:
+            ValueError: Neither or both of ``site`` and ``policy`` were given.
         """
         self._inner = inner
-        self._site = site
+        if site is not None and policy is None:
+            self._policy: RequestPolicy = functools.partial(request_allowed, site=site)
+            self._login_exempt = True
+        elif policy is not None and site is None:
+            self._policy = policy
+            self._login_exempt = False
+        else:
+            raise ValueError('ReadOnlyAsyncTransport takes exactly one of site= or policy=')
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         """Check the request against the policy, then forward it to the inner transport.
@@ -385,10 +458,9 @@ class ReadOnlyAsyncTransport(httpx.AsyncBaseTransport):
         """
         verb = request.method.upper()
         raw = request.url.raw_path.decode('ascii', errors='replace')
-        path_only, _, query = raw.partition('?')
-        if verb == 'POST' and not query and _LOGIN_PATH_RE.match(path_only):
+        if self._login_exempt and is_login_request(verb, raw):
             return await self._inner.handle_async_request(request)
-        allowed, detail = request_allowed(verb, raw, self._site)
+        allowed, detail = self._policy(verb, raw)
         if not allowed:
             raise ReadOnlyViolation(detail)
         audit_request(verb, detail)

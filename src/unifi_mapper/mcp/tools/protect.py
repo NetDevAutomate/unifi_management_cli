@@ -2,6 +2,11 @@
 
 These wrappers handle the lifecycle of the Protect client connection
 and provide a consistent async interface for MCP tool execution.
+
+Each call opens its own ``UniFiProtectClient(config, read_only=True)``, whose
+``ReadOnlyProtectApiClient`` sends GET and HEAD (to the opt-in request audit) and the
+session login, and refuses anything else before any I/O. A refused write propagates, so
+the runner reports ``READ_ONLY_VIOLATION``; other failures still return ``{'error': ...}``.
 """
 
 from __future__ import annotations
@@ -9,6 +14,7 @@ from __future__ import annotations
 from functools import lru_cache
 from loguru import logger
 from typing import Any
+from unifi_mapper.core.utils.readonly import ReadOnlyViolation
 from unifi_mapper.protect.client import UniFiProtectClient
 from unifi_mapper.protect.config import ProtectConfig
 
@@ -27,7 +33,7 @@ async def get_cameras() -> list[dict[str, Any]]:
     """
     try:
         config = _get_config()
-        async with UniFiProtectClient(config) as client:
+        async with UniFiProtectClient(config, read_only=True) as client:
             cameras = client.cameras
             return [
                 {
@@ -40,6 +46,8 @@ async def get_cameras() -> list[dict[str, Any]]:
                 }
                 for cam in cameras.values()
             ]
+    except ReadOnlyViolation:
+        raise
     except Exception as e:
         logger.error(f'Failed to get cameras: {e}')
         return [{'error': str(e)}]
@@ -53,7 +61,7 @@ async def get_nvr_info() -> dict[str, Any]:
     """
     try:
         config = _get_config()
-        async with UniFiProtectClient(config) as client:
+        async with UniFiProtectClient(config, read_only=True) as client:
             nvr = client.nvr
             if nvr is None:
                 return {'error': 'NVR not available'}
@@ -65,6 +73,8 @@ async def get_nvr_info() -> dict[str, Any]:
                 'uptime': getattr(nvr, 'uptime', None),
                 'is_connected': getattr(nvr, 'is_connected', False),
             }
+    except ReadOnlyViolation:
+        raise
     except Exception as e:
         logger.error(f'Failed to get NVR info: {e}')
         return {'error': str(e)}
@@ -78,7 +88,7 @@ async def get_sensors() -> list[dict[str, Any]]:
     """
     try:
         config = _get_config()
-        async with UniFiProtectClient(config) as client:
+        async with UniFiProtectClient(config, read_only=True) as client:
             sensors = client.sensors
             return [
                 {
@@ -91,6 +101,8 @@ async def get_sensors() -> list[dict[str, Any]]:
                 }
                 for sensor in sensors.values()
             ]
+    except ReadOnlyViolation:
+        raise
     except Exception as e:
         logger.error(f'Failed to get sensors: {e}')
         return [{'error': str(e)}]
@@ -104,7 +116,7 @@ async def get_lights() -> list[dict[str, Any]]:
     """
     try:
         config = _get_config()
-        async with UniFiProtectClient(config) as client:
+        async with UniFiProtectClient(config, read_only=True) as client:
             lights = client.lights
             return [
                 {
@@ -116,6 +128,8 @@ async def get_lights() -> list[dict[str, Any]]:
                 }
                 for light in lights.values()
             ]
+    except ReadOnlyViolation:
+        raise
     except Exception as e:
         logger.error(f'Failed to get lights: {e}')
         return [{'error': str(e)}]
@@ -129,7 +143,7 @@ async def get_doorbells() -> list[dict[str, Any]]:
     """
     try:
         config = _get_config()
-        async with UniFiProtectClient(config) as client:
+        async with UniFiProtectClient(config, read_only=True) as client:
             cameras = client.cameras
             doorbells = [
                 cam
@@ -146,6 +160,8 @@ async def get_doorbells() -> list[dict[str, Any]]:
                 }
                 for db in doorbells
             ]
+    except ReadOnlyViolation:
+        raise
     except Exception as e:
         logger.error(f'Failed to get doorbells: {e}')
         return [{'error': str(e)}]

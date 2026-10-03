@@ -73,13 +73,19 @@ class UniFiNetworkClient:
         ...         print(f'{device.name}: {device.state}')
     """
 
-    def __init__(self, config: NetworkConfig) -> None:
+    def __init__(
+        self, config: NetworkConfig, *, transport: httpx.AsyncBaseTransport | None = None
+    ) -> None:
         """Initialize the Network API client.
 
         Args:
             config: Network API configuration.
+            transport: Optional httpx transport (e.g. a read-only guard); default httpx's.
+                httpx ignores ``verify`` when a transport is given, so a custom transport
+                must carry its own TLS setting (``config.verify_ssl``).
         """
         self.config = config
+        self._transport = transport
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
 
@@ -103,6 +109,7 @@ class UniFiNetworkClient:
                 headers=self.config.get_headers(),
                 verify=self.config.verify_ssl,
                 timeout=httpx.Timeout(self.config.timeout),
+                transport=self._transport,
             )
 
             if self.config.debug:

@@ -3,6 +3,10 @@
 This module provides an async wrapper around the uiprotect library's
 ProtectApiClient, adding connection management, error handling, and
 convenient device access methods.
+
+``UniFiProtectClient(config, read_only=True)``, which every MCP ``protect`` tool uses,
+builds :class:`ReadOnlyProtectApiClient`: it allows GET and HEAD (audited) plus the session
+login, and refuses anything else before any I/O.
 """
 
 from __future__ import annotations
@@ -12,13 +16,20 @@ from contextlib import asynccontextmanager
 from enum import Enum
 from loguru import logger  # type: ignore[import-untyped]
 from types import TracebackType
-from typing import TYPE_CHECKING, AsyncIterator, Callable
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable
 from uiprotect import ProtectApiClient
 from uiprotect.data import Bootstrap
+from unifi_mapper.core.utils.readonly import (
+    ReadOnlyViolation,
+    audit_request,
+    get_only_request_allowed,
+    is_login_request,
+)
 from unifi_mapper.protect.config import ProtectConfig
 
 
 if TYPE_CHECKING:
+    from aiohttp import ClientResponse
     from uiprotect.data import NVR, AiPort, Camera, Chime, Doorlock, Light, Sensor
 
 
@@ -72,6 +83,65 @@ class AuthenticationError(ProtectClientError):
     pass
 
 
+class ReadOnlyProtectApiClient(ProtectApiClient):
+    """A ``ProtectApiClient`` that refuses every request that could change Protect state.
+
+    uiprotect 8.1.1 sends every REST call (``api_request*``, ``get_bootstrap``,
+    ``authenticate``) through ``BaseApiClient.request``, so this override sees them all:
+
+    * GET and HEAD pass :func:`get_only_request_allowed`, go to the opt-in request audit
+      (``{t, method, path}``: no host, query or body) and are sent.
+    * The session login (``POST /api/auth/login``, :func:`is_login_request`) is sent
+      unaudited, as the controller guards treat their own login.
+    * Anything else raises :class:`ReadOnlyViolation` before any I/O, the login included.
+
+    Not covered, because they bypass ``request``: the websocket subscriptions
+    (``subscribe_*websocket``, through ``session.ws_connect``) and the private
+    ``_get_versions_from_api`` (a direct ``session.get``; nothing in uiprotect 8.1.1 calls
+    it). No MCP tool uses either. The dependency pin (``uiprotect>=8.1.1,<9``) bounds the
+    seam, and a test checks this signature still matches uiprotect's.
+    """
+
+    async def request(
+        self,
+        method: str,
+        url: str,
+        require_auth: bool = False,
+        auto_close: bool = True,
+        public_api: bool = False,
+        **kwargs: Any,
+    ) -> ClientResponse:
+        """Check one request against the read-only policy, then send it through uiprotect.
+
+        Args:
+            method: HTTP method, any case.
+            url: Request path relative to the console (``/proxy/protect/api/...``).
+            require_auth: Passed through to uiprotect.
+            auto_close: Passed through to uiprotect.
+            public_api: Passed through to uiprotect.
+            **kwargs: Passed through to uiprotect (``json``, ``params``, ``headers``, ...).
+
+        Returns:
+            uiprotect's response.
+
+        Raises:
+            ReadOnlyViolation: The request could change Protect state; nothing was sent.
+        """
+        if not is_login_request(method, url):
+            allowed, detail = get_only_request_allowed(method, url)
+            if not allowed:
+                raise ReadOnlyViolation(detail)
+            audit_request(method.upper(), detail)
+        return await super().request(
+            method,
+            url,
+            require_auth=require_auth,
+            auto_close=auto_close,
+            public_api=public_api,
+            **kwargs,
+        )
+
+
 class UniFiProtectClient:
     """Async wrapper for UniFi Protect API client.
 
@@ -91,13 +161,16 @@ class UniFiProtectClient:
         ...         print(f'{camera.name}: {camera.state}')
     """
 
-    def __init__(self, config: ProtectConfig) -> None:
+    def __init__(self, config: ProtectConfig, *, read_only: bool = False) -> None:
         """Initialize the UniFi Protect client.
 
         Args:
             config: Configuration containing connection parameters.
+            read_only: Build a :class:`ReadOnlyProtectApiClient`, which refuses writes and
+                audits reads; the MCP tools always pass True.
         """
         self._config = config
+        self._read_only = read_only
         self._client: ProtectApiClient | None = None
         self._state = ConnectionState.DISCONNECTED
         self._bootstrap: Bootstrap | None = None
@@ -262,7 +335,9 @@ class UniFiProtectClient:
         logger.info(f'Connecting to Protect controller at {self._config.host}')
 
         try:
-            self._client = ProtectApiClient(**self._config.to_client_kwargs())
+            # ProtectApiClient is looked up at call time, so tests can patch it.
+            api_class = ReadOnlyProtectApiClient if self._read_only else ProtectApiClient
+            self._client = api_class(**self._config.to_client_kwargs())
             self._bootstrap = await self._client.get_bootstrap()
             self._state = ConnectionState.CONNECTED
 
@@ -273,6 +348,10 @@ class UniFiProtectClient:
             )
             return True
 
+        except ReadOnlyViolation:
+            # A refused write is a bug in the caller, not a connection failure: keep its type.
+            self._state = ConnectionState.ERROR
+            raise
         except Exception as e:
             self._state = ConnectionState.ERROR
             error_msg = str(e).lower()
@@ -339,6 +418,8 @@ class UniFiProtectClient:
             logger.debug(
                 f'Bootstrap refreshed: {len(self.cameras)} cameras, {len(self.ai_ports)} AI ports'
             )
+        except ReadOnlyViolation:
+            raise
         except Exception as e:
             logger.error(f'Failed to refresh bootstrap: {e}')
             raise ConnectionError(f'Failed to refresh data: {e}', original_error=e)
