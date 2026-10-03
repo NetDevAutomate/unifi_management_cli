@@ -48,9 +48,10 @@ UNIFI_CONSOLE_API_TOKEN=your_api_token   # Recommended authentication
 UNIFI_VERIFY_SSL=false                   # false for self-signed certificates
 UNIFI_TIMEOUT=10                         # API timeout in seconds
 
-# SSH access (for latency matrix and bandwidth tests)
+# Gateway SSH, for the latency matrix and bandwidth tests. Enable SSH in UniFi OS first
+# (Settings > Control Plane > Console); UNIFI_PASSWORD is never used for SSH.
 UNIFI_SSH_USERNAME=root                  # SSH user on UDM (default: root)
-UNIFI_SSH_PASSWORD=your_ssh_password     # SSH password for gateway
+UNIFI_SSH_PASSWORD=your_ssh_password     # required: the SSH password set in UniFi OS
 ```
 
 ## Usage
@@ -148,7 +149,7 @@ unifi-mapper diagnose bandwidth 192.0.2.50 --reverse --parallel 4
 
 The `diagnose all` runner checks: link quality, capacity, port profiles, MTU, SFP, radio, firmware skew, DHCP pool, PoE budget, client density, and uplink redundancy.
 
-Latency matrix and bandwidth tests require `UNIFI_SSH_USERNAME` and `UNIFI_SSH_PASSWORD` in your config.
+Latency matrix and bandwidth tests SSH to the gateway, so they need SSH enabled in UniFi OS (Settings > Control Plane > Console) and `UNIFI_SSH_PASSWORD` in your config, plus `UNIFI_SSH_USERNAME` if the SSH user isn't `root`. Without `UNIFI_SSH_PASSWORD` both stop before connecting to anything: `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH.
 
 ### Radio Management
 

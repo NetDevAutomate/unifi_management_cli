@@ -909,7 +909,7 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 | `client_density.py` | `analyze_client_density` | Wireless client density analysis per AP |
 | `config_drift.py` | `snapshot_config`, `detect_drift` | Configuration drift detection with baseline snapshot and diff |
 | `dhcp_pool.py` | `check_dhcp_pool_utilization` | DHCP pool utilization and exhaustion analysis |
-| `gateway_ssh.py` | `require_ip`, `require_bounded_int` | Checks every address and number before it goes on a command line run on the gateway over SSH (latency matrix, bandwidth test) |
+| `gateway_ssh.py` | `require_ip`, `require_bounded_int`, `ssh_login` | Checks every address and number before it goes on a command line run on the gateway over SSH, and reads the SSH login from `UNIFI_SSH_*` only (latency matrix, bandwidth test) |
 | `latency_matrix.py` | `run_latency_matrix` | Gateway-centric ping matrix via SSH across all device and client IPs |
 | `link_error_tracking.py` | `snapshot_link_errors`, `compare_link_errors` | Link error rate tracking with baseline deltas for active degradation detection |
 | `neighbour_scan.py` | `scan_neighbours`, `get_cached_neighbours` | RF neighbour AP scanning for external network detection per channel |

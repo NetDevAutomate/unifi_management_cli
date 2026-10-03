@@ -9,11 +9,10 @@ invalid target is refused before anything connects.
 import asyncio
 import asyncssh
 import json
-import os
 import re
 import shlex
 from datetime import datetime
-from unifi_mapper.analysis.gateway_ssh import require_bounded_int, require_ip
+from unifi_mapper.analysis.gateway_ssh import require_bounded_int, require_ip, ssh_login
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
@@ -74,8 +73,9 @@ async def run_bandwidth_test(
 ) -> dict:
     """Run iperf3 from UDM to a target device.
 
-    Requires iperf3 installed on UDM (available by default on UniFi OS)
-    and an iperf3 server running on the target.
+    Requires iperf3 installed on UDM (available by default on UniFi OS),
+    an iperf3 server running on the target, and ``UNIFI_SSH_PASSWORD``
+    (``UNIFI_SSH_USERNAME`` defaults to root).
 
     Args:
         target_ip: IPv4 or IPv6 address of the device running iperf3 -s
@@ -87,13 +87,12 @@ async def run_bandwidth_test(
         Bandwidth test results with throughput metrics
 
     Raises:
-        ToolError: If an argument is invalid (before anything connects), or SSH,
-            iperf3 or the route to the target fails
+        ToolError: If an argument is invalid or UNIFI_SSH_PASSWORD is unset (both
+            before anything connects), or SSH, iperf3 or the route to the target fails
     """
     target_ip, duration, parallel = check_bandwidth_args(target_ip, duration, parallel)
     creds = Credentials.from_env()
-    ssh_user = os.environ.get('UNIFI_SSH_USERNAME', 'root')
-    ssh_pass = os.environ.get('UNIFI_SSH_PASSWORD') or creds.password
+    ssh_user, ssh_pass = ssh_login()  # before connecting: UNIFI_PASSWORD is never tried
 
     cmd = _iperf3_command(target_ip, duration, parallel, reverse)
 

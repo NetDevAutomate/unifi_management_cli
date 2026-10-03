@@ -3,11 +3,49 @@
 ``diagnose latency-matrix`` and ``diagnose bandwidth`` run ``ping`` and ``iperf3`` on the
 gateway, normally as root, with addresses the controller reports or the user types. Every
 value is checked here before it is interpolated, and the command line is shell-quoted as
-well (``shlex.join``), so no value can add a shell command of its own.
+well (``shlex.join``), so no value can add a shell command of its own. The SSH login
+(``ssh_login``) comes only from ``UNIFI_SSH_USERNAME`` and ``UNIFI_SSH_PASSWORD``.
 """
 
 import ipaddress
+import os
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+
+
+DEFAULT_SSH_USERNAME = 'root'
+SSH_PASSWORD_MISSING = (
+    'UNIFI_SSH_PASSWORD is not set. The gateway SSH login has its own password; '
+    'UNIFI_PASSWORD (the UniFi OS login) is never sent over SSH'
+)
+SSH_PASSWORD_SUGGESTION = (
+    'Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD '
+    'to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root'
+)
+
+
+def ssh_login() -> tuple[str, str]:
+    """Return the username and password for SSH to the gateway.
+
+    The password comes only from ``UNIFI_SSH_PASSWORD``. ``UNIFI_PASSWORD`` is the UniFi OS
+    login, not the console's SSH password, so sending it to root SSH only fails and leaves
+    failed root logins on the gateway. The username is ``UNIFI_SSH_USERNAME``, default
+    ``root``. Empty values count as unset.
+
+    Returns:
+        ``(username, password)``.
+
+    Raises:
+        ToolError: ``CONFIG_MISSING`` if ``UNIFI_SSH_PASSWORD`` is unset or empty. Call this
+            before connecting to anything.
+    """
+    password = os.environ.get('UNIFI_SSH_PASSWORD')
+    if not password:
+        raise ToolError(
+            message=SSH_PASSWORD_MISSING,
+            error_code=ErrorCodes.CONFIG_MISSING,
+            suggestion=SSH_PASSWORD_SUGGESTION,
+        )
+    return os.environ.get('UNIFI_SSH_USERNAME') or DEFAULT_SSH_USERNAME, password
 
 
 def require_ip(value: object) -> str:

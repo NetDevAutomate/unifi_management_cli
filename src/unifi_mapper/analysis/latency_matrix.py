@@ -12,7 +12,7 @@ import asyncssh
 import re
 import shlex
 from datetime import datetime
-from unifi_mapper.analysis.gateway_ssh import require_bounded_int, require_ip
+from unifi_mapper.analysis.gateway_ssh import require_bounded_int, require_ip, ssh_login
 from unifi_mapper.core.models import LatencyMatrixReport, LatencyResult, LatencySkippedTarget
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.client import UniFiClient
@@ -53,12 +53,14 @@ async def run_latency_matrix(
         ``skipped_targets``.
 
     Raises:
-        ToolError: If an argument is out of range, no target has a valid IP,
-            or SSH or API connection fails
+        ToolError: If an argument is out of range or UNIFI_SSH_PASSWORD is unset
+            (both before any request), no target has a valid IP, or SSH or API
+            connection fails
     """
     ping_count = require_bounded_int('ping count', ping_count, *PING_COUNT_RANGE)
     timeout = require_bounded_int('ping timeout (seconds)', timeout, *PING_TIMEOUT_RANGE)
     creds = Credentials.from_env()
+    login = ssh_login()  # before any request: without UNIFI_SSH_PASSWORD nothing connects
 
     # Gather target IPs from API
     async with UniFiClient() as client:
@@ -85,7 +87,7 @@ async def run_latency_matrix(
         )
 
     # SSH to UDM and ping all targets
-    results = await _ping_targets_via_ssh(creds, targets, ping_count, timeout)
+    results = await _ping_targets_via_ssh(creds, login, targets, ping_count, timeout)
 
     reachable = [r for r in results if r.reachable]
     unreachable = [r for r in results if not r.reachable]
@@ -165,16 +167,13 @@ def _split_targets(targets: list[dict]) -> tuple[list[dict], list[LatencySkipped
 
 async def _ping_targets_via_ssh(
     creds: Credentials,
+    login: tuple[str, str],
     targets: list[dict],
     ping_count: int,
     timeout: int,
 ) -> list[LatencyResult]:
-    """SSH to UDM and run ping commands for all targets."""
-    import os
-
-    # UDM SSH uses 'root' with the UniFi OS password (may differ from API creds)
-    ssh_user = os.environ.get('UNIFI_SSH_USERNAME', 'root')
-    ssh_pass = os.environ.get('UNIFI_SSH_PASSWORD') or creds.password
+    """SSH to UDM as ``login`` (from ``ssh_login``) and run ping commands for all targets."""
+    ssh_user, ssh_pass = login
 
     try:
         conn = await asyncssh.connect(
@@ -191,7 +190,7 @@ async def _ping_targets_via_ssh(
             error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
             suggestion=(
                 'Set UNIFI_SSH_USERNAME (default: root) and UNIFI_SSH_PASSWORD in config. '
-                'Ensure SSH is enabled in UniFi OS Settings > System > Advanced.'
+                'Ensure SSH is enabled in UniFi OS (Settings > Control Plane > Console).'
             ),
         )
 
