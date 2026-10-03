@@ -1,7 +1,7 @@
 ---
 title: "The Protect MCP tools are unverified live: no Protect account is configured"
 date: 2026-10-03
-status: open, decision needed
+status: open
 severity: low
 components: [mcp/tools/protect, protect/client]
 found_by: review follow-ups live checks at 7ef13c2 (L4)
@@ -32,20 +32,65 @@ and there was no `READ_ONLY_VIOLATION`. The second attempt built no Protect fami
 
 ## Impact
 
-The live checks can't pass the 10 Protect cases. The refused logins weren't writes and every
-audit holds 0 violations, but repeated failed admin logins can lock or flag the account. It
-doesn't break fresh clones or CI.
+Until a Protect account is configured, the Protect tools can't be verified live. The
+refused logins weren't writes and every audit holds 0 violations, but repeated failed admin
+logins can lock or flag the account. It doesn't break fresh clones or CI.
 
-## Decision needed
+## Decision (2026-10-03)
 
-Which account Protect should use for live verification:
+Option (b), taken by the review orchestrator on the user's behalf for the review follow-ups
+branch: verify the Protect guard offline only, as the plan's baseline did.
 
-- (b, recommended) None on this branch: accept offline-only verification of the Protect
-  guard, as the plan's baseline did. The 10 live Protect cases then expect
-  `CONFIG_MISSING` with 0 requests.
-- (a) A dedicated local, view-only Protect account, set in `PROTECT_*`, so the 10 cases run
-  read-only.
+- The live checks expect each of the 10 Protect cases (five tools on the discovery and the
+  direct surface) to return `CONFIG_MISSING` with zero requests, and count exactly that as
+  a pass. Any request, login or other error code fails the case.
+- `PROTECT_*` is never derived from the controller account, and the live harness makes no
+  Protect login at all. The harness (git-ignored) refuses to build `PROTECT_*` itself and
+  asserts, before any request, that nothing it exports starts with `PROTECT_`.
 
-Either way, `PROTECT_*` must never again be derived from the controller account; the review
-follow-ups' live harness (git-ignored) now refuses to. Also check the console's security log
-for a lockout or alert around 04:52–04:53Z on 2026-10-03.
+Live verification stays open as a user action, the recipe below. It doesn't block a merge.
+
+## Security log check (2026-10-03)
+
+A read-only check of the console looked for traces of the refused logins. It used
+`UNIFI_CONSOLE_API_TOKEN` only (a token login, so no password login was possible), behind
+the read-only guard: 9 audited requests (7 allowlisted system-log query POSTs and 2 GETs),
+0 violations.
+
+- The Network application's v2 system log (`admin-activity` and `device-alert`) has no entry
+  between 04:40 and 05:10Z. The query returns data otherwise: 252 and 157 entries in the 7
+  days before, the newest at 02:04Z and 02:15Z. No failed-login, lockout, blocked-IP or alert
+  entry was found.
+- The refused logins went to UniFi OS (`/api/auth/login`), which the Network application's
+  log doesn't record, and no allowlisted endpoint reads the UniFi OS security log. Check the
+  console's own notifications and email (UniFi OS, Admins & Users) for a lockout or alert.
+- The controller family still answers normally on its token: `stat/health` reports all five
+  subsystems `ok` and `stat/device-basic` lists 24 devices.
+
+Evidence: `.kiro/review-followups/iter2/security-log/result.json` (git-ignored).
+
+## Recipe: verify Protect live with a view-only account (user action)
+
+1. In UniFi OS, under Admins & Users, add a local user restricted to local access, with the
+   Protect role "View Only" and no Network or other application role. Don't reuse the
+   controller admin.
+2. Add the account to the env file the MCP client loads (its `UNIFI_CONFIG`):
+
+   ```bash
+   PROTECT_HOST=<console address, as in UNIFI_URL>
+   PROTECT_USERNAME=<the view-only user>
+   PROTECT_PASSWORD=<its password>
+   PROTECT_VERIFY_SSL=<true or false, as UNIFI_VERIFY_SSL>
+   PROTECT_STORE_SESSIONS=false   # optional: keep no session file on disk
+   ```
+
+3. Check readiness (key names only, no request):
+   `UNIFI_CONFIG=<file> uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli
+   unifi-mcp --check` must report `protect` as `ready: true`.
+4. Start the server with `UNIFI_MCP_REQUEST_AUDIT=<audit.jsonl>` and run the 10 cases: on
+   the `discovery` surface, `execute_tool` with `params: {}` and each of `get_cameras`,
+   `get_nvr_info`, `get_sensors`, `get_lights` and `get_doorbells`; then, with
+   `UNIFI_MCP_TOOL_SURFACE=direct`, the same five tools.
+5. Pass: every result is data with no `error` and no `READ_ONLY_VIOLATION`, and the audit
+   file holds only GET and HEAD lines under `/proxy/protect/` (the session login is sent but
+   not recorded). Then mark this issue resolved with that evidence.

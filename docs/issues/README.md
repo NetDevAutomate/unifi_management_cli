@@ -44,6 +44,7 @@ the reasoning stays next to the code it explains.
 | [031](031-acl-rules-path-not-served.md) | `get_acl_rules` gets a 404: the client's `/acls` path isn't served by Network 10.6 | resolved (`fb4ff9e`) |
 | [032](032-dns-policies-path-not-served.md) | `get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served | resolved (`fb4ff9e`) |
 | [033](033-client-access-type-default-rejected.md) | `get_clients` returns no clients: `access.type: DEFAULT` fails validation | resolved (`1f79d47`) |
-| [034](034-protect-has-no-live-account.md) | The Protect MCP tools are unverified live: no Protect account is configured | open, decision needed |
+| [034](034-protect-has-no-live-account.md) | The Protect MCP tools are unverified live: no Protect account is configured | open |
 | [035](035-device-statistics-and-port-action-paths.md) | The Integration API client's device-statistics and port-action paths aren't served | open |
 | [036](036-integration-api-models-drift-from-the-reference.md) | Integration API models disagree with the v10.6 reference, so some fields are lost | open |
+| [037](037-launch-config-network-family-incomplete.md) | With the legacy config file, the six network_api tools return CONFIG_MISSING | open, decision needed |
