@@ -3673,7 +3673,9 @@ def analyze_link_errors(
         try:
             devices = asyncio.run(fetch_devices())
         except Exception as e:  # noqa: BLE001 - any read failure ends the command cleanly
-            _fail(f'Error: {e}')
+            from .core.utils.redact import redact_text
+
+            _fail(f'Error: {redact_text(e)}')
         if snapshot:
             console.print('📸 [bold]Link Error Baseline Snapshot[/bold]\n')
             target = Path(baseline) if baseline else default_link_error_baseline_path()

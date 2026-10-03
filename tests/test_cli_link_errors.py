@@ -92,6 +92,23 @@ def test_record_writes_only_the_history(controller):
     assert 'holds 0 days' in _plain(result)  # the window the file actually holds
 
 
+@pytest.mark.parametrize('flag', ['--snapshot', '--record'])
+def test_a_read_failure_is_reported_redacted(controller, monkeypatch, flag):
+    secret = 'FAKE-LINK-ERRORS-SECRET-MUST-NOT-APPEAR'  # pragma: allowlist secret
+
+    async def _boom() -> list[dict[str, Any]]:
+        raise RuntimeError(f'controller said api_key={secret} was rejected')
+
+    monkeypatch.setattr(link_error_tracking, 'fetch_devices', _boom)
+    result = runner.invoke(app, ['analyze', 'link-errors', flag])
+
+    # Regression (code-review F11): this path printed the exception text unredacted.
+    assert result.exit_code == 1
+    assert secret not in result.output
+    assert 'api_key=***redacted***' in _plain(result)
+    assert _state_files() == set()
+
+
 def test_snapshot_and_record_share_one_device_read(controller):
     result = runner.invoke(app, ['analyze', 'link-errors', '--snapshot', '--record'])
 
