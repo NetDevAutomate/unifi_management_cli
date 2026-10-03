@@ -41,3 +41,7 @@ the reasoning stays next to the code it explains.
 | [028](028-tool-docstrings-name-missing-tools.md) | Tool docstrings and `path_analysis` recommendations name tools that don't exist | open |
 | [029](029-async-guard-judges-a-different-path.md) | The async read-only guard judges and audits a different path when the raw path starts with `//` | open |
 | [030](030-raw-portconf-id-read-as-a-profile-name.md) | `vlan_diagnostics` and `mac_analyzer` read a raw `portconf_id` as if it were a profile name | open, decision needed |
+| [031](031-acl-rules-path-not-served.md) | `get_acl_rules` gets a 404: the client's `/acls` path isn't served by Network 10.6 | open |
+| [032](032-dns-policies-path-not-served.md) | `get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served | open |
+| [033](033-client-access-type-default-rejected.md) | `get_clients` returns no clients: `access.type: DEFAULT` fails validation | open |
+| [034](034-protect-has-no-live-account.md) | The Protect MCP tools are unverified live: no Protect account is configured | open, decision needed |
