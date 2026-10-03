@@ -45,3 +45,5 @@ the reasoning stays next to the code it explains.
 | [032](032-dns-policies-path-not-served.md) | `get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served | resolved |
 | [033](033-client-access-type-default-rejected.md) | `get_clients` returns no clients: `access.type: DEFAULT` fails validation | resolved |
 | [034](034-protect-has-no-live-account.md) | The Protect MCP tools are unverified live: no Protect account is configured | open, decision needed |
+| [035](035-device-statistics-and-port-action-paths.md) | The Integration API client's device-statistics and port-action paths aren't served | open |
+| [036](036-integration-api-models-drift-from-the-reference.md) | Integration API models disagree with the v10.6 reference, so some fields are lost | open |
