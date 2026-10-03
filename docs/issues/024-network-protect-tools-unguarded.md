@@ -2,6 +2,7 @@
 title: "Network Integration API and Protect MCP tools run without a read-only guard or request audit"
 date: 2026-10-02
 status: resolved
+resolved_by: 5d21cdc
 severity: low
 components: [mcp/tools/network, mcp/tools/protect, network/client, protect/client, core/utils/readonly]
 found_by: MCP uvx standards work (convergence fixer, iteration 1)
