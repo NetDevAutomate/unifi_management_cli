@@ -2,6 +2,7 @@
 title: "Root `--connected-devices`, `--verify-updates` and `--dry-run` are silently dropped before a subcommand"
 date: 2026-10-03
 status: resolved
+resolved_by: 7412365
 severity: medium
 components: [typer_cli]
 found_by: review follow-ups (code-review F11)
