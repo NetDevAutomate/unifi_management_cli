@@ -274,3 +274,28 @@ def test_fixture_switch_is_not_mutated_by_resolution():
     before = copy.deepcopy(device)
     effective_port_settings(device, find_port_entry(device, 5), 5, _profiles(), _networks())
     assert device == before
+
+
+# ---------------------------------------------------------------------------
+# Known divergence outside the port-diagnostics family (code-review F9, issue 026)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason='issue 026: validate_port_profiles prefers the port table over the override',
+)
+def test_validate_port_profiles_uses_the_effective_profile_for_port_5():
+    from unifi_mapper.analysis.port_profile_validation import _profile_id_for_port
+
+    device = fake_switch()
+    port = find_port_entry(device, 5)
+    assert effective_profile_id(device, port, 5) == (PROF_10G, 'override')
+    assert _profile_id_for_port(port, device) == PROF_10G  # today: PROF_AUTO
+
+
+def test_the_module_docstring_names_the_callers_it_does_not_cover():
+    doc = link_settings.__doc__ or ''
+    assert 'issue 026' in doc
+    for module in ('port_profile_validation', 'foreign_bridges', 'uplink_transparency'):
+        assert module in doc

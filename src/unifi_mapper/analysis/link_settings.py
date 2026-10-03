@@ -3,11 +3,17 @@
 A port's configuration can come from a ``port_overrides`` entry on the device or
 be inherited from the profile (``portconf``) its ``port_table`` entry references.
 The override's ``portconf_id`` wins, because that is what the controller pushes
-to the device. Every caller that picks a port's effective profile uses
-:func:`effective_profile_id`: ``ports inspect`` (through
+to the device. Every port-diagnostics caller that picks a port's effective
+profile uses :func:`effective_profile_id`: ``ports inspect`` (through
 :func:`effective_port_settings`), the sibling's ``collect_override``,
 ``summarise_ports`` and ``profile_usage``, and the link-speed and profile-usage
-audits. So no two views can name a different profile for the same port.
+audits. So no two of those views can name a different profile for the same port.
+
+Not yet routed through it (issue 026): ``port_profile_validation`` (behind
+``validate_port_profiles``) prefers the port table's ``portconf_id`` over the
+override, the reverse precedence, and ``foreign_bridges``,
+``uplink_transparency`` and ``vlan_coverage`` read only the port table. They can
+name a different profile for a port that has an override.
 
 Negotiation keys (verified against a live controller's ``rest/portconf`` and
 ``port_overrides``): ``autoneg`` (bool), ``speed`` (Mbps) and ``full_duplex``
