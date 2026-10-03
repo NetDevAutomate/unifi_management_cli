@@ -20,6 +20,7 @@ import time
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, cast
+from unifi_mapper.analysis.link_settings import effective_profile_id
 from unifi_mapper.analysis.vlan_coverage import (
     _as_int,
     _carried_vlans,
@@ -169,9 +170,10 @@ def audit_uplink_transparency_from_data(
             continue
         uplinks_analyzed += 1
 
-        profile = profiles_by_id.get(
-            str(uplink_port.get('portconf_id') or uplink_port.get('port_conf_id') or '')
+        profile_id, _source = effective_profile_id(
+            device, uplink_port, _as_int(uplink_port.get('port_idx'))
         )
+        profile = profiles_by_id.get(profile_id or '')
         effective = _merge_profile_port(uplink_port, profile)
         forward_mode = str(effective.get('forward') or '').lower()
         tagged_mgmt = str(effective.get('tagged_vlan_mgmt') or '').lower()

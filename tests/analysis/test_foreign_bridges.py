@@ -162,3 +162,20 @@ def test_bridge_location_unknown_is_still_reported() -> None:
 
     assert report.bridges_found == 1
     assert report.bridges[0].attached_to == []
+
+
+def test_an_override_trunk_profile_is_the_one_judged() -> None:
+    """Issue 026: the port table says access, but the override the switch runs is a trunk."""
+    switch = _switch(FLEX8, 'Lounge Flex8', [_port(8, 'prof-access', last_mac=EERO)])
+    switch['port_overrides'] = [{'port_idx': 8, 'portconf_id': 'prof-trunk'}]
+    clients = [
+        {'mac': EERO, 'sw_mac': FLEX8, 'sw_port': 8, 'oui': 'eero inc.'},
+        {'mac': 'aa:bb:cc:00:00:02', 'sw_mac': EERO, 'sw_port': 1},
+    ]
+
+    report = detect_foreign_bridges_from_data([switch], clients, [ACCESS, TRUNK])
+
+    assert report.bridges[0].trunk_ports == ['Trunk VLAN 1 Home 1 Gbps']
+    trunk = [x for x in report.findings if 'trunk' in x.message.lower()]
+    assert trunk and trunk[0].severity == 'CRITICAL'
+    assert 'Trunk VLAN 1 Home 1 Gbps' in trunk[0].message

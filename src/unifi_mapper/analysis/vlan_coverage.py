@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, cast
+from unifi_mapper.analysis.link_settings import effective_profile_id
 from unifi_mapper.core.utils.client import UniFiClient
 
 
@@ -79,9 +80,8 @@ def audit_vlan_coverage_from_data(
 
         for port in _port_table(device):
             port_idx = _as_int(port.get('port_idx'))
-            profile = profiles_by_id.get(
-                str(port.get('portconf_id') or port.get('port_conf_id') or '')
-            )
+            profile_id, _source = effective_profile_id(device, port, port_idx)
+            profile = profiles_by_id.get(profile_id or '')
             effective_port = _merge_profile_port(port, profile)
             lldp_entry = lldp_by_port.get(port_idx)
             matched_target = _matching_planned_target(effective_port, lldp_entry, planned_targets)

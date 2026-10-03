@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, cast
+from unifi_mapper.analysis.link_settings import effective_profile_id
 from unifi_mapper.core.utils.client import UniFiClient
 
 
@@ -66,7 +67,7 @@ def validate_port_profiles_from_data(
             ports_analyzed += 1
             port_idx = _as_int(port.get('port_idx'))
             port_name = str(port.get('name') or f'Port {port_idx}')
-            profile_id = _profile_id_for_port(port, device)
+            profile_id, _source = effective_profile_id(device, port, port_idx)
             if not profile_id:
                 continue
             profile = profiles_by_id.get(profile_id)
@@ -182,30 +183,6 @@ def _lldp_ports(device: dict[str, Any]) -> set[int]:
         for entry in entries
         if entry.get('local_port_idx') is not None
     }
-
-
-def _profile_id_for_port(port: dict[str, Any], device: dict[str, Any]) -> str:
-    for key in ('portconf_id', 'port_conf_id', 'profile_id'):
-        value = port.get(key)
-        if value:
-            return str(value)
-
-    port_idx = _as_int(port.get('port_idx'))
-    overrides = device.get('port_overrides')
-    if isinstance(overrides, list):
-        override_values = cast(list[object], overrides)
-        override_items = [
-            cast(dict[str, Any], override)
-            for override in override_values
-            if isinstance(override, dict)
-        ]
-        for override in override_items:
-            if _as_int(override.get('port_idx')) == port_idx:
-                override_value = override.get('portconf_id') or override.get('port_conf_id')
-                if override_value:
-                    return str(override_value)
-
-    return ''
 
 
 def _is_uplink_port(port: dict[str, Any], port_idx: int, lldp_ports: set[int]) -> bool:

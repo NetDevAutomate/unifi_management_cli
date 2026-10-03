@@ -29,6 +29,7 @@ from __future__ import annotations
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, cast
+from unifi_mapper.analysis.link_settings import effective_profile_id
 from unifi_mapper.core.utils.client import UniFiClient
 
 
@@ -150,7 +151,8 @@ def _locate_bridge(
                 continue
             idx = _as_int(port.get('port_idx'))
             attached.append((name, idx))
-            profile = profiles_by_id.get(str(port.get('portconf_id') or ''))
+            profile_id, _source = effective_profile_id(device, port, idx)
+            profile = profiles_by_id.get(profile_id or '')
             if profile and _is_trunk(profile):
                 trunks.append(str(profile.get('name') or ''))
     return attached, trunks

@@ -12,6 +12,7 @@ from tests.fixtures_unifi import (
     PROF_10G,
     PROF_AUTO,
     PROF_TRUNK,
+    PROFILE_10G_NAME,
     SITE,
     SWITCH_NAME,
     FakeSession,
@@ -277,25 +278,81 @@ def test_fixture_switch_is_not_mutated_by_resolution():
 
 
 # ---------------------------------------------------------------------------
-# Known divergence outside the port-diagnostics family (code-review F9, issue 026)
+# Every analysis that picks a port's profile uses the one precedence rule (issue 026)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason='issue 026: validate_port_profiles prefers the port table over the override',
-)
 def test_validate_port_profiles_uses_the_effective_profile_for_port_5():
-    from unifi_mapper.analysis.port_profile_validation import _profile_id_for_port
+    from unifi_mapper.analysis.port_profile_validation import validate_port_profiles_from_data
 
-    device = fake_switch()
-    port = find_port_entry(device, 5)
-    assert effective_profile_id(device, port, 5) == (PROF_10G, 'override')
-    assert _profile_id_for_port(port, device) == PROF_10G  # today: PROF_AUTO
+    profiles = fake_portconf()
+    for profile in profiles:
+        if profile['_id'] in (PROF_10G, PROF_AUTO):
+            profile['stp_edge'] = False  # port 5 is client-only, so each yields a finding
+
+    report = validate_port_profiles_from_data([fake_switch()], profiles)
+
+    port_5 = [finding.profile_name for finding in report.findings if finding.port_idx == 5]
+    assert port_5 == [PROFILE_10G_NAME]  # the override's profile, not the port table's Auto
 
 
-def test_the_module_docstring_names_the_callers_it_does_not_cover():
-    doc = link_settings.__doc__ or ''
-    assert 'issue 026' in doc
-    for module in ('port_profile_validation', 'foreign_bridges', 'uplink_transparency'):
+def test_the_module_docstring_names_every_caller():
+    doc = ' '.join((link_settings.__doc__ or '').split())
+    for module in (
+        'port_profile_validation',
+        'foreign_bridges',
+        'uplink_transparency',
+        'vlan_coverage',
+    ):
         assert module in doc
+    assert 'Not yet routed' not in doc
+    assert 'issue 026' not in doc
+    assert 'issue 030' in doc
+
+
+SRC = Path(__file__).resolve().parents[2] / 'src' / 'unifi_mapper'
+PROFILE_ID_KEYS = frozenset({'portconf_id', 'port_conf_id'})
+# The only modules that may read a profile id themselves, and why.
+READS_A_PROFILE_ID = {
+    'analysis/link_settings.py': 'the precedence rule itself',
+    'port_diagnostics.py': (
+        'collect_override reports the raw override and port-table ids beside the effective one'
+    ),
+    'analysis/mac_analyzer.py': 'issue 030: _is_trunk_port reads a raw id as a profile name',
+    'analysis/vlan_diagnostics.py': 'issue 030: stores an override id as the profile name',
+}
+
+
+def _reads_a_profile_id(tree: ast.AST) -> bool:
+    """``.get('portconf_id', …)``, ``['portconf_id']`` or a literal key list holding it."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            first = node.args[0] if node.args else None
+            if node.func.attr == 'get' and isinstance(first, ast.Constant):
+                if first.value in PROFILE_ID_KEYS:
+                    return True
+        if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
+            if isinstance(node.slice, ast.Constant) and node.slice.value in PROFILE_ID_KEYS:
+                return True
+        if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+            if any(isinstance(e, ast.Constant) and e.value in PROFILE_ID_KEYS for e in node.elts):
+                return True
+    return False
+
+
+def test_only_link_settings_resolves_a_portconf_id():
+    readers = {
+        path.relative_to(SRC).as_posix()
+        for path in sorted(SRC.rglob('*.py'))
+        if _reads_a_profile_id(ast.parse(path.read_text(encoding='utf-8')))
+    }
+    assert readers == set(READS_A_PROFILE_ID), (
+        'route profile lookups through link_settings.effective_profile_id; '
+        f'unexpected: {sorted(readers - set(READS_A_PROFILE_ID))}, '
+        f'no longer reading (drop from the allowlist): {sorted(set(READS_A_PROFILE_ID) - readers)}'
+    )
+    # The scan finds each shape it looks for, so an empty difference means something.
+    assert _reads_a_profile_id(ast.parse("p.get('portconf_id')"))
+    assert _reads_a_profile_id(ast.parse("p['port_conf_id']"))
+    assert _reads_a_profile_id(ast.parse("for k in ('profile_id', 'portconf_id'): pass"))
+    assert not _reads_a_profile_id(ast.parse("payload = {'portconf_id': pid}"))

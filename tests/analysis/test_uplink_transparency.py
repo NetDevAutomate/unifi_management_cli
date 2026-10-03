@@ -459,3 +459,33 @@ def test_no_tagged_vlans_on_site_means_nothing_to_sever() -> None:
 
     assert report.tagged_vlans == []
     assert [f for f in report.findings if f.severity == 'CRITICAL'] == []
+
+
+def test_an_override_trunk_on_the_uplink_passes() -> None:
+    """Issue 026: the port table says access, but the override the switch runs is a trunk."""
+    switch = _switch(portconf_id='prof-access')
+    switch['port_overrides'] = [{'port_idx': 16, 'portconf_id': 'prof-trunk'}]
+
+    report = audit_uplink_transparency_from_data(
+        devices=[switch, _aggregation()],
+        port_profiles=[TRUNK_PROFILE, ACCESS_PROFILE],
+        networks=NETWORKS,
+    )
+
+    assert report.findings == []
+    assert report.validation_passed is True
+
+
+def test_an_override_access_profile_on_the_uplink_is_critical() -> None:
+    """Issue 026, the reverse: a trunk in the port table, an access override on the switch."""
+    switch = _switch(portconf_id='prof-trunk')
+    switch['port_overrides'] = [{'port_idx': 16, 'portconf_id': 'prof-access'}]
+
+    report = audit_uplink_transparency_from_data(
+        devices=[switch, _aggregation()],
+        port_profiles=[TRUNK_PROFILE, ACCESS_PROFILE],
+        networks=NETWORKS,
+    )
+
+    assert [f.severity for f in report.findings] == ['CRITICAL']
+    assert report.findings[0].profile_name == 'Access Port VLAN 1 Home 1Gbps'

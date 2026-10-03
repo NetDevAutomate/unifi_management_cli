@@ -129,3 +129,32 @@ def test_unknown_profile_is_info() -> None:
     assert report.validation_passed is True
     assert report.findings[0].severity == 'INFO'
     assert report.findings[0].category == 'Port Profile'
+
+
+def test_an_override_profile_wins_over_the_port_table() -> None:
+    """Issue 026: judge a port by its override's profile, the one the controller pushes."""
+    report = validate_port_profiles_from_data(
+        devices=[
+            {
+                '_id': 'switch1',
+                'name': 'Switch',
+                'port_overrides': [{'port_idx': 1, 'portconf_id': 'edge-profile'}],
+                'port_table': [
+                    {
+                        'port_idx': 1,
+                        'name': 'Client Port',
+                        'up': True,
+                        'is_uplink': False,
+                        'portconf_id': 'no-edge-profile',
+                    }
+                ],
+                'lldp_table': [],
+            }
+        ],
+        port_profiles=[
+            {'_id': 'no-edge-profile', 'name': 'No Edge', 'stp_edge': False},
+            {'_id': 'edge-profile', 'name': 'Edge', 'stp_edge': True, 'bpdu_guard': True},
+        ],
+    )
+
+    assert [f.category for f in report.findings] == []

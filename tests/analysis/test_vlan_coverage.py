@@ -118,3 +118,43 @@ def test_access_client_ports_are_ignored() -> None:
     assert report.validation_passed is True
     assert report.ports_analyzed == 0
     assert report.findings == []
+
+
+def test_an_override_trunk_profile_carries_the_required_vlans() -> None:
+    """Issue 026: the port table says access, but the override the switch runs is a trunk."""
+    report = audit_vlan_coverage_from_data(
+        devices=[
+            {
+                '_id': 'switch1',
+                'name': 'Office Switch',
+                'type': 'usw',
+                'port_overrides': [{'port_idx': 1, 'portconf_id': 'prof-trunk'}],
+                'port_table': [
+                    {
+                        'port_idx': 1,
+                        'name': 'Uplink',
+                        'up': True,
+                        'is_uplink': True,
+                        'portconf_id': 'prof-access',
+                    }
+                ],
+            }
+        ],
+        required_vlans=[10, 20],
+        port_profiles=[
+            {
+                '_id': 'prof-access',
+                'name': 'Access',
+                'forward': 'native',
+                'tagged_vlan_mgmt': 'block_all',
+            },
+            {'_id': 'prof-trunk', 'name': 'Trunk', 'forward': 'all', 'tagged_vlan_mgmt': 'auto'},
+        ],
+        networks=[
+            {'_id': 'net-10', 'name': 'Ten', 'vlan': 10, 'enabled': True},
+            {'_id': 'net-20', 'name': 'Twenty', 'vlan': 20, 'enabled': True},
+        ],
+    )
+
+    assert report.ports_analyzed == 1
+    assert report.findings == []
