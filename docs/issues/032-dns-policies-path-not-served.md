@@ -2,6 +2,7 @@
 title: "`get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served"
 date: 2026-10-03
 status: resolved
+resolved_by: fb4ff9e
 severity: medium
 components: [network/client]
 found_by: review follow-ups live checks at 7ef13c2 (L2)

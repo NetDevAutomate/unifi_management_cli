@@ -2,6 +2,7 @@
 title: "`get_clients` returns no clients: `access.type: DEFAULT` fails validation"
 date: 2026-10-03
 status: resolved
+resolved_by: 1f79d47
 severity: medium
 components: [network/models]
 found_by: review follow-ups live checks at 7ef13c2 (L3)

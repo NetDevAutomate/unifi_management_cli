@@ -2,6 +2,7 @@
 title: "`get_acl_rules` gets a 404: the client's `/acls` path isn't served by Network 10.6"
 date: 2026-10-03
 status: resolved
+resolved_by: fb4ff9e
 severity: medium
 components: [network/client]
 found_by: review follow-ups live checks at 7ef13c2 (L1)
