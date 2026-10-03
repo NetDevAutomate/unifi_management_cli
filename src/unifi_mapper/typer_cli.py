@@ -1659,6 +1659,13 @@ def diagnose_latency_matrix(
         for name in report.unreachable_devices:
             console.print(f'  ❌ {name}')
 
+    if report.skipped_targets:
+        console.print(
+            f'\n[yellow]Not pinged, no valid IP ({len(report.skipped_targets)}):[/yellow]'
+        )
+        for skipped in report.skipped_targets:
+            console.print(f'  ⚠ {escape(skipped.name)}: {escape(skipped.reason)}')
+
 
 @diagnose_app.command('inter-vlan')
 def diagnose_inter_vlan(
@@ -4183,6 +4190,26 @@ def analyze_neighbours(
 # ─── Bandwidth Test Commands ─────────────────────────────────────────────────
 
 
+def _run_gateway_ssh[T](run: Callable[[], Coroutine[Any, Any, T]]) -> T:
+    """Run one gateway SSH diagnostic; report a failure on stderr as text, never a traceback.
+
+    Typer's traceback prints every frame's local variables, which here include the SSH
+    password. A ``ToolError`` prints with its code and suggestion; anything else, redacted.
+    """
+    import asyncio
+    from .core.utils.errors import ToolError
+    from .core.utils.redact import redact_text
+
+    try:
+        return asyncio.run(run())
+    except ToolError as e:
+        _fail(e)
+    except Exception as e:  # noqa: BLE001 - every failure ends the command cleanly
+        if state.debug:
+            err_console.print_exception(show_locals=False)
+        _fail(f'Error: {redact_text(e)}')
+
+
 @diagnose_app.command('bandwidth')
 def diagnose_bandwidth(
     target: str = typer.Argument(..., help='Target IP running iperf3 -s'),
@@ -4194,12 +4221,22 @@ def diagnose_bandwidth(
     parallel: int = typer.Option(1, '--parallel', '-P', help='Number of parallel streams'),
 ):
     """⚡ Run iperf3 bandwidth test from UDM to a target device."""
-    import asyncio
-    from unifi_mapper.analysis.bandwidth_test import run_bandwidth_test
+    from unifi_mapper.analysis.bandwidth_test import check_bandwidth_args, run_bandwidth_test
+    from unifi_mapper.core.utils.errors import ToolError
+
+    try:  # refuse a bad TARGET or number before reading config or connecting
+        target, duration, parallel = check_bandwidth_args(target, duration, parallel)
+    except ToolError as e:
+        _fail(e)
 
     load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
+
+    def run_test(reverse: bool) -> dict:
+        return _run_gateway_ssh(
+            lambda: run_bandwidth_test(target, duration, reverse=reverse, parallel=parallel)
+        )
 
     console.print('⚡ [bold]Bandwidth Test (iperf3 via SSH)[/bold]\n')
     console.print(f'Target: [cyan]{target}[/cyan]')
@@ -4208,7 +4245,7 @@ def diagnose_bandwidth(
     if bidirectional:
         # Upload
         console.print('▶ Upload (UDM → target)...')
-        up = asyncio.run(run_bandwidth_test(target, duration, reverse=False, parallel=parallel))
+        up = run_test(False)
         if up['status'] == 'OK':
             console.print(
                 f'  [green]{up["throughput_mbps"]} Mbps[/green] ({up["throughput_gbps"]} Gbps)'
@@ -4220,7 +4257,7 @@ def diagnose_bandwidth(
 
         # Download
         console.print('\n▼ Download (target → UDM)...')
-        down = asyncio.run(run_bandwidth_test(target, duration, reverse=True, parallel=parallel))
+        down = run_test(True)
         if down['status'] == 'OK':
             console.print(
                 f'  [green]{down["throughput_mbps"]} Mbps[/green] ({down["throughput_gbps"]} Gbps)'
@@ -4232,9 +4269,7 @@ def diagnose_bandwidth(
     else:
         direction = 'download' if reverse else 'upload'
         console.print(f'{"▼" if reverse else "▶"} Testing {direction}...')
-        result = asyncio.run(
-            run_bandwidth_test(target, duration, reverse=reverse, parallel=parallel)
-        )
+        result = run_test(reverse)
 
         if result['status'] == 'OK':
             console.print(

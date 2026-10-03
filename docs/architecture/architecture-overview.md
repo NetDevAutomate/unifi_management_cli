@@ -903,9 +903,11 @@ graph TD
 
 **Connection pattern**: Both tools use `asyncssh.connect()` with `known_hosts=None` (self-signed UDM certs) and `preferred_auth='keyboard-interactive,password'`. Credentials come from `UNIFI_SSH_USERNAME` / `UNIFI_SSH_PASSWORD` environment variables, falling back to the main controller password.
 
-**Latency matrix** SSHs once, then runs `ping -c {count} -W {timeout} {ip}` for each target IP sequentially, parsing RTT stats from stdout. Returns a `LatencyMatrixReport` with per-target `LatencyResult` entries.
+**Command lines**: every value is checked before it goes on a command line run on the gateway, normally as root (`analysis/gateway_ssh.py`). Each address must parse with `ipaddress` and carry no IPv6 zone id (`ipaddress` accepts any text after `%`); `--count` must be 1–100, `--timeout` 1–60 s, `--duration` 1–86400 s and `--parallel` 1–128 (iperf3's own limits). The line itself is built with `shlex.join`.
 
-**Bandwidth test** SSHs once, runs `iperf3 -c {target} -t {duration} -P {parallel} -J` (JSON output mode), and parses the structured result. Supports `--reverse` for download testing and `--bidir` for bidirectional.
+**Latency matrix** SSHs once, then runs `ping -c {count} -W {timeout} {ip}` for each target IP, ten at a time, parsing RTT stats from stdout. A target whose IP fails the check is not pinged and is listed in `skipped_targets`. Returns a `LatencyMatrixReport` with per-target `LatencyResult` entries.
+
+**Bandwidth test** SSHs once, runs `iperf3 -c {target} -t {duration} -P {parallel} -J` (JSON output mode), and parses the structured result. Supports `--reverse` for download testing and `--bidir` for bidirectional. An invalid TARGET exits 1 before the config is read or anything connects, and every failure prints as text on stderr, never as a traceback: Typer's traceback shows each frame's local variables, which include the SSH password.
 
 ---
 

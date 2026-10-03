@@ -757,6 +757,15 @@ class LatencyResult(BaseModel):
     packet_loss: float = Field(default=100.0, description='Packet loss percentage')
 
 
+class LatencySkippedTarget(BaseModel):
+    """A target left out of the latency matrix because its IP can't go on a command line."""
+
+    ip: str = Field(description='The IP value as the controller reported it')
+    name: str = Field(description='Target device/client name')
+    target_type: str = Field(description='device or client')
+    reason: str = Field(description='Why the target was skipped')
+
+
 class LatencyMatrixReport(BaseModel):
     """Gateway-centric latency matrix report."""
 
@@ -768,3 +777,7 @@ class LatencyMatrixReport(BaseModel):
     ping_count: int = Field(description='Pings sent per target')
     results: list[LatencyResult] = Field(description='Per-target results')
     unreachable_devices: list[str] = Field(description='Names of unreachable targets')
+    skipped_targets: list[LatencySkippedTarget] = Field(
+        default_factory=list,
+        description='Targets not pinged because their IP is not a plain IPv4 or IPv6 address',
+    )

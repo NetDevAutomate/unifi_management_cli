@@ -1,7 +1,9 @@
 """Bandwidth testing via iperf3 over SSH to UDM.
 
 Runs iperf3 between the UDM Pro Max and a target device (e.g., NAS)
-to measure actual throughput on network paths.
+to measure actual throughput on network paths. The target and both numbers
+are checked (``gateway_ssh``) before the iperf3 command line is built, so an
+invalid target is refused before anything connects.
 """
 
 import asyncio
@@ -9,9 +11,16 @@ import asyncssh
 import json
 import os
 import re
+import shlex
 from datetime import datetime
+from unifi_mapper.analysis.gateway_ssh import require_bounded_int, require_ip
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+
+
+# iperf3's own limits: -t up to 86400 seconds, -P up to 128 streams.
+DURATION_RANGE = (1, 86400)
+PARALLEL_RANGE = (1, 128)
 
 
 def _as_text(value: object) -> str:
@@ -23,6 +32,38 @@ def _as_text(value: object) -> str:
     if isinstance(value, bytes):
         return value.decode('utf-8', errors='replace')
     return '' if value is None else str(value)
+
+
+def check_bandwidth_args(
+    target_ip: object, duration: object, parallel: object
+) -> tuple[str, int, int]:
+    """Check the iperf3 arguments, before anything connects.
+
+    Args:
+        target_ip: The target's IPv4 or IPv6 address.
+        duration: Test duration in seconds.
+        parallel: Number of parallel streams.
+
+    Returns:
+        ``(target_ip, duration, parallel)``, unchanged.
+
+    Raises:
+        ToolError: ``INVALID_IP`` for a bad target, ``CONFIG_INVALID`` for a number
+            out of range.
+    """
+    return (
+        require_ip(target_ip),
+        require_bounded_int('duration (seconds)', duration, *DURATION_RANGE),
+        require_bounded_int('parallel streams', parallel, *PARALLEL_RANGE),
+    )
+
+
+def _iperf3_command(target_ip: str, duration: int, parallel: int, reverse: bool) -> str:
+    """Return the iperf3 command line for checked arguments, every argument shell-quoted."""
+    args = ['iperf3', '-c', target_ip, '-t', str(duration), '-P', str(parallel), '-J']
+    if reverse:
+        args.append('-R')
+    return shlex.join(args)
 
 
 async def run_bandwidth_test(
@@ -37,22 +78,24 @@ async def run_bandwidth_test(
     and an iperf3 server running on the target.
 
     Args:
-        target_ip: IP of device running iperf3 -s
-        duration: Test duration in seconds (default 10)
+        target_ip: IPv4 or IPv6 address of the device running iperf3 -s
+        duration: Test duration in seconds (default 10, from 1 to 86400)
         reverse: If True, test download (target→UDM) instead of upload
-        parallel: Number of parallel streams (default 1)
+        parallel: Number of parallel streams (default 1, from 1 to 128)
 
     Returns:
         Bandwidth test results with throughput metrics
+
+    Raises:
+        ToolError: If an argument is invalid (before anything connects), or SSH,
+            iperf3 or the route to the target fails
     """
+    target_ip, duration, parallel = check_bandwidth_args(target_ip, duration, parallel)
     creds = Credentials.from_env()
     ssh_user = os.environ.get('UNIFI_SSH_USERNAME', 'root')
     ssh_pass = os.environ.get('UNIFI_SSH_PASSWORD') or creds.password
 
-    # Build iperf3 command
-    cmd = f'iperf3 -c {target_ip} -t {duration} -P {parallel} -J'
-    if reverse:
-        cmd += ' -R'
+    cmd = _iperf3_command(target_ip, duration, parallel, reverse)
 
     try:
         conn = await asyncssh.connect(
