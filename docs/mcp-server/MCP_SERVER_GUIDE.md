@@ -127,7 +127,11 @@ after 60 s. Other requests keep being answered while it waits.
 **Per-process state.** One server process logs in to the controller once: the lifespan
 installs a shared client (connect timeout 10 s, request timeout 30 s) that every async tool
 borrows, behind a read-only HTTP transport that refuses any request that could change the
-controller. The sync port-diagnostics tools (`diagnose_switch_port`, `get_switch_ports`,
+controller. If the controller answers a borrowed request with 401 (for example an expired
+password session), the shared client logs in again once and the request is retried once; a
+second 401 is reported as an error. Credentials are re-resolved for that login, but the
+config file is read into the process environment at start-up, so a token or password
+changed in the file still needs a server restart (issue 020). The sync port-diagnostics tools (`diagnose_switch_port`, `get_switch_ports`,
 `diff_port_profiles`, `get_client_history`, `get_device_events`, `get_port_counter_rates`,
 `audit_link_speeds`, `audit_port_profile_usage`) keep one guarded login per call.
 `inspect_switch_port` also logs in per call, through its own sync client behind the same

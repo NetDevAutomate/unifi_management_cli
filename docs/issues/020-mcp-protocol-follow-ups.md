@@ -23,6 +23,7 @@ Smaller follow-ups left after the MCP uvx standards work, each independent:
 | — | Record what an **unpinned** `uvx --from <path> unifi-mcp` picks as its interpreter (the docs pin `--python 3.12`, the tested interpreter; `requires-python` is `>=3.12`), and whether the suite passes on it | Plan P13: the workflow's verify step records the result; add it here |
 | — | `unifi-mcp --check` writes loguru DEBUG lines to stderr (for example "optimize_radio_channels has no structured return type") because logging is configured only on the serving path | Found while documenting `--check`; stderr only, the JSON on stdout is unaffected. Configure the stderr sink at `UNIFI_MCP_LOG_LEVEL` before `--check` builds the catalog |
 | — | `python -m unifi_mapper.mcp.server` prints runpy's "found in sys.modules" RuntimeWarning on stderr, because `mcp/__init__.py` imports `server` | Pre-existing; the `unifi-mcp` console script is unaffected. Make `mcp/__init__.py` import lazily (PEP 562) or document the console script as the only entry point |
+| — | A token or password changed in the config file needs a server restart. Since code-review F8 the shared client logs in again after a 401 and re-runs the credential chain, but the chain reads the process environment first, and the config file was loaded into it at start-up | Re-reading the config file on a 401 changes config resolution (plan item 4), so it needs its own change: re-run `resolve_mcp_config` for the controller family before the fresh login, under the holder's lock |
 
 ## Impact
 

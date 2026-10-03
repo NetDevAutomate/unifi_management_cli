@@ -31,6 +31,8 @@ from unifi_mapper.core.utils.readonly import ReadOnlyAsyncTransport
 DEFAULT_TIMEOUT = httpx.Timeout(30.0)
 SHARED_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 DEFAULT_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
+# Lost shared connections kept open for borrowers still using them (oldest closed first).
+MAX_STALE_CLIENTS = 4
 
 
 class UniFiClient:
@@ -65,6 +67,8 @@ class UniFiClient:
         self._is_unifi_os: bool = False
         self._auth_method: str | None = None
         self._borrowed = False
+        self._holder: 'SharedControllerClient | None' = None
+        self._owner: 'UniFiClient | None' = None
 
     async def __aenter__(self) -> 'UniFiClient':
         """Async context manager entry."""
@@ -85,8 +89,9 @@ class UniFiClient:
             return
 
         if not self._explicit_credentials and _shared_holder is not None:
-            owner = await _shared_holder.acquire()
-            self._borrow(owner)
+            holder = _shared_holder
+            owner = await holder.acquire()
+            self._borrow(owner, holder)
             return
 
         # Get credentials if not provided
@@ -133,6 +138,8 @@ class UniFiClient:
             self._session_token = None
             self._auth_method = None
             self._borrowed = False
+            self._holder = None
+            self._owner = None
             return
         if self._client:
             try:
@@ -149,7 +156,7 @@ class UniFiClient:
                 self._session_token = None
                 self._auth_method = None
 
-    def _borrow(self, owner: 'UniFiClient') -> None:
+    def _borrow(self, owner: 'UniFiClient', holder: 'SharedControllerClient') -> None:
         """Share ``owner``'s connected, authenticated state without logging in."""
         self._client = owner._client
         self._credentials = owner._credentials
@@ -159,6 +166,24 @@ class UniFiClient:
         self._session_token = owner._session_token
         self._authenticated = True
         self._borrowed = True
+        self._holder = holder
+        self._owner = owner
+
+    async def _reauthenticate(self) -> None:
+        """Recover from a 401: log in again, or have the shared holder reconnect.
+
+        A borrower never re-authenticates on the shared ``httpx.AsyncClient`` itself
+        (a failed token check there would strip ``X-API-KEY`` for every borrower).
+        It marks the holder's connection stale, so the holder logs in afresh, with
+        freshly resolved credentials, and then borrows the new connection.
+        """
+        if self._borrowed and self._holder is not None and self._owner is not None:
+            holder = self._holder
+            await holder.invalidate(self._owner)
+            self._borrow(await holder.acquire(), holder)
+            return
+        self._authenticated = False
+        await self._authenticate()
 
     async def _detect_unifi_os(self) -> None:
         """Detect if controller is UniFi OS device (UDM/UDR).
@@ -322,8 +347,12 @@ class UniFiClient:
 
         return await self._request('POST', path, json=data, params=params)
 
-    async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        """Make authenticated request to UniFi API."""
+    async def _request(self, method: str, path: str, *, _retry: bool = True, **kwargs: Any) -> Any:
+        """Make authenticated request to UniFi API.
+
+        A 401 triggers one re-authentication (see :meth:`_reauthenticate`) and one
+        retry; a second 401 is reported as an HTTP error instead of recursing.
+        """
         if not self._client:
             raise ToolError(
                 message='Client not connected',
@@ -351,11 +380,10 @@ class UniFiClient:
             return data
 
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
+            if e.response.status_code == 401 and _retry:
                 # Re-authenticate and retry once
-                self._authenticated = False
-                await self._authenticate()
-                return await self._request(method, path, **kwargs)
+                await self._reauthenticate()
+                return await self._request(method, path, _retry=False, **kwargs)
             else:
                 raise ToolError(
                     message=f'HTTP {e.response.status_code}: {e.response.text}',
@@ -721,7 +749,9 @@ class SharedControllerClient:
     The first :meth:`acquire` resolves credentials, builds a :class:`UniFiClient` on
     ``httpx.Timeout(30.0, connect=10.0)`` behind :class:`ReadOnlyAsyncTransport` and
     connects it once, under a lock. A failed connect is not cached, so the next call
-    retries. :meth:`aclose` disconnects.
+    retries. A borrower that gets a 401 calls :meth:`invalidate`, so the next
+    :meth:`acquire` logs in afresh instead of every borrower re-authenticating on
+    the shared connection. :meth:`aclose` disconnects.
     """
 
     def __init__(
@@ -740,12 +770,35 @@ class SharedControllerClient:
         self._credentials = credentials
         self._inner_transport = inner_transport
         self._client: UniFiClient | None = None
+        self._stale: list[UniFiClient] = []
         self._lock: anyio.Lock | None = None
 
     @property
     def is_connected(self) -> bool:
         """Return True once a connection has been established and not closed."""
         return self._client is not None and self._client.is_connected
+
+    async def invalidate(self, client: UniFiClient) -> None:
+        """Mark ``client`` (the connection a borrower got a 401 on) as lost.
+
+        The next :meth:`acquire` logs in afresh, re-resolving credentials unless they
+        were given explicitly, so a rotated token or changed password is picked up
+        without a restart. Only the first of several concurrent borrowers that saw
+        the same 401 has an effect. The lost connection is closed in :meth:`aclose`,
+        not now, because other borrowers may still be using it.
+
+        Args:
+            client: The owner client the borrower was using.
+        """
+        if self._lock is None:
+            self._lock = anyio.Lock()
+        async with self._lock:
+            if self._client is client:
+                self._client = None
+                self._stale.append(client)
+                logger.info('Shared controller session lost; reconnecting on next use')
+            while len(self._stale) > MAX_STALE_CLIENTS:  # bound sockets kept for borrowers
+                await self._stale.pop(0).disconnect()
 
     async def acquire(self) -> UniFiClient:
         """Return the connected shared client, connecting it on first use.
@@ -758,9 +811,9 @@ class SharedControllerClient:
         async with self._lock:
             if self._client is not None and self._client.is_connected:
                 return self._client
-            if self._client is not None:  # lost its session: close it before reconnecting
-                stale, self._client = self._client, None
-                await stale.disconnect()
+            if self._client is not None:  # lost its session: retire it, close it in aclose()
+                self._stale.append(self._client)
+                self._client = None
             credentials = self._credentials or await get_credentials()
             inner = self._inner_transport or httpx.AsyncHTTPTransport(
                 verify=credentials.verify_ssl, limits=DEFAULT_LIMITS
@@ -779,10 +832,11 @@ class SharedControllerClient:
             return client
 
     async def aclose(self) -> None:
-        """Disconnect the shared client (logging out a password session)."""
+        """Disconnect the shared client and any lost ones (logging out password sessions)."""
         client, self._client = self._client, None
-        if client is not None:
-            await client.disconnect()
+        stale, self._stale = self._stale, []
+        for old in [*stale, *([client] if client is not None else [])]:
+            await old.disconnect()
 
 
 _shared_holder: SharedControllerClient | None = None
