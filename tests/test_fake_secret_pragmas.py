@@ -1,9 +1,10 @@
 """House rule (plan §0.4): a fake credential in a test carries ``# pragma: allowlist secret``.
 
 Code-review F9 found eleven dict entries that mapped a credential key (a console API token,
-say) to a fake value without the pragma. This scan covers that shape: a quoted credential-named key mapped to a
-string literal of four or more characters. Values that are deliberately not secrets (the
-redaction tests check that ``'true'`` survives masking) are listed in ``NOT_SECRETS``.
+say) to a fake value without the pragma. This scan covers that shape: a quoted credential-named
+key mapped to a string literal of four or more characters. Values that are deliberately not
+secrets (the redaction tests check that ``'true'`` survives masking) are listed in
+``NOT_SECRETS``.
 """
 
 import re
