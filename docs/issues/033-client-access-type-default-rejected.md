@@ -61,3 +61,10 @@ audit on): 98 clients returned (31 wired, 67 wireless), every `access.type` the 
 member, and no other `ClientInfo` field rejected a live value; 11 audited GETs (the site
 lookup and the six network tools), 0 violations. Evidence:
 `.kiro/review-followups/iter2/network-api/f16-wip/result.json` (git-ignored).
+
+Follow-up: `ClientInfo.type` had the same failure mode. Ubiquiti's reference documents
+`TELEPORT` clients, which `ClientType` (`WIRED`, `WIRELESS`, `VPN`) would have rejected, again
+emptying the list. It got the same treatment in the commit that adds this note: `TELEPORT`
+joins the enum, and an unknown type is kept as its string
+(`tests/network/test_models.py::TestClientConnectionType` and
+`test_get_clients_keeps_teleport_and_unknown_connection_types`).

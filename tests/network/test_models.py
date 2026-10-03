@@ -245,6 +245,26 @@ class TestClientAccess:
         assert client.is_guest is True
 
 
+class TestClientConnectionType:
+    """The connection types Network 10.6 documents (TELEPORT included), and unknown ones."""
+
+    def test_teleport_type_validates(self) -> None:
+        """Ubiquiti's v10.6.102 reference lists WIRED, WIRELESS, VPN and TELEPORT clients."""
+        client = ClientInfo.model_validate({'id': 'c-1', 'type': 'TELEPORT'})
+        assert client.type is ClientType.TELEPORT
+
+    def test_unknown_type_is_kept_as_sent(self) -> None:
+        """A type this model doesn't know is kept as its string instead of failing."""
+        client = ClientInfo.model_validate({'id': 'c-1', 'type': 'SOMETHING_NEW'})
+        assert client.type == 'SOMETHING_NEW'
+        assert type(client.type) is str
+
+    def test_known_type_is_the_enum_member(self) -> None:
+        """A smart-mode union would return the plain str 'WIRELESS' here, not the member."""
+        client = ClientInfo.model_validate({'id': 'c-1', 'type': 'WIRELESS'})
+        assert client.type is ClientType.WIRELESS
+
+
 class TestClientFingerprint:
     """Tests for ClientFingerprint model."""
 

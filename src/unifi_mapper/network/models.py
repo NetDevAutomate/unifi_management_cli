@@ -41,11 +41,17 @@ class DeviceFeature(str, Enum):
 
 
 class ClientType(str, Enum):
-    """Client connection type."""
+    """Client connection type.
+
+    Ubiquiti's Network API reference (v10.6.102) lists WIRED, WIRELESS, VPN and TELEPORT.
+    ``ClientInfo.type`` keeps a value this enum doesn't know as its string, so a new type
+    can't fail the whole client list.
+    """
 
     WIRED = 'WIRED'
     WIRELESS = 'WIRELESS'
     VPN = 'VPN'
+    TELEPORT = 'TELEPORT'
 
 
 class ClientAccessType(str, Enum):
@@ -484,7 +490,8 @@ class ClientInfo(BaseModel):
     ip_address: Annotated[str | None, Field(alias='ipAddress')] = None
     hostname: str | None = None
     name: str | None = None
-    type: ClientType = ClientType.WIRED
+    # left_to_right, as for ClientAccess.type: known values are members, unknown ones a str.
+    type: Annotated[ClientType | str, Field(union_mode='left_to_right')] = ClientType.WIRED
     connected_at: Annotated[datetime | None, Field(alias='connectedAt')] = None
     access: ClientAccess | None = None
     fingerprint: ClientFingerprint | None = None

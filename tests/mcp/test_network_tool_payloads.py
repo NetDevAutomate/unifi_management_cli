@@ -81,6 +81,27 @@ async def test_get_clients_returns_default_and_user_clients(
     assert transport.calls == [('GET', f'{INTEGRATION}/clients')]
 
 
+@pytest.mark.usefixtures('network_env')
+async def test_get_clients_keeps_teleport_and_unknown_connection_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    teleport = {
+        'type': 'TELEPORT',
+        'id': 'c-teleport',
+        'name': 'c-teleport',
+        'connectedAt': '2026-10-03T04:55:20Z',
+        'access': {'type': 'DEFAULT'},
+    }
+    unknown = {**_wired_client('c-new', 'DEFAULT', '02:00:00:00:00:73'), 'type': 'SOMETHING_NEW'}
+    wired = _wired_client('c-wired', 'DEFAULT', '02:00:00:00:00:74')
+    _serve(monkeypatch, {f'{INTEGRATION}/clients': [teleport, unknown, wired]})
+
+    result = await network_tools.get_clients()
+
+    assert [c.get('id') for c in result] == ['c-teleport', 'c-new', 'c-wired'], result
+    assert [c['type'] for c in result] == ['TELEPORT', 'SOMETHING_NEW', 'WIRED']
+
+
 # Issues 031 and 032: one record each, shaped as Ubiquiti's v10.6.102 reference documents it.
 ACL_RULE = {
     'type': 'IPV4',
