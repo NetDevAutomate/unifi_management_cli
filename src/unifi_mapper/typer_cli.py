@@ -91,7 +91,7 @@ def main(
         bool,
         typer.Option(
             '--apply',
-            help='⚡ Write port names to the controller (runs discover; default: preview only)',
+            help='⚡ Write port names (runs discover; with a subcommand use discover --apply)',
         ),
     ] = False,
     verify_updates: Annotated[
@@ -106,7 +106,8 @@ def main(
 
     Global options apply to all commands. Use --connected-devices, --verify-updates,
     --dry-run or --apply as shortcuts to run the discover command. Discover previews
-    by default; only --apply writes port names to the controller.
+    by default; only --apply writes port names to the controller. Given before a
+    subcommand, --apply exits 2: use the subcommand's own flag (``discover --apply``).
     """
     # Set global state
     state.config_path = config if config else get_default_config_path()
@@ -117,6 +118,10 @@ def main(
 
     if apply and dry_run:
         _fail('choose --apply or --dry-run', code=2)
+    # Typer parses each command level on its own, so a root --apply never reaches a
+    # subcommand. Refuse it rather than preview (or run another command) after a write request.
+    if apply and ctx.invoked_subcommand is not None:
+        _fail('--apply must follow the subcommand: unifi-mapper discover --apply', code=2)
 
     # If no subcommand but discover-related flags provided, run discover
     if ctx.invoked_subcommand is None:

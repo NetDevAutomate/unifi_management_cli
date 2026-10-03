@@ -161,6 +161,37 @@ def test_root_apply_with_dry_run_is_rejected(rec: Recorder) -> None:
     assert rec.writes == []
 
 
+@pytest.mark.parametrize(
+    'args',
+    [
+        ['--apply', 'discover'],
+        ['--apply', 'discover', '--connected-devices'],
+        ['--apply', '--verify-updates', 'discover'],
+        ['--apply', 'ports', 'list', 'USW Flex XG'],
+    ],
+)
+def test_root_apply_before_a_subcommand_is_rejected(rec: Recorder, args: list[str]) -> None:
+    """Code-review F11: Typer never hands a root --apply to the subcommand, so refuse it."""
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 2, result.output
+    assert 'discover --apply' in result.output
+    # No controller client was built and nothing was written.
+    assert rec.mappers == []
+    assert rec.run_dry_run == []
+    assert rec.smart_dry_run == []
+    assert rec.writes == []
+
+
+def test_root_dry_run_before_discover_still_previews(rec: Recorder) -> None:
+    result = runner.invoke(app, ['--dry-run', 'discover'])
+
+    assert result.exit_code == 0, result.output
+    assert rec.run_dry_run == [True]
+    assert rec.writes == []
+    assert 'DRY RUN' in result.output
+
+
 def test_root_without_discover_flags_shows_help(rec: Recorder) -> None:
     result = runner.invoke(app, [])
 
