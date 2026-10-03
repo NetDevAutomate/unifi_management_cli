@@ -197,16 +197,17 @@ def test_mask_secret_values_defaults_to_500_and_applies_redact_text():
 
 def test_mcp_secret_values_takes_credential_keys_only():
     env = {
-        'UNIFI_CONSOLE_API_TOKEN': 'console-token-123',
-        'UNIFI_NETWORK_API_KEY': 'network-key-456',
-        'PROTECT_PASSWORD': 'protect-pass-789',
-        'UNIFI_PASSWORD': 'short',  # < 8 characters: never masked by value
+        'UNIFI_CONSOLE_API_TOKEN': 'console-token-123',  # pragma: allowlist secret
+        'UNIFI_NETWORK_API_KEY': 'network-key-456',  # pragma: allowlist secret
+        'PROTECT_PASSWORD': 'protect-pass-789',  # pragma: allowlist secret
+        # < 8 characters: never masked by value
+        'UNIFI_PASSWORD': 'short',  # pragma: allowlist secret
         'UNIFI_URL': 'https://192.0.2.1',
         'FOO_TOKEN': 'true',
         'HOME': '/Users/someone',
     }
     assert mcp_secret_values(env) == frozenset(
-        {'console-token-123', 'network-key-456', 'protect-pass-789'}
+        {'console-token-123', 'network-key-456', 'protect-pass-789'}  # pragma: allowlist secret
     )
 
 

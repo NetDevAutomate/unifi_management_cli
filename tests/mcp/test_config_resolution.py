@@ -35,6 +35,8 @@ SITE_ID = '550e8400-e29b-41d4-a716-446655440000'
 NET_KEY = 'FAKE-NETWORK-KEY-MUST-NOT-APPEAR'  # pragma: allowlist secret
 LAB = 'https://lab.example.test'
 PROD = 'https://192.0.2.1'
+EXPORTED_TOKEN = 'exported'  # pragma: allowlist secret
+LAB_TOKEN = 'lab-token'  # pragma: allowlist secret
 
 PROD_FILE = {
     'UNIFI_URL': PROD,
@@ -201,7 +203,7 @@ def test_status_json_has_key_names_only(tmp_path: Path) -> None:
 
 
 def test_exported_keys_are_never_overwritten() -> None:
-    env = {'UNIFI_URL': PROD, 'UNIFI_CONSOLE_API_TOKEN': 'exported', 'UNIFI_TIMEOUT': '5'}
+    env = {'UNIFI_URL': PROD, 'UNIFI_CONSOLE_API_TOKEN': EXPORTED_TOKEN, 'UNIFI_TIMEOUT': '5'}
     to_set, status, settings = apply_file(env, PROD_FILE, explicit=True)
     assert not set(to_set) & set(env)
     assert status['controller'].source == 'environment'
@@ -209,7 +211,7 @@ def test_exported_keys_are_never_overwritten() -> None:
 
 
 def test_lab_export_with_prod_discovered_file_is_not_applied() -> None:
-    env = {'UNIFI_URL': LAB, 'UNIFI_CONSOLE_API_TOKEN': 'lab-token'}
+    env = {'UNIFI_URL': LAB, 'UNIFI_CONSOLE_API_TOKEN': LAB_TOKEN}
     to_set, status, settings = apply_file(env, PROD_FILE, explicit=False)
     assert to_set == {}
     assert settings == frozenset()
@@ -223,16 +225,16 @@ def test_lab_export_with_prod_discovered_file_is_not_applied() -> None:
 
 def test_foreign_file_warning_is_emitted_once(tmp_path: Path) -> None:
     _write_env(tmp_path / '.config' / 'unifi_management_cli' / 'prod.env', PROD_FILE)
-    env = {'UNIFI_URL': LAB, 'UNIFI_CONSOLE_API_TOKEN': 'lab-token'}
+    env = {'UNIFI_URL': LAB, 'UNIFI_CONSOLE_API_TOKEN': LAB_TOKEN}
     messages, warn = _collect()
     resolved = resolve_mcp_config(env=env, home=tmp_path, warn=warn)
     assert resolved.source == 'home'
     assert len(messages) == 1 and 'UNIFI_CONFIG' in messages[0]
-    assert env == {'UNIFI_URL': LAB, 'UNIFI_CONSOLE_API_TOKEN': 'lab-token'}
+    assert env == {'UNIFI_URL': LAB, 'UNIFI_CONSOLE_API_TOKEN': LAB_TOKEN}
 
 
 def test_same_host_fills_unexported_families_from_file() -> None:
-    env = {'UNIFI_URL': 'https://192.0.2.1:443/', 'UNIFI_CONSOLE_API_TOKEN': 'exported'}
+    env = {'UNIFI_URL': 'https://192.0.2.1:443/', 'UNIFI_CONSOLE_API_TOKEN': EXPORTED_TOKEN}
     to_set, status, settings = apply_file(env, PROD_FILE, explicit=False)
     assert status['controller'].source == 'environment'
     assert status['network_api'].source == 'file' and status['network_api'].ready
@@ -260,7 +262,7 @@ def test_exported_host_but_file_lacks_that_host_is_foreign() -> None:
 
 
 def test_explicit_file_with_different_host_is_applied_per_family() -> None:
-    env = {'UNIFI_URL': LAB, 'UNIFI_CONSOLE_API_TOKEN': 'lab-token'}
+    env = {'UNIFI_URL': LAB, 'UNIFI_CONSOLE_API_TOKEN': LAB_TOKEN}
     to_set, status, settings = apply_file(env, PROD_FILE, explicit=True)
     assert status['controller'].source == 'environment'
     assert status['network_api'].source == 'file'
