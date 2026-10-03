@@ -812,7 +812,7 @@ class UniFiNetworkClient:
         """
         rules = []
         async for item in self._paginate(
-            '/sites/{siteId}/acls', limit=limit, filter_expr=filter_expr
+            '/sites/{siteId}/acl-rules', limit=limit, filter_expr=filter_expr
         ):
             rules.append(ACLRule.model_validate(item))
         return rules
@@ -826,7 +826,7 @@ class UniFiNetworkClient:
         Returns:
             ACL rule.
         """
-        response = await self._get(f'/sites/{{siteId}}/acls/{acl_rule_id}')
+        response = await self._get(f'/sites/{{siteId}}/acl-rules/{acl_rule_id}')
         return ACLRule.model_validate(response.get('data', response))
 
     async def create_acl_rule(
@@ -875,7 +875,7 @@ class UniFiNetworkClient:
         if enforcing_device_ids:
             payload['enforcingDeviceFilter'] = {'deviceIds': enforcing_device_ids}
 
-        response = await self._post('/sites/{siteId}/acls', json=payload)
+        response = await self._post('/sites/{siteId}/acl-rules', json=payload)
         return ACLRule.model_validate(response.get('data', response))
 
     async def update_acl_rule(
@@ -893,7 +893,7 @@ class UniFiNetworkClient:
             Updated ACL rule.
         """
         response = await self._put(
-            f'/sites/{{siteId}}/acls/{acl_rule_id}',
+            f'/sites/{{siteId}}/acl-rules/{acl_rule_id}',
             json=updates,
         )
         return ACLRule.model_validate(response.get('data', response))
@@ -907,7 +907,7 @@ class UniFiNetworkClient:
         Returns:
             Deletion response.
         """
-        return await self._delete(f'/sites/{{siteId}}/acls/{acl_rule_id}')
+        return await self._delete(f'/sites/{{siteId}}/acl-rules/{acl_rule_id}')
 
     # =========================================================================
     # DNS Policy Endpoints
@@ -929,7 +929,7 @@ class UniFiNetworkClient:
         """
         policies = []
         async for item in self._paginate(
-            '/sites/{siteId}/dns-policies', limit=limit, filter_expr=filter_expr
+            '/sites/{siteId}/dns/policies', limit=limit, filter_expr=filter_expr
         ):
             policies.append(DNSPolicy.model_validate(item))
         return policies
@@ -943,7 +943,7 @@ class UniFiNetworkClient:
         Returns:
             DNS policy.
         """
-        response = await self._get(f'/sites/{{siteId}}/dns-policies/{dns_policy_id}')
+        response = await self._get(f'/sites/{{siteId}}/dns/policies/{dns_policy_id}')
         return DNSPolicy.model_validate(response.get('data', response))
 
     async def create_dns_policy(
@@ -980,7 +980,7 @@ class UniFiNetworkClient:
         if ipv6_address:
             payload['ipv6Address'] = ipv6_address
 
-        response = await self._post('/sites/{siteId}/dns-policies', json=payload)
+        response = await self._post('/sites/{siteId}/dns/policies', json=payload)
         return DNSPolicy.model_validate(response.get('data', response))
 
     async def update_dns_policy(
@@ -998,7 +998,7 @@ class UniFiNetworkClient:
             Updated DNS policy.
         """
         response = await self._put(
-            f'/sites/{{siteId}}/dns-policies/{dns_policy_id}',
+            f'/sites/{{siteId}}/dns/policies/{dns_policy_id}',
             json=updates,
         )
         return DNSPolicy.model_validate(response.get('data', response))
@@ -1012,7 +1012,7 @@ class UniFiNetworkClient:
         Returns:
             Deletion response.
         """
-        return await self._delete(f'/sites/{{siteId}}/dns-policies/{dns_policy_id}')
+        return await self._delete(f'/sites/{{siteId}}/dns/policies/{dns_policy_id}')
 
     # =========================================================================
     # Traffic Matching List Endpoints

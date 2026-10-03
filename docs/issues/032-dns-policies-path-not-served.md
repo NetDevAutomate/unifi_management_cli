@@ -1,7 +1,7 @@
 ---
 title: "`get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served"
 date: 2026-10-03
-status: open
+status: resolved
 severity: medium
 components: [network/client]
 found_by: review follow-ups live checks at 7ef13c2 (L2)
@@ -40,3 +40,20 @@ clones or CI.
 
 As for issue 031: confirm the served path with one guarded GET, move all five call sites to
 `/sites/{siteId}/dns/policies` together, and pin them with `httpx.MockTransport` tests.
+
+## Resolution
+
+Fixed as recommended, together with issue 031. On Network 10.6.106 the guarded probe's GET
+on `/dns-policies` answered 404 again and `/dns/policies` answered 200 (an empty page: this
+console has no DNS policies). All five call sites now use `/sites/{siteId}/dns/policies`.
+
+Tests: `tests/network/test_client_paths.py` pins the list and get paths, and shows
+`create_dns_policy`, `update_dns_policy` and `delete_dns_policy` build the same path while
+the GET-only guard refuses each of them before any I/O;
+`tests/mcp/test_network_tool_payloads.py::test_acl_and_dns_tools_read_the_served_paths`
+returns a reference-shaped policy through the tool. All of them failed on the old path.
+
+Live after the fix: `get_dns_policies` returned `[]` with no error; 11 audited GETs for the
+site lookup and the six tools, 0 violations. Evidence (git-ignored):
+`.kiro/review-followups/iter2/f17/probe.json` and
+`.kiro/review-followups/iter2/network-api/f17-wip/result.json`.

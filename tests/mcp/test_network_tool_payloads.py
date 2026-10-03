@@ -2,9 +2,10 @@
 
 The first live run of these tools (review follow-ups at 7ef13c2, Network 10.6.106) found that
 one client with ``access.type: DEFAULT`` failed validation and emptied the whole
-``get_clients`` result (issue 033). These tests serve fake pages shaped like the controller's
-through ``httpx.MockTransport``, behind the tools' own read-only guard, so nothing reaches a
-network.
+``get_clients`` result (issue 033), and that ``get_acl_rules`` and ``get_dns_policies`` asked
+for paths the controller doesn't serve (issues 031 and 032). These tests serve fake pages
+shaped like the controller's through ``httpx.MockTransport``, behind the tools' own read-only
+guard, so nothing reaches a network.
 """
 
 import httpx
@@ -78,3 +79,45 @@ async def test_get_clients_returns_default_and_user_clients(
     assert [c.get('id') for c in result] == ['c-default', 'c-user'], result
     assert [c['access']['type'] for c in result] == ['DEFAULT', 'USER']
     assert transport.calls == [('GET', f'{INTEGRATION}/clients')]
+
+
+# Issues 031 and 032: one record each, shaped as Ubiquiti's v10.6.102 reference documents it.
+ACL_RULE = {
+    'type': 'IPV4',
+    'id': '00000000-0000-0000-0000-0000000000c1',
+    'name': 'Block lab to NAS',
+    'enabled': True,
+    'action': 'BLOCK',
+    'index': 0,
+    'metadata': {'origin': 'USER_DEFINED'},
+    'protocolFilter': ['TCP'],
+}
+DNS_POLICY = {
+    'type': 'A_RECORD',
+    'id': '00000000-0000-0000-0000-0000000000d1',
+    'enabled': True,
+    'domain': 'nas.lab.example',
+    'ipv4Address': '192.0.2.5',
+    'ttlSeconds': 3600,
+    'metadata': {'origin': 'USER_DEFINED'},
+}
+
+
+@pytest.mark.usefixtures('network_env')
+@pytest.mark.parametrize(
+    ('tool', 'path', 'record'),
+    [
+        ('get_acl_rules', f'{INTEGRATION}/acl-rules', ACL_RULE),
+        ('get_dns_policies', f'{INTEGRATION}/dns/policies', DNS_POLICY),
+    ],
+    ids=['get_acl_rules', 'get_dns_policies'],
+)
+async def test_acl_and_dns_tools_read_the_served_paths(
+    tool: str, path: str, record: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transport = _serve(monkeypatch, {path: [record]})
+
+    result = await getattr(network_tools, tool)()
+
+    assert [r.get('id') for r in result] == [record['id']], result
+    assert transport.calls == [('GET', path)]

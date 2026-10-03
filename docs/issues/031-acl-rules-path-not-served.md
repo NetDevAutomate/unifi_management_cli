@@ -1,7 +1,7 @@
 ---
 title: "`get_acl_rules` gets a 404: the client's `/acls` path isn't served by Network 10.6"
 date: 2026-10-03
-status: open
+status: resolved
 severity: medium
 components: [network/client]
 found_by: review follow-ups live checks at 7ef13c2 (L1)
@@ -42,3 +42,22 @@ Confirm the served path with one guarded GET, then move all five call sites to
 `/sites/{siteId}/acl-rules` together. Add `httpx.MockTransport` tests that pin the list and
 get paths, and one that shows the write methods build the same path while the GET-only
 guard still refuses them before any I/O.
+
+## Resolution
+
+Fixed as recommended, together with issue 032. The guarded probe (read-only: GET only,
+through `ReadOnlyAsyncTransport(policy=get_only_request_allowed)` with the request audit on,
+using CONFIG's API key) sent one GET per candidate on Network 10.6.106: `/acls` answered 404
+again and `/acl-rules` answered 200 (an empty page: this console has no ACL rules). All five
+call sites now use `/sites/{siteId}/acl-rules`.
+
+Tests: `tests/network/test_client_paths.py` pins the list and get paths, and shows
+`create_acl_rule`, `update_acl_rule` and `delete_acl_rule` build the same path while the
+GET-only guard refuses each of them before any I/O, naming that path;
+`tests/mcp/test_network_tool_payloads.py::test_acl_and_dns_tools_read_the_served_paths`
+returns a reference-shaped rule through the tool. All of them failed on the old path.
+
+Live after the fix (the six network tools in-process, behind their guard): `get_acl_rules`
+returned `[]` with no error, and all six tools succeeded; 11 audited GETs, 0 violations.
+Evidence (git-ignored): `.kiro/review-followups/iter2/f17/probe.json` and
+`.kiro/review-followups/iter2/network-api/f17-wip/result.json`.
