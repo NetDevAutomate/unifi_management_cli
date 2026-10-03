@@ -30,8 +30,9 @@ discover` and `--verify-updates discover` exit 0 with one preview and no smart-m
 follow from the code: each reads only its own flags.
 
 Root `--apply` before a subcommand no longer has this problem: since code-review F11 it
-exits 2 with `--apply must follow the subcommand: unifi-mapper discover --apply`
-(`test_root_apply_before_a_subcommand_is_rejected`).
+exits 2 with `--apply must follow the subcommand and its arguments (e.g. unifi-mapper
+discover --apply)` (`test_root_apply_before_a_subcommand_is_rejected`; code-review F26 made
+the hint generic, so it also fits `ports refresh` and `stp`).
 
 ## Impact
 

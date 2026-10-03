@@ -175,6 +175,8 @@ def test_root_apply_before_a_subcommand_is_rejected(rec: Recorder, args: list[st
     result = runner.invoke(app, args)
 
     assert result.exit_code == 2, result.output
+    # Code-review F26: generic, so it also fits `--apply ports refresh X` and `--apply stp …`.
+    assert '--apply must follow the subcommand and its arguments' in result.output
     assert 'discover --apply' in result.output
     # No controller client was built and nothing was written.
     assert rec.mappers == []

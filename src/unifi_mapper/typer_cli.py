@@ -121,7 +121,11 @@ def main(
     # Typer parses each command level on its own, so a root --apply never reaches a
     # subcommand. Refuse it rather than preview (or run another command) after a write request.
     if apply and ctx.invoked_subcommand is not None:
-        _fail('--apply must follow the subcommand: unifi-mapper discover --apply', code=2)
+        _fail(
+            '--apply must follow the subcommand and its arguments '
+            '(e.g. unifi-mapper discover --apply)',
+            code=2,
+        )
 
     # If no subcommand but discover-related flags provided, run discover
     if ctx.invoked_subcommand is None:
