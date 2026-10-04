@@ -1,3 +1,5 @@
+default_install_hook_types: [pre-commit, pre-push]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -37,6 +39,79 @@ repos:
     hooks:
       - id: detect-secrets
         args: ["--baseline", ".secrets.baseline"]
+
+  # Secret scanners (repo_init merges these into existing configs by hook id).
+  # - Each scanner runs at pre-commit AND at pre-push. dirsync auto-commits with
+  #   --no-verify, so the pre-push hooks on the push host are the check that cannot be
+  #   skipped on the way to GitHub.
+  # - language: system, so `pre-commit autoupdate` never moves them: the scanner is
+  #   whatever is on PATH. Each entry first checks a minimum version (the version these
+  #   flags were verified with) and fails closed, exit 1 plus a one-line install hint,
+  #   when the tool is missing or too old.
+  # - Pre-push hooks scan pre-commit's PRE_COMMIT_FROM_REF..PRE_COMMIT_TO_REF, or the
+  #   whole ancestry of the pushed ref when the push includes a root commit. pre-commit
+  #   hands hooks only the FIRST ref of a multi-ref push; repo_secrets_guard's raw
+  #   pre-push hook scans every ref.
+  # - `pre-commit run --all-files` still scans only staged changes with these hooks. For
+  #   a whole-tree scan run `known-secrets scan-files .` or `gitleaks dir .`.
+  - repo: local
+    hooks:
+      # This repo carries only the trufflehog hooks for now; repo_init's merge adds the
+      # known-secrets and gitleaks hooks from the same template.
+      # Live credentials: blocks results that are verified, or unknown because
+      # verification failed. Fakes and revoked tokens verify as "unverified" and pass.
+      # At pre-commit, --since-commit HEAD scans the staged changes. At pre-push that
+      # would scan nothing, so the push hook scans the pushed range instead.
+      # trufflehog switches to "pre-commit hook" mode (staged changes only, whatever the
+      # flags say) when PRE_COMMIT is set, so the push hook unsets it first.
+      # trufflehog has no --redact: results go through --json and only the detector,
+      # path and line are printed, so a live value never reaches a terminal or a log.
+      - id: trufflehog
+        name: trufflehog (staged)
+        entry: >-
+          bash -c 't=trufflehog f=3.97.6 h="mise use -g trufflehog@3.97.6";
+          command -v $t >/dev/null 2>&1 || { echo "$t missing: $h" >&2; exit 1; };
+          v=$($t --version 2>&1 | grep -Eo "[0-9]+[.][0-9]+[.][0-9]+" | head -n1);
+          [ "$(printf "%s\n" $f "$v" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" = $f ] ||
+          { echo "$t ${v:-unknown} is older than $f: $h" >&2; exit 1; };
+          set --; git rev-parse -q --verify HEAD >/dev/null && set -- --since-commit HEAD;
+          o=$(trufflehog git file://. "$@" --results=verified,unknown --fail --no-update
+          --trust-local-git-config --json 2>/dev/null); r=$?;
+          printf "%s\n" "$o" | while IFS= read -r l; do case $l in *\"DetectorName\"*)
+          d=${l#*\"DetectorName\":\"}; p=${l#*\"file\":\"}; n=${l#*\"line\":};
+          echo "trufflehog: ${d%%\"*} credential at ${p%%\"*}:${n%%[!0-9]*} (value hidden)";;
+          esac; done;
+          case $r in 0) ;; 183) echo "trufflehog: rotate the credential(s) above, then remove them";;
+          *) echo "trufflehog failed (exit $r): run it by hand to see why";; esac; exit $r'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: trufflehog-push
+        name: trufflehog (pushed commits)
+        entry: >-
+          bash -c 't=trufflehog f=3.97.6 h="mise use -g trufflehog@3.97.6";
+          command -v $t >/dev/null 2>&1 || { echo "$t missing: $h" >&2; exit 1; };
+          v=$($t --version 2>&1 | grep -Eo "[0-9]+[.][0-9]+[.][0-9]+" | head -n1);
+          [ "$(printf "%s\n" $f "$v" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" = $f ] ||
+          { echo "$t ${v:-unknown} is older than $f: $h" >&2; exit 1; };
+          if [ -n "${PRE_COMMIT_FROM_REF:-}" ] && [ -n "${PRE_COMMIT_TO_REF:-}" ];
+          then set -- --since-commit "$PRE_COMMIT_FROM_REF" --branch "$PRE_COMMIT_TO_REF";
+          else set -- --branch "${PRE_COMMIT_LOCAL_BRANCH:-HEAD}"; fi;
+          unset PRE_COMMIT TRUFFLEHOG_PRE_COMMIT;
+          o=$(trufflehog git file://. "$@" --results=verified,unknown --fail --no-update
+          --trust-local-git-config --json 2>/dev/null); r=$?;
+          printf "%s\n" "$o" | while IFS= read -r l; do case $l in *\"DetectorName\"*)
+          d=${l#*\"DetectorName\":\"}; p=${l#*\"file\":\"}; n=${l#*\"line\":};
+          echo "trufflehog: ${d%%\"*} credential at ${p%%\"*}:${n%%[!0-9]*} (value hidden)";;
+          esac; done;
+          case $r in 0) ;; 183) echo "trufflehog: rotate the credential(s) above, then remove them";;
+          *) echo "trufflehog failed (exit $r): run it by hand to see why";; esac; exit $r'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
 
   - repo: local
     hooks:
