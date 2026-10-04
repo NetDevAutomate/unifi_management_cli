@@ -351,7 +351,7 @@ class EventMatcher:
     * ``switch``: any value equals the switch MAC or ``_id`` (case-insensitive),
       or contains the switch name. A name hit is ignored when the same text
       contains a *longer* known device name that includes it, so 'USW Flex XG'
-      does not match entries about 'Hotel3 USW Flex XG 10G'.
+      does not match entries about 'Core USW Flex XG 10G'.
     * ``port``: needs a switch match, then a ``port``/``sw_port``/``port_idx``
       field equal to N, or text matching ``port N`` / ``port #N``. 'Port 15'
       never matches port 5.

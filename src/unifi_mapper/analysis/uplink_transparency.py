@@ -8,10 +8,9 @@ untagged network keeps working, so clients look fine, while every tagged VLAN
 behind that switch is severed. If the management VLAN is one of them the switch
 becomes unreachable and cannot be reconfigured over the API at all.
 
-Observed on 2026-07-29: ``Mike2 USW Lite 16 PoE`` lost its trunk to
-``Mike2 USW Flex 2.5G 8 PoE`` and re-homed onto an eero-facing access port.
+Observed on 2026-07-29: ``Switch F USW Lite 16 PoE`` lost its trunk to
+``Switch B USW Flex 2.5G 8 PoE`` and re-homed onto an eero-facing access port.
 VLAN 125 (untagged) stayed up; VLAN 255 (management) and VLAN 10 (CCTV) went dark.
-See ``reports/FINDINGS-lounge-l2-loop.md``.
 """
 
 from __future__ import annotations
@@ -564,7 +563,7 @@ def _infer_mgmt_vlan(devices: list[dict[str, Any]], networks: list[dict[str, Any
 
 
 def _subnet_prefix(subnet: str) -> str:
-    """Reduce '203.0.113.254/24' to the '192.168.255.' comparison prefix."""
+    """Reduce '192.0.2.254/24' to the '192.0.2.' comparison prefix."""
     address = subnet.split('/', 1)[0]
     octets = address.split('.')
     if len(octets) != 4:

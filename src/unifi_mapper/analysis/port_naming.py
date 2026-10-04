@@ -2,9 +2,9 @@
 
 Why this exists
 ---------------
-Port labels drift. On 2026-08-03 an audit found `Office USW Ultra 210W` ports 1-7 still
+Port labels drift. On 2026-08-03 an audit found `Switch A USW Ultra 210W` ports 1-7 still
 reading the factory default ``PoE Out + Data`` when they were seven named access points,
-and `Mike2 USW Flex 2.5G 8 PoE` p1/p2 had their two downstream switches transposed. Stale
+and `Switch B USW Flex 2.5G 8 PoE` p1/p2 had their two downstream switches transposed. Stale
 labels are worse than absent ones: two diagnoses during that session were wrong because a
 port label was trusted as evidence (a "faulty" camera link was really a switch uplink, and
 a "100 Mbps Raspberry Pi" was really a JetKVM).
@@ -28,9 +28,9 @@ Four failure modes were observed while building the plan against a live estate, 
 which loses information or churns pointlessly:
 
 * ``would_lose_information`` - a client that momentarily reports no hostname would rename
-  ``Google Streamer 4K`` to ``02:00:fe:02:00:0f``.
+  ``Google Streamer 4K`` to ``02:00:00:00:00:01``.
 * ``name_quality`` - a raw MAC sorts first alphabetically, so a multi-client port labelled
-  ``Hotel3-Apple-TV`` would become ``02:00:fe:02:00:06 +2``.
+  ``Media-Player`` would become ``02:00:00:00:00:02 +2``.
 * ``is_cosmetic_change`` - ``AI-Port`` -> ``AI Port`` is pure churn.
 * ``strip_multi_suffix`` - a device that comes and goes makes the ``+N`` counter oscillate
   between runs forever.
@@ -127,7 +127,7 @@ def looks_like_mac(value: str) -> bool:
 def is_weak_label(name: str) -> bool:
     """True for hex-blob names that read as an address rather than a device.
 
-    Catches both `02:00:fe:02:00:0f` and `0200fe00000a`.
+    Catches both `02:00:00:00:00:01` and `020000000002`.
     """
     cleaned = (name or '').replace('-', '').replace(':', '').strip()
     return (

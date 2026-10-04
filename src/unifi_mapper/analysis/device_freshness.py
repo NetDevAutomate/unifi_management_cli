@@ -4,7 +4,7 @@
 informing hours ago. Every field in it describes the moment it last reported. Acting on that
 data is the single most expensive trap in UniFi diagnosis.
 
-Motivating incident (2026-07-29): `Mike2 USW Lite 16 PoE` had `last_seen` frozen at
+Motivating incident (2026-07-29): `Switch F USW Lite 16 PoE` had `last_seen` frozen at
 07:17:47Z and was still returning `p13: forwarding`. Peers advanced normally in the same
 samples. Several hours went into interpreting a three-hour-old snapshot as current state.
 

@@ -771,12 +771,12 @@ def match_switch(
       2. ``mac``: the query is a full MAC equal to the device MAC, in any notation.
       3. ``ip``: the query equals the device IP.
       4. ``tokens``: every whitespace-separated token appears in the name
-         (multi-token queries only), so 'Lounge Flex 8' finds
-         'Mike2 USW Flex 2.5G 8 PoE'.
+         (multi-token queries only), so 'Switch B Flex 8' finds
+         'Switch B USW Flex 2.5G 8 PoE'.
       5. ``substring``: the query appears in name, model, IP or MAC.
 
     An exact name therefore beats a token match: 'USW Flex XG' resolves to the
-    switch named exactly that even when 'Hotel3 USW Flex XG 10G' also exists.
+    switch named exactly that even when 'Core USW Flex XG 10G' also exists.
 
     Args:
         devices: ``stat/device`` records (non-dict entries are ignored).
