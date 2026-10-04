@@ -53,7 +53,10 @@ def cameras_built(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
     built: list[tuple[object, ...]] = []
 
     class _NoCamera:
+        """Stands in for ``ONVIFCamera``: records each construction, then fails."""
+
         def __init__(self, *args: object, **_kwargs: object) -> None:
+            """Record the camera's arguments and fail the test."""
             built.append(args)
             raise AssertionError('an ONVIF connection in a unit test')
 
@@ -65,6 +68,7 @@ def cameras_built(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
 
 
 def _env(**overrides: str) -> dict[str, str]:
+    """Return a complete set of ONVIF variables with dummy values, updated by ``overrides``."""
     env = {
         'ONVIF_USERNAME': 'onvifuser',
         'ONVIF_PASSWORD': FAKE_PASSWORD,
@@ -75,6 +79,7 @@ def _env(**overrides: str) -> dict[str, str]:
 
 
 def test_load_cameras_reads_each_camera_and_the_shared_account(config: Any) -> None:
+    """Each NAME=HOST[:PORT] entry becomes a camera (port 80 by default) with the account."""
     cameras = config.load_cameras(_env())
 
     assert [(c.name, c.ip, c.port, c.user) for c in cameras] == [
@@ -87,6 +92,7 @@ def test_load_cameras_reads_each_camera_and_the_shared_account(config: Any) -> N
 def test_load_cameras_reads_os_environ_by_default(
     config: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """With no mapping given, the loader reads ``os.environ``."""
     for var, value in _env(ONVIF_CAMERAS='Camera A=camera-a.example').items():
         monkeypatch.setenv(var, value)
 
@@ -106,6 +112,7 @@ def test_load_cameras_reads_os_environ_by_default(
 def test_load_cameras_names_every_missing_variable(
     config: Any, unset: tuple[str, ...], named: str
 ) -> None:
+    """The error names every unset variable, in a fixed order, and says how to set them."""
     env = {var: value for var, value in _env().items() if var not in unset}
 
     with pytest.raises(config.ConfigError, match=f'^not set: {named}\\. Set ONVIF_USERNAME'):
@@ -114,6 +121,7 @@ def test_load_cameras_names_every_missing_variable(
 
 @pytest.mark.parametrize('value', ['', '   '])
 def test_an_empty_variable_counts_as_unset(config: Any, value: str) -> None:
+    """An empty or blank value is reported as unset."""
     with pytest.raises(config.ConfigError, match='^not set: ONVIF_USERNAME\\.'):
         config.load_cameras(_env(ONVIF_USERNAME=value))
 
@@ -133,6 +141,7 @@ def test_an_empty_variable_counts_as_unset(config: Any, value: str) -> None:
     ],
 )
 def test_load_cameras_rejects_a_malformed_camera_list(config: Any, cameras: str) -> None:
+    """A malformed camera list is a ConfigError that names the variable, never the password."""
     with pytest.raises(config.ConfigError, match='ONVIF_CAMERAS') as excinfo:
         config.load_cameras(_env(ONVIF_CAMERAS=cameras))
 
@@ -140,6 +149,7 @@ def test_load_cameras_rejects_a_malformed_camera_list(config: Any, cameras: str)
 
 
 def test_the_password_stays_out_of_the_repr(config: Any) -> None:
+    """A camera's repr never shows its password."""
     [camera, _] = config.load_cameras(_env())
 
     assert FAKE_PASSWORD not in repr(camera)
@@ -152,6 +162,7 @@ def test_stream_script_stops_before_connecting_when_unset(
     monkeypatch: pytest.MonkeyPatch,
     command: str,
 ) -> None:
+    """Every stream command stops with the missing variables before building a camera."""
     stream = _load('onvif_stream', monkeypatch)
     monkeypatch.setattr(sys, 'argv', ['onvif_stream.py', command])
 
@@ -169,6 +180,7 @@ def test_stream_script_reports_usage_without_reading_the_environment(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """An unknown command prints the usage and exits 1 without reading the environment."""
     stream = _load('onvif_stream', monkeypatch)
     monkeypatch.setattr(sys, 'argv', ['onvif_stream.py', 'no-such-command'])
 
@@ -183,6 +195,7 @@ def test_stream_script_reports_usage_without_reading_the_environment(
 def test_probe_script_stops_before_connecting_when_unset(
     config: Any, cameras_built: list[tuple[object, ...]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The probe stops with the missing variables before building a camera."""
     probe = _load('onvif_probe', monkeypatch)
     monkeypatch.setenv('ONVIF_USERNAME', 'onvifuser')
 
