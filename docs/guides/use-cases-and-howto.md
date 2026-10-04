@@ -105,12 +105,18 @@ uv run unifi-mapper version
 mkdir -p ~/.config/unifi_management_cli
 ```
 
-The tool uses the XDG Base Directory specification. Config file resolution order:
+The tool uses the XDG Base Directory specification. `unifi-mapper` reads one env file, the
+first of:
 
-1. `$XDG_CONFIG_HOME/unifi_management_cli/prod.env`
-2. `~/.config/unifi_management_cli/prod.env`
-3. `~/.config/unifi_management_cli/default.env`
+1. `--config PATH`, or `UNIFI_CONFIG=PATH` (the inventory commands take their own
+   `--config` instead, [issue 043](../issues/043-inventory-ignores-the-root-config.md))
+2. `prod.env` in `$XDG_CONFIG_HOME/unifi_management_cli/`, or in
+   `~/.config/unifi_management_cli/` when `XDG_CONFIG_HOME` is unset
+3. `default.env` in that same directory
 4. `.env` in the current directory (legacy fallback)
+
+A set `XDG_CONFIG_HOME` replaces `~/.config` here; the MCP server tries both
+([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
 
 **Step 3: Create the configuration file**
 
@@ -135,14 +141,21 @@ UNIFI_CONSOLE_API_TOKEN=your_api_token_here
 # Connection settings
 UNIFI_VERIFY_SSL=false                  # false for self-signed certificates
 UNIFI_TIMEOUT=10                        # API timeout in seconds
-UNIFI_MAX_RETRIES=3
-UNIFI_RETRY_DELAY=1.0
 
-# Output defaults (optional)
-UNIFI_DEFAULT_FORMAT=png                # png, svg, html, mermaid, dot
+# No effect yet (issue 042): requests keep the built-in 3 attempts and 1.0 s back-off,
+# and discover keeps its --format, --output and --diagram defaults
+# UNIFI_MAX_RETRIES=3
+# UNIFI_RETRY_DELAY=1.0
+# UNIFI_DEFAULT_FORMAT=png
 # UNIFI_OUTPUT_DIR=~/Documents/network-reports
 # UNIFI_DIAGRAM_DIR=~/Documents/network-diagrams
 ```
+
+These five settings have no effect on `unifi-mapper`
+([issue 042](../issues/042-settings-with-no-effect.md)); `UNIFI_TIMEOUT` does. The optional
+credential families (gateway SSH for `diagnose latency-matrix` and `diagnose bandwidth`,
+`UNIFI_NETWORK_*` and `PROTECT_*` for the MCP network and Protect tools) are listed in
+`.env.example` and the README's Configuration section.
 
 **Step 4: Secure the configuration file**
 
@@ -159,10 +172,10 @@ uv run unifi-mapper discover --dry-run
 **Step 6: Install shell completions (optional)**
 
 ```bash
-# For zsh
+# For the current shell (bash, zsh or fish), through Typer
 uv run unifi-mapper --install-completion
 
-# Or for bash
+# Or the bundled installer, for bash or zsh
 uv run unifi-mapper install-completions bash
 ```
 
@@ -190,12 +203,14 @@ flowchart TD
 ### Expected Output
 
 ```
-Config: /home/user/.config/unifi_management_cli/prod.env
-Output: /home/user/reports/port_mapping_report.md
-Diagram: /home/user/diagrams/network_diagram.png
-Dry run mode - no changes will be applied
-Discovery completed successfully!
-Devices: 12, Connections: 18
+🔍 Preview mode - no port names will be written
+📁 Config: /home/user/.config/unifi_management_cli/prod.env
+📄 Output: /home/user/reports/port_mapping_report.md
+🖼️ Diagram: /home/user/diagrams/network_diagram.png
+...
+✅ Discovery completed successfully!
+📊 Devices: 12, Connections: 18
+DRY RUN — run with --apply to write
 ```
 
 ### Common Issues
@@ -204,7 +219,7 @@ Devices: 12, Connections: 18
 |---------|-------|-----|
 | `SSL: CERTIFICATE_VERIFY_FAILED` | Self-signed certificate | Set `UNIFI_VERIFY_SSL=false` |
 | `Configuration file not found` | Missing prod.env | Run `cp .env.example ~/.config/unifi_management_cli/prod.env` |
-| `UNIFI_URL environment variable required` | No config loaded | Check config path with `unifi-mapper --config /path/to/file` |
+| `UNIFI_URL environment variable required` | No config loaded | Name the file: `unifi-mapper --config /path/to/file discover` |
 | `Failed to authenticate` | Wrong credentials or cloud account | Use a local controller account, not a UniFi Cloud SSO account |
 | `Connection refused` | Wrong port | Use 443 for UniFi OS / Dream Machine, 8443 for legacy Network Application |
 
@@ -214,13 +229,13 @@ Devices: 12, Connections: 18
 
 ### Description
 
-Discover the full network topology using LLDP data, automatically name switch ports after the devices connected to them, generate visual diagrams, and verify that names persist correctly in the controller.
+Discover the full network topology using LLDP data, propose switch port names from the devices connected to them, generate visual diagrams, and, with `--apply`, write the names and verify that they persist in the controller.
 
 ### Prerequisites
 
 - Configuration file with valid credentials (see Section 1)
 - LLDP enabled on switches (enabled by default in UniFi)
-- Write access to the controller (not needed for dry-run or diagram-only modes)
+- Write access to the controller, for `--apply` only (the default preview and `diagram` only read)
 
 ### Step-by-Step Instructions
 
@@ -256,10 +271,12 @@ uv run unifi-mapper diagram --format svg --output ~/diagrams/network.svg
 
 # Interactive HTML
 uv run unifi-mapper diagram --format html --output ~/diagrams/network.html
-
-# Mermaid source (embed in Markdown)
-uv run unifi-mapper discover --format mermaid --diagram ~/diagrams/network.md
 ```
+
+`discover --format` also lists `mermaid` and `dot`, but both currently write a one-line
+placeholder instead of a diagram
+([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)); use `svg` or
+`html`.
 
 **Scenario E: Override output paths**
 
@@ -272,9 +289,13 @@ uv run unifi-mapper discover \
 
 **Scenario F: Using the network toolkit (argparse-based)**
 
+`unifi-network-toolkit discover` writes port names unless `--dry-run` is given
+([issue 015](../issues/015-other-discover-entry-points-write-by-default.md)), so pass it
+explicitly:
+
 ```bash
-uv run unifi-network-toolkit discover --verify-updates --connected-devices
-uv run unifi-network-toolkit discover --dry-run --format svg --diagram /tmp/network.svg
+uv run unifi-network-toolkit discover --dry-run --verify-updates --connected-devices
+uv run unifi-network-toolkit discover --dry-run --format svg --diagram diagrams/network.svg
 ```
 
 ### Sequence Diagram: LLDP Discovery and Port Naming
@@ -286,7 +307,7 @@ sequenceDiagram
     participant API as UniFi Controller API
     participant SPM as SmartPortMapper
 
-    User->>CLI: discover --verify-updates
+    User->>CLI: discover --verify-updates --apply
     CLI->>API: GET /api/s/{site}/stat/device
     API-->>CLI: Device list with port_table
     CLI->>API: GET /api/s/{site}/stat/sta (clients)
@@ -356,7 +377,7 @@ Search for any device on the network by name, IP address, or MAC address. Trace 
 # Using the main CLI
 uv run unifi-mapper find device "Office Switch"
 
-# Using the network toolkit (full implementation)
+# Using the network toolkit
 uv run unifi-network-toolkit find device "Office"
 uv run unifi-network-toolkit find device "USW-Pro-24"
 ```
@@ -453,7 +474,7 @@ Uptime:  14 days
 
 ### Description
 
-Analyse link quality (errors, drops), assess capacity utilisation, diagnose VLAN configurations, and inspect MAC address tables. All analysis commands use the `unifi-network-toolkit` entry point for full feature access.
+Analyse link quality (errors, drops), assess capacity utilisation, diagnose VLAN configurations, and inspect MAC address tables. The examples below use `unifi-network-toolkit`, which has the capacity, VLAN and MAC analyses; `unifi-mapper analyze` has link quality too, plus the fleet audits (link speeds, port-profile usage, MTU, PoE and power budgets, uplinks, client density, DHCP pools) shown in the README.
 
 ### Prerequisites
 
@@ -1024,7 +1045,9 @@ Connect to a UniFi Protect controller, enumerate cameras and devices, subscribe 
 ### Prerequisites
 
 - UniFi Protect controller (Dream Machine Pro, NVR, etc.)
-- Local controller account credentials (Protect does not support API tokens)
+- A dedicated local, view-only Protect account, not the console's admin login (Protect does
+  not support API tokens). The MCP Protect tools haven't been verified against a live console
+  yet ([issue 034](../issues/034-protect-has-no-live-account.md)).
 - For MQTT bridge: a running MQTT broker (e.g., Mosquitto)
 - Python `aiomqtt` package for MQTT bridge: `uv add aiomqtt`
 
@@ -1038,7 +1061,7 @@ from unifi_mapper.protect import ProtectConfig, UniFiProtectClient
 
 config = ProtectConfig(
     host="192.0.2.1",
-    username="admin",
+    username="protect-viewer",
     password="your_password",
     verify_ssl=False,
 )
@@ -1088,7 +1111,7 @@ from unifi_mapper.protect import ProtectConfig, UniFiProtectClient, MQTTBridge, 
 
 protect_config = ProtectConfig(
     host="192.0.2.1",
-    username="admin",
+    username="protect-viewer",
     password="your_password",
     verify_ssl=False,
 )
@@ -1364,6 +1387,7 @@ flowchart TD
 | Tools return empty results | Controller not reachable from server process | Check `UNIFI_URL` and network access from the machine the client runs on |
 | `uvx` not found | uv not installed | Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh` |
 | Protect tools return `[CONFIG_MISSING]` | `PROTECT_HOST`, `PROTECT_USERNAME` or `PROTECT_PASSWORD` missing | Add them to the env file named by `UNIFI_CONFIG` |
+| Network tools return `[CONFIG_MISSING]` | The `network_api` family needs all three of `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID`; the legacy config file sets only the key | Add the other two ([issue 037](../issues/037-launch-config-network-family-incomplete.md)) |
 
 ---
 
@@ -1511,22 +1535,25 @@ Summary: 10 verified, 1 uncertain, 1 failed
 
 | Command | Purpose | Framework |
 |---------|---------|-----------|
-| `unifi-mapper` | Main CLI: discovery, diagram, STP, inventory, verify, capabilities | Typer (rich output, auto-completion) |
-| `unifi-network-toolkit` | Analysis, diagnostics, find commands | argparse |
+| `unifi-mapper` | Main CLI: discovery, diagram, ports, analysis, diagnostics, STP, radio, inventory, verify, capabilities | Typer (rich output, auto-completion) |
+| `unifi-network-toolkit` | Analysis, diagnostics, find, and a `discover` that writes port names unless `--dry-run` is given ([issue 015](../issues/015-other-discover-entry-points-write-by-default.md)) | argparse |
 | `unifi-inventory` | Standalone inventory access | Typer (same as inventory subcommands) |
 | `unifi-mcp` | MCP server for AI integration | FastMCP |
 
 ### unifi-mapper Command Reference
 
+A summary; the README's Command Reference lists every command, and `--help` on any command
+shows its options.
+
 ```
 unifi-mapper [OPTIONS] COMMAND [ARGS]...
 
 Global options:
-  --config, -c PATH    Path to .env config file [default: XDG path]
+  --config, -c PATH    Path to .env config file (or UNIFI_CONFIG) [default: XDG search]
   --debug              Enable debug logging
 
 Commands:
-  discover             Discover topology and update port names with LLDP
+  discover             Discover topology and propose port names (writes with --apply)
   diagram              Generate topology diagram (no port renaming)
   verify               Port name verification with ground truth checking
   capabilities         Device capability analysis for port naming
@@ -1572,7 +1599,8 @@ Global options:
   --config, -c PATH    Path to .env config file
 
 Commands:
-  discover             Network topology discovery (same as unifi-mapper discover)
+  discover             Topology discovery and port naming; writes port names unless --dry-run
+                       (unifi-mapper discover previews by default instead)
   analyze link-quality   Port error analysis [--device NAME] [--port N]
   analyze capacity-planning  Utilisation report [--threshold FLOAT]
   analyze vlan         VLAN diagnostics [--vlan-id N]
@@ -1708,19 +1736,22 @@ The check resolves endpoints, identifies source and destination VLANs, confirms 
 For port naming, use verification by default. UniFi API responses can be stale, so the tool does not trust a single read after mutation.
 
 ```bash
+# Preview: the report and diagram show the proposed names, nothing is written
 uv run unifi-mapper discover \
   --connected-devices \
   --verify-updates \
   --output reports/port-naming-verify.md \
-  --diagram reports/topology-port-naming-verify.mermaid \
-  --format mermaid
+  --diagram reports/topology-port-naming-verify.svg \
+  --format svg
+
+# Then write the names and verify them: the same command with --apply
 ```
 
-Expected success criteria:
+Expected success criteria after `--apply`:
 
 - Verification count equals attempted update count.
 - Failed verification count is zero.
-- Generated Mermaid topology matches the expected physical design.
+- The generated topology diagram matches the expected physical design.
 
 ### Port Counters And Baselines
 
@@ -1764,7 +1795,9 @@ There is a read-only radio optimisation tool. It analyzes AP radio tables, flags
 uv run unifi-mapper analyze radio
 ```
 
-Use the report as evidence for a manual RF plan. The tool does not currently mutate AP channel or power settings.
+Use the report as evidence for a manual RF plan. `analyze radio` only reads; `radio optimize`
+and `radio auto-channel` preview their changes by default and write AP channel and power
+settings only with `--apply` (see the README's Radio Management section).
 
 ### SFP Diagnostics
 
@@ -1797,7 +1830,7 @@ flowchart TB
     end
 
     subgraph Analysis["Analysis Toolkit"]
-        G[analysis - 40 tools]
+        G[analysis - 46 tools]
         H[diagnostics - 8 tools]
         I[discovery - 5 tools]
         J[connectivity - 4 tools]
@@ -1823,6 +1856,7 @@ flowchart TB
     C --> J
     C --> K
     C --> L
+    C --> P
 
     D --> E
     D --> F
@@ -1843,8 +1877,8 @@ flowchart TB
 | `config.py` | Configuration dataclass, validation, env loading |
 | `port_mapper.py` | Traditional port mapping (LLDP to port name) |
 | `smart_port_mapper.py` | SmartPortMapper with verification and cache-busting |
-| `mcp/server.py` | FastMCP server, tool registry, meta-tools |
-| `mcp/manifests/` | YAML tool definitions for all 53 registered automation tools |
+| `mcp/server.py` | FastMCP server: the meta-tools, the direct surface, resources and prompts |
+| `mcp/manifests/` | YAML tool definitions for all 76 registered tools |
 | `analysis/stp_optimizer.py` | STP topology discovery, priority calculation, report generation |
 | `protect/client.py` | Async wrapper around uiprotect ProtectApiClient |
 | `protect/mqtt.py` | MQTT bridge with Home Assistant discovery |
