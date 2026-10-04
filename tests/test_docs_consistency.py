@@ -14,6 +14,8 @@ from ``docs/artefacts/``, and ``scripts/*.sh``), offline and without a controlle
   can pass;
 - the ``diagnose all`` check count and list match ``typer_cli.diagnose_all``;
 - relative links and ``#anchors`` resolve, and no doc names a machine-local path;
+- no Mermaid sequence-diagram line holds a ``;``, which ends the statement there, so GitHub
+  can't render the diagram;
 - every ``UNIFI_*``, ``PROTECT_*`` and ``XDG_*`` variable a doc names is read by the code;
 - privacy: MAC addresses in docs are locally administered, no private, link-local or CGNAT
   IPv4 address appears in a doc, and no device or client name from the local captures
@@ -29,7 +31,7 @@ synthetic snippet, so no guard can pass because it matched nothing. Failures nam
 ``path:line`` and a kind, never a matched address, identifier or device name.
 
 "Current" docs are everything except ``docs/issues/`` and ``docs/solutions/``, which record
-history and proposals on purpose; links, local paths and privacy cover every doc.
+history and proposals on purpose; links, local paths, Mermaid and privacy cover every doc.
 """
 
 from __future__ import annotations
@@ -914,6 +916,84 @@ def test_relative_links_and_anchors_resolve() -> None:
 def test_no_doc_names_a_machine_local_path() -> None:
     """No committed doc points at git-ignored scratch, a personal directory or a home path."""
     assert _all_problems(_docs(), local_path_problems) == []
+
+
+# ---------------------------------------------------------------------------
+# Mermaid
+# ---------------------------------------------------------------------------
+
+# Mermaid's escape codes, such as #59; for a ';', are text, not a statement break.
+MERMAID_ENTITY = re.compile(r'#\w+;')
+
+
+def _diagram_type(body: list[str]) -> str:
+    """Return a Mermaid block's diagram type: the first word of its first statement."""
+    for line in body:
+        statement = line.strip()
+        if statement and not statement.startswith('%%'):
+            return statement.split()[0]
+    return ''
+
+
+def mermaid_problems(path: str, text: str) -> list[str]:
+    """Return ``path:line: problem`` for each sequence-diagram line that breaks the render.
+
+    In a Mermaid ``sequenceDiagram`` a ``;`` ends the statement, so a message such as
+    ``A->>B: open; read`` stops at ``open`` and the rest of the line doesn't parse: GitHub
+    shows an error box instead of the diagram. ``%%`` comment lines and entity codes such as
+    ``#59;`` are allowed. Other diagram types are not checked: a ``;`` inside a flowchart
+    label renders.
+
+    Args:
+        path: The repo-relative file name.
+        text: The file's text.
+
+    Returns:
+        One entry per offending line, in file order.
+    """
+    if not path.endswith('.md'):
+        return []
+    problems = []
+    for start, info, body in code_blocks(text):
+        if not info.startswith('mermaid') or _diagram_type(body) != 'sequenceDiagram':
+            continue
+        for offset, line in enumerate(body):
+            if not line.strip().startswith('%%') and ';' in MERMAID_ENTITY.sub('', line):
+                problems.append(f'{path}:{start + offset}: ";" ends a sequence-diagram statement')
+    return problems
+
+
+def test_mermaid_detector_reports_a_semicolon_in_a_sequence_message() -> None:
+    """A ``;`` in a sequence message is reported; comments, escapes and flowcharts are not."""
+    text = (
+        '```mermaid\n'
+        'sequenceDiagram\n'
+        '    %% a comment; allowed\n'
+        '    A->>B: open; read\n'
+        '    B-->>A: done #59; next\n'
+        '```\n'
+        '\n'
+        '```mermaid\n'
+        'flowchart LR\n'
+        '    A["one; two"] --> B\n'
+        '```\n'
+    )
+    assert mermaid_problems('docs/demo.md', text) == [
+        'docs/demo.md:4: ";" ends a sequence-diagram statement'
+    ]
+
+
+def test_no_sequence_diagram_breaks_a_statement_at_a_semicolon() -> None:
+    """Every Mermaid sequence diagram in every doc parses past each message's text."""
+    docs = _docs()
+    sequences = sum(
+        1
+        for text in docs.values()
+        for _start, info, body in code_blocks(text)
+        if info.startswith('mermaid') and _diagram_type(body) == 'sequenceDiagram'
+    )
+    assert sequences > 10, f'found only {sequences} sequence diagrams: has the syntax moved?'
+    assert _all_problems(docs, mermaid_problems) == []
 
 
 # ---------------------------------------------------------------------------
