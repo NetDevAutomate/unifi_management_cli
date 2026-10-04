@@ -205,3 +205,27 @@ def test_probe_script_stops_before_connecting_when_unset(
     message = str(excinfo.value.code)
     assert message.startswith('onvif_probe.py: not set: ONVIF_PASSWORD, ONVIF_CAMERAS')
     assert cameras_built == []
+
+
+def test_rtsp_check_reports_each_failing_camera_and_moves_on(
+    config: Any,
+    cameras_built: list[tuple[object, ...]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``test-rtsp`` prints a failure for a camera it can't reach, then tries the next one.
+
+    The camera stub fails on construction, before ffprobe runs, which is the path that used to
+    stop the whole run with an UnboundLocalError.
+    """
+    stream = _load('onvif_stream', monkeypatch)
+    for var, value in _env().items():
+        monkeypatch.setenv(var, value)
+    monkeypatch.setattr(sys, 'argv', ['onvif_stream.py', 'test-rtsp'])
+
+    asyncio.run(stream.main())
+
+    out = capsys.readouterr().out
+    assert out.count('❌ Failed') == 2
+    assert len(cameras_built) == 2
+    assert FAKE_PASSWORD not in out

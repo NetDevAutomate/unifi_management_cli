@@ -16,6 +16,7 @@ before connecting to any camera if one of them is unset.
 import asyncio
 import onvif
 import os
+import subprocess
 import sys
 from collections.abc import Awaitable, Callable
 from onvif import ONVIFCamera
@@ -138,8 +139,12 @@ async def capture_snapshot(config: CameraConfig, output_dir: str = '/tmp'):
         print(f'  ❌ Failed: {e}')
 
 
-async def test_rtsp(config: CameraConfig):
-    """Test RTSP stream connectivity."""
+async def check_rtsp(config: CameraConfig):
+    """Test RTSP stream connectivity (the ``test-rtsp`` command).
+
+    A camera that fails, before or during the ffprobe run, is reported, and the caller moves
+    on to the next one.
+    """
     print(f'\n🔗 Testing RTSP for {config.name}...')
 
     try:
@@ -164,8 +169,6 @@ async def test_rtsp(config: CameraConfig):
         print(f'  Stream URI: {rtsp_uri}')
 
         # Test with ffprobe if available
-        import subprocess
-
         result = subprocess.run(
             [
                 'ffprobe',
@@ -209,7 +212,7 @@ COMMANDS: dict[str, Callable[[CameraConfig], Awaitable[None]]] = {
     'info': show_info,
     'streams': list_streams,
     'snapshot': capture_snapshot,
-    'test-rtsp': test_rtsp,
+    'test-rtsp': check_rtsp,
 }
 
 
