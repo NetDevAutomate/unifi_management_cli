@@ -18,8 +18,8 @@ C4Component
         Component(config, "protect/config.py / ProtectConfig", "Pydantic", "PROTECT_* environment config, SecretStr password, session/cache settings")
         Component(client, "protect/client.py / UniFiProtectClient", "asyncio + uiprotect", "Connection lifecycle, bootstrap cache, typed device properties, WebSocket subscription support")
         Component(events, "protect/events.py / EventHandler", "asyncio", "Normalises WebSocket messages into ProtectEvent records and dispatches filtered subscriptions")
-        Component(models, "protect/models.py", "dataclasses", "Camera, NVR, sensor, event, and state records")
-        Component(repository, "protect/repository.py", "Python", "Data access layer over ProtectApiClient/bootstrap data")
+        Component(models, "protect/models.py", "Pydantic", "BaseDevice models: camera, NVR, sensor, light, chime, doorlock and AI Port")
+        Component(repository, "protect/repository.py", "Python", "DeviceRepository and ProtectDeviceCache, refreshed from a connected client's bootstrap")
         Component(analytics, "protect/analytics.py", "Python", "Event aggregation, smart detection counts, motion statistics")
         Component(health, "protect/health.py", "asyncio", "Device health polling and transition detection")
         Component(aiport, "protect/aiport.py", "Python", "AI Port and third-party ONVIF camera support")
@@ -92,9 +92,10 @@ class UniFiProtectClient {
 }
 
 class EventHandler {
-  +subscribe(callback, filter) Callable
-  +unsubscribe(token) None
-  -_dispatch(message) None
+  +subscribe(callback, event_filter) UnsubscribeFunc
+  +clear_subscriptions() None
+  -_handle_ws_message(msg) None
+  -_dispatch_event(subscription, event) None
 }
 
 class MQTTConfig {
@@ -109,8 +110,9 @@ class MQTTConfig {
 class MQTTBridge {
   +start() Coroutine
   +stop() Coroutine
-  -_publish_event(event) Coroutine
-  -_publish_discovery(device) Coroutine
+  +publish_device_state(device_id, state_type, value) Coroutine
+  -_publish_message(message) Coroutine
+  -_publish_discovery() Coroutine
 }
 
 UniFiProtectClient --> ProtectConfig : configured by

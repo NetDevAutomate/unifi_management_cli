@@ -780,13 +780,16 @@ classDiagram
         +switches: List~SwitchSTPConfig~
         +connections: List~STPConnection~
         +root_bridge_id: str
-        +tier_assignments: Dict
+        +root_bridge_priority: int
+        +loops_detected: bool
     }
 
     class SwitchSTPConfig {
         +device_id: str
-        +bridge_priority: int
-        +ports: List~STPPortConfig~
+        +current_priority: int
+        +optimal_priority: int
+        +hierarchy_tier: int
+        +port_states: List~STPPortConfig~
     }
 ```
 

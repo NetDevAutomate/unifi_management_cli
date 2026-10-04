@@ -59,10 +59,33 @@ C4Component
 
 ```plantuml
 @startuml MCPAutomationClasses
-class FastMCPServer {
+class "server.py meta-tools" as MetaTools <<module>> {
   +search_tools(query, category, tags, detail_level) list
   +list_categories() dict
   +get_tool_info(tool_name) dict
+  +execute_tool(tool_name, params) CallToolResult
+}
+
+class UnifiFastMCP {
+  +runner: ToolRunner
+  +call_tool(name, arguments) Any
+  +list_tools() list
+}
+
+class ToolRunner {
+  +registry: ToolRegistry
+  +catalog: ToolCatalog
+  +settings: ServerSettings
+  +is_direct(name) bool
+  +run(name, params, surface) CallToolResult
+}
+
+class ToolCatalog {
+  +registry: ToolRegistry
+  +get(name) Tool
+  +find(name) Tool
+  +is_direct(name) bool
+  +direct_tools() list
 }
 
 class ToolMetadata {
@@ -74,6 +97,9 @@ class ToolMetadata {
   +priority: str
   +tags: list[str]
   +parameters: dict
+  +credentials: str
+  +mutates: bool
+  +pipeline: bool
 }
 
 class ToolProxy {
@@ -93,7 +119,11 @@ class ToolRegistry {
   +get_metadata(name) ToolMetadata
 }
 
-FastMCPServer --> ToolRegistry : uses singleton
+MetaTools --> ToolRegistry : searches
+MetaTools --> ToolRunner : execute_tool runs through
+UnifiFastMCP --> ToolRunner : routes direct tools to
+ToolRunner --> ToolCatalog : builds tools through
+ToolCatalog --> ToolRegistry : reads metadata from
 ToolRegistry "1" --> "*" ToolMetadata : indexes
 ToolRegistry "1" --> "*" ToolProxy : creates lazily
 ToolProxy --> ToolMetadata : holds
