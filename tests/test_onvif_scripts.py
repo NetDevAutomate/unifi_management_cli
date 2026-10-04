@@ -48,7 +48,7 @@ def cameras_built(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
             built.append(args)
             raise AssertionError('an ONVIF connection in a unit test')
 
-    stub = types.ModuleType('onvif')
+    stub: Any = types.ModuleType('onvif')  # Any: ModuleType declares no ONVIFCamera attribute
     stub.__file__ = str(SCRIPTS / 'onvif' / '__init__.py')  # the scripts derive WSDL_DIR from it
     stub.ONVIFCamera = _NoCamera
     monkeypatch.setitem(sys.modules, 'onvif', stub)
