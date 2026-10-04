@@ -10,10 +10,11 @@ own section of the real file, found in this order:
 2. ``$XDG_CONFIG_HOME/unifi_management_cli/site-targets.json``, or
    ``~/.config/unifi_management_cli/site-targets.json`` when ``XDG_CONFIG_HOME`` is unset.
 
-A missing or unreadable file, a missing section, a key repeated in one object or a malformed
-entry raises :class:`TargetsError`. Each script reports it and exits 2 before it reads the
-controller config or contacts the controller. A message names the file, and the section and
-the entry's position where they apply; it never repeats an entry's value.
+A missing or unreadable file, a missing section, a key repeated in one object, an AP listed
+twice in the channel plan or a malformed entry raises :class:`TargetsError`. Each script
+reports it and exits 2 before it reads the controller config or contacts the controller. A
+message names the file, and the section and the entry's position where they apply; it never
+repeats an entry's value.
 """
 
 from __future__ import annotations
@@ -135,7 +136,9 @@ def channel_plan(
         belongs last).
 
     Raises:
-        TargetsError: The file or section is missing, or an entry is malformed.
+        TargetsError: The file or section is missing, an entry is malformed, or an AP is
+            listed twice (it would be written and provisioned twice, the later entry
+            winning).
     """
     where = f'{CHANNEL_PLAN}.channel_plan'
     raw = load_section(CHANNEL_PLAN, path, environ)
@@ -143,12 +146,18 @@ def channel_plan(
     if not isinstance(entries, list) or not entries:
         raise TargetsError(f'{where}: expected a non-empty list of [AP name, channel, width]')
     plan: list[tuple[str, int, str]] = []
+    first_entry: dict[str, int] = {}
     for i, entry in enumerate(entries, 1):
         if not isinstance(entry, list) or len(entry) != 3:
             raise TargetsError(f'{where} entry {i}: expected [AP name, channel, width]')
         name, channel, width = entry
         if not _is_name(name):
             raise TargetsError(f'{where} entry {i}: the AP name must be a non-empty string')
+        if name in first_entry:
+            raise TargetsError(
+                f'{where} entry {i}: the same AP as entry {first_entry[name]}; list each AP once'
+            )
+        first_entry[name] = i
         if not _is_int(channel) or channel <= 0:
             raise TargetsError(f'{where} entry {i}: the channel must be a positive integer')
         if not isinstance(width, str) or width not in WIDTHS:

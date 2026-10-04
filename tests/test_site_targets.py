@@ -129,6 +129,20 @@ def test_a_malformed_channel_plan_is_rejected(
     assert SENTINEL not in str(caught.value)
 
 
+def test_an_ap_listed_twice_in_the_channel_plan_is_rejected(targets: Any, tmp_path: Path) -> None:
+    """Two entries for one AP would write and provision it twice, so the plan is refused.
+
+    The two entries sit in different 40MHz blocks, so ``find_overlaps`` alone would pass the
+    plan, and under ``--apply`` the later entry would win.
+    """
+    plan = {'channel_plan': [[SENTINEL, 36, '40'], ['AP-2', 52, '40'], [SENTINEL, 100, '40']]}
+
+    with pytest.raises(targets.TargetsError, match='entry 3: the same AP as entry 1') as caught:
+        targets.channel_plan(_write(tmp_path, {'apply_ap_channel_plan': plan}))
+
+    assert SENTINEL not in str(caught.value)
+
+
 def test_invalid_json_is_reported_with_its_line(targets: Any, tmp_path: Path) -> None:
     """A file that isn't JSON is reported, with the line where parsing failed."""
     path = tmp_path / 'site-targets.json'
@@ -256,6 +270,26 @@ def test_channel_plan_script_refuses_a_self_colliding_plan(
 
     assert _run(mod, ['apply_ap_channel_plan.py', '--targets', str(path)], monkeypatch) == 2
     assert 'self-inconsistent' in capsys.readouterr().out
+
+
+def test_channel_plan_script_refuses_an_ap_listed_twice(
+    targets: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A plan that lists one AP twice stops with exit 2 before any config read."""
+    mod = load_script('apply_ap_channel_plan', monkeypatch)
+    monkeypatch.setattr(mod, 'load_config', _fail)
+    monkeypatch.setattr(mod, '_load_aps', _fail)
+    plan = {'channel_plan': [[SENTINEL, 36, '40'], [SENTINEL, 100, '40']]}
+    path = _write(tmp_path, {'apply_ap_channel_plan': plan})
+
+    argv = ['apply_ap_channel_plan.py', '--apply', '--targets', str(path)]
+    assert _run(mod, argv, monkeypatch) == 2
+    out = capsys.readouterr().out
+    assert 'the same AP as entry 1' in out
+    assert SENTINEL not in out
 
 
 def test_stp_priorities_script_stops_without_a_targets_file(
