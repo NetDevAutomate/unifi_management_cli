@@ -223,12 +223,18 @@ Authentication issue with devices endpoint. Attempting to re-authenticate...
 `diagnose latency-matrix` and `diagnose bandwidth` run `ping` and `iperf3` on the gateway
 over SSH. They are the only commands that use SSH, and no MCP tool does.
 
-**Symptom**: both exit 1 before connecting to anything, with:
+**Symptom**: both exit 1 before connecting to anything. `diagnose bandwidth` prints this on
+stderr:
 
 ```text
 ❌ [CONFIG_MISSING] UNIFI_SSH_PASSWORD is not set. The gateway SSH login has its own password; UNIFI_PASSWORD (the UniFi OS login) is never sent over SSH
 💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
 ```
+
+`diagnose latency-matrix` prints the same two lines on stdout, with `Error:` in place of `❌`,
+and doesn't redact an unexpected error's text the way `diagnose bandwidth` does
+([issue 050](../issues/050-latency-matrix-errors-bypass-the-ssh-error-path.md)). A script
+that checks for the error should read both streams.
 
 **Resolution**:
 
