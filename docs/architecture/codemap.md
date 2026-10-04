@@ -1,6 +1,6 @@
 # UniFi Management CLI - Codebase Map
 
-Generated: 2026-05-02
+Generated: 2026-05-02; refreshed against the code on 2026-10-04
 
 > **See also**: [Architecture Overview](architecture-overview.md) | [C4 Architecture](c4-architecture.md) | [Use Cases](../guides/use-cases-and-howto.md) | [Troubleshooting](../operations/troubleshooting-and-runbook.md)
 
@@ -38,6 +38,7 @@ Generated: 2026-05-02
    - 10.2 [core/utils/client.py - UniFiClient (async)](#102-coreutilsclientpy)
    - 10.3 [core/utils/errors.py - ToolError](#103-coreutilserrorspy)
    - 10.4 [core/utils/redact.py and core/utils/readonly.py](#104-coreutilsredactpy-and-coreutilsreadonlypy)
+   - 10.5 [Other core/utils/ modules](#105-other-coreutils-modules)
 11. [analysis/ Package](#11-analysis-package)
 12. [diagnostics/ Package](#12-diagnostics-package)
 13. [discovery/ Package](#13-discovery-package)
@@ -50,7 +51,7 @@ Generated: 2026-05-02
 16. [protect/ Package](#16-protect-package)
     - 16.1 [protect/config.py - ProtectConfig](#161-protectconfigpy)
     - 16.2 [protect/client.py - UniFiProtectClient](#162-protectclientpy)
-    - 16.3 protect/events.py - Event handling
+    - 16.3 [protect/events.py - Event handling](#163-protecteventspy)
     - 16.4 [protect/analytics.py - EventAnalytics](#164-protectanalyticspy)
     - 16.5 [protect/mqtt.py - MQTTBridge](#165-protectmqttpy)
     - 16.6 [protect/repository.py - DeviceRepository](#166-protectrepositorypy)
@@ -58,7 +59,8 @@ Generated: 2026-05-02
     - 17.1 [mcp/server.py - FastMCP entry point](#171-mcpserverpy)
     - 17.2 [mcp/registry.py - ToolRegistry](#172-mcpregistrypy)
     - 17.3 [mcp/tools/ - Tool wrappers](#173-mcptools)
-18. [monitors/ Package](#18-monitors-package)
+    - 17.4 [mcp/catalog.py, mcp/runner.py and mcp/config.py](#174-mcpcatalogpy-mcprunnerpy-and-mcpconfigpy)
+18. [monitors/ and backup/ Packages](#18-monitors-and-backup-packages)
 19. [utility/ Package](#19-utility-package)
 20. [Key Workflows](#20-key-workflows)
     - 20.1 [Port Discovery and Naming Workflow](#201-port-discovery-and-naming-workflow)
@@ -77,8 +79,8 @@ Generated: 2026-05-02
 The UniFi Management CLI is a Python package (`unifi_mapper`) that provides three distinct interface layers over UniFi Controller APIs:
 
 1. **CLI tools** - argparse and Typer-based command-line interfaces for network operators
-2. **Analysis and diagnostics tools** - 30+ domain-specific modules for network analysis
-3. **MCP server** - A FastMCP server that exposes all tools to AI agents via the Model Context Protocol
+2. **Analysis and diagnostics tools** - 49 analysis modules plus the diagnostics, discovery and connectivity packages
+3. **MCP server** - A FastMCP server that exposes 76 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
 
 The codebase contains two generations of API client code. The legacy synchronous path (`api_client.py`, `port_mapper.py`, `run_methods.py`) handles the original port-mapping workflow. The modern async path (`core/utils/client.py`, `network/client.py`, `protect/client.py`) serves the analysis, network control, and Protect integration packages.
 
@@ -112,11 +114,11 @@ graph TB
     end
 
     subgraph "Domain Packages"
-        ANA["analysis/\n30+ modules"]
-        DIA["diagnostics/\n11 tool handlers"]
-        DIS["discovery/\n4 tools"]
-        CON["connectivity/\n4 tools"]
-        NET["network/\n10 modules"]
+        ANA["analysis/\n49 modules, 46 tools"]
+        DIA["diagnostics/\n6 modules, 8 tools"]
+        DIS["discovery/\n4 modules, 5 tools"]
+        CON["connectivity/\n4 modules, 4 tools"]
+        NET["network/\n12 modules"]
         PRO["protect/\n9 modules"]
     end
 
@@ -143,7 +145,7 @@ graph TB
     PRO --> PC
     MCP --> REG
     REG --> TW
-    TW --> UC
+    TW --> NC
     TW --> PC
 ```
 
@@ -203,7 +205,7 @@ graph LR
 
     subgraph "MCP"
         MSRV["mcp/server.py"] --> MREG["mcp/registry.py"]
-        MTW_N["mcp/tools/network.py"] --> CUC
+        MTW_N["mcp/tools/network.py"] --> NC
         MTW_P["mcp/tools/protect.py"] --> PC
     end
 
@@ -233,7 +235,7 @@ graph TB
     subgraph "Operator Interfaces"
         Argparse["cli.py / verify_cli.py\nlegacy argparse CLIs"]
         Typer["typer_cli.py / inventory_cli.py\nTyper + Rich CLIs"]
-        MCPServer["mcp/server.py\nFastMCP meta-tools"]
+        MCPServer["mcp/server.py\nFastMCP meta-tools, ToolRunner"]
     end
 
     subgraph "Sync Port-Naming Slice"
@@ -268,7 +270,7 @@ graph TB
         NetworkManagers["network/*\nfirewall, ACL, DNS, clients, sites"]
         Protect["protect/*\nclient, events, analytics, MQTT"]
         MCPTools["mcp/tools/*\nmanager lifecycle wrappers"]
-        Registry["mcp/registry.py\nmanifest registry + lazy proxies"]
+        Registry["mcp/registry.py + catalog.py\nmanifest registry, lazy SDK tools"]
         Manifests["mcp/manifests/*.yaml\ntool metadata"]
     end
 
@@ -312,7 +314,7 @@ graph TB
 | Verification | `ground_truth_verification.py`, `verify_cli.py`, `browser_verification.py` | Multi-read verification helpers and CLI | Exists because UniFi API reads can be stale after writes. |
 | Async analysis | `analysis/*`, `diagnostics/*`, `discovery/*`, `connectivity/*` | `async` functions returning Pydantic models | Consumed directly by tests and indirectly by MCP manifests. |
 | Network control plane | `network/*`, `network_cli.py`, `mcp/tools/network.py` | Manager classes over `UniFiClient` or `UniFiNetworkClient` | Splits typed Network API resources from classic controller analysis tools. |
-| MCP exposure | `mcp/server.py`, `mcp/registry.py`, `mcp/manifests/*.yaml`, `mcp/tools/*` | FastMCP meta-tools plus lazy `ToolProxy.execute()` | Agents search metadata before loading expensive domain modules. |
+| MCP exposure | `mcp/server.py`, `mcp/registry.py`, `mcp/catalog.py`, `mcp/runner.py`, `mcp/config.py`, `mcp/manifests/*.yaml`, `mcp/tools/*` | FastMCP meta-tools and direct tools; `ToolCatalog` builds each SDK tool on first use and `ToolRunner` validates, gates, runs and masks every call | Agents search metadata before loading expensive domain modules. |
 | Protect integration | `protect/*`, `monitors/protect_monitor.py`, `mcp/tools/protect.py` | Async `uiprotect` wrapper plus independent polling monitor | Protect is intentionally separate from Network API concerns. |
 
 **PlantUML component view.**
@@ -346,13 +348,14 @@ package "Async Tool Stack" {
   [Discovery Tools] as Disc
   [Connectivity Tools] as Conn
   [Network Managers] as Network
+  [UniFiNetworkClient] as NetClient
   [Protect Client] as ProtectClient
 }
 
 package "MCP Registry" {
   [YAML Manifests] as Manifests
   [ToolRegistry] as Registry
-  [ToolProxy] as Proxy
+  [ToolCatalog + ToolRunner] as Proxy
   [MCP Wrappers] as Wrappers
 }
 
@@ -378,7 +381,7 @@ Wrappers --> ProtectClient
 Analysis --> AsyncClient
 Disc --> AsyncClient
 Conn --> AsyncClient
-Network --> AsyncClient
+Network --> NetClient
 AsyncClient --> Creds
 AsyncClient --> Errors
 @enduml
@@ -390,33 +393,33 @@ AsyncClient --> Errors
 
 ### 5.1 `cli.py`
 
-**Purpose.** The original CLI entry point registered as the `unifi-mapper` console script. It handles XDG Base Directory config discovery, loads a `.env` file into `os.environ`, then delegates to `run_port_mapper` or `SmartPortMapper`.
+**Purpose.** The original argparse CLI, now run only as `python -m unifi_mapper.cli` (the `unifi-mapper` console script is `typer_cli:app`). It handles config discovery, loads a `.env` file into `os.environ`, then delegates to `run_port_mapper` or `SmartPortMapper`. Unlike `unifi-mapper discover`, it writes port names unless `--dry-run` is given ([issue 015](../issues/015-other-discover-entry-points-write-by-default.md)).
 
 **Key functions.**
 
 | Function | Description |
 |---|---|
 | `main()` | argparse-based entry, dispatches to port mapping or smart mapping |
-| `load_env_from_config(config_path)` | Parses a key=value `.env` file into `os.environ` |
-| `get_default_config_path()` | XDG-compliant config file discovery with 5-level fallback |
+| `load_env_from_config(config_path)` | Parses a key=value `.env` file into `os.environ`; exits 1 if the file is missing |
+| `get_default_config_path()` | `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` (or `~/.config/unifi_management_cli/` when unset), else `./.env` |
 
 **Dependencies.** `config.py`, `api_client.py`, `port_mapper.py`, `smart_port_mapper.py`, `run_methods.py`, `completions.py`
 
-**Interface.** Consumed by the `unifi-mapper` entry point in `pyproject.toml`. Deferred imports after env loading avoid import-time side effects.
+**Interface.** `typer_cli.py` and `inventory_cli.py` import its two config helpers; `network_cli.py` imports `load_env_from_config`. Deferred imports after env loading avoid import-time side effects. The MCP server has its own search (`mcp/config.py`), which also tries `~/.config` when `XDG_CONFIG_HOME` is set ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
 
 ---
 
 ### 5.2 `typer_cli.py`
 
-**Purpose.** A modern Typer + Rich CLI that wraps the same underlying port-mapping logic with richer UX. Registers subcommands including `discover`, `inventory`, and `devices`.
+**Purpose.** The `unifi-mapper` console script: a Typer + Rich CLI over the port-mapping logic and the analysis packages. Registers the top-level commands (`discover`, `diagram`, `verify`, `capabilities`, `version`, `install-completions`) and the `find`, `analyze`, `diagnose`, `inventory`, `stp`, `radio` and `ports` groups, 60 commands in all.
 
 **Key objects.**
 
 | Object | Description |
 |---|---|
-| `app` | Typer application instance with `--config`, `--debug`, `--dry-run` global options |
-| `state` (State) | Global singleton holding config path and debug flag |
-| `main()` | Callback invoked on bare `unifi-mapper` invocation |
+| `app` | Typer application instance. Root options: `--config`/`-c` (also `UNIFI_CONFIG`), `--debug`, and the `discover` shortcuts `--dry-run`, `--apply`, `--connected-devices` and `--verify-updates`. On their own the shortcuts run `discover` (a preview unless `--apply`); before the `discover` subcommand the first three are passed on to it; before any other subcommand they exit 2, and a root `--apply` exits 2 before any subcommand |
+| `state` (State) | Global singleton holding config path, debug flag and the root shortcuts passed on to `discover` |
+| `main()` | Root callback: applies the shortcut rules above, and prints help on a bare `unifi-mapper` |
 
 **Dependencies.** `cli.py` (for `get_default_config_path`, `load_env_from_config`), `inventory_cli.py`
 
@@ -424,9 +427,11 @@ AsyncClient --> Errors
 
 ### 5.3 `network_cli.py` and `inventory_cli.py`
 
-**Purpose.** `network_cli.py` is an argparse-based entry point for the `unifi-network-toolkit` console script; it focuses on network-level operations rather than port mapping. `inventory_cli.py` provides a Typer subapp (`inventory_app`) for listing devices and querying firmware versions, integrated into `typer_cli.py`.
+**Purpose.** `network_cli.py` is the argparse entry point for the `unifi-network-toolkit` console script (`analyze`, `diagnose`, `find`, `discover`, `install-completions`); its `discover` writes port names unless `--dry-run` is given (issue 015). `inventory_cli.py` provides the Typer subapp `inventory_app` (`list`, `check-updates`, `firmware-skew`, `update-firmware`), mounted as `unifi-mapper inventory` and run on its own as `unifi-inventory`. Each inventory command takes its own `--config` and ignores the root one ([issue 043](../issues/043-inventory-ignores-the-root-config.md)).
 
-**Dependencies.** Both depend on `api_client.py` and `cli.py`.
+`toolkit_adapters.py` (`ToolkitAdapter`) gives the toolkit synchronous versions of three tools (`find_device_sync`, `analyze_link_quality_sync`, `network_health_check_sync`) over its `EnhancedUnifiApiClient`.
+
+**Dependencies.** `inventory_cli.py` imports `api_client.py` and `cli.py`. `network_cli.py` defers its imports: `cli.load_env_from_config`, `config.py`, `port_mapper.py`, `run_methods.py`, `enhanced_api_client.py` and `toolkit_adapters.py`.
 
 ---
 
@@ -444,12 +449,13 @@ AsyncClient --> Errors
 | `username` / `password` | `Optional[str]` | Fallback auth |
 | `verify_ssl` | `bool` | Defaults to `False` for self-signed certs |
 | `timeout` | `int` | Clamped to 1-300 seconds |
-| `default_format` | `str` | Diagram output format (`png`, `svg`, etc.) |
+| `max_retries` / `retry_delay` | `int` / `float` | Clamped to 1-10 and 0.1-10.0, but no caller passes them on ([issue 042](../issues/042-settings-with-no-effect.md)) |
+| `default_format`, `default_output_dir`, `default_diagram_dir` | `str` / `Optional[str]` | Read only by the legacy `python -m unifi_mapper.cli` (issue 042) |
 
 **Key methods.**
 
-- `from_env(env_file)` - Loads `UNIFI_URL`, `UNIFI_SITE`, `UNIFI_CONSOLE_API_TOKEN`, etc. from environment
-- `to_dict()` - Returns plain dict suitable for `UnifiApiClient` constructor kwargs
+- `from_env(env_file)` - Loads `UNIFI_URL`, `UNIFI_SITE`, `UNIFI_CONSOLE_API_TOKEN`, etc. from environment (and the file, when it exists)
+- `to_dict()` - Returns every field as a dict. It includes the output preferences, which `UnifiApiClient` does not accept, so it can't be passed to that constructor as is
 
 **Dependencies.** Standard library only (`os`, `dataclasses`, `pathlib`).
 
@@ -585,6 +591,8 @@ classDiagram
 | `PortNamingSupport` (Enum) | `FULL_SUPPORT`, `UI_ONLY`, `LIMITED`, `RESETS_AUTOMATICALLY`, `NOT_SUPPORTED` |
 | `DeviceCapability` (dataclass) | Per-device record: known issues, workarounds, max name length |
 | `DeviceCapabilityDetector` | Lookup class with `detect_capabilities`, `should_attempt_port_naming`, `get_recommended_strategy` |
+
+`analyze_network_capabilities.py` (`python -m unifi_mapper.analyze_network_capabilities`) runs the detector over the live device list and prints the compatibility report; `unifi-mapper capabilities` does the same through the Typer CLI.
 
 **Dependencies.** Standard library only.
 
@@ -736,6 +744,7 @@ classDiagram
 | `mirror.py` | (port mirror models) | SPAN/mirror session definitions |
 | `analysis.py` | (analysis result models) | Structured results for analysis tools |
 | `network_path.py` | `NetworkPath` | Used by `render_mermaid` for path visualisation |
+| `capability.py` | `SwitchCapabilityClass`, `is_root_eligible`, `is_access_class` | Switch capability classes shared by the STP models and `analysis/model_capabilities.py` |
 
 ```mermaid
 classDiagram
@@ -797,8 +806,8 @@ classDiagram
 | `add_connection(source_id, target_id, source_port_idx, target_port_idx)` | Appends a connection record |
 | `generate_png_diagram(path)` | Renders PNG via Graphviz |
 | `generate_svg_diagram(path)` | Renders SVG via Graphviz |
-| `generate_dot_diagram(path)` | Outputs Graphviz DOT notation |
-| `generate_mermaid_diagram(path)` | Outputs Mermaid flowchart markup |
+| `generate_dot_diagram(path)` | Writes a one-line placeholder, not DOT source ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)) |
+| `generate_mermaid_diagram(path)` | Writes a one-line placeholder, not Mermaid markup (issue 044) |
 | `generate_html_diagram(path, show_connected_devices)` | Renders interactive HTML diagram |
 
 **Dependencies.** `models.py`
@@ -846,13 +855,17 @@ The `core/` package provides shared infrastructure consumed by the async analysi
 
 | Method | Description |
 |---|---|
-| `connect()` | Opens httpx session, detects UniFi OS, authenticates |
+| `connect()` | Opens httpx session, detects UniFi OS, authenticates; under the MCP server it borrows the lifespan's shared client instead |
 | `disconnect()` | Closes session and logs out |
-| `get_devices()` | Returns device list |
-| `get_lldp_info(device_id)` | Returns LLDP table for device |
-| Various domain methods | Port stats, STP config, client lists, etc. |
+| `get_devices()`, `get_device(device_id)`, `get_device_ports(device_id)` | Device and port reads |
+| `get_lldp_table(device_id)` | Returns the LLDP table for a device |
+| `get_clients()`, `get_rogue_aps()`, `get_networks()`, `get_network_topology()` | Client, neighbour-AP, network and topology reads |
+| `get(path)`, `post(path)`, `put(path)` | Raw requests on the site API |
+| `update_device_port()`, `update_port_names()`, `force_provision()` | Write helpers; under the MCP server the read-only transport refuses them |
 
 **Authentication.** Prefers token (`X-API-KEY` header). Falls back to username/password POST against `/api/auth/login` (UniFi OS) or `/api/login` (legacy).
+
+**Read-only under MCP.** The shared client the MCP lifespan installs (connect timeout 10 s, request timeout 30 s) sends every request through `core/utils/readonly.py`'s `ReadOnlyAsyncTransport`, which refuses a write with `ReadOnlyViolation` before any I/O. After a 401 it logs in again once and retries the request once.
 
 **Dependencies.** `core/utils/auth.py`, `core/utils/errors.py`, `httpx`
 
@@ -872,7 +885,19 @@ The `core/` package provides shared infrastructure consumed by the async analysi
 
 **`redact.py`.** `strip_secrets(value, path)` removes (never masks) every key starting with `x_` or containing `password`, `secret`, `token`, `authkey`, `psk`, `passphrase`, `api_key` or `private_key`, at any depth, and returns the dotted paths it removed. `redact_text()` masks secret values quoted in error or HTTP text and truncates it. `SECRET_KEY_RE` is the single shared pattern.
 
-**`readonly.py`.** `install_read_only_guard(client)` wraps an authenticated `UnifiApiClient` session in `ReadOnlySession`: `GET`/`HEAD` pass except `cmd`/`upd` paths, `POST` passes only to `stat/event`, `list/alarm`, the v2 `system-log/{device-alert,admin-activity,update-alert,client-alert}` queries and logout, and every other method raises `ReadOnlyViolation` (a `PermissionError`) before any I/O. Each sent request is audited as `{method, path}`. It must be installed after `login()`, which replaces the session. Installing it also wraps the client's `login`/`_perform_login` on the instance, so a later login (for example after `logout()`) leaves a fresh session that is wrapped again with the same audit list; login traffic itself is never audited. `assert_guarded()` is the backstop for a session assigned directly.
+**`readonly.py`.** `install_read_only_guard(client)` wraps an authenticated `UnifiApiClient` session in `ReadOnlySession`: `GET`/`HEAD` pass except `cmd`/`upd` paths, `POST` passes only to `stat/event`, `list/alarm`, the v2 `system-log/{device-alert,admin-activity,update-alert,client-alert}` queries and logout, and every other method raises `ReadOnlyViolation` (a `PermissionError`) before any I/O. Each sent request is audited as `{method, path}`. It must be installed after `login()`, which replaces the session. Installing it also wraps the client's `login`/`_perform_login` on the instance, so a later login (for example after `logout()`) leaves a fresh session that is wrapped again with the same audit list; login traffic itself is never audited. `assert_guarded()` is the backstop for a session assigned directly. `ReadOnlyAsyncTransport` is the httpx twin for the async clients: with `site=` it applies the controller policy (the shared MCP `UniFiClient`), and with `policy=get_only_request_allowed` the GET-only policy the `network_api` tools use. Every request it lets through goes to the opt-in `UNIFI_MCP_REQUEST_AUDIT` file.
+
+`redact.py` is also what the CLI's gateway SSH commands use (`redact_text`) to report an unexpected failure without a traceback, since the traceback's locals would include the SSH password.
+
+---
+
+### 10.5 Other `core/utils/` modules
+
+| Module | Key names | Purpose |
+|---|---|---|
+| `coerce.py` | `int_or_none`, `float_or_none` | Numeric coercion for controller fields whose JSON type varies by model and firmware (system stats sent as strings) |
+| `overrides.py` | `load_stp_overrides`, `STPOverrides` | Loads the STP optimiser's root-eligible and forced-access MACs from `UNIFI_STP_OVERRIDES` (default `~/.config/unifi_management_cli/stp_overrides.yaml`) |
+| `logging.py` | `configure_logging`, `get_logger` | A loguru JSON-file setup that nothing calls, so `UNIFI_MAPPER_DEBUG` has no effect ([issue 045](../issues/045-configure-logging-is-never-called.md)); the CLI uses `typer_cli.setup_logging` and the MCP server `server._configure_logging` |
 
 ---
 
@@ -889,7 +914,7 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 | `link_quality.py` | `analyze_link_quality` | Analyses port error rates and link stability |
 | `mac_analyzer.py` | `analyze_mac_table` | MAC address table analysis including aging and conflicts |
 | `mtu_audit.py` | `audit_mtu_consistency` | Checks MTU and jumbo-frame consistency across inter-switch links |
-| `port_counter_baseline.py` | `snapshots_from_switches`, `diff_since_last` | Persists and diffs port error/drop counters; nothing produces the store yet (§20.4) |
+| `port_counter_baseline.py` | `snapshots_from_switches`, `diff_since_last` | Persists and diffs per-port counter snapshots under the XDG state root; `analyze link-errors --snapshot` writes the store (§20.4) |
 | `port_profile_validation.py` | `validate_port_profiles` | Validates STP Edge, BPDU Guard, uplink, and client access profile safety |
 | `qos_validation.py` | `validate_qos` | Validates QoS policy consistency across devices |
 | `radio_optimization.py` | `analyze_radio_optimization` | Reviews Wi-Fi channel reuse and transmit power |
@@ -912,11 +937,25 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 | `gateway_ssh.py` | `require_ip`, `require_bounded_int`, `ssh_login` | Checks every address and number before it goes on a command line run on the gateway over SSH, and reads the SSH login from `UNIFI_SSH_*` only (latency matrix, bandwidth test) |
 | `latency_matrix.py` | `run_latency_matrix` | Gateway-centric ping matrix via SSH across all device and client IPs |
 | `link_error_tracking.py` | `snapshot_link_errors`, `compare_link_errors` | Link error rate tracking with baseline deltas for active degradation detection |
-| `neighbour_scan.py` | `scan_neighbours`, `get_cached_neighbours` | RF neighbour AP scanning for external network detection per channel |
+| `neighbour_scan.py` | `scan_neighbours`, `get_our_ap_bssids`, `compute_channel_neighbour_score` | RF neighbour AP scanning for external network detection per channel |
 | `poe_budget.py` | `check_poe_budget` | PoE budget validation: per-switch consumption vs capacity |
 | `radio_config.py` | `snapshot_radio_config`, `apply_radio_config`, `restore_radio_config`, `build_optimisation_plan` | Radio config management: snapshot, apply, restore, and optimisation planning |
 | `roaming_analysis.py` | `snapshot_client_associations`, `analyze_roaming` | Client roaming pattern analysis to identify sticky clients and frequent roamers |
 | `uplink_redundancy.py` | `check_uplink_redundancy` | Uplink single-point-of-failure detection and failover validation |
+| `counter_history.py` | `append_history`, `read_port_history`, `summarise_port_history` | Capped JSON Lines history of switch port counters under the XDG state root (`analyze link-errors --record`; §20.4) |
+| `device_freshness.py` | `check_device_freshness`, `summarise_freshness` | Whether the controller serves live telemetry or a stale snapshot: a slow two-sample check, and a single-read summary for `diagnose all` |
+| `foreign_bridges.py` | `detect_foreign_bridges` | Wired third-party bridges inside the UniFi layer-2 domain |
+| `link_settings.py` | `port_override`, `effective_profile_id`, `effective_port_settings` | The one place that decides a port's effective profile and link settings (the override over the port table over the profile), shared by the port diagnostics and the profile analyses ([issue 026](../issues/026-profile-precedence-outside-port-diagnostics.md)) |
+| `link_speed_audit.py` | `audit_link_speeds`, `collect_link_speed_audit` | Fleet-wide ports below their capability, forced-speed traps and half duplex (`analyze link-speeds`) |
+| `model_capabilities.py` | `classify_model` | Capability classes for UniFi switch and gateway models, used by the STP optimiser |
+| `neighbour_trend.py` | `snapshot_neighbours`, `detect_neighbour_trend` | Neighbour AP baseline snapshot and diff (`analyze neighbours --snapshot` / `--diff`) |
+| `port_naming.py` | `resolve_peer`, `is_weak_label`, `name_quality`, `would_lose_information`, `is_cosmetic_change`, `strip_multi_suffix` | Port-label rules for `ports refresh`: the LLDP peer or wired client, with guards against weak labels, churn and `+N` flapping |
+| `port_profile_usage.py` | `audit_port_profile_usage`, `collect_port_profile_usage` | Where each port profile is applied, and which profiles are traps (`analyze port-profile-usage`) |
+| `power_budget.py` | `audit_power_budget` | Switch input power headroom against published vendor figures (`analyze power-budget`) |
+| `rf_strategy.py` | `compute_coverage_score`, `classify_confidence` | RF strategy scorecard engine, used by the roaming analysis and the RF simulator |
+| `rf_simulator.py` | `simulate_disable`, `simulate_width_change` | What-if simulation for RF strategy recommendations |
+| `uplink_transparency.py` | `audit_uplink_transparency` | Elected uplinks that can't carry tagged VLANs (`analyze uplink-transparency`) |
+| `wlan_config.py` | `update_wlan_settings`, `verify_wlan_patch`, `check_minrate_gate` | Guarded WLAN (SSID) setting writes with guard-field verification; no CLI command or MCP tool calls it yet |
 
 `stp_optimizer.py` is the hub for STP analysis. It discovers switches from `stat/device`, extracts STP state from `port_table`, builds LLDP-derived `STPConnection` records, annotates root eligibility, then feeds specialised helpers such as drift detection, snapshots, Root Guard auditing, 10G path-cost validation, and change-plan generation.
 
@@ -939,7 +978,7 @@ Diagnostic tools. The first four use `UniFiClient`; `inspect_port.py` and `port_
 
 ## 13. `discovery/` Package
 
-Four discovery tools for locating specific assets. All use `UniFiClient`.
+Four modules for locating specific assets, all on `UniFiClient`. The `discovery` MCP category has five tools: the fifth, `get_client_history`, lives in `diagnostics/port_diagnostics_tools.py`.
 
 | Module | Purpose |
 |---|---|
@@ -952,15 +991,16 @@ Four discovery tools for locating specific assets. All use `UniFiClient`.
 
 ## 14. `connectivity/` Package
 
-Three connectivity tools. All use `UniFiClient`.
+Four connectivity tools. All use `UniFiClient`.
 
 | Module | Purpose |
 |---|---|
 | `firewall_check.py` | Determines whether traffic between two endpoints would be permitted by firewall rules |
+| `inter_vlan.py` | `check_inter_vlan_routing`: resolves two endpoints, their VLANs and gateway, and the firewall verdict between them (`diagnose inter-vlan`) |
 | `path_analysis.py` | Calculates layer-2 and layer-3 path between two endpoints |
 | `traceroute.py` | Logical traceroute through UniFi topology (does not send ICMP) |
 
-The package `__init__.py` exports `firewall_check`, `path_analysis`, and `traceroute` directly.
+The package `__init__.py` exports `firewall_check`, `path_analysis`, `traceroute`, `check_inter_vlan_routing` and its models directly.
 
 ---
 
@@ -972,7 +1012,7 @@ The `network/` package provides the modern async interface to the UniFi Network 
 
 **Purpose.** Pydantic `NetworkConfig` for the Network API connection: `host`, `port`, `api_key` (SecretStr), `site_id`, `verify_ssl`, `timeout`.
 
-Loaded via `NetworkConfig.from_env()` reading `UNIFI_HOST`, `UNIFI_API_KEY`, `UNIFI_SITE_ID`.
+Loaded via `NetworkConfig.from_env()` with the prefix `UNIFI_NETWORK_`: `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID` (all three required: the MCP `network_api` family), plus the optional `UNIFI_NETWORK_PORT`, `UNIFI_NETWORK_VERIFY_SSL`, `UNIFI_NETWORK_TIMEOUT` and `UNIFI_NETWORK_DEBUG`.
 
 ---
 
@@ -1046,17 +1086,21 @@ Loaded via `ProtectConfig.from_env(prefix='PROTECT_')` reading `PROTECT_HOST`, `
 
 **Key class.** `UniFiProtectClient`
 
-| Method | Description |
+| Member | Description |
 |---|---|
-| `connect()` / `disconnect()` | Lifecycle management |
-| `get_bootstrap()` | Returns `uiprotect.data.Bootstrap` with all device data |
-| `get_cameras()` | Returns typed list of camera objects |
-| `get_nvr()` | Returns NVR device |
-| `get_ai_ports()` | Returns AI Port devices |
-| `get_lights()`, `get_sensors()`, `get_doorbells()`, `get_doorcams()` | Typed device accessors |
+| `connect()` / `disconnect()` / `refresh()` | Lifecycle management; `refresh()` re-reads the bootstrap |
+| `state`, `is_connected` | The `ConnectionState` and whether the client is usable |
+| `bootstrap`, `nvr` (properties) | The `uiprotect` `Bootstrap` and the NVR |
+| `cameras`, `ai_ports`, `sensors`, `lights`, `chimes`, `doorlocks` (properties) | Typed device dictionaries keyed by id |
+| `get_camera(camera_id)`, `get_camera_by_name(name)` | One camera |
+| `get_ai_port(ai_port_id)`, `get_cameras_by_ai_port(ai_port_id)`, `get_third_party_cameras()` | AI Ports and the third-party cameras paired with them |
 | Context manager `__aenter__` / `__aexit__` | Use as `async with UniFiProtectClient(config) as client` |
 
+The MCP Protect tools (`mcp/tools/protect.py`) connect through `ReadOnlyProtectApiClient`, a `ProtectApiClient` subclass in this module whose `request()` allows only GET and HEAD (no `cmd`/`upd` segment) and the session login.
+
 **Exceptions.** `ProtectClientError`, `ConnectionError`, `AuthenticationError` (all defined in this module).
+
+`protect/aiport.py` (`AIPortManager`, `AIPortInfo`, `PairedCamera`, `AIDetectionEvent`) models AI Ports, their capabilities and paired cameras, for the client, the event and health modules and the Protect monitor.
 
 ---
 
@@ -1143,7 +1187,7 @@ The MCP server exposes all analysis, diagnostic, discovery, connectivity, networ
 
 ### 17.2 `mcp/registry.py`
 
-**Purpose.** Lazy-loading tool registry. Reads YAML manifests on first access, builds `ToolMetadata` records, and wraps tool implementations in `ToolProxy` for deferred import.
+**Purpose.** Lazy-loading tool registry. Reads YAML manifests on first access, validates each entry against `MANIFEST_KEYS` (`ToolRegistry(strict=True)` in the tests rejects an unknown key or a wrong type), builds `ToolMetadata` records, and wraps tool implementations in `ToolProxy` for deferred import.
 
 ```mermaid
 classDiagram
@@ -1156,6 +1200,15 @@ classDiagram
         +priority: str
         +tags: List~str~
         +parameters: Dict
+        +mutates: bool
+        +title: str
+        +writes_local: bool
+        +open_world: bool
+        +pipeline: bool
+        +mcp: bool
+        +aliases: Dict~str, str~
+        +credentials: str
+        +idempotent: bool
     }
 
     class ToolProxy {
@@ -1185,9 +1238,9 @@ classDiagram
 
 **Concurrency.** Double-checked locking (`threading.Lock`) ensures manifests are loaded only once even under concurrent access.
 
-**Lazy loading.** `ToolProxy._load_implementation()` calls `importlib.import_module` and `getattr` on first `execute()` call, not at startup. This keeps server startup fast regardless of the number of registered tools.
+**Lazy loading.** `ToolProxy._load_implementation()` calls `importlib.import_module` and `getattr` on first `execute()` call, not at startup. `ToolRegistry.execute(name, params)` is the registry's own refuse-mutation choke point over the proxies; the MCP server runs tools through `ToolCatalog` and `ToolRunner` instead (§17.4), which import each handler the same lazy way.
 
-**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml`, `connectivity.yaml`, `diagnostics.yaml`, `discovery.yaml`, `network.yaml`, `observability.yaml`, `protect.yaml`. Each declares a `category` and a `tools` mapping of name to `{module, handler, description, priority, tags, parameters}`.
+**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (46 tools), `connectivity.yaml` (4), `diagnostics.yaml` (8), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (2), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
 
 ---
 
@@ -1197,14 +1250,24 @@ classDiagram
 
 | Module | Wraps | Example functions |
 |---|---|---|
-| `network.py` | `core/utils/client.py` `UniFiClient`, various `network/` managers | `get_firewall_zones`, `get_firewall_policies`, `get_acl_rules`, `get_dns_policies`, `get_networks`, `get_clients` |
-| `protect.py` | `protect/client.py` `UniFiProtectClient` | Camera queries, event retrieval, AI Port status |
+| `network.py` | `network/client.py` `UniFiNetworkClient` and the `network/` managers | `get_firewall_zones`, `get_firewall_policies`, `get_acl_rules`, `get_dns_policies`, `get_networks`, `get_clients` |
+| `protect.py` | `protect/client.py` `UniFiProtectClient` over `ReadOnlyProtectApiClient` | `get_cameras`, `get_nvr_info`, `get_sensors`, `get_lights`, `get_doorbells` |
 
-Each function uses `async with UniFiClient() as client` (or `UniFiProtectClient`) for clean connection lifecycle, catches exceptions, and returns either model dicts or `[{"error": str(e)}]` on failure.
+Each call opens its own guarded client: the network wrappers build `UniFiNetworkClient` on `ReadOnlyAsyncTransport` with the GET-only policy (`get_only_request_allowed`), and the Protect wrappers use `ReadOnlyProtectApiClient`. A refused write raises `ReadOnlyViolation`, which the runner reports as `READ_ONLY_VIOLATION`. Any other failure still comes back as model dicts with an `{"error": str(e)}` entry inside a successful result ([issue 011](../issues/011-network-protect-errors-as-success.md)).
 
 ---
 
-## 18. `monitors/` Package
+### 17.4 `mcp/catalog.py`, `mcp/runner.py` and `mcp/config.py`
+
+| Module | Key names | Responsibility |
+|---|---|---|
+| `catalog.py` | `ToolCatalog`, `build_tool`, `is_direct` | Builds each SDK `Tool` with `Tool.from_function` on first use (the handler signature is the input schema; a typed return gives the output schema), with its title and annotations; `direct_tools()` lists the non-mutating, non-pipeline tools for the direct surface |
+| `runner.py` | `ToolRunner`, `ERRORS_SET_IS_ERROR` | One path for every call on either surface: look up, refuse mutating tools, rewrite aliases, validate, gate the credential family, run under the concurrency cap and the optional `UNIFI_MCP_TOOL_TIMEOUT`, mask secrets and package the envelope; every failure sets `isError` |
+| `config.py` | `resolve_config_path`, `resolve_mcp_config`, `load_server_settings`, `CREDENTIAL_KEYS`, `FAMILY_KEYS` | Working-directory-independent config discovery, per-family loading (`controller`, `network_api`, `protect`), the bounded Keychain/1Password fallback and the `UNIFI_MCP_*` settings |
+
+---
+
+## 18. `monitors/` and `backup/` Packages
 
 ### `protect_monitor.py`
 
@@ -1212,7 +1275,11 @@ Each function uses `async with UniFiClient() as client` (or `UniFiProtectClient`
 
 **Key class.** `ProtectMonitor`
 
-Uses `requests` (synchronous) rather than `uiprotect`, making it independent of the async Protect client stack.
+Uses `requests` (synchronous) rather than `uiprotect`, making it independent of the async Protect client stack. Credentials come from `PROTECT_HOST`, `PROTECT_USERNAME` and `PROTECT_PASSWORD` unless given on the command line.
+
+### `backup/poc_decrypt.py`
+
+**Purpose.** A proof of concept that decrypts a UniFi controller backup (`.unf`) with the controller's fixed AES key and IV (module constants, not settings), extracts the database and parses its BSON collections (`decrypt_backup`, `extract_db_gz`, `parse_bson_documents`). Run it as `python -m unifi_mapper.backup.poc_decrypt BACKUP.unf`; only `backup/__init__.py` re-exports it.
 
 ---
 
@@ -1226,7 +1293,7 @@ Three helper modules for output generation.
 | `format_table.py` | `format_table(data, headers)` | Formats tabular data for terminal or Markdown output |
 | `render_mermaid.py` | `render_mermaid(diagram_type, data)` | Converts topology/path/firewall/STP data into Mermaid diagram strings |
 
-`render_mermaid` supports four diagram types: `path`, `topology`, `firewall_matrix`, and `stp`. It uses `core/models/network_path.py` (`NetworkPath`) for path diagrams.
+`render_mermaid` supports four diagram types: `'path'`, `'topology'`, `'firewall_matrix'` and `'stp'`. It uses `core/models/network_path.py` (`NetworkPath`) for path diagrams. Its topology renderer is the candidate for `discover --format mermaid`, which still writes a placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)).
 
 ---
 
@@ -1266,25 +1333,27 @@ sequenceDiagram
         AC->>UC: GET /stat/device/{device_id} (lldp_table field)
         UC-->>AC: LLDP entries
         Note over RM: Resolve MAC to device name<br/>Build port_updates dict
-        alt Smart mapping enabled
-            RM->>SM: smart_update_ports(devices_data, lldp_data)
-            SM->>CAP: detect_capabilities(model, firmware)
-            CAP-->>SM: support level + strategy
-            SM->>PM: apply allowed updates
-        else Standard mapping
-            RM->>PM: batch_update_port_names(device_id, port_updates)
-        end
-        PM->>AC: update_device_port_table(device_id, port_table)
-        AC->>UC: PUT /rest/device/{device_id} (port_overrides)
-        UC-->>AC: 200 OK (meta.rc=ok)
-        PM->>AC: _force_device_provision(device_id, mac)
-        AC->>UC: POST /cmd/devmgr (force-provision)
-        UC-->>AC: 200 OK
-        opt Verification requested
-            SM->>GTV: verify_with_ground_truth(api_client, device_updates)
-            GTV->>AC: repeated reads of port_table + port_overrides
-            AC-->>GTV: consistency observations
-            GTV-->>SM: per-port verification result
+        opt Writes requested with apply (the default preview stops here)
+            alt Smart mapping enabled
+                RM->>SM: smart_update_ports(devices_data, lldp_data)
+                SM->>CAP: detect_capabilities(model, firmware)
+                CAP-->>SM: support level + strategy
+                SM->>PM: apply allowed updates
+            else Standard mapping
+                RM->>PM: batch_update_port_names(device_id, port_updates)
+            end
+            PM->>AC: update_device_port_table(device_id, port_table)
+            AC->>UC: PUT /rest/device/{device_id} (port_overrides)
+            UC-->>AC: 200 OK (meta.rc=ok)
+            PM->>AC: _force_device_provision(device_id, mac)
+            AC->>UC: POST /cmd/devmgr (force-provision)
+            UC-->>AC: 200 OK
+            opt Verification requested
+                SM->>GTV: verify_with_ground_truth(api_client, device_updates)
+                GTV->>AC: repeated reads of port_table + port_overrides
+                AC-->>GTV: consistency observations
+                GTV-->>SM: per-port verification result
+            end
         end
     end
     RM->>NT: build topology from devices + inferred connections
@@ -1449,31 +1518,27 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-    Agent["AI Agent / MCP Client"] --> Search["mcp/server.py\nsearch_tools()"]
-    Search --> Registry["ToolRegistry.search()"]
-    Registry --> Load["Load mcp/manifests/*.yaml\nfirst access only"]
-    Load --> Metadata["ToolMetadata\nname, module, handler,\ndescription, tags, params"]
-    Metadata --> Results["summary or full results"]
+    Agent["AI Agent / MCP Client"] --> Search["mcp/server.py\nsearch_tools() / list_categories()"]
+    Search --> Registry["ToolRegistry\nmanifests loaded on first access"]
+    Registry --> Results["names and descriptions\n(detail_level=full adds input_schema)"]
     Results --> Agent
 
     Agent --> Info["get_tool_info(tool_name)"]
-    Info --> Registry
-    Registry --> Spec["Full metadata including module + handler"]
+    Info --> Catalog["ToolCatalog\nimport the handler and build the SDK Tool\n(first use only)"]
+    Catalog --> Spec["input_schema, output_schema,\ntitle, annotations"]
     Spec --> Agent
 
-    Agent --> Execute["Domain tool execution\nvia registry.get_tool(name)"]
-    Execute --> Proxy{"ToolProxy exists?"}
-    Proxy -->|no| Create["Create ToolProxy from metadata"]
-    Proxy -->|yes| Use["Reuse cached proxy"]
-    Create --> Import["importlib.import_module(module)\ngetattr(handler)"]
-    Use --> Import
-    Import --> Handler["Tool handler\nanalysis/discovery/connectivity/network/protect"]
-    Handler --> Client["UniFiClient / manager / Protect client"]
-    Client --> Controller["UniFi Network or Protect Controller"]
-    Controller --> Client
-    Client --> Handler
-    Handler --> Result["Pydantic model, dict,\nor error payload"]
-    Result --> Agent
+    Agent --> Call["execute_tool(name, params)\nor a tool listed on the direct surface"]
+    Call --> Runner["ToolRunner.run()"]
+    Runner --> Mutating{"mutates: true?"}
+    Mutating -->|yes| Refused["MUTATION_REFUSED"]
+    Mutating -->|no| Checks["rewrite aliases, validate,\ngate the credential family"]
+    Checks --> Handler["handler: analysis, diagnostics, discovery,\nconnectivity, observability, mcp/tools"]
+    Handler --> Guard["read-only guarded client"]
+    Guard --> Controller["UniFi Network or Protect"]
+    Handler --> Package["mask secrets; ok envelope,\nor error_code with isError"]
+    Package --> Agent
+    Refused --> Agent
 ```
 
 ```mermaid
@@ -1481,9 +1546,10 @@ sequenceDiagram
     participant Agent as AI Agent
     participant MCP as mcp/server.py (FastMCP)
     participant REG as ToolRegistry
-    participant PROXY as ToolProxy
+    participant RUN as ToolRunner
+    participant CAT as ToolCatalog
     participant TOOL as Domain Tool (e.g. stp_optimizer)
-    participant UC as UniFiClient
+    participant UC as UniFiClient (shared, read-only)
 
     Agent->>MCP: search_tools(category="analysis")
     MCP->>REG: search(category="analysis", detail_level="summary")
@@ -1492,33 +1558,37 @@ sequenceDiagram
 
     Agent->>MCP: get_tool_info("discover_stp_topology")
     MCP->>REG: get_metadata("discover_stp_topology")
-    REG-->>MCP: ToolMetadata (with parameters schema)
+    MCP->>CAT: find("discover_stp_topology")
+    CAT-->>MCP: SDK Tool (schemas, title, annotations)
     MCP-->>Agent: full tool spec
 
-    Agent->>MCP: execute discover_stp_topology(device_id=None)
-    MCP->>REG: get_tool("discover_stp_topology")
-    REG-->>MCP: ToolProxy
-    MCP->>PROXY: proxy.execute(device_id=None)
-    PROXY->>PROXY: _load_implementation() [first call only]
-    PROXY->>TOOL: discover_stp_topology(device_id=None)
+    Agent->>MCP: execute_tool("discover_stp_topology", {})
+    MCP->>RUN: run(name, params)
+    RUN->>CAT: get(name) [builds the Tool on first use]
+    RUN->>RUN: refuse mutation, validate, gate credentials
+    RUN->>TOOL: discover_stp_topology(device_id=None)
     TOOL->>UC: async with UniFiClient() as client
-    UC-->>TOOL: authenticated client
-    TOOL->>UC: get_devices(), get_lldp_info(...)
-    UC-->>TOOL: data
-    TOOL-->>PROXY: STPTopology model
-    PROXY-->>MCP: result
-    MCP-->>Agent: STPTopology as dict
+    UC-->>TOOL: the lifespan's shared client
+    TOOL->>UC: get_devices(), get_lldp_table(...)
+    UC-->>TOOL: data (GET only)
+    TOOL-->>RUN: STPTopology model
+    RUN->>RUN: mask secrets, package the envelope
+    RUN-->>MCP: CallToolResult
+    MCP-->>Agent: {"ok": true, "result": ...}
 ```
 
 **MCP interface layers.**
 
 | Layer | Module | Responsibility |
 |---|---|---|
-| Meta-tools | `mcp/server.py` | Exposes `search_tools`, `list_categories`, and `get_tool_info` through FastMCP |
-| Registry | `mcp/registry.py` | Loads YAML manifests, indexes categories/tags, creates lazy proxies |
+| Meta-tools and surfaces | `mcp/server.py` | Exposes `search_tools`, `list_categories`, `get_tool_info` and `execute_tool` through FastMCP; on the direct surface also lists each non-mutating, non-pipeline tool; two resources and two prompts |
+| Registry | `mcp/registry.py` | Loads and validates the YAML manifests, indexes categories and tags |
+| Catalog | `mcp/catalog.py` | Builds each SDK tool from its handler on first use: schemas, title, annotations |
+| Runner | `mcp/runner.py` | Validates, gates, runs, masks and packages every call on either surface |
+| Config | `mcp/config.py` | Config discovery, credential families, `UNIFI_MCP_*` settings |
 | Manifests | `mcp/manifests/*.yaml` | Declarative tool name -> module/handler metadata |
-| Wrappers | `mcp/tools/network.py`, `mcp/tools/protect.py` | Own manager/client lifecycle for Network and Protect tools |
-| Domain tools | `analysis/*`, `discovery/*`, `connectivity/*`, `network/*`, `protect/*` | Implement operational behavior |
+| Wrappers | `mcp/tools/network.py`, `mcp/tools/protect.py` | Open one guarded Network API or Protect client per call |
+| Domain tools | `analysis/*`, `diagnostics/*`, `discovery/*`, `connectivity/*`, `network/*`, `protect/*` | Implement operational behavior |
 
 **Dependency rule.** MCP metadata points inward to existing domain functions; domain modules do not depend on MCP. That keeps tools usable from tests, CLIs, and future interfaces without carrying FastMCP concerns into business logic.
 
@@ -1562,7 +1632,14 @@ The async `core/` and `protect/` stacks use separate exception classes (`ToolErr
 
 | Script | Purpose |
 |---|---|
-| `unifi-cron.sh` | Master cron/scheduler script supporting macOS (launchd) and Linux (crontab). Installs, updates, and removes scheduled audit jobs: link errors + roaming every 5 min, config drift + health + radio hourly, port naming every 30 min. Subcommands: `install`, `status`, `run-all`, `update`, `uninstall`. |
+| `unifi-cron.sh` | Master cron/scheduler script supporting macOS (launchd) and Linux (crontab). Installs, updates, and removes scheduled audit jobs: the link-error history (`analyze link-errors --record`) and roaming snapshots every 5 min; config drift, `diagnose all` and the radio report hourly; port naming every 30 min, which writes (`--apply`). Subcommands: `install`, `status`, `run-all`, `update`, `uninstall`, `help`. On macOS the generated plists are invalid XML ([issue 025](../issues/025-launchd-plists-are-invalid-xml.md)) |
+| `unifi-mcp-launch.sh` | Legacy MCP launch wrapper: sources `$UNIFI_MCP_ENV`, exports every key, then runs `unifi-mcp` from the repo's environment |
+| `audit_port_labels.py` | Read-only census explaining why `ports refresh` proposes few changes |
+| `verify_format_safety.py` | Checks that a formatting sweep changed no code semantics |
+| `axis_provision.py` | AXIS camera and device provisioning from `~/.config/axiscam/config.yaml` (writes to the devices; see the [AXIS guide](../guides/axis-provisioning.md)) |
+| `onvif_probe.py`, `onvif_stream.py` | ONVIF camera probes and stream tests; both name the site's own cameras ([issue 041](../issues/041-onvif-scripts-hard-code-cameras.md)) |
+| `apply_ap_tx_power_auto.py` | Releases a manual 5 GHz transmit power back to the controller's auto mode (writes, through `apply_radio_config`) |
+| `apply_ap_channel_plan.py`, `apply_stp_priorities_custom.py`, `remediate_stp_post_apply.py` | One-off controller changes for this site (channel plan, STP priorities, post-apply STP remediation). They write to the controller and target its devices by name ([issue 046](../issues/046-real-device-names-in-code-and-history.md)) |
 
 ---
 
