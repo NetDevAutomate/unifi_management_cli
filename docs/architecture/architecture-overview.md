@@ -1169,7 +1169,7 @@ sequenceDiagram
 
     AGENT->>MCP: execute_tool("detect_ip_conflicts", {})
     MCP->>RUN: run(name, params)
-    RUN->>CAT: get(name) [refuses mutating; lazy import + build]
+    RUN->>CAT: get(name) [refuses mutating, lazy import + build]
     CAT->>TOOL: importlib.import_module("unifi_mapper.analysis.ip_conflicts")
     RUN->>RUN: validate params, credential gate
     RUN->>TOOL: detect_ip_conflicts()

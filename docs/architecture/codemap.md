@@ -1500,9 +1500,9 @@ sequenceDiagram
     PRO-->>UI: Bootstrap (all device data)
     UI-->>PC: connected
     App->>EH: EventHandler(client)
-    App->>EA: EventAnalytics(client); analytics.start()
+    App->>EA: EventAnalytics(client), then analytics.start()
     EA->>EH: subscribe(on_event, EventFilter(all))
-    App->>MQTT: MQTTBridge(client, mqtt_config); bridge.start()
+    App->>MQTT: MQTTBridge(client, mqtt_config), then bridge.start()
     MQTT->>EH: subscribe(on_event, EventFilter(camera events))
     loop WebSocket stream
         PRO-->>UI: WSSubscriptionMessage
