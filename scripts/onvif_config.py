@@ -52,7 +52,8 @@ def _parse_camera(entry: str, position: int) -> tuple[str, str, int]:
 
     Args:
         entry: One comma-separated item of ``ONVIF_CAMERAS``, already stripped.
-        position: The entry's 1-based position in ``ONVIF_CAMERAS``.
+        position: The entry's 1-based position among the non-empty entries of
+            ``ONVIF_CAMERAS``.
 
     Returns:
         The camera's name, host and port (``DEFAULT_PORT`` when the entry has none).
