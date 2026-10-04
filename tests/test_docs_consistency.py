@@ -13,8 +13,8 @@ from ``docs/artefacts/``, and ``scripts/*.sh``), offline and without a controlle
 - relative links and ``#anchors`` resolve, and no doc names a machine-local path;
 - every ``UNIFI_*``, ``PROTECT_*`` and ``XDG_*`` variable a doc names is read by the code;
 - privacy: MAC addresses are locally administered, no private, link-local or CGNAT IPv4
-  address appears, and no device name from the local captures (``reports/*.json``, when they
-  exist) appears in a doc or under ``src/unifi_mapper/``.
+  address appears, and no device or client name from the local captures
+  (``reports/*.json``, when they exist) appears in a doc or under ``src/unifi_mapper/``.
 
 Each detector is a pure function over ``(path, text)`` and has a negative self-test on a
 synthetic snippet, so no guard can pass because it matched nothing. Failures name
@@ -1040,10 +1040,13 @@ def ipv4_problems(path: str, text: str) -> list[str]:
 
 
 def local_device_names(reports: Path) -> frozenset[str]:
-    """Return the identifying names in the local ``reports/*.json`` captures.
+    """Return the device and client names in the local ``reports/*.json`` captures.
 
-    Takes every ``name``, ``hostname`` and ``device_name`` string longer than 4 and shorter
-    than 60 characters, minus generic words, bare numbers and ``GENERIC_NAMES``.
+    Only device and client records count, so a port label, network, SSID or profile name in a
+    new capture can't fail the suite: a ``name`` is taken from a record that also carries a
+    ``mac`` or ``device_id``, and a ``hostname`` or ``device_name`` from any record, never from
+    a port (a record with a ``port_idx``). Strings longer than 4 and shorter than 60
+    characters count, minus generic words, bare numbers and ``GENERIC_NAMES``.
 
     Args:
         reports: The directory holding the captures.
@@ -1054,12 +1057,17 @@ def local_device_names(reports: Path) -> frozenset[str]:
     names: set[str] = set()
 
     def walk(node: object) -> None:
-        """Collect the name-like strings anywhere in one parsed capture."""
+        """Collect the device and client names anywhere in one parsed capture."""
         if isinstance(node, dict):
-            for key, value in node.items():
-                if key in ('name', 'hostname', 'device_name') and isinstance(value, str):
-                    if 4 < len(value) < 60:
+            if 'port_idx' not in node:
+                keys = ['hostname', 'device_name']
+                if 'mac' in node or 'device_id' in node:
+                    keys.append('name')
+                for key in keys:
+                    value = node.get(key)
+                    if isinstance(value, str) and 4 < len(value) < 60:
                         names.add(value)
+            for value in node.values():
                 walk(value)
         elif isinstance(node, list):
             for item in node:
@@ -1117,11 +1125,19 @@ def test_privacy_detectors_report_real_looking_identifiers(tmp_path: Path) -> No
     assert ipv4_problems('demo.md', text) == [
         'demo.md:2: private, link-local or CGNAT IPv4 address'
     ]
-    captures = {'data': [{'name': 'Synthetic Lounge Switch'}, {'name': 'U6 LR'}]}
-    captures['data'] += [{'hostname': 'Port 3'}, {'device_name': '12.3.4'}]
+    captures = {
+        'devices': [
+            {'name': 'Synthetic Lounge Switch', 'mac': '02:00:00:00:00:01'},
+            {'name': 'U6 LR', 'device_id': 'a' * 24},
+            {'name': 'Synthetic Port Label', 'port_idx': 4},
+        ],
+        'clients': [{'hostname': 'synthetic-laptop'}, {'hostname': 'Port 3'}],
+        'plan': [{'device_name': 'Synthetic Core Switch'}, {'device_name': '12.3.4'}],
+        'networks': [{'name': 'Synthetic Guest Network', 'vlan': 30}],
+    }
     (tmp_path / 'capture.json').write_text(json.dumps(captures), encoding='utf-8')
     names = local_device_names(tmp_path)
-    assert names == {'Synthetic Lounge Switch'}
+    assert names == {'Synthetic Lounge Switch', 'synthetic-laptop', 'Synthetic Core Switch'}
     assert device_name_problems('demo.md', text, _names_pattern(names)) == [
         'demo.md:3: device name from the local captures'
     ]
@@ -1147,4 +1163,9 @@ def test_no_device_name_from_the_local_captures() -> None:
         if p.startswith('src/unifi_mapper/') and p.endswith(('.py', '.yaml'))
     }
     corpus = {**_docs(), **sources}
-    assert _all_problems(corpus, lambda p, t: device_name_problems(p, t, pattern)) == []
+    problems = _all_problems(corpus, lambda p, t: device_name_problems(p, t, pattern))
+    assert problems == [], (
+        'a device or client name from reports/*.json appears on these lines (the name is not '
+        'shown). Replace it with a placeholder, or, if it is a product model or a factory port '
+        'label rather than a site name, add it to GENERIC_NAMES once that is checked.'
+    )
