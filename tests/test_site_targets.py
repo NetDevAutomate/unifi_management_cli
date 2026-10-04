@@ -149,6 +149,53 @@ def test_invalid_json_is_reported_with_its_line(targets: Any, tmp_path: Path) ->
         targets.channel_plan(path)
 
 
+def test_a_file_that_is_not_utf8_is_reported(targets: Any, tmp_path: Path) -> None:
+    """Bytes that aren't UTF-8 raise TargetsError, not a traceback, and echo no content."""
+    path = tmp_path / 'site-targets.json'
+    path.write_bytes(b'{"apply_ap_channel_plan": "' + SENTINEL.encode() + b'\xff"}')
+
+    with pytest.raises(targets.TargetsError, match='not UTF-8') as caught:
+        targets.channel_plan(path)
+
+    assert SENTINEL not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ('loader', 'section'),
+    [
+        ('stp_priorities', '{"priorities": {"%s": 4096, "%s": 8192}}'),
+        ('post_apply_ports', '{"port_profile": "P", "ports": {"%s": {"2": "A", "2": "B"}}}'),
+    ],
+    ids=['stp-priorities', 'post-apply-ports'],
+)
+def test_a_key_repeated_in_one_object_is_rejected(
+    targets: Any, tmp_path: Path, loader: str, section: str
+) -> None:
+    """``json`` keeps only the last of two equal keys, so the loader refuses the file."""
+    name = {
+        'stp_priorities': targets.STP_PRIORITIES,
+        'post_apply_ports': targets.POST_APPLY,
+    }[loader]
+    body = section.replace('%s', SENTINEL)
+    path = tmp_path / 'site-targets.json'
+    path.write_text(f'{{"{name}": {body}}}', encoding='utf-8')
+
+    with pytest.raises(targets.TargetsError, match='same key twice') as caught:
+        getattr(targets, loader)(path)
+
+    assert SENTINEL not in str(caught.value)
+
+
+def test_a_port_number_written_two_ways_is_rejected(targets: Any, tmp_path: Path) -> None:
+    """``"2"`` and ``"02"`` are both port 2, so one entry would silently replace the other."""
+    section = {'port_profile': 'Profile', 'ports': {SENTINEL: {'2': 'AP-1', '02': 'AP-2'}}}
+
+    with pytest.raises(targets.TargetsError, match='listed twice') as caught:
+        targets.post_apply_ports(_write(tmp_path, {'remediate_stp_post_apply': section}))
+
+    assert SENTINEL not in str(caught.value)
+
+
 @pytest.mark.parametrize('priority', [4097, 65536, -4096, True, '4096'])
 def test_a_malformed_stp_priority_is_rejected(
     targets: Any, tmp_path: Path, priority: object
