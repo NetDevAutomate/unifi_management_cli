@@ -49,3 +49,8 @@ the reasoning stays next to the code it explains.
 | [036](036-integration-api-models-drift-from-the-reference.md) | Integration API models disagree with the v10.6 reference, so some fields are lost | open |
 | [037](037-launch-config-network-family-incomplete.md) | With the legacy config file, the six network_api tools return CONFIG_MISSING | open, decision needed |
 | [038](038-ssh-host-key-verification-disabled.md) | The gateway SSH commands don't verify the gateway's host key (`known_hosts=None`) | open, decision needed |
+| [039](039-promote-the-live-check-harness.md) | Promote the read-only live-check harness into the repo as a config-driven tool | open, decision needed |
+| [040](040-real-identifiers-in-tests.md) | Test fixtures carry MAC addresses and addresses from the live network | open, decision needed |
+| [041](041-onvif-scripts-hard-code-cameras.md) | The ONVIF scripts hard-code the site's cameras, and `onvif_stream.py` a camera password | open, decision needed |
+| [042](042-settings-with-no-effect.md) | Five documented settings have no effect on `unifi-mapper` | open, decision needed |
+| [043](043-inventory-ignores-the-root-config.md) | `unifi-mapper inventory` ignores the root `--config` and `UNIFI_CONFIG` | open |
