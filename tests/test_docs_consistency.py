@@ -926,9 +926,28 @@ def test_no_doc_names_a_machine_local_path() -> None:
 MERMAID_ENTITY = re.compile(r'#\w+;')
 
 
+def _front_matter_end(body: list[str]) -> int:
+    """Return the index of a Mermaid block's first line after its YAML front matter.
+
+    Front matter is a ``---`` first line, up to the next ``---`` line (a ``title:``, say).
+
+    Args:
+        body: The block's lines, without the fences.
+
+    Returns:
+        0 when the block has no complete front matter.
+    """
+    if not body or body[0].strip() != '---':
+        return 0
+    return next((i + 1 for i, line in enumerate(body[1:], 1) if line.strip() == '---'), 0)
+
+
 def _diagram_type(body: list[str]) -> str:
-    """Return a Mermaid block's diagram type: the first word of its first statement."""
-    for line in body:
+    """Return a Mermaid block's diagram type: the first word of its first statement.
+
+    A leading front-matter section is skipped.
+    """
+    for line in body[_front_matter_end(body) :]:
         statement = line.strip()
         if statement and not statement.startswith('%%'):
             return statement.split()[0]
@@ -941,8 +960,8 @@ def mermaid_problems(path: str, text: str) -> list[str]:
     In a Mermaid ``sequenceDiagram`` a ``;`` ends the statement, so a message such as
     ``A->>B: open; read`` stops at ``open`` and the rest of the line doesn't parse: GitHub
     shows an error box instead of the diagram. ``%%`` comment lines and entity codes such as
-    ``#59;`` are allowed. Other diagram types are not checked: a ``;`` inside a flowchart
-    label renders.
+    ``#59;`` are allowed, and so is YAML front matter. Other diagram types are not checked: a
+    ``;`` inside a flowchart label renders.
 
     Args:
         path: The repo-relative file name.
@@ -957,7 +976,8 @@ def mermaid_problems(path: str, text: str) -> list[str]:
     for start, info, body in code_blocks(text):
         if not info.startswith('mermaid') or _diagram_type(body) != 'sequenceDiagram':
             continue
-        for offset, line in enumerate(body):
+        skip = _front_matter_end(body)
+        for offset, line in enumerate(body[skip:], skip):
             if not line.strip().startswith('%%') and ';' in MERMAID_ENTITY.sub('', line):
                 problems.append(f'{path}:{start + offset}: ";" ends a sequence-diagram statement')
     return problems
@@ -980,6 +1000,22 @@ def test_mermaid_detector_reports_a_semicolon_in_a_sequence_message() -> None:
     )
     assert mermaid_problems('docs/demo.md', text) == [
         'docs/demo.md:4: ";" ends a sequence-diagram statement'
+    ]
+
+
+def test_mermaid_detector_reads_past_front_matter() -> None:
+    """A sequence diagram that opens with front matter is still checked; the YAML is not."""
+    text = (
+        '```mermaid\n'
+        '---\n'
+        'title: Login; refresh\n'
+        '---\n'
+        'sequenceDiagram\n'
+        '    A->>B: open; read\n'
+        '```\n'
+    )
+    assert mermaid_problems('docs/demo.md', text) == [
+        'docs/demo.md:6: ";" ends a sequence-diagram statement'
     ]
 
 
