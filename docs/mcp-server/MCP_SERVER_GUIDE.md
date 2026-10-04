@@ -7,6 +7,8 @@ the same Python modules the `unifi-mapper` CLI uses. It registers **76 tools** i
 categories (see [Tool categories](#tool-categories)). Every tool it will run is read-only
 against the controller: tools that change the controller are refused over MCP, and changes go
 through the CLI's plan → review → apply flow (see [Control boundary](#mcp-control-boundary)).
+The [MCP standards review](MCP_STANDARDS_REVIEW.md) audits the server against the MCP
+specification and SDK guidance, and lists the decisions still open.
 
 ## Technology Stack
 

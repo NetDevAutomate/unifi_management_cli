@@ -479,7 +479,7 @@ Credentials come from an env file, not the client config: `--config PATH`, else 
 }
 ```
 
-`UNIFI_MCP_TOOL_SURFACE=direct` lists every read-only tool to hosts that defer tool schemas; the default `discovery` surface lists four meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`). The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch mode, the Codex config, all environment variables, the error codes and the config discovery rules.
+`UNIFI_MCP_TOOL_SURFACE=direct` lists every read-only tool to hosts that defer tool schemas; the default `discovery` surface lists four meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`). The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch mode, the Codex config, all environment variables, the error codes and the config discovery rules. The [MCP standards review](docs/mcp-server/MCP_STANDARDS_REVIEW.md) audits the server against the MCP specification and SDK guidance.
 
 **Available Tools (76 total):**
 
