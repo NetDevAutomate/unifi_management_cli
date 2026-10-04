@@ -62,3 +62,4 @@ the reasoning stays next to the code it explains.
 | [049](049-lines-over-99-characters.md) | 225 tracked lines are longer than the 99-character limit, and nothing enforces it | open, decision needed |
 | [050](050-latency-matrix-errors-bypass-the-ssh-error-path.md) | `diagnose latency-matrix` reports errors on stdout and unredacted, unlike `diagnose bandwidth` | open |
 | [051](051-verify-cli-help-example-held-a-password.md) | `verify_cli`'s help example held a real-looking password, and it is in pushed history | open, decision needed |
+| [052](052-class-names-outside-the-docs-guard.md) | Class names in the docs are outside the docs-drift guard | open |
