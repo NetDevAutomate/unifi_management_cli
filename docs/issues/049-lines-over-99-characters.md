@@ -1,5 +1,5 @@
 ---
-title: "225 tracked lines are longer than the 99-character limit, and nothing enforces it"
+title: "At `8d51214`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it"
 date: 2026-10-04
 status: open, decision needed
 severity: low
@@ -7,14 +7,14 @@ components: [pyproject, src, tests, scripts]
 found_by: docs and repo hygiene review (line-length guard)
 ---
 
-# 225 tracked lines are longer than the 99-character limit, and nothing enforces it
+# At `8d51214`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it
 
 ## Problem
 
 `pyproject.toml` sets ruff's `line-length = 99`, and the house style keeps `.py` and `.toml`
 lines at 99 characters or fewer. ruff can't hold that line, though: `E501` is in the
 `ignore` list, and `ruff format` doesn't split long strings or comments. At `8d51214`,
-counting characters per line (not bytes), 225 tracked lines are longer:
+counting characters per line (not bytes), 225 tracked lines were longer:
 
 | Area | Files | Lines over 99 characters |
 | --- | ---: | ---: |
@@ -23,9 +23,12 @@ counting characters per line (not bytes), 225 tracked lines are longer:
 | `scripts/` | 4 | 16 |
 | `pyproject.toml` | 1 | 1 |
 
-The longest is 174 characters. About 100 are f-strings (mostly log and console messages),
-about 80 other string literals (help text and test fixtures), 6 comments and the rest code.
-All of them predate the docs and hygiene review, which added none.
+The longest was 174 characters. About 100 were f-strings (mostly log and console
+messages), about 80 other string literals (help text and test fixtures), 6 comments and
+the rest code. All of them predate the docs and hygiene review, which added none. Later
+commits move the count a little, so count again before a sweep. A count in bytes, such as
+macOS `awk 'length > 99'`, reports more lines than this, because box-drawing and emoji
+characters take several bytes each.
 
 ## Impact
 
@@ -34,7 +37,7 @@ unnoticed, because nothing checks them. It doesn't break fresh clones, contribut
 
 ## Decision needed
 
-Recommendation: sweep the 225 lines (wrap strings and comments, mechanical and reviewable
+Recommendation: sweep the long lines (wrap strings and comments, mechanical and reviewable
 file by file), then drop `E501` from the ignore list so ruff enforces the limit from then
 on.
 

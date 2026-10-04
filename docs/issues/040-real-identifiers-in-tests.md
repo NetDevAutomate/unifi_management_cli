@@ -23,7 +23,17 @@ found_by: docs and repo hygiene review (privacy scan)
     the file, line and kind only.
 - The history still holds the old values. The eight files below were on `origin/main`
   before `d045079`; `062a0e5` (not pushed) added a live address; and the removed lines of
-  `29879cf` and `a78d403` hold the values they replaced. Only a history rewrite removes them.
+  `29879cf` and `a78d403` hold the values they replaced. The earlier doc and docstring
+  scrubs removed MACs and addresses that were already public, too:
+  - `e6a6aae` (the docs): 41 lines that held a captured MAC or an address in a captured
+    subnet, all 41 on `origin/main`: `README.md` 7, `docs/guides/axis-provisioning.md` 15,
+    `docs/guides/use-cases-and-howto.md` 14, `docs/operations/troubleshooting-and-runbook.md`
+    1 and `docs/solutions/analysis/port-label-drift.md` 4;
+  - `3afa3bc` (the `src/` docstrings): 4 such lines, all 4 on `origin/main`:
+    `src/unifi_mapper/analysis/port_naming.py` 3 and
+    `src/unifi_mapper/analysis/uplink_transparency.py` 1.
+
+  Only a history rewrite removes them.
   The rewrite the user asked for, to purge two passwords
   ([issue 041](041-onvif-scripts-hard-code-cameras.md),
   [issue 051](051-verify-cli-help-example-held-a-password.md)), runs separately, after this
@@ -61,6 +71,8 @@ breaks for fresh clones, CI or users.
 ## Decision needed
 
 What is left: whether the history rewrite also covers these identifiers, that is the pushed
-history of the eight test files, `062a0e5`, and the removed lines of `29879cf` and
-`a78d403`. It is the user's call: a rewrite changes every later commit hash, including the
-`resolved_by` hashes the issue files record, and every clone has to be re-made afterwards.
+history of the eight test files, `062a0e5`, the removed lines of `29879cf` and `a78d403`,
+and the removed lines of `e6a6aae` and `3afa3bc` (the 45 doc and docstring lines above,
+public since before this review). It is the user's call: a rewrite changes every later
+commit hash, including the `resolved_by` hashes the issue files record, and every clone has
+to be re-made afterwards.

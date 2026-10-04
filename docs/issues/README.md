@@ -56,10 +56,10 @@ the reasoning stays next to the code it explains.
 | [043](043-inventory-ignores-the-root-config.md) | `unifi-mapper inventory` ignores the root `--config` and `UNIFI_CONFIG` | open |
 | [044](044-discover-mermaid-and-dot-write-a-placeholder.md) | `discover --format mermaid` and `--format dot` write a placeholder, not a diagram | open, decision needed |
 | [045](045-configure-logging-is-never-called.md) | `configure_logging` is never called, so `UNIFI_MAPPER_DEBUG` does nothing | open, decision needed |
-| [046](046-real-device-names-in-code-and-history.md) | Tests and scripts carried device names from the live network; the history and two source rules still do | open, decision needed |
+| [046](046-real-device-names-in-code-and-history.md) | Tests, scripts and docstrings carried the site's device and room names; the history and some runtime strings still do | open, decision needed |
 | [047](047-install-completions-fish-and-all-fail.md) | `unifi-mapper install-completions` accepts `fish` and `all` but installs only bash and zsh | open |
 | [048](048-cli-and-mcp-config-searches-differ.md) | With `XDG_CONFIG_HOME` set, the CLI and the MCP server search different config files | open, decision needed |
-| [049](049-lines-over-99-characters.md) | 225 tracked lines are longer than the 99-character limit, and nothing enforces it | open, decision needed |
+| [049](049-lines-over-99-characters.md) | At `8d51214`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it | open, decision needed |
 | [050](050-latency-matrix-errors-bypass-the-ssh-error-path.md) | `diagnose latency-matrix` reports errors on stdout and unredacted, unlike `diagnose bandwidth` | open |
 | [051](051-verify-cli-help-example-held-a-password.md) | `verify_cli`'s help example held a real-looking password, and it is in pushed history | open, decision needed |
 | [052](052-class-names-outside-the-docs-guard.md) | Class names in the docs are outside the docs-drift guard | open |
