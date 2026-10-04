@@ -24,7 +24,7 @@ from unifi_mapper.port_inspect import (
 
 
 NAS_ID = 'net-nas'
-HOME_ID = 'net-home'
+HOME_ID = 'net-zulu'
 MGMT_ID = 'net-mgmt'
 
 NETWORKS = {
@@ -41,7 +41,7 @@ NETWORKS = {
     },
     HOME_ID: {
         '_id': HOME_ID,
-        'name': 'Home LAN',
+        'name': 'Zulu LAN',
         'vlan': None,
         'ip_subnet': '198.51.100.254/24',
         'enabled': True,

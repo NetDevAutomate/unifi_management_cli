@@ -105,10 +105,10 @@ def test_drops_remote_port_id_when_it_is_only_a_mac() -> None:
 
 
 def test_corrects_a_transposed_switch_label() -> None:
-    """Lounge p1/p2 had their two downstream switches swapped."""
+    """Mike2 p1/p2 had their two downstream switches swapped."""
     devices = [
         _switch(
-            'Lounge Flex',
+            'Mike2 Flex',
             [_port(1, 'Mike2 USW-Ultra-210W')],
             lldp=[{'local_port_idx': 1, 'chassis_id': 'sw:99', 'port_id': 'Port 16'}],
         ),
@@ -129,11 +129,11 @@ def test_unresolvable_peer_falls_through_to_clients() -> None:
             mac='sw:01',
         ),
     ]
-    clients = [_client('aa:bb', 'sw:01', 1, hostname='MacMiniM4')]
+    clients = [_client('aa:bb', 'sw:01', 1, hostname='Romeo21')]
 
     plan = build_port_name_plan(devices, clients)
 
-    assert plan.renames[0].proposed == 'MacMiniM4'
+    assert plan.renames[0].proposed == 'Romeo21'
     assert plan.renames[0].reason == 'wired-client'
 
 
@@ -168,13 +168,13 @@ def test_would_lose_information_predicate() -> None:
 
 # ─── Guard 1b: a vendor OUI string must not replace a curated label ──────────
 # Observed 2026-08-10: a NAS reporting no hostname would have renamed both
-# 'Synology NAS01 VLAN 15' and 'Synology NAS01' to 'Synology Incorporated',
+# 'Synology ZULU21 VLAN 15' and 'Synology ZULU21' to 'Synology Incorporated',
 # collapsing two distinguishable ports onto one manufacturer name.
 
 
 def test_does_not_overwrite_a_real_name_with_a_vendor_string() -> None:
-    """'Synology NAS01 VLAN 15' must survive a poll where the client has no hostname."""
-    devices = [_switch('A', [_port(6, 'Synology NAS01 VLAN 15')], mac='sw:01')]
+    """'Synology ZULU21 VLAN 15' must survive a poll where the client has no hostname."""
+    devices = [_switch('A', [_port(6, 'Synology ZULU21 VLAN 15')], mac='sw:01')]
     clients = [_client('02:00:00:00:00:03', 'sw:01', 6, oui='Synology Incorporated')]
 
     plan = build_port_name_plan(devices, clients)
@@ -205,13 +205,13 @@ def test_is_vendor_only_label_predicate() -> None:
     ):
         assert is_vendor_only_label(name) is True, name
 
-    for name in ('Synology NAS01', 'Hotel3-Apple-TV', 'Google Streamer 4K', 'Port 6', ''):
+    for name in ('Synology ZULU21', 'Hotel3-Apple-TV', 'Google Streamer 4K', 'Port 6', ''):
         assert is_vendor_only_label(name) is False, name
 
 
 def test_would_lose_information_covers_vendor_strings() -> None:
     """The guard treats a vendor string as a downgrade from a curated label."""
-    assert would_lose_information('Synology NAS01', 'Synology Incorporated') is True
+    assert would_lose_information('Synology ZULU21', 'Synology Incorporated') is True
     assert would_lose_information('Port 6', 'Synology Incorporated') is False
     assert would_lose_information('02:00:00:00:00:03', 'Synology Incorporated') is False
 
@@ -235,8 +235,8 @@ def test_multi_client_port_prefers_a_named_device_over_a_mac() -> None:
 
 
 def test_name_quality_ranks_hostname_then_vendor_then_address() -> None:
-    ranked = sorted(['00:11:32:4a:bd:25', 'Synology Incorporated', 'MacMiniM4'], key=name_quality)
-    assert ranked == ['MacMiniM4', 'Synology Incorporated', '00:11:32:4a:bd:25']
+    ranked = sorted(['00:11:32:4a:bd:25', 'Synology Incorporated', 'Romeo21'], key=name_quality)
+    assert ranked == ['Romeo21', 'Synology Incorporated', '00:11:32:4a:bd:25']
 
 
 # ─── Guard 3: no cosmetic churn ──────────────────────────────────────────────
@@ -312,13 +312,13 @@ def test_placeholder_covers_ultra_series_poe_defaults() -> None:
 def test_real_labels_are_not_placeholders() -> None:
     assert is_placeholder_name('Bravo4 U6-Pro') is False
     assert is_placeholder_name('Port 7 Media Rack') is False
-    assert is_placeholder_name('myHivehub') is False
+    assert is_placeholder_name('Sierra4') is False
 
 
 def test_weak_label_detection() -> None:
     assert is_weak_label('0200fe00000a') is True
     assert is_weak_label('02:00:1b:00:00:01') is True
-    assert is_weak_label('MacMiniM4') is False
+    assert is_weak_label('Romeo21') is False
 
 
 # ─── Scope: what must never be touched ───────────────────────────────────────
@@ -338,12 +338,12 @@ def test_down_port_already_at_the_default_is_left_alone() -> None:
 
 def test_down_port_with_a_stale_device_label_reverts_to_the_default() -> None:
     """Nothing is plugged in, so a label naming hardware is misinformation."""
-    devices = [_switch('A', [_port(5, 'Office Printer', up=False)], mac='sw:01')]
+    devices = [_switch('A', [_port(5, 'Hotel3 Printer', up=False)], mac='sw:01')]
 
     plan = build_port_name_plan(devices, [])
 
     assert plan.count == 1
-    assert plan.renames[0].current == 'Office Printer'
+    assert plan.renames[0].current == 'Hotel3 Printer'
     assert plan.renames[0].proposed == 'Port 5'
     assert plan.renames[0].reason == 'port-down'
 
@@ -416,19 +416,19 @@ def test_integrated_udm_switch_ports_are_named() -> None:
         {
             '_id': 'ucg',
             'mac': 'gw:01',
-            'name': 'UCG Fiber',
+            'name': 'UCG Golf4',
             'type': 'udm',
             'port_table': [_port(7, 'SFP+ 2')],
             'lldp_table': [{'local_port_idx': 7, 'chassis_id': 'sw:01', 'port_id': 'te4'}],
         },
-        _switch('Office Core', [], mac='sw:01'),
+        _switch('Hotel3 Core', [], mac='sw:01'),
     ]
 
     plan = build_port_name_plan(devices, [])
 
     assert plan.count == 1
-    assert plan.renames[0].device == 'UCG Fiber'
-    assert plan.renames[0].proposed == 'Office Core te4'
+    assert plan.renames[0].device == 'UCG Golf4'
+    assert plan.renames[0].proposed == 'Hotel3 Core te4'
 
 
 def test_names_are_truncated_to_the_controller_limit() -> None:

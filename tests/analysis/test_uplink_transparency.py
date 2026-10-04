@@ -1,9 +1,9 @@
 """Tests for uplink VLAN-transparency audit.
 
-Modelled on the 2026-07-29 Lounge failure: a switch lost its trunk uplink, UniFi
+Modelled on the 2026-07-29 Mike2 failure: a switch lost its trunk uplink, UniFi
 elected an eero-facing *access* port as the replacement uplink, and every tagged
 VLAN behind that switch (management 255, CCTV 10) was severed while the untagged
-Home LAN kept working.
+Zulu LAN kept working.
 """
 
 from __future__ import annotations
@@ -11,23 +11,23 @@ from __future__ import annotations
 from unifi_mapper.analysis.uplink_transparency import audit_uplink_transparency_from_data
 
 
-HOME_LAN = {'_id': 'net-home', 'name': 'Home LAN', 'vlan': None, 'enabled': True}
+HOME_LAN = {'_id': 'net-zulu', 'name': 'Zulu LAN', 'vlan': None, 'enabled': True}
 CCTV = {'_id': 'net-cctv', 'name': 'CCTV', 'vlan': 10, 'enabled': True}
 MGMT = {'_id': 'net-mgmt', 'name': 'Management', 'vlan': 255, 'enabled': True}
 NETWORKS = [HOME_LAN, CCTV, MGMT]
 
 TRUNK_PROFILE = {
     '_id': 'prof-trunk',
-    'name': 'Trunk VLAN 1 Home 1 Gbps',
+    'name': 'Trunk VLAN 1 Zulu 1 Gbps',
     'forward': 'all',
-    'native_networkconf_id': 'net-home',
+    'native_networkconf_id': 'net-zulu',
     'tagged_vlan_mgmt': 'auto',
 }
 ACCESS_PROFILE = {
     '_id': 'prof-access',
-    'name': 'Access Port VLAN 1 Home 1Gbps',
+    'name': 'Access Port VLAN 1 Zulu 1Gbps',
     'forward': 'native',
-    'native_networkconf_id': 'net-home',
+    'native_networkconf_id': 'net-zulu',
     'tagged_vlan_mgmt': 'block_all',
 }
 
@@ -96,7 +96,7 @@ def test_trunk_uplink_carrying_all_vlans_passes() -> None:
 
 
 def test_access_port_uplink_severs_tagged_vlans_is_critical() -> None:
-    """The Lounge failure: uplink via a block_all access port severs every tagged VLAN."""
+    """The Mike2 failure: uplink via a block_all access port severs every tagged VLAN."""
     report = audit_uplink_transparency_from_data(
         devices=[
             _switch(uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:13:00:00:01'),
@@ -190,7 +190,7 @@ def test_customize_forward_reports_only_missing_vlans() -> None:
         '_id': 'prof-partial',
         'name': 'Partial trunk',
         'forward': 'customize',
-        'native_networkconf_id': 'net-home',
+        'native_networkconf_id': 'net-zulu',
         'tagged_vlan_mgmt': 'custom',
         'tagged_vlan_ids': [10],
     }
@@ -216,7 +216,7 @@ def test_unresolvable_custom_profile_warns_instead_of_failing() -> None:
         '_id': 'prof-opaque',
         'name': 'Custom trunk',
         'forward': 'customize',
-        'native_networkconf_id': 'net-home',
+        'native_networkconf_id': 'net-zulu',
         'tagged_vlan_mgmt': 'custom',
     }
     report = audit_uplink_transparency_from_data(
@@ -488,4 +488,4 @@ def test_an_override_access_profile_on_the_uplink_is_critical() -> None:
     )
 
     assert [f.severity for f in report.findings] == ['CRITICAL']
-    assert report.findings[0].profile_name == 'Access Port VLAN 1 Home 1Gbps'
+    assert report.findings[0].profile_name == 'Access Port VLAN 1 Zulu 1Gbps'

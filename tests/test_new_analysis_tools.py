@@ -2150,7 +2150,7 @@ class TestRFStrategyModeSelection:
         assert classify_iot_client(tasmota) is True
 
         # Negative: modern smartphone — no IoT indicators, modern radio_proto
-        iphone = {'oui': 'Apple, Inc.', 'hostname': 'Hotel-iphone', 'radio_proto': 'ax'}
+        iphone = {'oui': 'Apple, Inc.', 'hostname': 'hotel-iphone', 'radio_proto': 'ax'}
         assert classify_iot_client(iphone) is False
 
         # Negative: ambiguous laptop — no IoT keywords, radio_proto=ac (modern)

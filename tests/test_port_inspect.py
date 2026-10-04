@@ -32,10 +32,10 @@ def test_resolve_switch_by_name():
     devices = [
         {'_id': '1', 'type': 'usw', 'name': 'Mike2 USW Flex 2.5G 8 PoE', 'model': 'USWED37'},
         {'_id': '2', 'type': 'usw', 'name': 'Hotel3 USW Lite 8 PoE', 'model': 'USL8LP'},
-        {'_id': '3', 'type': 'uap', 'name': 'Lounge AP'},
+        {'_id': '3', 'type': 'uap', 'name': 'Mike2 AP'},
     ]
     c = _fake_client(devices)
-    got = resolve_switch(c, 'default', 'Lounge')
+    got = resolve_switch(c, 'default', 'Mike2')
     assert got['_id'] == '1'
 
 
@@ -46,24 +46,24 @@ def test_resolve_switch_multi_token_finds_with_gaps():
         {'_id': '2', 'type': 'usw', 'name': 'Mike2 USW Lite 8 PoE', 'model': 'B'},
     ]
     c = _fake_client(devices)
-    got = resolve_switch(c, 'default', 'Lounge Flex 8')
+    got = resolve_switch(c, 'default', 'Mike2 Flex 8')
     assert got['_id'] == '1'
 
 
 def test_resolve_switch_ambiguous():
     """resolve_switch raises LookupError when multiple switches match."""
     devices = [
-        {'_id': '1', 'type': 'usw', 'name': 'Lounge USW Flex 8', 'model': 'A'},
-        {'_id': '2', 'type': 'usw', 'name': 'Lounge USW Lite 8', 'model': 'B'},
+        {'_id': '1', 'type': 'usw', 'name': 'Mike2 USW Flex 8', 'model': 'A'},
+        {'_id': '2', 'type': 'usw', 'name': 'Mike2 USW Lite 8', 'model': 'B'},
     ]
     c = _fake_client(devices)
     with pytest.raises(LookupError, match='Ambiguous'):
-        resolve_switch(c, 'default', 'Lounge')
+        resolve_switch(c, 'default', 'Mike2')
 
 
 def test_resolve_switch_not_found():
     """resolve_switch raises LookupError with hint list when nothing matches."""
-    devices = [{'_id': '1', 'type': 'usw', 'name': 'Office', 'model': 'X'}]
+    devices = [{'_id': '1', 'type': 'usw', 'name': 'Hotel3', 'model': 'X'}]
     c = _fake_client(devices)
     with pytest.raises(LookupError, match='No switch matched'):
         resolve_switch(c, 'default', 'nonexistent')
@@ -72,7 +72,7 @@ def test_resolve_switch_not_found():
 def test_resolve_switch_says_when_the_controller_returned_no_devices():
     """An empty device list (wrong site, no permission) is not reported as 'no match'."""
     with pytest.raises(LookupError, match='returned no devices'):
-        resolve_switch(_fake_client([]), 'default', 'Office')
+        resolve_switch(_fake_client([]), 'default', 'Hotel3')
 
 
 def test_resolve_switch_by_ip_or_mac():
@@ -227,7 +227,7 @@ def test_inspect_port_end_to_end_with_mocks():
     device_id = 'sw-abc'
     switch = {
         '_id': device_id,
-        'name': 'Lounge Flex 8',
+        'name': 'Mike2 Flex 8',
         'model': 'USWED37',
         'mac': '02:00:17:00:00:01',
         'type': 'usw',

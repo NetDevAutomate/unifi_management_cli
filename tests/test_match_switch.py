@@ -25,7 +25,7 @@ DEVICES = [
     _dev('USW Flex XG', '02:00:00:00:00:01', '192.0.2.10'),
     _dev('Hotel3 USW Flex XG 10G', '02:00:00:00:00:02', '192.0.2.11'),
     _dev('Mike2 USW Flex 2.5G 8 PoE', '02:00:00:00:00:03', '192.0.2.12', model='USWF8'),
-    _dev('Lounge AP', '02:00:00:00:00:04', '192.0.2.13', model='U7PRO', type_='uap'),
+    _dev('Mike2 AP', '02:00:00:00:00:04', '192.0.2.13', model='U7PRO', type_='uap'),
 ]
 
 
@@ -45,7 +45,7 @@ def test_mac_matches_in_any_notation(query):
 
 def test_ip_then_tokens_then_substring():
     assert match_switch(DEVICES, '192.0.2.12')[1] == 'ip'
-    assert match_switch(DEVICES, 'Lounge Flex 8')[1] == 'tokens'
+    assert match_switch(DEVICES, 'Mike2 Flex 8')[1] == 'tokens'
     assert match_switch(DEVICES, 'USWF8')[1] == 'substring'
 
 
@@ -56,24 +56,22 @@ def test_ambiguity_lists_every_candidate():
     assert "Ambiguous match for 'flex' (substring)" in message
     for device in DEVICES[:3]:
         assert repr(device['name']) in message and device['mac'] in message
-    assert 'Lounge AP' not in message
+    assert 'Mike2 AP' not in message
     assert 'Pass the exact name or the MAC address.' in message
 
 
 def test_no_match_lists_known_switches_or_devices():
     with pytest.raises(LookupError, match=r"No switch matched 'nope'\. Known switches: "):
         match_switch(DEVICES, 'nope')
-    with pytest.raises(
-        LookupError, match=r"No device matched 'nope'\. Known devices: .*Lounge AP"
-    ):
+    with pytest.raises(LookupError, match=r"No device matched 'nope'\. Known devices: .*Mike2 AP"):
         match_switch(DEVICES, 'nope', device_types=None)
 
 
 def test_device_types_none_considers_every_device_and_junk_is_ignored():
-    device, matched_by, _ = match_switch(['junk', None, *DEVICES], 'lounge ap', device_types=None)
-    assert device['name'] == 'Lounge AP' and matched_by == 'exact_name'
+    device, matched_by, _ = match_switch(['junk', None, *DEVICES], 'mike2 ap', device_types=None)
+    assert device['name'] == 'Mike2 AP' and matched_by == 'exact_name'
     with pytest.raises(LookupError):
-        match_switch(DEVICES, 'lounge ap')
+        match_switch(DEVICES, 'mike2 ap')
 
 
 def test_an_empty_list_is_a_no_match_not_a_crash():
