@@ -456,14 +456,15 @@ def _known_names() -> frozenset[str]:
     names = {n for v in registry.get_categories().values() for n in v}
     names |= set(mcp_server.META_TOOLS) | set(CREDENTIAL_FAMILIES)
     names |= {p.name for p in anyio.run(mcp_server.create_server('discovery').list_prompts)}
-    for path in (REPO / 'src').rglob('*.py'):
-        source = path.read_text(encoding='utf-8')
+    for path in sorted(p for p in _tracked() if p.startswith('src/') and p.endswith('.py')):
+        source = (REPO / path).read_text(encoding='utf-8')
         names |= set(re.findall(r'\b(?:def|class)\s+([A-Za-z_]\w*)', source))
         names |= set(re.findall(r'^\s*([a-z_][a-z0-9_]*)\s*[:=]', source, re.M))
-        names.add(path.stem)
-    for manifest in (REPO / 'src/unifi_mapper/mcp/manifests').glob('*.yaml'):
-        text = manifest.read_text(encoding='utf-8')
-        names |= set(re.findall(r'^\s{6,}([a-z_][a-z0-9_]*):', text, re.M))
+        names.add(Path(path).stem)
+    for path in sorted(_tracked()):
+        if path.startswith('src/unifi_mapper/mcp/manifests/') and path.endswith('.yaml'):
+            text = (REPO / path).read_text(encoding='utf-8')
+            names |= set(re.findall(r'^\s{6,}([a-z_][a-z0-9_]*):', text, re.M))
     return frozenset(names)
 
 
@@ -929,13 +930,48 @@ PREFIXED_READERS = (
 NOT_ENV_VARS = frozenset({'UNIFI_AES_KEY', 'UNIFI_AES_IV', 'UNIFI_LTE'})
 
 
+def env_vars_read(path: str, text: str) -> frozenset[str]:
+    """Return the ``UNIFI_*``, ``PROTECT_*`` and ``XDG_*`` names one source file reads.
+
+    In Python only string constants count, never a docstring or a comment, so a variable the
+    code stopped reading fails the docs guard even while a docstring still names it. In a
+    shell script or YAML file every line but a comment counts.
+
+    Args:
+        path: The repo-relative file name.
+        text: The file's text.
+
+    Returns:
+        The variable names.
+    """
+    if not path.endswith('.py'):
+        code = '\n'.join(ln for ln in text.splitlines() if not ln.lstrip().startswith('#'))
+        return frozenset(ENV_VAR.findall(code))
+    tree = ast.parse(text)
+    docstrings: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            first = node.body[0] if node.body else None
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+                docstrings.add(id(first.value))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and id(node) not in docstrings
+        ):
+            names.update(ENV_VAR.findall(node.value))
+    return frozenset(names)
+
+
 @functools.cache
 def _read_env_vars() -> frozenset[str]:
     """Return every environment variable the code under ``src/`` and ``scripts/`` reads."""
     names: set[str] = set()
     for path in _tracked():
         if path.startswith(('src/', 'scripts/')) and path.endswith(('.py', '.sh', '.yaml')):
-            names |= set(ENV_VAR.findall((REPO / path).read_text(encoding='utf-8')))
+            names |= env_vars_read(path, (REPO / path).read_text(encoding='utf-8'))
     for path, prefix in PREFIXED_READERS:
         source = (REPO / path).read_text(encoding='utf-8')
         names |= {prefix + key for key in re.findall(r"get_env\('([A-Z_]+)'", source)}
@@ -967,6 +1003,23 @@ def test_env_detector_reports_an_unread_variable() -> None:
     assert env_problems('README.md', text, _read_env_vars()) == [
         'README.md:1: UNIFI_NO_SUCH_SETTING is read by no code'
     ]
+
+
+def test_env_reader_ignores_docstrings_and_comments() -> None:
+    """A variable only a docstring or comment names isn't read; a string constant is."""
+    source = (
+        '"""Module docs name UNIFI_DOC_ONLY."""\n'
+        'import os\n'
+        '\n'
+        '\n'
+        'def get() -> str | None:\n'
+        '    """Function docs name UNIFI_ALSO_DOC_ONLY."""\n'
+        '    # A comment names UNIFI_COMMENT_ONLY.\n'
+        "    return os.environ.get('UNIFI_READ_HERE')\n"
+    )
+    shell = '# UNIFI_SHELL_COMMENT\nexport UNIFI_SHELL_READ="${UNIFI_SHELL_READ:-x}"\n'
+    assert env_vars_read('src/demo.py', source) == {'UNIFI_READ_HERE'}
+    assert env_vars_read('scripts/demo.sh', shell) == {'UNIFI_SHELL_READ'}
 
 
 def test_documented_env_vars_are_read_by_the_code() -> None:
