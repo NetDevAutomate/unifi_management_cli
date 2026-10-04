@@ -47,23 +47,28 @@ class CameraConfig:
     password: str = field(repr=False)
 
 
-def _parse_camera(entry: str) -> tuple[str, str, int]:
+def _parse_camera(entry: str, position: int) -> tuple[str, str, int]:
     """Split one ``NAME=HOST[:PORT]`` entry.
 
     Args:
         entry: One comma-separated item of ``ONVIF_CAMERAS``, already stripped.
+        position: The entry's 1-based position in ``ONVIF_CAMERAS``.
 
     Returns:
         The camera's name, host and port (``DEFAULT_PORT`` when the entry has none).
 
     Raises:
-        ConfigError: If the entry has no name or host, has a ``:`` with no port after it, or
-            its port isn't a decimal number from 1 to 65535.
+        ConfigError: If the entry has no name or host, its address has more than one ``:``
+            (an IPv6 literal, say; the message gives the position, not the address), it has a
+            ``:`` with no port after it, or its port isn't a decimal number from 1 to 65535.
     """
     name, sep, address = (part.strip() for part in entry.partition('='))
-    host, colon, port_text = address, '', ''
-    if address.count(':') == 1:
-        host, colon, port_text = address.partition(':')
+    if address.count(':') > 1:
+        raise ConfigError(
+            f'{CAMERAS_VAR} entry {position} has more than one ":". IPv6 literals aren\'t'
+            ' supported: give a host name or an IPv4 address, then an optional :PORT'
+        )
+    host, colon, port_text = address.partition(':')
     if not sep or not name or not host or (colon and not port_text):
         raise ConfigError(f'{CAMERAS_VAR} entry {entry!r} is not NAME=HOST[:PORT]. {HELP}')
     if not port_text:
@@ -98,5 +103,5 @@ def load_cameras(environ: Mapping[str, str] | None = None) -> list[CameraConfig]
     user, password = values[USERNAME_VAR], values[PASSWORD_VAR]
     return [
         CameraConfig(name, host, port, user, password)
-        for name, host, port in map(_parse_camera, entries)
+        for name, host, port in (_parse_camera(entry, n) for n, entry in enumerate(entries, 1))
     ]

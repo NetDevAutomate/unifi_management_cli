@@ -138,6 +138,23 @@ def test_load_cameras_rejects_a_malformed_camera_list(config: Any, cameras: str)
     assert FAKE_PASSWORD not in str(excinfo.value)
 
 
+@pytest.mark.parametrize(
+    'camera',
+    ['Camera B=192.0.2.11:80:90', 'Camera B=2001:db8::11', 'Camera B=[2001:db8::11]:8080'],
+)
+def test_an_address_with_more_than_one_colon_is_rejected(config: Any, camera: str) -> None:
+    """A second ``:`` (a typo, or an IPv6 literal, which isn't supported) fails at load time.
+
+    Such an entry used to become a bare host on port 80 and fail only when the script tried
+    to connect. The message gives the entry's position, not its address.
+    """
+    with pytest.raises(config.ConfigError, match='entry 2 has more than one ":"') as excinfo:
+        config.load_cameras(_env(ONVIF_CAMERAS=f'Camera A=192.0.2.10, {camera}'))
+
+    assert camera.partition('=')[2] not in str(excinfo.value)
+    assert FAKE_PASSWORD not in str(excinfo.value)
+
+
 def test_the_password_stays_out_of_the_repr(config: Any) -> None:
     """A camera's repr never shows its password."""
     [camera, _] = config.load_cameras(_env())
