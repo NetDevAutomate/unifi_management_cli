@@ -61,7 +61,7 @@ async def _envelope(runner: ToolRunner, name: str, params: dict[str, Any]) -> di
 
 SHAPES = [
     ('find_device', {'identifier': 'USW Flex XG'}, {'query': 'USW Flex XG'}),
-    ('find_ip', {'ip': '203.0.113.51'}, {'ip_address': '203.0.113.51'}),
+    ('find_ip', {'ip': '192.0.2.51'}, {'ip_address': '192.0.2.51'}),
     ('find_mac', {'mac': NAS_MAC}, {'mac_address': NAS_MAC}),
     ('client_trace', {'client': NAS_MAC}, {'client_id': NAS_MAC}),
 ]
@@ -92,7 +92,7 @@ async def test_alias_and_canonical_together_are_rejected(
 @pytest.mark.usefixtures('gate_env')
 async def test_traceroute_canonical_shape(shipped, monkeypatch) -> None:
     received = _record(monkeypatch, 'traceroute')
-    params = {'source': 'gateway', 'destination': '203.0.113.51', 'verbosity': 'expert'}
+    params = {'source': 'gateway', 'destination': '192.0.2.51', 'verbosity': 'expert'}
     assert (await _envelope(shipped, 'traceroute', params))['ok'] is True
     assert received == [{**params, 'include_firewall': True}]
 
@@ -100,7 +100,7 @@ async def test_traceroute_canonical_shape(shipped, monkeypatch) -> None:
 @pytest.mark.usefixtures('gate_env')
 async def test_traceroute_max_hops_gets_the_hint(shipped, monkeypatch) -> None:
     received = _record(monkeypatch, 'traceroute')
-    params = {'source': 'gateway', 'destination': '203.0.113.51', 'max_hops': 30}
+    params = {'source': 'gateway', 'destination': '192.0.2.51', 'max_hops': 30}
     out = await _envelope(shipped, 'traceroute', params)
     assert out['error_code'] == 'INVALID_PARAMETERS'
     assert out['message'].startswith('unknown parameter(s): max_hops')
@@ -145,9 +145,9 @@ def path_module(monkeypatch: pytest.MonkeyPatch):
 
 async def test_path_analysis_mcp_with_endpoints_traces_first(path_module) -> None:
     module, traced, analysed = path_module
-    out = await module.path_analysis_mcp(source='gateway', destination='203.0.113.51')
+    out = await module.path_analysis_mcp(source='gateway', destination='192.0.2.51')
     assert out == {'analysed': True}
-    assert traced == [('gateway', '203.0.113.51')]
+    assert traced == [('gateway', '192.0.2.51')]
     assert analysed == ['traced-path']
 
 
@@ -160,9 +160,9 @@ async def test_path_analysis_mcp_with_a_path_skips_the_trace(path_module) -> Non
 
 VALID_PATH = {
     'source': 'gateway',
-    'source_resolved': '203.0.113.1',
+    'source_resolved': '192.0.2.1',
     'destination': 'ugreen',
-    'destination_resolved': '203.0.113.51',
+    'destination_resolved': '192.0.2.51',
 }
 
 
@@ -172,9 +172,9 @@ VALID_PATH = {
     [
         {},
         {'source': 'gateway'},
-        {'destination': '203.0.113.51'},
+        {'destination': '192.0.2.51'},
         {'path': VALID_PATH, 'source': 'gateway'},
-        {'path': VALID_PATH, 'source': 'gateway', 'destination': '203.0.113.51'},
+        {'path': VALID_PATH, 'source': 'gateway', 'destination': '192.0.2.51'},
     ],
 )
 async def test_path_analysis_neither_or_both_is_config_invalid(shipped, path_module, params):
@@ -190,16 +190,16 @@ async def test_path_analysis_path_shape_through_execute_tool(shipped, path_modul
     _, traced, analysed = path_module
     out = await _envelope(shipped, 'path_analysis', {'path': VALID_PATH})
     assert out == {'ok': True, 'result': {'analysed': True}}
-    assert traced == [] and analysed[0].destination_resolved == '203.0.113.51'
+    assert traced == [] and analysed[0].destination_resolved == '192.0.2.51'
 
 
 @pytest.mark.usefixtures('gate_env')
 async def test_path_analysis_endpoints_through_execute_tool(shipped, path_module) -> None:
     _, traced, _ = path_module
-    params = {'source': 'gateway', 'destination': '203.0.113.51'}
+    params = {'source': 'gateway', 'destination': '192.0.2.51'}
     out = await _envelope(shipped, 'path_analysis', params)
     assert out == {'ok': True, 'result': {'analysed': True}}
-    assert traced == [('gateway', '203.0.113.51')]
+    assert traced == [('gateway', '192.0.2.51')]
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ class _FakeUniFiClient:
                 'sw_mac': SWITCH_MAC,
                 'sw_port': 5,
                 'vlan': 255,
-                'ip': '203.0.113.51',
+                'ip': '192.0.2.51',
             }
         ],
         'stat/alluser': [],
