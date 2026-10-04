@@ -14,8 +14,18 @@ from onvif import ONVIFCamera
 WSDL_DIR = os.path.join(os.path.dirname(onvif.__file__), 'wsdl')
 
 
-async def probe_camera(ip: str, port: int, user: str, password: str):
-    """Probe an ONVIF connection and print the camera's info."""
+async def probe_camera(ip: str, port: int, user: str, password: str) -> bool:
+    """Probe an ONVIF connection and print the camera's info.
+
+    Args:
+        ip: The camera's address.
+        port: The camera's ONVIF port.
+        user: The ONVIF user name.
+        password: The ONVIF user's password.
+
+    Returns:
+        True if the camera answered every probe, False if any step failed.
+    """
     print(f'\n{"=" * 60}')
     print(f'Testing ONVIF: {ip}:{port} as {user}')
     print('=' * 60)
@@ -65,7 +75,7 @@ async def probe_camera(ip: str, port: int, user: str, password: str):
         return False
 
 
-async def main():
+async def main() -> None:
     """Probe both cameras."""
     cameras = [
         ('198.51.100.11', 80, 'onvifuser', '***REMOVED***', 'Intercom'),
