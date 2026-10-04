@@ -70,6 +70,10 @@ def _tracked_sources() -> list[Path]:
 
     Skips the calling test outside a git checkout (an sdist, say): the list comes from the
     git index.
+
+    Returns:
+        The absolute path of each tracked ``.py`` file under ``src/`` and ``scripts/``, in
+        ``git ls-files`` order.
     """
     if not (REPO / '.git').exists():
         pytest.skip('not a git checkout: the scan reads the git index')
