@@ -1,7 +1,7 @@
 # UniFi Management CLI: Troubleshooting Guide and Operational Runbook
 
 **Version**: 1.0
-**Last Updated**: 2026-04-06
+**Last Updated**: 2026-10-04
 **Audience**: Network engineers and operations staff managing UniFi infrastructure via this CLI
 
 > **See also**: [Use Cases and How-To](../guides/use-cases-and-howto.md) | [Architecture Overview](../architecture/architecture-overview.md) | [Codebase Map](../architecture/codemap.md) | [AXIS Provisioning](../guides/axis-provisioning.md)
@@ -56,9 +56,9 @@ flowchart TD
     D -->|No| E[Use: uv run unifi-mapper ...]
     D -->|Yes| F{Does pyproject.toml list the entry point?}
     F -->|Entry point missing| G[Check pyproject.toml scripts section]
-    F -->|Entry point present| H{Python version >= 3.11?}
-    H -->|No| I[Install Python 3.12+ via asdf]
-    H -->|Yes| J[Run: uv pip install -e . to reinstall in dev mode]
+    F -->|Entry point present| H{Python version >= 3.12?}
+    H -->|No| I[Install Python 3.12+: uv python install 3.12]
+    H -->|Yes| J[Run: uv sync --reinstall-package unifi-management-cli]
     C --> E
 ```
 
@@ -86,13 +86,17 @@ unifi-mapper --help
 
 **Symptom**: `Configuration file not found: /home/user/.config/unifi_management_cli/prod.env` or `UNIFI_URL environment variable required.`
 
-The CLI searches for config in the following priority order (from `cli.py`):
+The CLI reads the first of these (`cli.get_default_config_path`):
 
-1. `$XDG_CONFIG_HOME/unifi_management_cli/prod.env`
-2. `~/.config/unifi_management_cli/prod.env`
-3. `$XDG_CONFIG_HOME/unifi_management_cli/default.env`
-4. `~/.config/unifi_management_cli/default.env`
-5. `.env` in the current directory (legacy fallback)
+1. `--config PATH`, or `UNIFI_CONFIG=PATH` (the `inventory` commands take their own
+   `--config` instead, [issue 043](../issues/043-inventory-ignores-the-root-config.md))
+2. `prod.env` in `$XDG_CONFIG_HOME/unifi_management_cli/`, or in
+   `~/.config/unifi_management_cli/` when `XDG_CONFIG_HOME` is unset
+3. `default.env` in that same directory
+4. `.env` in the current directory (legacy fallback)
+
+A set `XDG_CONFIG_HOME` replaces `~/.config` here, while the MCP server tries both
+([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
 
 **Resolution**:
 
@@ -102,13 +106,34 @@ cp .env.example ~/.config/unifi_management_cli/prod.env
 # Edit prod.env with actual values
 chmod 600 ~/.config/unifi_management_cli/prod.env
 
-# Or specify config explicitly:
-uv run unifi-mapper --config /path/to/my.env
+# Or name the file explicitly (UNIFI_CONFIG=/path/to/my.env works too):
+uv run unifi-mapper --config /path/to/my.env discover
 ```
 
 #### Prevention
 
 Keep a `prod.env` at the XDG standard path. Never use `.env` in the working directory for production; it is a legacy fallback only.
+
+#### A Root Flag Exits 2
+
+**Symptom**: the command stops at once with exit status 2 and one of these on stderr:
+
+```text
+❌ --apply must follow the subcommand and its arguments (e.g. unifi-mapper discover --apply, unifi-mapper ports refresh --apply)
+❌ --connected-devices only applies to discover (unifi-mapper discover --connected-devices)
+❌ --verify-updates only applies to discover (unifi-mapper discover --verify-updates)
+❌ --dry-run before a subcommand only reaches discover: read-only subcommands need no flag, and those with their own --dry-run take it after their arguments (e.g. unifi-mapper ports refresh --dry-run)
+❌ choose --apply or --dry-run
+```
+
+**Cause**: the root `--dry-run`, `--connected-devices`, `--verify-updates` and `--apply`
+are shortcuts for `discover`. On their own they run it (a preview unless `--apply`), and
+before the `discover` subcommand the first three are passed on to it. Before any other
+subcommand they are refused rather than silently ignored, and a root `--apply` is refused
+before any subcommand, `discover` included, so a write is never requested by accident.
+
+**Resolution**: put a subcommand's own flags after it: `unifi-mapper discover --apply`,
+`unifi-mapper ports refresh --apply`, `unifi-mapper discover --connected-devices`.
 
 ---
 
@@ -139,7 +164,7 @@ flowchart TD
     I -->|Read-only role| J[Promote user to Local Admin in UniFi OS]
     I -->|Admin but 403| K[Check site membership - user must be assigned to the site]
 
-    E --> L[Set UNIFI_LOGLEVEL=DEBUG and retry]
+    E --> L[Re-run with the root --debug flag]
     L --> M{Does log show UniFi OS detected?}
     M -->|Yes - is_unifi_os=True| N[Verify endpoint: /proxy/network/api/s/SITE/self]
     M -->|No - is_unifi_os=False| O[Verify endpoint: /api/s/SITE/self]
@@ -192,6 +217,32 @@ Authentication issue with devices endpoint. Attempting to re-authenticate...
 - Use API token authentication rather than username/password. Tokens survive password rotations.
 - Generate API tokens under Settings > Control Plane > API Tokens in UniFi OS.
 - Store tokens at `chmod 600` permissions.
+
+#### Gateway SSH Commands Fail
+
+`diagnose latency-matrix` and `diagnose bandwidth` run `ping` and `iperf3` on the gateway
+over SSH. They are the only commands that use SSH, and no MCP tool does.
+
+**Symptom**: both exit 1 before connecting to anything, with:
+
+```text
+❌ [CONFIG_MISSING] UNIFI_SSH_PASSWORD is not set. The gateway SSH login has its own password; UNIFI_PASSWORD (the UniFi OS login) is never sent over SSH
+💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
+```
+
+**Resolution**:
+
+1. Enable SSH in UniFi OS (Settings > Control Plane > Console) and set its password there.
+2. Add `UNIFI_SSH_PASSWORD` to the env file, and `UNIFI_SSH_USERNAME` if the SSH user isn't
+   `root`. `UNIFI_PASSWORD` is never tried over SSH: it is the UniFi OS login, so sending it
+   would only leave failed root logins on the gateway.
+3. If `diagnose bandwidth` refuses the target, give a plain IPv4 or IPv6 address: names
+   and IPv6 zone ids (`%eth0`) are refused before anything connects. The latency matrix
+   skips such targets and lists them as skipped.
+
+The SSH session doesn't verify the gateway's host key yet (`known_hosts=None`,
+[issue 038](../issues/038-ssh-host-key-verification-disabled.md)), so run these only on a
+network you trust.
 
 ---
 
@@ -340,14 +391,13 @@ Zero (`0`) and any other value will be stripped from `port_overrides` before sub
 #### Resolution
 
 ```bash
-# Step 1: Enable debug logging to see full payload
-export UNIFI_LOGLEVEL=DEBUG
-uv run unifi-mapper --verify-updates --apply 2>&1 | grep -E "PORT OVERRIDE|API RESPONSE|config_version"
+# Step 1: Run with the root --debug flag to see the full payload (this run writes, --apply)
+uv run unifi-mapper --debug --verify-updates --apply 2>&1 | grep -E "PORT OVERRIDE|API RESPONSE|config_version"
 
 # Step 2: Check the response meta.rc - should be 'ok'
 # Look for: Response meta.rc: ok
 
-# Step 3: Dry run to inspect what would be sent
+# Step 3: Preview (the default) to inspect what would be sent
 uv run unifi-mapper --dry-run --verify-updates
 ```
 
@@ -507,6 +557,11 @@ Run the compatibility report before deploying to a new site. Upgrade the UniFi N
 - MQTT messages not reaching Home Assistant
 - AI Port cameras showing as disconnected
 
+> [!NOTE]
+> Connect with a dedicated local, view-only Protect account, not the console's admin login.
+> The MCP Protect tools haven't been verified against a live console yet
+> ([issue 034](../issues/034-protect-has-no-live-account.md)).
+
 #### Connection State Machine
 
 ```mermaid
@@ -534,7 +589,7 @@ The `UniFiProtectClient.state` property exposes the current `ConnectionState` en
 The Protect client raises `AuthenticationError` (a subclass of `ProtectClientError`) when `get_bootstrap()` fails with "unauthorized" or "authentication" in the error message. This is distinct from `UniFiAuthenticationError` in the main API client.
 
 **Common causes**:
-- `PROTECT_USERNAME` / `PROTECT_PASSWORD` credentials are for a local admin, not a Ubiquiti account
+- `PROTECT_USERNAME` / `PROTECT_PASSWORD` belong to a Ubiquiti cloud account instead of a local user
 - Multi-factor authentication is enabled on the account
 - The account does not have Protect access in UniFi OS permissions
 
@@ -542,7 +597,7 @@ The Protect client raises `AuthenticationError` (a subclass of `ProtectClientErr
 
 ```bash
 # Test Protect connectivity independently:
-python3 -c "
+uv run python -c "
 import asyncio
 from unifi_mapper.protect import ProtectConfig, UniFiProtectClient
 
@@ -629,7 +684,7 @@ flowchart TD
     D -->|Yes| H{Which tools fail?}
     H -->|network category| I[network_api family: UNIFI_NETWORK_HOST, UNIFI_NETWORK_API_KEY, UNIFI_NETWORK_SITE_ID]
     H -->|protect category| J[protect family: PROTECT_HOST, PROTECT_USERNAME, PROTECT_PASSWORD]
-    H -->|all controller tools| K["Test the same env file with unifi-mapper --config FILE"]
+    H -->|all controller tools| K["Test the same env file with unifi-mapper --config FILE diagnose health"]
     H -->|old behaviour after a code change| L["Restart the client so uvx relaunches (cache-keys rebuild on edits); for an installed tool, uv tool install --reinstall"]
 ```
 
@@ -689,13 +744,12 @@ only with `--from`.
 
 #### Retry and Backoff Behaviour
 
-The client implements exponential backoff for retryable errors (`UniFiRetryableError` subclasses: `UniFiConnectionError`, `UniFiTimeoutError`, `UniFiRateLimitError`). Delays are:
+The client implements exponential backoff for retryable errors (`UniFiRetryableError` subclasses: `UniFiConnectionError`, `UniFiTimeoutError`, `UniFiRateLimitError`). The wait before each retry is:
 
-- Attempt 1: `retry_delay * 2^0` (e.g., 1.0s with default settings)
-- Attempt 2: `retry_delay * 2^1` (2.0s)
-- Attempt 3: `retry_delay * 2^2` (4.0s)
+- Before attempt 2: `retry_delay * 2^0` (1.0s with the default delay)
+- Before attempt 3: `retry_delay * 2^1` (2.0s)
 
-Total worst-case wait with defaults (`max_retries=3`, `retry_delay=1.0`): ~7 seconds per failing request.
+There is no wait after the last attempt, so with the defaults (`max_retries=3`, `retry_delay=1.0`) a failing request spends 3 seconds backing off, plus up to three request timeouts of `UNIFI_TIMEOUT` each. The CLI always uses those defaults: `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` are read but not applied yet ([issue 042](../issues/042-settings-with-no-effect.md)).
 
 `UniFiAuthenticationError` and `UniFiPermissionError` (4xx errors) are NOT retried and raise immediately.
 
@@ -715,29 +769,22 @@ flowchart TD
 
     A --> J{Is verify_port_update taking too long?}
     J -->|Yes| K[verify_port_update waits 5s initially, then 3+n seconds per attempt]
-    K --> L[Default 5 attempts = up to 35+ seconds total per port]
+    K --> L[Default 5 attempts: up to 27 s of waiting per port]
     L --> M[This is by design for cache stabilisation - reduce num_reads in GroundTruthVerifier if needed]
 ```
 
 #### Tuning Parameters
 
-Adjust these in `~/.config/unifi_management_cli/prod.env`:
+Adjust this in `~/.config/unifi_management_cli/prod.env`:
 
 ```bash
-# For high-latency or WAN-connected controllers (default: 10)
+# For high-latency or WAN-connected controllers (default: 10; kept within 1-300 seconds)
 UNIFI_TIMEOUT=30
-
-# For flaky connections, increase retries (default: 3, max: 10)
-UNIFI_MAX_RETRIES=5
-
-# For very reliable links, reduce retry delay to speed up failures (default: 1.0)
-UNIFI_RETRY_DELAY=0.5
 ```
 
-Valid ranges (clamped by config validation):
-- `UNIFI_TIMEOUT`: 1-300 seconds
-- `UNIFI_MAX_RETRIES`: 1-10
-- `UNIFI_RETRY_DELAY`: 0.1-10.0 seconds
+`UNIFI_MAX_RETRIES` (1-10) and `UNIFI_RETRY_DELAY` (0.1-10.0 seconds) are parsed and
+clamped, but no client uses them yet, so changing them has no effect on `unifi-mapper`
+([issue 042](../issues/042-settings-with-no-effect.md)).
 
 #### Prevention
 
@@ -836,11 +883,12 @@ uv run unifi-mapper --verify-updates --connected-devices --apply
 #### Configuration Backup
 
 ```bash
-# Generate a current topology report (port names, device connections)
-uv run unifi-mapper --format mermaid --output ~/backups/topology-$(date +%Y%m%d).md
+# Generate a current topology report (port names, device connections) and an SVG diagram;
+# discover previews by default, so this writes nothing to the controller
+uv run unifi-mapper discover --output ~/backups/topology-$(date +%Y%m%d).md --format svg --diagram ~/backups/topology-$(date +%Y%m%d).svg
 
-# Generate inventory snapshot
-uv run unifi-mapper inventory list --format json --output ~/backups/inventory-$(date +%Y%m%d).json
+# Generate inventory snapshot (markdown)
+uv run unifi-mapper inventory list --output ~/backups/inventory-$(date +%Y%m%d).md
 ```
 
 #### STP Topology Management
@@ -902,9 +950,11 @@ uv run unifi-mapper discover \
   --verify-updates \
   --apply \
   --output reports/port-naming-verify-$(date +%Y%m%d).md \
-  --diagram reports/topology-port-naming-verify-$(date +%Y%m%d).mermaid \
-  --format mermaid
+  --diagram reports/topology-port-naming-verify-$(date +%Y%m%d).svg \
+  --format svg
 ```
+
+This one writes (`--apply`); without it the same command previews.
 
 Success means all attempted updates verify cleanly after repeated reads. If a device repeatedly fails verification, treat it as a model/firmware behaviour problem rather than assuming the CLI payload is wrong.
 
@@ -940,12 +990,13 @@ uv run unifi-mapper analyze traffic-matrix --top 10
 vim ~/.config/unifi_management_cli/prod.env
 # Change: UNIFI_CONSOLE_API_TOKEN=new_token_here
 
-# 3. Verify new token works
+# 3. Verify new token works (a discover preview: reads only)
 uv run unifi-mapper --dry-run
 
-# 4. Update MCP server config if applicable
-# Update UNIFI_CONSOLE_API_TOKEN in claude_desktop_config.json
-# Restart Claude Desktop
+# 4. The MCP server reads the same env file (the one UNIFI_CONFIG names in the client's env).
+#    Check it, then restart or reconnect the client: a running server keeps the old token
+#    until it restarts (issue 020)
+uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --check
 ```
 
 ---
@@ -987,8 +1038,8 @@ curl -k -o /dev/null -s -w "%{http_code}" https://YOUR_CONTROLLER/api/system
 # Test authentication
 curl -k -H "X-API-KEY: YOUR_TOKEN" https://YOUR_CONTROLLER/proxy/network/api/s/default/self
 
-# Test with CLI
-UNIFI_LOGLEVEL=DEBUG uv run unifi-mapper --dry-run 2>&1 | head -50
+# Test with CLI (root --debug for DEBUG logs)
+uv run unifi-mapper --debug --dry-run 2>&1 | head -50
 ```
 
 #### Incident: Intermittent Ping After 10G or STP Change
@@ -1069,8 +1120,9 @@ uv run unifi-network-toolkit find ip 192.0.2.x
 # Check port connectivity to uplink device
 uv run unifi-network-toolkit analyze link-quality
 
-# Trace client path to the device
-uv run unifi-network-toolkit trace client MAC_ADDRESS
+# Find the switch port a client MAC is on (the MCP client_trace tool gives the full
+# path from the client to the uplink)
+uv run unifi-network-toolkit find mac 02:00:00:00:00:01
 ```
 
 #### Incident: Mass Port Name Reversion
@@ -1080,8 +1132,9 @@ This indicates either a firmware issue (see Section 6) or a controller-level con
 **Response**:
 
 ```bash
-# 1. Identify affected devices
-uv run unifi-mapper --verify-updates --connected-devices --apply 2>&1 | grep -E "FAILED|mismatch"
+# 1. Identify affected devices: a preview (no --apply) reports the port names it would
+#    write, and writes nothing to the controller
+uv run unifi-mapper --verify-updates --connected-devices 2>&1 | tee reports/reversion-preview.txt
 
 # 2. Check if firmware version changed on affected devices
 uv run unifi-mapper inventory list --filter switch
@@ -1104,14 +1157,15 @@ uv run python -m unifi_mapper.verify_cli --verify-all --consistency-check
 
 # 2. Generate new token
 
-# 3. Update all config files
-sed -i 's/OLD_TOKEN/NEW_TOKEN/g' ~/.config/unifi_management_cli/prod.env
+# 3. Update all config files: edit UNIFI_CONSOLE_API_TOKEN in the env file with an editor,
+#    so the token never lands in shell history
+vim ~/.config/unifi_management_cli/prod.env
 
-# 4. Update Claude Desktop MCP config
-# Edit ~/Library/Application Support/Claude/claude_desktop_config.json
-# Restart Claude Desktop
+# 4. The MCP server reads the same env file: restart or reconnect every MCP client that
+#    runs unifi-mcp, since a running server keeps the old token (issue 020), then check
+uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --check
 
-# 5. Verify access is restored
+# 5. Verify access is restored (a discover preview: reads only)
 uv run unifi-mapper --dry-run
 
 # 6. Audit recent API activity in UniFi controller logs for
@@ -1143,17 +1197,22 @@ uv run unifi-mapper --verify-updates --connected-devices --apply
 
 **Option 3: API reset via curl**
 
+`port_overrides` is the device's whole list: a `PUT` replaces it, so a body that carries only
+one port drops every other port's overrides (names, profiles, PoE and speed settings). Read
+the device's current list first (`GET .../rest/device/DEVICE_ID`, see section 18;
+`unifi-mapper ports diagnose SWITCH PORT` shows this port's entry), and send every entry back
+with only this port's name changed:
+
 ```bash
-# Set a port back to its default name via API
+# Set a port back to its default name via API; PORT_OVERRIDES_WITH_THIS_NAME_RESET stands for
+# the device's full port_overrides list with one name edited
 curl -k -X PUT \
   -H "X-API-KEY: YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "_id": "DEVICE_ID",
     "mac": "DEVICE_MAC",
-    "port_overrides": [
-      {"port_idx": PORT_NUMBER, "name": "Port PORT_NUMBER"}
-    ]
+    "port_overrides": PORT_OVERRIDES_WITH_THIS_NAME_RESET
   }' \
   https://YOUR_CONTROLLER/proxy/network/api/s/default/rest/device/DEVICE_ID
 ```
@@ -1182,21 +1241,13 @@ If a device has invalid `port_overrides` (e.g., from a partial write), the devic
 **Recovery**:
 
 ```bash
-# 1. Diagnose current device state
-uv run python -c "
-from unifi_mapper.api_client import UnifiApiClient
-from unifi_mapper.config import UnifiConfig
+# 1. Diagnose current device state (read-only): every port's settings, then one port's raw
+#    port_table entry, its port_overrides entry and profiles, as a JSON evidence bundle
+uv run unifi-mapper ports list "SWITCH" --json
+uv run unifi-mapper ports diagnose "SWITCH" PORT
 
-config = UnifiConfig.from_env()
-client = UnifiApiClient(**config.to_dict())
-client.login()
-debug = client.debug_device_config('DEVICE_ID')
-import json
-print(json.dumps(debug['config_fields'], indent=2))
-print(json.dumps(debug['port_table'][:3], indent=2))
-"
-
-# 2. Clear all port_overrides (reset to device defaults)
+# 2. Clear all port_overrides (reset to device defaults). This drops every port's override
+#    on the device, names and profile, PoE and speed settings alike
 curl -k -X PUT \
   -H "X-API-KEY: YOUR_TOKEN" \
   -H "Content-Type: application/json" \
@@ -1310,20 +1361,29 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_PASSWORD` | One of these two methods | None | String | Admin password. |
 | `UNIFI_VERIFY_SSL` | No | `false` | `true` / `false` | Enable SSL certificate verification. Set `false` for self-signed certs. |
 | `UNIFI_TIMEOUT` | No | `10` | `1`-`300` (seconds) | Per-request connection timeout. Clamped to 1-300. |
-| `UNIFI_MAX_RETRIES` | No | `3` | `1`-`10` | Maximum retry attempts for retryable errors. Clamped to 1-10. |
-| `UNIFI_RETRY_DELAY` | No | `1.0` | `0.1`-`10.0` (seconds) | Base delay for exponential backoff. Clamped to 0.1-10.0. |
-| `UNIFI_DEFAULT_FORMAT` | No | `png` | `png`, `svg`, `html`, `mermaid`, `dot` | Default output format for diagrams. |
-| `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path | Default directory for generated reports. |
-| `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path | Default directory for generated diagrams. |
+| `UNIFI_MAX_RETRIES` | No | `3` | `1`-`10` | Parsed and clamped, but no effect on `unifi-mapper` yet ([issue 042](../issues/042-settings-with-no-effect.md)); requests keep 3 attempts. |
+| `UNIFI_RETRY_DELAY` | No | `1.0` | `0.1`-`10.0` (seconds) | Parsed and clamped, but no effect on `unifi-mapper` yet (issue 042); the back-off starts at 1.0 s. |
+| `UNIFI_DEFAULT_FORMAT` | No | `png` | `png`, `svg`, `html`, `mermaid`, `dot` | No effect on `unifi-mapper` (issue 042): only the legacy `python -m unifi_mapper.cli` reads it. `mermaid` and `dot` write a placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)). |
+| `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
+| `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
+| `UNIFI_CONFIG` | No | XDG search | File path | The env file to read, like `--config` (see section 1). |
+| `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix` and `diagnose bandwidth` (see section 2). |
+| `UNIFI_SSH_USERNAME` | No | `root` | String | Gateway SSH user. |
+| `UNIFI_STP_OVERRIDES` | No | `~/.config/unifi_management_cli/stp_overrides.yaml` | File path | Root-eligible and forced-access switch MACs for the STP optimiser. |
 | `XDG_CONFIG_HOME` | No | `~/.config` | Directory path | Overrides XDG config base directory. |
+| `XDG_STATE_HOME` | No | `~/.local/state` | Directory path | Base of `unifi_mapper/`, where the link-error baselines and counter history live. |
+
+The `network_api` family (`UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and
+`UNIFI_NETWORK_SITE_ID`, all three required) and the MCP server's `UNIFI_MCP_*` settings are
+listed in `.env.example` and the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md).
 
 **Protect-specific variables** (used by `ProtectConfig` and MCP server):
 
 | Variable | Required for Protect | Default | Description |
 |----------|---------------------|---------|-------------|
 | `PROTECT_HOST` | Yes | None | IP or hostname of UniFi Protect controller |
-| `PROTECT_USERNAME` | Yes | None | Local admin username (not Ubiquiti cloud account) |
-| `PROTECT_PASSWORD` | Yes | None | Local admin password |
+| `PROTECT_USERNAME` | Yes | None | A dedicated local, view-only Protect user (not a Ubiquiti cloud account) |
+| `PROTECT_PASSWORD` | Yes | None | That user's password |
 | `PROTECT_VERIFY_SSL` | No | `false` | SSL verification for Protect connection |
 
 ---
@@ -1332,17 +1392,29 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 
 #### `unifi-mapper`
 
+Root options (before any subcommand):
+
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--config PATH` | Path to `.env` config file | XDG auto-discovery |
-| `--dry-run` | Preview changes without applying | Disabled |
-| `--verify-updates` | Enable multi-read consistency verification after updates | Disabled |
-| `--connected-devices` | Include client devices in LLDP mapping output | Disabled |
-| `--format FORMAT` | Output format: `png`, `svg`, `html`, `mermaid`, `dot` | `UNIFI_DEFAULT_FORMAT` or `png` |
-| `--output PATH` | Output path for report file | `./reports/` |
-| `--diagram PATH` | Output path for diagram file | `./diagrams/` |
+| `--config PATH`, `-c` | Path to the `.env` config file; also read from `UNIFI_CONFIG` | XDG search (section 1) |
+| `--debug` | DEBUG logging for this run | Off |
+| `--dry-run` | Runs `discover` as a preview, its default anyway; exits 2 before a subcommand other than `discover` | Off |
+| `--apply` | On its own, runs `discover` and writes port names; before any subcommand it exits 2 | Off |
+| `--connected-devices` | Runs `discover` including non-UniFi connected devices; exits 2 before a subcommand other than `discover` | Off |
+| `--verify-updates` | Runs `discover` with the smart mapper and multi-read verification; exits 2 before a subcommand other than `discover` | Off |
 
-**Subcommands**:
+`discover` options (after the subcommand):
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--apply` / `--dry-run` | Write port names to the controller; `--dry-run` previews | Preview |
+| `--connected-devices` | Include non-UniFi connected devices | Off |
+| `--verify-updates` | Verify that port name updates persist | Off |
+| `--format FORMAT` | Diagram format: `png`, `svg`, `html`, `mermaid`, `dot`. `mermaid` and `dot` currently write a one-line placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)) | `png` |
+| `--output PATH`, `-o` | Markdown report path | `./reports/port_mapping_report.md` |
+| `--diagram PATH`, `-d` | Diagram path | `./diagrams/network_diagram.<format>` |
+
+**Subcommands** (a selection; the README's Command Reference lists every one):
 
 | Subcommand | Description |
 |-----------|-------------|
@@ -1350,23 +1422,31 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `unifi-mapper stp optimize --dry-run` | Preview optimal STP bridge priorities |
 | `unifi-mapper stp optimize --apply` | Apply STP optimisation |
 | `unifi-mapper stp report -o FILE` | Generate STP markdown report |
+| `unifi-mapper ports refresh` | Preview port labels from LLDP and wired clients (`--apply` writes) |
 | `unifi-mapper inventory list` | List devices with optional filters |
 | `unifi-mapper inventory check-updates` | Check for available firmware updates |
 | `unifi-mapper install-completions SHELL` | Install shell completions (`bash` or `zsh`) |
 
 #### `unifi-network-toolkit`
 
+Root options: `--config PATH` (default `~/.config/unifi_management_cli/prod.env`) and
+`--debug`, before the subcommand.
+
 | Subcommand | Description |
 |-----------|-------------|
-| `diagnose network-health` | Overall infrastructure health check |
-| `diagnose performance` | Bottleneck and performance analysis |
-| `diagnose connectivity` | Connection troubleshooting |
-| `diagnose security` | Security configuration audit |
-| `analyze link-quality` | Interface error and drop rate analysis |
-| `find device NAME` | Locate device by name |
-| `find ip ADDRESS` | Locate device by IP address |
-| `find mac ADDRESS` | Locate device by MAC address |
-| `trace client MAC` | End-to-end client path analysis |
+| `discover` | Topology discovery and port naming; writes port names unless `--dry-run` is given ([issue 015](../issues/015-other-discover-entry-points-write-by-default.md)) |
+| `analyze link-quality` | Interface error and drop rate analysis (`--device`, `--port`) |
+| `analyze capacity-planning` | Ports above a utilisation threshold (`--threshold`, default 80) |
+| `analyze vlan` | VLAN diagnostics (`--vlan-id`) |
+| `analyze mac` | MAC address table analysis (`--device`) |
+| `diagnose network-health` | Overall infrastructure health check (`--detailed`) |
+| `diagnose performance` | Bottleneck and performance analysis (`--device`) |
+| `find device QUERY` | Locate a device by name, IP or MAC |
+| `find ip ADDRESS` | Locate the device and port for an IP address |
+| `find mac ADDRESS` | Locate a device by MAC address |
+| `install-completions SHELL` | Install completions (`bash`, `zsh` or `both`) |
+
+For an end-to-end client path, use the MCP `client_trace` tool.
 
 ---
 
@@ -1414,4 +1494,4 @@ User-Agent: UnifiPortMapper/1.0
 
 ---
 
-*For issues not covered here, enable debug logging with `UNIFI_LOGLEVEL=DEBUG` and review the output. The codebase comments in `api_client.py` (`_update_port_overrides`) contain inline debug logging that captures the full request payload and response for persistence issues.*
+*For issues not covered here, run the CLI with the root `--debug` flag (or set `UNIFI_MCP_LOG_LEVEL=DEBUG` in the MCP client's env) and review the output. The codebase comments in `api_client.py` (`_update_port_overrides`) contain inline debug logging that captures the full request payload and response for persistence issues.*
