@@ -57,7 +57,8 @@ def _code_blocks(text: str) -> Iterator[tuple[str, list[str]]]:
     Pairs every opening fence with its own closing fence whatever the info string
     (``bash``, ``text``, ``json`` ...). A regex that only knows ``bash`` blocks pairs a
     ``text`` block's closing fence with the next block's opening fence, which silently
-    turns every later block inside out.
+    turns every later block inside out. A fence that is never closed runs to the end of
+    the document, as in CommonMark, so its commands are still checked.
     """
     fence: str | None = None
     info = ''
@@ -73,6 +74,8 @@ def _code_blocks(text: str) -> Iterator[tuple[str, list[str]]]:
             fence = None
         else:
             body.append(line)
+    if fence is not None:
+        yield info, body
 
 
 def _documented_commands() -> set[str]:
@@ -116,6 +119,15 @@ def test_code_blocks_pair_fences_whatever_the_info_string():
     assert list(_code_blocks(text)) == [
         ('text', ['not a command']),
         ('bash', ['unifi-mapper ports refresh']),
+    ]
+
+
+def test_code_blocks_run_an_unclosed_fence_to_the_end():
+    """A last fence that is never closed is still a block, so its commands are checked."""
+    text = '```bash\nunifi-mapper version\n```\n\n```sh\nunifi-mapper ports refresh\n'
+    assert list(_code_blocks(text)) == [
+        ('bash', ['unifi-mapper version']),
+        ('sh', ['unifi-mapper ports refresh']),
     ]
 
 
