@@ -51,16 +51,43 @@ def _registered_commands(t: typer.Typer, prefix: str = '') -> set[str]:
     return found
 
 
+def _code_blocks(text: str) -> Iterator[tuple[str, list[str]]]:
+    """Yield ``(info string, lines)`` for each fenced code block in ``text``.
+
+    Pairs every opening fence with its own closing fence whatever the info string
+    (``bash``, ``text``, ``json`` ...). A regex that only knows ``bash`` blocks pairs a
+    ``text`` block's closing fence with the next block's opening fence, which silently
+    turns every later block inside out.
+    """
+    fence: str | None = None
+    info = ''
+    body: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if fence is None:
+            opening = re.match(r'(`{3,}|~{3,})([^`]*)$', stripped)
+            if opening:
+                fence, info, body = opening.group(1), opening.group(2).strip(), []
+        elif stripped.startswith(fence) and not stripped.strip(fence[0]):
+            yield info, body
+            fence = None
+        else:
+            body.append(line)
+
+
 def _documented_commands() -> set[str]:
     """Extract unifi-mapper command paths from README fenced code blocks.
 
     Flags and positional arguments are dropped, leaving the subcommand path so
-    ``unifi-mapper ports inspect "Switch" 2`` resolves to ``ports inspect``.
+    ``unifi-mapper ports inspect "Switch" 2`` resolves to ``ports inspect``. Only shell
+    blocks (``bash``, ``sh`` or no info string) are read.
     """
     text = README.read_text(encoding='utf-8')
     documented: set[str] = set()
-    for block in re.findall(r'```(?:bash)?\n(.*?)```', text, re.S):
-        for line in block.splitlines():
+    for info, block in _code_blocks(text):
+        if info not in ('', 'bash', 'sh'):
+            continue
+        for line in block:
             line = line.strip()
             if not line.startswith(f'{TYPER_ENTRY_POINT} '):
                 continue
@@ -81,6 +108,15 @@ def _documented_commands() -> set[str]:
 # ---------------------------------------------------------------------------
 # Documented commands must exist
 # ---------------------------------------------------------------------------
+
+
+def test_code_blocks_pair_fences_whatever_the_info_string():
+    """A ``text`` block must not swallow the next ``bash`` block, as the old regex let it."""
+    text = '```text\nnot a command\n```\n\nprose\n\n```bash\nunifi-mapper ports refresh\n```\n'
+    assert list(_code_blocks(text)) == [
+        ('text', ['not a command']),
+        ('bash', ['unifi-mapper ports refresh']),
+    ]
 
 
 def test_readme_documents_at_least_the_known_command_groups():
