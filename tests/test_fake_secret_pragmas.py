@@ -2,9 +2,9 @@
 
 Code-review F9 found eleven dict entries that mapped a credential key (a console API token,
 say) to a fake value without the pragma. This scan covers that shape: a quoted credential-named
-key mapped to a string literal of four or more characters. Values that are deliberately not
-secrets (the redaction tests check that ``'true'`` survives masking) are listed in
-``NOT_SECRETS``.
+key, in any case (``'UNIFI_CONSOLE_API_TOKEN'`` or ``'api_key'``), mapped to a string literal
+of four or more characters. Values that are deliberately not secrets (the redaction tests
+check that ``'true'`` survives masking) are listed in ``NOT_SECRETS``.
 """
 
 import re
@@ -14,7 +14,8 @@ from pathlib import Path
 TESTS = Path(__file__).resolve().parent
 PRAGMA = 'pragma: allowlist secret'
 CREDENTIAL_ENTRY = re.compile(
-    r"""['"][A-Z_]*(?:TOKEN|API_KEY|PASSWORD|SECRET)[A-Z_]*['"]\s*:\s*['"]([^'"]{4,})['"]"""
+    r"""['"][A-Z_]*(?:TOKEN|API_KEY|PASSWORD|SECRET)[A-Z_]*['"]\s*:\s*['"]([^'"]{4,})['"]""",
+    re.IGNORECASE,
 )
 NOT_SECRETS = frozenset({'true', 'false'})
 
@@ -33,6 +34,8 @@ def _unmarked_entries() -> list[str]:
 def test_scan_finds_an_unmarked_fake_credential() -> None:
     line = "    env = {'UNIFI_CONSOLE_API_TOKEN': 'lab-token'}"  # pragma: allowlist secret
     assert [m.group(1) for m in CREDENTIAL_ENTRY.finditer(line)] == ['lab-token']
+    lower = "    params = {'api_key': 'not-an-int'}"  # pragma: allowlist secret
+    assert [m.group(1) for m in CREDENTIAL_ENTRY.finditer(lower)] == ['not-an-int']
     assert not CREDENTIAL_ENTRY.search("{'FOO_TOKEN': 'abc'}")  # under four characters
 
 

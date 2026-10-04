@@ -84,7 +84,7 @@ def test_values_are_not_scanned():
     [
         f"x_authkey='{FAKE}'",
         f'password={FAKE}',
-        f'{{"token": "{FAKE}"}}',
+        f'{{"token": "{FAKE}"}}',  # pragma: allowlist secret
         f'GET https://192.0.2.1/api?api_key={FAKE}&x=1',
         f'Authorization: Bearer {FAKE}',
     ],
