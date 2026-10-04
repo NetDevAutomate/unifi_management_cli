@@ -144,7 +144,7 @@ class ProtectConfig(BaseModel):
             >>> # With environment variables:
             >>> # PROTECT_HOST=192.0.2.1
             >>> # PROTECT_USERNAME=admin
-            >>> # PROTECT_PASSWORD=secret
+            >>> # PROTECT_PASSWORD=<password>
             >>> config = ProtectConfig.from_env()
         """
         if env_file is not None:
