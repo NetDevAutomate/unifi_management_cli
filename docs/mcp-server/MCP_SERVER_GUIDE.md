@@ -428,4 +428,5 @@ uv run unifi-mcp --check
    title, credential family), so a new tool needs no edit there.
 4. **Update the docs**: the category counts in this guide and in the README.
 
-`docs/mcp-server/IMPLEMENTATION_PROMPT.md` is the original design prompt, kept for history.
+The design rationale and the decisions still open are in the
+[MCP standards review](MCP_STANDARDS_REVIEW.md).

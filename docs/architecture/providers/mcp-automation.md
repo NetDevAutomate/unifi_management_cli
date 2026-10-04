@@ -1,6 +1,6 @@
 # MCP and Automation Interface Architecture
 
-> **See also**: [C4 Architecture](../c4-architecture.md) | [MCP Server Guide](../../mcp-server/MCP_SERVER_GUIDE.md) | [Implementation Prompt](../../mcp-server/IMPLEMENTATION_PROMPT.md)
+> **See also**: [C4 Architecture](../c4-architecture.md) | [MCP Server Guide](../../mcp-server/MCP_SERVER_GUIDE.md) | [MCP Standards Review](../../mcp-server/MCP_STANDARDS_REVIEW.md)
 
 ## Scope
 
