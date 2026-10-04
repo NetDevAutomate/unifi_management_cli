@@ -29,7 +29,7 @@ The formats are advertised in:
 - the `discover --format` help (`src/unifi_mapper/typer_cli.py:223`:
   `png, svg, html, mermaid, dot`), and the `--format` choices of `unifi-network-toolkit
   discover` (`src/unifi_mapper/network_cli.py:121`) and `python -m unifi_mapper.cli`
-  (`src/unifi_mapper/cli.py:132`);
+  (`src/unifi_mapper/cli.py:134`);
 - the use-cases guide and the runbook, which offered `--format mermaid` as a way to get
   Mermaid source to embed in Markdown. The docs review that filed this issue switched those
   examples to `svg` or `html` and links here wherever the two formats are listed.

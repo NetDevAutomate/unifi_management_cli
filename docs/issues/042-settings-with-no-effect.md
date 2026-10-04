@@ -15,7 +15,7 @@ found_by: docs and repo hygiene review (config reference)
 
 - `UNIFI_DEFAULT_FORMAT`, `UNIFI_OUTPUT_DIR` and `UNIFI_DIAGRAM_DIR`. `UnifiConfig.from_env`
   reads them (`src/unifi_mapper/config.py:109-111`), but only the legacy
-  `python -m unifi_mapper.cli` uses them (`src/unifi_mapper/cli.py:186-199`).
+  `python -m unifi_mapper.cli` uses them (`src/unifi_mapper/cli.py:188-201`).
   `unifi-mapper discover` always defaults to `--format png`,
   `./reports/port_mapping_report.md` and `./diagrams/network_diagram.<format>`
   (`src/unifi_mapper/typer_cli.py`, `discover`). The file said the format setting applied

@@ -31,7 +31,7 @@ port diagnostics' own Integration API reads already use `/statistics/latest`.
 
 ## Impact
 
-Library callers only: `StatisticsManager` (`network/statistics.py`) is the only user of
+Library callers only: `DeviceMetricsCollector` (`network/statistics.py`) is the only user of
 `get_device_statistics`, nothing calls `execute_port_action`, and no MCP tool or CLI uses
 either (the MCP `network_api` tools would refuse the POST anyway). Their calls fail with a
 404. It doesn't break fresh clones or CI.

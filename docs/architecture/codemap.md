@@ -1054,12 +1054,12 @@ Exposes typed response methods for each resource type: `get_devices()`, `get_net
 | `acl.py` | `ACLManager` | ACL rule retrieval and management |
 | `clients.py` | `ClientManager` | Connected client listing and search |
 | `dns.py` | `DNSPolicyManager` | DNS policy retrieval |
-| `dpi.py` | `DPIManager` | Deep Packet Inspection application/category data |
+| `dpi.py` | `DPIAnalytics` | Deep Packet Inspection application/category data |
 | `models.py` | `FirewallZone`, `FirewallPolicy`, `ACLRule`, `DNSPolicy`, etc. | Network API typed response models (distinct from `core/models/firewall.py`) |
 | `networks.py` | `NetworkManager` | Network/VLAN definition management |
 | `sites.py` | `SiteManager` | Site enumeration |
-| `statistics.py` | `StatisticsCollector` | Port and device statistics collection |
-| `traffic_matching.py` | `TrafficMatchingManager` | Traffic matching rule management |
+| `statistics.py` | `DeviceMetricsCollector` | Port and device statistics collection |
+| `traffic_matching.py` | `TrafficMatchingListManager` | Traffic matching rule management |
 
 ---
 
@@ -1161,9 +1161,9 @@ The MCP Protect tools (`mcp/tools/protect.py`) connect through `ReadOnlyProtectA
 | Class | Description |
 |---|---|
 | `DeviceRepository[T]` | Generic typed cache: `add(device)`, `get(id)`, `all()`, `filter(predicate)` |
-| `ProtectRepository` | Composite repository holding typed sub-repos for each device type |
+| `ProtectDeviceCache` | Composite cache holding a typed repository for each device type, filled by `refresh(client)` |
 
-Populated by `UniFiProtectClient` from the `Bootstrap` response.
+Populated from a connected `UniFiProtectClient`'s `Bootstrap` response.
 
 ---
 
