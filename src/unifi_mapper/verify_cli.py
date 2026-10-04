@@ -28,7 +28,7 @@ Examples:
   python -m unifi_mapper.verify_cli --verify-all
 
   # Use browser verification (most reliable)
-  python -m unifi_mapper.verify_cli --browser --username unpoller --password '***REMOVED***'
+  python -m unifi_mapper.verify_cli --browser --username <username> --password '<password>'
 
   # Multi-read consistency check
   python -m unifi_mapper.verify_cli --consistency-check --reads 10

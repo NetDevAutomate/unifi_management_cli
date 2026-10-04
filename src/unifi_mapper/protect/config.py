@@ -34,7 +34,7 @@ class ProtectConfig(BaseModel):
 
     Example:
         >>> config = ProtectConfig(
-        ...     host='192.0.2.1', username='admin', password=SecretStr('password123')
+        ...     host='192.0.2.1', username='admin', password=SecretStr('<password>')
         ... )
         >>> print(config.host)
         192.0.2.1

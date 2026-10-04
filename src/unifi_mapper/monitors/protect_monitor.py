@@ -47,7 +47,7 @@ class ProtectMonitor:
         monitor = ProtectMonitor(
             base_url="https://192.0.2.1",
             username="admin",
-            password="secret"
+            password="<password>"
         )
         monitor.run(poll_interval=3)
     """
@@ -604,7 +604,7 @@ Examples:
   python -m unifi_mapper.monitors.protect_monitor \\
     --url https://192.0.2.1 \\
     --user admin \\
-    --password secret
+    --password <password>
         """,
     )
     parser.add_argument(
