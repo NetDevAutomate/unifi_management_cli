@@ -455,8 +455,9 @@ The design rationale and the decisions still open are in the
 All 76 registered tools by category, generated from `ToolRegistry()`. **Family** is
 the credential family a tool needs (`none`: it computes from its input). **Marks**:
 *mutating* tools are never listed or run over MCP; *pipeline* tools are reachable only
-through `execute_tool`; *writes a local file* drops `readOnlyHint`. Every other tool is
-on the direct surface.
+through `execute_tool`; *writes a local file* drops `readOnlyHint`. Every tool that is
+neither mutating nor a pipeline tool is listed on the direct surface,
+`snapshot_radio_config` (which writes a local file) included.
 
 ### analysis (46)
 

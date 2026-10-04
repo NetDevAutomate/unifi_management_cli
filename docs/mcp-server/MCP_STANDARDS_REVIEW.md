@@ -97,11 +97,16 @@ C4Container
 
 - Registry: 76 tools in 7 categories; 3 mutating, 11 pipeline, 62 on the direct catalog.
 - `unifi-mcp --check` (offline): `tool_count` 76; `listed_tools` 4 on `discovery`, 66 on
-  `direct`.
-- Offline suite at `cb356b0`: 2964 passed, 3 skipped (the network-marked packaging tests);
+  `direct`. The 66 are the 62 direct catalog tools plus the 4 meta-tools.
+- Offline suite at `cb356b0`: 2964 passed, 3 skipped (the three `slow`-marked packaging tests,
+  two of which are also `network`-marked). With the slow tests opted in,
   `uv run pytest --run-slow tests/mcp/test_packaging.py`: 4 passed.
 - Read-only live checks against a real controller, at `d6be722`: 61 of 61 passed. The request
   audit recorded 114 controller requests, all GET, and no refused write.
+- Re-checked offline at `c03da2c` (2026-10-04): the registry and `--check` figures are
+  unchanged, and the suite has 2996 passed, 3 skipped (the same three).
+  `tests/test_docs_consistency.py` now fails when a documented MCP count stops matching the
+  registry.
 
 ## Sources
 
