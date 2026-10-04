@@ -26,6 +26,8 @@ from unifi_mapper.mcp.runner import (
 
 
 REDACTED = '***redacted***'
+# The api_key value the INVALID_PARAMETERS test passes: a dummy that fails int validation.
+INVALID_API_KEY = 'not-an-int'  # pragma: allowlist secret
 
 
 @pytest.fixture
@@ -320,10 +322,10 @@ async def test_secret_assignments_are_redacted_in_domain_text(runner) -> None:
 
 
 async def test_invalid_parameters_keeps_a_secret_looking_parameter_name(runner) -> None:
-    out = await _envelope(runner, 'api_key_param', {'api_key': 'not-an-int'})
+    out = await _envelope(runner, 'api_key_param', {'api_key': INVALID_API_KEY})
     assert out['error_code'] == 'INVALID_PARAMETERS'
     assert out['message'].startswith('invalid parameter(s): api_key (')
-    assert 'not-an-int' not in out['message']
+    assert INVALID_API_KEY not in out['message']
 
 
 @pytest.mark.parametrize(
