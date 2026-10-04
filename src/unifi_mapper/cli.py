@@ -56,12 +56,14 @@ def load_env_from_config(config_path: str) -> None:
 def get_default_config_path() -> Path:
     """Get default config path following XDG Base Directory specification.
 
-    Priority:
-    1. XDG_CONFIG_HOME/unifi_management_cli/prod.env
-    2. ~/.config/unifi_management_cli/prod.env
-    3. XDG_CONFIG_HOME/unifi_management_cli/default.env
-    4. ~/.config/unifi_management_cli/default.env
-    5. .env (current directory - legacy fallback)
+    Search order (the first file that exists wins):
+    1. ``prod.env`` in ``$XDG_CONFIG_HOME/unifi_management_cli/``, or in
+       ``~/.config/unifi_management_cli/`` when ``XDG_CONFIG_HOME`` is unset
+    2. ``default.env`` in that same directory
+    3. ``.env`` (current directory - legacy fallback, returned even if missing)
+
+    A set ``XDG_CONFIG_HOME`` replaces ``~/.config`` here; the MCP server's search
+    (``mcp.config.resolve_config_path``) tries it first and then ``~/.config`` too.
 
     Returns:
         Path to default config file.
