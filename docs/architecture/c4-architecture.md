@@ -61,8 +61,8 @@ C4Context
 
     Rel(admin, unifi_mgmt, "Runs CLI commands", "terminal / shell")
     Rel(ai_user, ai_assistant, "Issues natural language requests", "chat")
-    Rel(ai_assistant, unifi_mgmt, "Discovers tool metadata", "MCP / JSON-RPC over stdio")
-    Rel(unifi_mgmt, unifi_network, "Reads topology, stats, and config. Writes port names, STP priorities.", "HTTPS REST API")
+    Rel(ai_assistant, unifi_mgmt, "Discovers and runs read-only tools", "MCP / JSON-RPC over stdio")
+    Rel(unifi_mgmt, unifi_network, "Reads topology, stats, and config. CLI commands write port names, STP priorities, radio settings and firmware upgrades; the MCP server never writes.", "HTTPS REST API")
     Rel(unifi_mgmt, unifi_protect, "Reads device inventory and events. Subscribes to real-time updates.", "HTTPS REST + WebSocket")
     Rel(unifi_mgmt, home_assistant, "Publishes camera events and device states with auto-discovery", "MQTT")
 ```
@@ -85,8 +85,8 @@ System_Ext(ai_assistant, "AI Assistant (Claude / MCP Client)", "LLM or MCP-compa
 
 Rel(admin, unifi_mgmt, "Runs CLI commands", "terminal / shell")
 Rel(ai_user, ai_assistant, "Issues natural language requests", "chat")
-Rel(ai_assistant, unifi_mgmt, "Discovers tool metadata", "MCP / JSON-RPC over stdio")
-Rel(unifi_mgmt, unifi_network, "Reads and writes network configuration", "HTTPS REST")
+Rel(ai_assistant, unifi_mgmt, "Discovers and runs read-only tools", "MCP / JSON-RPC over stdio")
+Rel(unifi_mgmt, unifi_network, "Reads; CLI commands write, the MCP server never does", "HTTPS REST")
 Rel(unifi_mgmt, unifi_protect, "Reads devices and events, subscribes to updates", "HTTPS REST + WebSocket")
 Rel(unifi_mgmt, home_assistant, "Publishes events with MQTT auto-discovery", "MQTT")
 @enduml
@@ -98,7 +98,7 @@ The platform serves two distinct user personas with different interaction models
 
 - The **Network Administrator** invokes CLI tools directly. They choose the appropriate tool (`unifi-mapper`, `unifi-network-toolkit`, or `unifi-inventory`) depending on whether they need interactive output, scripting compatibility, or inventory reports.
 
-- The **AI-Assisted User** interacts indirectly through an MCP-compatible client such as Claude Desktop. The AI assistant uses `unifi-mcp` for progressive tool discovery. The current public FastMCP surface exposes discovery meta-tools; executable lazy tool proxies are available through the `ToolRegistry` for host code and tests.
+- The **AI-Assisted User** interacts indirectly through an MCP-compatible client such as Claude Desktop. The AI assistant uses `unifi-mcp` for progressive tool discovery: the default discovery surface lists four meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`), and the direct surface also lists each read-only tool by name. Every call runs through `ToolRunner`; the three tools that would change the controller are refused, and those changes go through the CLI.
 
 The dual-controller architecture (Network + Protect) reflects Ubiquiti's product split: network infrastructure and video security run on separate controllers with different APIs, authentication models, and communication protocols.
 
@@ -106,7 +106,7 @@ The dual-controller architecture (Network + Protect) reflects Ubiquiti's product
 
 ## Level 2: Container Diagram
 
-At the container level, the UniFi Management CLI resolves into five runnable units — four Python entry-point commands and one shared library that they all import. Each container has a distinct technology profile and responsibility boundary.
+At the container level, the UniFi Management CLI resolves into five containers: four Python entry-point commands and the shared library they all import. Each container has a distinct technology profile and responsibility boundary.
 
 ### Mermaid Diagram
 
@@ -122,9 +122,9 @@ C4Container
     System_Ext(home_assistant, "Home Assistant", "MQTT")
 
     System_Boundary(platform, "UniFi Management CLI") {
-        Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI. Subcommands: discover, find, analyze, diagnose, stp, inventory, verify. Rich terminal UI with tables and progress.")
-        Container(network_toolkit_cli, "unifi-network-toolkit", "Python / argparse", "Script-friendly CLI. Subcommands: discover, analyze, find, diagnose. Designed for piping and automation.")
-        Container(inventory_cli, "unifi-inventory", "Python / argparse", "Dedicated inventory report generator. Exports device and client inventory in structured formats.")
+        Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI. Commands: discover, diagram, verify, capabilities and the find, analyze, diagnose, ports, stp, radio and inventory groups. discover previews unless --apply.")
+        Container(network_toolkit_cli, "unifi-network-toolkit", "Python / argparse", "Script-friendly CLI. Subcommands: discover, analyze, find, diagnose, install-completions. Its discover writes port names unless --dry-run.")
+        Container(inventory_cli, "unifi-inventory", "Python / Typer", "The four inventory commands (list, check-updates, firmware-skew, update-firmware) as their own program.")
         Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server. Runs over stdio. Backed by YAML manifests for 76 registered tools, run read-only through ToolRunner.")
         Container(shared_lib, "unifi_mapper library", "Python 3.12 package", "Shared library providing API clients, domain models, analysis engines, diagnostic tools, discovery utilities, connectivity analysis, Protect integration, topology visualisation, and report generation.")
     }
@@ -132,7 +132,7 @@ C4Container
     Rel(admin, unifi_mapper_cli, "Runs commands", "shell")
     Rel(admin, network_toolkit_cli, "Runs commands", "shell")
     Rel(admin, inventory_cli, "Runs commands", "shell")
-    Rel(ai_assistant, mcp_server, "Discovers tool metadata", "MCP / JSON-RPC stdio")
+    Rel(ai_assistant, mcp_server, "Discovers and runs read-only tools", "MCP / JSON-RPC stdio")
     Rel(unifi_mapper_cli, shared_lib, "Imports and calls")
     Rel(network_toolkit_cli, shared_lib, "Imports and calls")
     Rel(inventory_cli, shared_lib, "Imports and calls")
@@ -158,15 +158,15 @@ System_Ext(home_assistant, "Home Assistant", "MQTT")
 System_Boundary(platform, "UniFi Management CLI") {
     Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI with Rich terminal UI")
     Container(network_toolkit_cli, "unifi-network-toolkit", "Python / argparse", "Script-friendly CLI for automation")
-    Container(inventory_cli, "unifi-inventory", "Python / argparse", "Inventory report generator")
-    Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server backed by 76 YAML-registered tools")
+    Container(inventory_cli, "unifi-inventory", "Python / Typer", "The four inventory commands as their own program")
+    Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server backed by 76 YAML-registered tools, run read-only")
     Container(shared_lib, "unifi_mapper library", "Python 3.12 package", "Shared library: API clients, models, analysis, diagnostics, Protect, topology")
 }
 
 Rel(admin, unifi_mapper_cli, "Runs commands", "shell")
 Rel(admin, network_toolkit_cli, "Runs commands", "shell")
 Rel(admin, inventory_cli, "Runs commands", "shell")
-Rel(ai_assistant, mcp_server, "Discovers tool metadata", "MCP / JSON-RPC stdio")
+Rel(ai_assistant, mcp_server, "Discovers and runs read-only tools", "MCP / JSON-RPC stdio")
 Rel(unifi_mapper_cli, shared_lib, "Imports and calls")
 Rel(network_toolkit_cli, shared_lib, "Imports and calls")
 Rel(inventory_cli, shared_lib, "Imports and calls")
@@ -179,7 +179,7 @@ Rel(shared_lib, home_assistant, "MQTT publish with auto-discovery", "MQTT")
 
 ### Container Notes
 
-The **four CLI entry points are thin shells** over the shared library. They handle argument parsing, output formatting, and process lifecycle. No business logic lives in the entry points — this is enforced by the `pyproject.toml` entry-point declarations, which map directly to CLI module `main` or `app` functions.
+The **four entry points (three CLIs and the MCP server) are shells** over the shared library. They handle argument parsing, output formatting, and process lifecycle, and the domain logic lives in the library. The `pyproject.toml` entry-point declarations map each command straight to a module's `main` or `app`.
 
 The **shared library** is the architectural centre of gravity. All domain logic, API interactions, and integration code live here. This makes the platform easy to extend: a new CLI tool, automation wrapper, or future web API can be added without touching existing containers.
 
@@ -198,10 +198,10 @@ C4Component
     title Component Diagram - CLI Layer
 
     Container_Boundary(cli_layer, "CLI Entry Points") {
-        Component(typer_cli, "typer_cli.py", "Typer + Rich", "unifi-mapper entry point. Defines subcommands: discover, find, analyze, diagnose, stp, inventory, verify. Global state for config path and debug flag.")
-        Component(network_cli, "network_cli.py", "argparse", "unifi-network-toolkit entry point. Subcommands: discover, analyze, find, diagnose. Optimised for scripting.")
-        Component(inventory_cli_comp, "inventory_cli.py", "argparse", "unifi-inventory entry point. Produces structured inventory reports.")
-        Component(completions, "completions.py", "Python", "Shell completion support for CLI argument completion across bash/zsh/fish.")
+        Component(typer_cli, "typer_cli.py", "Typer + Rich", "unifi-mapper entry point: discover, diagram, verify, capabilities, version, install-completions and the find, analyze, diagnose, ports, stp, radio and inventory groups. Global state for config path, debug flag and root shortcuts.")
+        Component(network_cli, "network_cli.py", "argparse", "unifi-network-toolkit entry point. Subcommands: discover, analyze, find, diagnose, install-completions. Optimised for scripting.")
+        Component(inventory_cli_comp, "inventory_cli.py", "Typer", "inventory_app: mounted as unifi-mapper inventory and run as unifi-inventory (list, check-updates, firmware-skew, update-firmware).")
+        Component(completions, "completions.py", "Python", "Bundled bash and zsh completion installer; Typer installs other shells.")
     }
 
     Container_Boundary(core_lib, "Shared Library - Core") {
@@ -216,8 +216,8 @@ C4Component
     Rel(typer_cli, run_methods, "Delegates subcommand execution")
     Rel(network_cli, cli_helpers, "Loads config")
     Rel(network_cli, run_methods, "Delegates subcommand execution")
-    Rel(inventory_cli_comp, config_comp, "Reads config")
-    Rel(inventory_cli_comp, api_client_comp, "Queries devices and clients")
+    Rel(inventory_cli_comp, cli_helpers, "Loads config")
+    Rel(inventory_cli_comp, api_client_comp, "Reads devices; update-firmware sends upgrade commands")
     Rel(run_methods, api_client_comp, "Creates and uses")
     Rel(run_methods, report_gen, "Generates reports")
     Rel(typer_cli, completions, "Registers completions")
@@ -230,10 +230,10 @@ C4Component
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
 Container_Boundary(cli_layer, "CLI Entry Points") {
-    Component(typer_cli, "typer_cli.py", "Typer + Rich", "unifi-mapper: discover, find, analyze, diagnose, stp, inventory, verify")
+    Component(typer_cli, "typer_cli.py", "Typer + Rich", "unifi-mapper: discover, diagram, verify, find, analyze, diagnose, ports, stp, radio, inventory")
     Component(network_cli, "network_cli.py", "argparse", "unifi-network-toolkit: discover, analyze, find, diagnose")
-    Component(inventory_cli_comp, "inventory_cli.py", "argparse", "unifi-inventory: structured inventory reports")
-    Component(completions, "completions.py", "Python", "Shell completion support")
+    Component(inventory_cli_comp, "inventory_cli.py", "Typer", "inventory_app: unifi-inventory, also mounted as the inventory group of unifi-mapper")
+    Component(completions, "completions.py", "Python", "bash and zsh completion installer")
 }
 
 Container_Boundary(core_lib, "Shared Library - Core") {
@@ -248,6 +248,8 @@ Rel(typer_cli, cli_helpers, "Loads config")
 Rel(typer_cli, run_methods, "Delegates")
 Rel(network_cli, cli_helpers, "Loads config")
 Rel(network_cli, run_methods, "Delegates")
+Rel(inventory_cli_comp, cli_helpers, "Loads config")
+Rel(inventory_cli_comp, api_client_comp, "Reads devices")
 Rel(run_methods, api_client_comp, "Creates and uses")
 Rel(run_methods, report_gen, "Generates reports")
 @enduml
@@ -264,23 +266,31 @@ C4Component
     title Component Diagram - API Integration Layer
 
     Container_Boundary(api_layer, "Shared Library - API Integration") {
-        Component(api_client_c, "api_client.py / UnifiApiClient", "requests + Session", "Synchronous REST client for UniFi Network Controller. Dual auth: API token or username/password. Supports UniFi OS and legacy controller URL schemas. Retry logic with exponential backoff (capped 1-10 retries, 0.1-10s delay). Sanitises credentials from logs.")
-        Component(enhanced_api, "enhanced_api_client.py / EnhancedUnifiApiClient", "requests + httpx", "Extended API client adding async capability (httpx), automatic provisioning flows, and additional endpoint coverage.")
-        Component(config_c, "config.py / UnifiConfig", "Python dataclass", "Validated configuration. Clamps timeout (1-300s), retries (1-10), and delay (0.1-10s). Requires api_token OR username+password.")
+        Component(api_client_c, "api_client.py / UnifiApiClient", "requests + Session", "Synchronous REST client for UniFi Network Controller. Dual auth: API token or username/password. Supports UniFi OS and legacy controller URL schemas. Retry logic with exponential backoff (it clamps its own arguments to 1-10 retries and a 0.1-10s delay, and callers leave the defaults of 3 and 1.0s). Keeps short hashes of the credentials for verification.")
+        Component(enhanced_api, "enhanced_api_client.py / EnhancedUnifiApiClient", "requests", "A separate synchronous client (it does not subclass UnifiApiClient) for the toolkit: port_overrides updates followed by force-provision, per-port verification, and meta.rc checks on 200 responses.")
+        Component(config_c, "config.py / UnifiConfig", "Python dataclass", "Validated configuration. Clamps timeout (1-300s), retries (1-10), and delay (0.1-10s). Requires api_token OR username+password. No caller passes its retry values on to a client, so they have no effect (issue 042).")
         Component(exceptions_c, "exceptions.py", "Python exception hierarchy", "Structured exception tree. Retryable vs Permanent split determines whether retry logic activates. Includes UniFiAuthenticationError, UniFiConnectionError, UniFiTimeoutError, UniFiRateLimitError, UniFiPermissionError, UniFiValidationError.")
         Component(ground_truth, "ground_truth_verification.py / GroundTruthVerifier", "Python", "Multi-read consistency checking to work around UniFi API response caching. Verifies applied changes actually took effect.")
-        Component(toolkit_adapters_c, "toolkit_adapters.py / ToolkitAdapter", "Python adapter pattern", "Bridges the synchronous UnifiApiClient to the async analysis tool interfaces. Provides synchronous wrapper methods for each tool category.")
+        Component(toolkit_adapters_c, "toolkit_adapters.py / ToolkitAdapter", "Python adapter pattern", "Synchronous versions of three tools (find device, link quality, network health) for unifi-network-toolkit, over its EnhancedUnifiApiClient.")
+        Component(async_client_c, "core/utils/client.py / UniFiClient", "httpx", "Async controller client for the analysis, diagnostics, discovery and connectivity tools. Under the MCP server every tool borrows one shared client behind ReadOnlyAsyncTransport.")
+        Component(network_client_c, "network/client.py / UniFiNetworkClient", "httpx", "Async Network Integration API client (UNIFI_NETWORK_* settings). The MCP network tools open one per call behind the GET-only transport.")
+        Component(readonly_c, "core/utils/readonly.py", "Python", "Read-only guards: ReadOnlySession for the sync client, ReadOnlyAsyncTransport for the httpx clients. A write raises ReadOnlyViolation before any I/O; allowed requests go to the opt-in request audit.")
+        Component(redact_c, "core/utils/redact.py", "Python", "Strips secret fields from port-diagnostic output and masks secret values in every MCP result and error, and in CLI error text.")
     }
 
     System_Ext(unifi_network_c, "UniFi Network Controller", "HTTPS REST API")
 
     Rel(api_client_c, unifi_network_c, "GET/POST/PUT requests", "HTTPS")
-    Rel(enhanced_api, api_client_c, "Extends")
-    Rel(enhanced_api, unifi_network_c, "Additional REST calls", "HTTPS")
+    Rel(enhanced_api, unifi_network_c, "REST calls with meta.rc checks", "HTTPS")
     Rel(api_client_c, exceptions_c, "Raises on error")
     Rel(api_client_c, config_c, "Configured by")
     Rel(ground_truth, api_client_c, "Uses for device lookups only")
-    Rel(toolkit_adapters_c, api_client_c, "Wraps")
+    Rel(toolkit_adapters_c, enhanced_api, "Wraps")
+    Rel(async_client_c, unifi_network_c, "Classic controller API", "HTTPS")
+    Rel(network_client_c, unifi_network_c, "Integration API", "HTTPS")
+    Rel(async_client_c, readonly_c, "Guarded by (MCP)")
+    Rel(network_client_c, readonly_c, "Guarded by (MCP, GET only)")
+    Rel(api_client_c, readonly_c, "Guarded by (port diagnostics)")
 ```
 
 ### PlantUML Equivalent
@@ -291,20 +301,28 @@ C4Component
 
 Container_Boundary(api_layer, "Shared Library - API Integration") {
     Component(api_client_c, "UnifiApiClient", "requests", "Synchronous REST client with dual auth, retry, and credential sanitisation")
-    Component(enhanced_api, "EnhancedUnifiApiClient", "requests + httpx", "Extended client with async capability and provisioning flows")
+    Component(enhanced_api, "EnhancedUnifiApiClient", "requests", "Separate sync client: overrides + force-provision, meta.rc checks")
     Component(config_c, "UnifiConfig", "dataclass", "Validated configuration with input clamping")
     Component(exceptions_c, "Exception hierarchy", "Python", "Retryable vs Permanent error split")
     Component(ground_truth, "GroundTruthVerifier", "Python", "Multi-read consistency checking for API cache workaround")
-    Component(toolkit_adapters_c, "ToolkitAdapter", "Python adapter", "Sync wrappers bridging API client to analysis tools")
+    Component(toolkit_adapters_c, "ToolkitAdapter", "Python adapter", "Sync versions of three tools for the toolkit")
+    Component(async_client_c, "UniFiClient", "httpx", "Async controller client; shared and read-only under MCP")
+    Component(network_client_c, "UniFiNetworkClient", "httpx", "Async Integration API client")
+    Component(readonly_c, "core/utils/readonly.py", "Python", "Read-only guards and request audit")
+    Component(redact_c, "core/utils/redact.py", "Python", "Secret stripping and masking")
 }
 
 System_Ext(unifi_network_c, "UniFi Network Controller", "HTTPS REST")
 
 Rel(api_client_c, unifi_network_c, "REST calls", "HTTPS")
-Rel(enhanced_api, api_client_c, "Extends")
+Rel(enhanced_api, unifi_network_c, "REST calls", "HTTPS")
 Rel(api_client_c, exceptions_c, "Raises on error")
 Rel(ground_truth, api_client_c, "Uses for lookups")
-Rel(toolkit_adapters_c, api_client_c, "Wraps")
+Rel(toolkit_adapters_c, enhanced_api, "Wraps")
+Rel(async_client_c, unifi_network_c, "Classic API", "HTTPS")
+Rel(network_client_c, unifi_network_c, "Integration API", "HTTPS")
+Rel(async_client_c, readonly_c, "Guarded by")
+Rel(network_client_c, readonly_c, "Guarded by")
 @enduml
 ```
 
@@ -324,27 +342,31 @@ C4Component
         Component(smart_port_mapper_c, "smart_port_mapper.py / SmartPortMapper", "Python", "Device-aware port mapping. Uses device capability profiles to interpret port data correctly per model.")
         Component(device_caps, "device_capabilities.py", "Python", "Model-specific capability detection. Determines port count, SFP slots, PoE capabilities, and uplink ports by hardware model.")
         Component(naming_rules, "run_methods.py / _choose_port_name", "Python", "Port-name decision rules: LLDP name, client name, useful active current name, or Port x default for disconnected ports.")
-        Component(topology_c, "enhanced_network_topology.py / NetworkTopology", "Python / graphviz", "Topology graph generation. Outputs: PNG, SVG, HTML interactive, Mermaid. Wraps graphviz for static formats.")
+        Component(topology_c, "enhanced_network_topology.py / NetworkTopology", "Python / graphviz", "Topology graph generation. Outputs: PNG, SVG, HTML interactive (mermaid and dot write a placeholder, issue 044). Wraps graphviz for static formats.")
+        Component(port_diag_c, "port_inspect.py / port_diagnostics.py / port_history.py", "Python", "Read-only port inspection, all-ports view, profile diff, client placement, event history, counter rates and the evidence bundle, behind the read-only guard.")
+        Component(link_settings_c, "analysis/link_settings.py", "Python", "The one rule for a port's effective profile and link settings (override, then port table, then profile), shared by the port diagnostics and the profile analyses.")
 
-        Component(analysis_pkg, "analysis/ (30 registered MCP tools)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality, MAC table, MTU, QoS, radio, SFP, STP, traffic matrix, VLAN, and 10G readiness analysis.")
-        Component(diagnostics_pkg, "diagnostics/ (4 modules)", "Python", "connectivity_analysis, network_health, performance_analysis, security_audit")
-        Component(discovery_pkg, "discovery/ (4 modules)", "Python", "client_trace, find_device, find_ip, find_mac")
+        Component(analysis_pkg, "analysis/ (46 registered MCP tools, 49 modules)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality and link speeds, MAC table, MTU, QoS, PoE and power budgets, port-profile usage, radio, SFP, STP, traffic matrix, uplinks, VLAN, freshness and 10G readiness analysis.")
+        Component(diagnostics_pkg, "diagnostics/ (8 registered MCP tools, 6 modules)", "Python", "connectivity_analysis, network_health, performance_analysis, security_audit, inspect_port, port_diagnostics_tools. port_diagnostics_tools also provides get_client_history (discovery) and the observability tools get_device_events and get_port_counter_rates.")
+        Component(discovery_pkg, "discovery/ (5 registered MCP tools, 4 modules)", "Python", "client_trace, find_device, find_ip, find_mac; get_client_history lives in diagnostics/")
         Component(connectivity_pkg, "connectivity/ (4 registered MCP tools)", "Python", "firewall_check, path_analysis, traceroute, inter_vlan")
         Component(network_pkg, "network/ (6 registered MCP tools)", "Python", "Control plane: firewall zones/policies, ACL rules, DNS policies, clients, and networks")
     }
 
     Container_Boundary(api_int, "API Integration") {
-        Component(api_ref, "UnifiApiClient / EnhancedUnifiApiClient", "requests", "")
+        Component(api_ref, "UniFiClient / UnifiApiClient / UniFiNetworkClient", "httpx / requests", "")
     }
 
     Rel(analysis_pkg, api_ref, "Queries device data")
     Rel(diagnostics_pkg, api_ref, "Queries health and stats")
     Rel(discovery_pkg, api_ref, "Queries device and client tables")
     Rel(connectivity_pkg, api_ref, "Queries firewall rules and routing")
-    Rel(network_pkg, api_ref, "Reads and writes network config")
-    Rel(port_mapper_c, api_ref, "Queries ports, clients, LLDP data. Writes port_overrides")
+    Rel(network_pkg, api_ref, "Reads network config (GET only under MCP)")
+    Rel(port_mapper_c, api_ref, "Queries ports, clients, LLDP data. Writes port_overrides unless its caller previews (unifi-mapper discover writes only with --apply)")
+    Rel(port_diag_c, api_ref, "Reads through the read-only guard")
+    Rel(port_diag_c, link_settings_c, "Resolves effective settings")
     Rel(naming_rules, port_mapper_c, "Feeds desired port names")
-    Rel(smart_port_mapper_c, port_mapper_c, "Extends")
+    Rel(smart_port_mapper_c, port_mapper_c, "Uses its API client")
     Rel(smart_port_mapper_c, device_caps, "Uses capability profiles")
     Rel(topology_c, port_mapper_c, "Consumes port map")
 ```
@@ -360,24 +382,28 @@ Container_Boundary(intelligence, "Shared Library - Intelligence Layer") {
     Component(smart_port_mapper_c, "SmartPortMapper", "Python", "Device-aware port mapping")
     Component(device_caps, "DeviceCapabilities", "Python", "Model-specific capability profiles")
     Component(naming_rules, "run_methods.py / _choose_port_name", "Python", "LLDP, client, current, or Port x naming rules")
-    Component(topology_c, "NetworkTopology", "Python / graphviz", "Topology graph: PNG, SVG, HTML, Mermaid")
-    Component(analysis_pkg, "analysis/ (30 registered MCP tools)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality, MAC, MTU, QoS, radio, SFP, STP, traffic, VLAN, 10G readiness")
-    Component(diagnostics_pkg, "diagnostics/ (4 modules)", "Python", "Health, performance, security, connectivity")
-    Component(discovery_pkg, "discovery/ (4 modules)", "Python", "Find device, find IP, find MAC, client trace")
+    Component(topology_c, "NetworkTopology", "Python / graphviz", "Topology graph: PNG, SVG, HTML")
+    Component(port_diag_c, "Port diagnostics", "Python", "Read-only port inspection and evidence bundles")
+    Component(link_settings_c, "analysis/link_settings.py", "Python", "Effective profile and link settings rule")
+    Component(analysis_pkg, "analysis/ (46 registered MCP tools)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality and speeds, MAC, MTU, QoS, PoE, radio, SFP, STP, traffic, uplinks, VLAN, 10G readiness")
+    Component(diagnostics_pkg, "diagnostics/ (8 registered MCP tools)", "Python", "Health, performance, security, connectivity, port inspection and evidence; also client history and the observability tools")
+    Component(discovery_pkg, "discovery/ (5 registered MCP tools)", "Python", "Find device, find IP, find MAC, client trace; client history comes from diagnostics/")
     Component(connectivity_pkg, "connectivity/ (4 registered MCP tools)", "Python", "Firewall check, path analysis, inter-VLAN routing, traceroute")
     Component(network_pkg, "network/ (6 registered MCP tools)", "Python", "Firewall zones/policies, ACL rules, DNS policies, clients, networks")
 }
 
 Container_Boundary(api_int, "API Integration") {
-    Component(api_ref, "UnifiApiClient", "requests", "")
+    Component(api_ref, "UniFiClient / UnifiApiClient / UniFiNetworkClient", "httpx / requests", "")
 }
 
 Rel(analysis_pkg, api_ref, "Queries")
 Rel(diagnostics_pkg, api_ref, "Queries")
 Rel(discovery_pkg, api_ref, "Queries")
 Rel(connectivity_pkg, api_ref, "Queries")
-Rel(network_pkg, api_ref, "Reads and writes")
-Rel(port_mapper_c, api_ref, "Writes port_overrides")
+Rel(network_pkg, api_ref, "Reads")
+Rel(port_mapper_c, api_ref, "Writes port_overrides unless previewing")
+Rel(port_diag_c, api_ref, "Reads (guarded)")
+Rel(port_diag_c, link_settings_c, "Uses")
 Rel(naming_rules, port_mapper_c, "Feeds desired names")
 Rel(smart_port_mapper_c, device_caps, "Uses")
 Rel(topology_c, port_mapper_c, "Consumes")
@@ -395,15 +421,15 @@ C4Component
     title Component Diagram - UniFi Protect Integration
 
     Container_Boundary(protect_sub, "Shared Library - Protect Subsystem") {
-        Component(protect_client_c, "client.py / UniFiProtectClient", "Python asyncio + uiprotect", "Async wrapper around uiprotect ProtectApiClient. Manages connection lifecycle via ConnectionState state machine (DISCONNECTED / CONNECTING / CONNECTED / RECONNECTING / ERROR). Implements async context manager pattern. Provides typed device access properties: cameras, ai_ports, sensors, lights, doorbells.")
+        Component(protect_client_c, "client.py / UniFiProtectClient", "Python asyncio + uiprotect", "Async wrapper around uiprotect ProtectApiClient. Manages connection lifecycle via ConnectionState state machine (DISCONNECTED / CONNECTING / CONNECTED / RECONNECTING / ERROR). Implements async context manager pattern. Provides typed device access properties: bootstrap, nvr, cameras, ai_ports, sensors, lights, chimes and doorlocks (the get_doorbells tool picks the cameras that have a chime). With read_only=True it runs over ReadOnlyProtectApiClient, as every MCP protect tool does.")
         Component(protect_config_c, "config.py / ProtectConfig", "Pydantic BaseModel", "Validated Protect configuration. SecretStr for password. from_env() class method with PROTECT_ prefix. to_client_kwargs() serialiser for uiprotect.")
-        Component(protect_models_c, "models.py", "Python dataclasses", "Protect domain models: camera state, NVR info, sensor state, event records.")
+        Component(protect_models_c, "models.py", "Pydantic", "Protect device models on a BaseDevice base: ProtectCamera, ProtectNVR, ProtectSensor, ProtectLight, ProtectChime, ProtectDoorlock and ProtectAIPort.")
         Component(events_c, "events.py / EventHandler", "Python asyncio", "Real-time WebSocket event processing. Typed ProtectEvent, ProtectEventType, ProtectEventCategory enums. EventFilter for subscription scoping. Unsubscribe function pattern.")
         Component(analytics_c, "analytics.py / EventAnalytics", "Python", "Event correlation and aggregation. Smart detection tracking by type (PERSON, VEHICLE, ANIMAL). Motion statistics, device health scoring from event patterns.")
-        Component(aiport_c, "aiport.py", "Python", "AI Port management for 3rd party ONVIF cameras. Handles smart detection capabilities on non-native cameras.")
+        Component(aiport_c, "aiport.py / AIPortManager", "Python", "AI Port management for 3rd party ONVIF cameras. Handles smart detection capabilities on non-native cameras.")
         Component(health_c, "health.py / DeviceHealthMonitor", "Python asyncio", "Proactive device health monitoring. HealthTransition enum (DEGRADED, IMPROVED, RECOVERED). Configurable polling with thresholds. Health history tracking.")
         Component(mqtt_c, "mqtt.py / MQTTBridge", "Python asyncio + aiomqtt", "Home Assistant MQTT bridge. MQTTConfig Pydantic model. Publishes events with HA auto-discovery payload format. Configurable topic prefix and QoS.")
-        Component(repository_c, "repository.py", "Python", "Data access layer over ProtectApiClient. Decouples domain logic from uiprotect library internals.")
+        Component(repository_c, "repository.py / DeviceRepository", "Python", "Typed device repositories and ProtectDeviceCache: a cache of Protect devices, refreshed from a connected UniFiProtectClient's bootstrap.")
     }
 
     System_Ext(protect_ctrl, "UniFi Protect Controller", "HTTPS REST + WebSocket")
@@ -429,13 +455,13 @@ C4Component
 Container_Boundary(protect_sub, "Shared Library - Protect Subsystem") {
     Component(protect_client_c, "UniFiProtectClient", "asyncio + uiprotect", "Async wrapper with ConnectionState machine and typed device properties")
     Component(protect_config_c, "ProtectConfig", "Pydantic", "Validated config with SecretStr and from_env()")
-    Component(protect_models_c, "Protect Models", "Python dataclasses", "Camera, NVR, sensor, event domain models")
+    Component(protect_models_c, "Protect Models", "Pydantic", "Camera, NVR, sensor, light, chime, doorlock and AI Port models")
     Component(events_c, "EventHandler", "asyncio", "WebSocket event processing with typed enums and subscription filtering")
     Component(analytics_c, "EventAnalytics", "Python", "Event correlation, smart detection stats, motion aggregation")
-    Component(aiport_c, "AiPort Manager", "Python", "AI Port management for 3rd party ONVIF cameras")
+    Component(aiport_c, "AIPortManager", "Python", "AI Port management for 3rd party ONVIF cameras")
     Component(health_c, "DeviceHealthMonitor", "asyncio", "Proactive health monitoring with transition detection")
     Component(mqtt_c, "MQTTBridge", "asyncio + aiomqtt", "HA MQTT bridge with auto-discovery")
-    Component(repository_c, "Repository", "Python", "Data access layer over uiprotect client")
+    Component(repository_c, "DeviceRepository", "Python", "Device cache refreshed from the client's bootstrap")
 }
 
 System_Ext(protect_ctrl, "UniFi Protect Controller")
@@ -454,37 +480,45 @@ Rel(mqtt_c, ha, "Publishes", "MQTT")
 
 ### 3.5 MCP Server Components
 
-The MCP server uses a Code Mode architecture pattern: tool discovery is separated from tool implementation loading, enabling AI assistants to efficiently explore the tool catalogue before host code executes a specific registered tool.
+The MCP server separates tool discovery from tool loading: an AI assistant explores the catalogue through the registry's metadata, and a handler is imported only when its tool is first described or run. Every call, on either surface, goes through one runner.
 
 ```mermaid
 C4Component
     title Component Diagram - MCP Server
 
     Container_Boundary(mcp_sub, "MCP Server Container") {
-        Component(mcp_server_c, "server.py / FastMCP app", "FastMCP", "FastMCP server named 'unifi-management'. Exposes four public meta-tools: search_tools, list_categories, get_tool_info, execute_tool (read-only tools through ToolRunner). Acts as the coordination layer for progressive tool discovery.")
-        Component(registry_c, "registry.py / ToolRegistry", "Python", "Dynamic tool discovery from YAML manifests. Singleton with thread-safe lazy loading via ToolProxy. Supports search by query string, category, and tag list. Returns summary or full detail levels.")
-        Component(tool_proxy_c, "registry.py / ToolProxy", "Python", "Lazy-loading proxy per tool. Defers importlib.import_module() until first execution. Thread-safe via Lock. Reduces startup time and memory when only a subset of tools is used.")
-        Component(tool_metadata_c, "registry.py / ToolMetadata", "Python dataclass", "Per-tool metadata: name, module path, handler name, description, category, priority (P1/P2/P3), tags list, parameter schema.")
+        Component(mcp_server_c, "server.py / FastMCP app", "FastMCP", "Entry point (main: --version, --help, --surface, --config, --check). Registers the meta-tools search_tools, list_categories, get_tool_info and execute_tool, the resources unifi://catalog and unifi://config/status, and the prompts troubleshoot_port_link and plan_stp_change. The direct surface also lists every non-mutating, non-pipeline tool.")
+        Component(lifespan_c, "server.py / lifespan", "Python", "Resolves the config, installs one SharedControllerClient (a UniFiClient behind ReadOnlyAsyncTransport that logs in on first use) that every async controller tool borrows, starts the request audit when UNIFI_MCP_REQUEST_AUDIT is set, and points sys.stdout at stderr so a stray print can't corrupt JSON-RPC.")
+        Component(config_c, "config.py", "Python", "Working-directory-independent config discovery, per-family credential loading (controller, network_api, protect), the bounded Keychain and 1Password fallback, and the UNIFI_MCP_* settings.")
+        Component(registry_c, "registry.py / ToolRegistry", "Python", "Loads and validates the YAML manifests on first access (thread-safe). Searches by query, category and tag; returns ToolMetadata. ToolProxy keeps a lazy handler per tool for ToolRegistry.execute.")
+        Component(catalog_c, "catalog.py / ToolCatalog", "Python", "Builds each SDK Tool on first use: imports the handler and calls Tool.from_function, so the signature is the input schema and a typed return the output schema; adds the title and annotations.")
+        Component(runner_c, "runner.py / ToolRunner", "Python", "Runs every call: refuse mutating tools, rewrite aliases, validate, gate the credential family, run under the concurrency cap and optional deadline, mask secrets, package the envelope with isError on failure.")
+        Component(tool_metadata_c, "registry.py / ToolMetadata", "Python dataclass", "Per-tool metadata: name, module, handler, title, description, category, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases.")
 
-        Component(manifests_c, "manifests/ (6 YAML files)", "YAML", "Tool manifests by category: analysis.yaml (30 tools), diagnostics.yaml (4 tools), discovery.yaml (4 tools), connectivity.yaml (4 tools), network.yaml (6 tools), protect.yaml (5 tools). Each entry declares module, handler, description, priority, tags, and optional parameter schema.")
+        Component(manifests_c, "manifests/ (7 YAML files)", "YAML", "Tool manifests by category: analysis.yaml (46 tools), connectivity.yaml (4), diagnostics.yaml (8), discovery.yaml (5), network.yaml (6), observability.yaml (2), protect.yaml (5).")
 
-        Component(network_tools_c, "tools/network.py", "Python", "Tool handler implementations for network category tools. Wraps shared library calls, serialises results to JSON-safe dicts.")
-        Component(protect_tools_c, "tools/protect.py", "Python", "Tool handler implementations for Protect category tools. Initialises async Protect client, awaits results, returns structured data.")
+        Component(network_tools_c, "tools/network.py", "Python", "Network Integration API tools. Each call opens a UniFiNetworkClient behind the GET-only ReadOnlyAsyncTransport.")
+        Component(protect_tools_c, "tools/protect.py", "Python", "Protect tools. Each call opens a UniFiProtectClient over ReadOnlyProtectApiClient.")
     }
 
     Container_Boundary(shared_c, "Shared Library") {
         Component(shared_ref, "Analysis / Diagnostics / Discovery / Connectivity / Network / Protect modules", "Python", "")
     }
 
-    Rel(mcp_server_c, registry_c, "Queries for tool search and listing")
-    Rel(mcp_server_c, tool_proxy_c, "Registry can resolve executable proxies")
+    Rel(mcp_server_c, registry_c, "Searches and lists tools")
+    Rel(mcp_server_c, runner_c, "Runs execute_tool and direct tools")
+    Rel(mcp_server_c, lifespan_c, "Starts")
+    Rel(lifespan_c, config_c, "Resolves config")
     Rel(registry_c, manifests_c, "Loads YAML on first access")
-    Rel(registry_c, tool_proxy_c, "Creates one proxy per tool")
-    Rel(tool_proxy_c, tool_metadata_c, "Holds metadata")
-    Rel(tool_proxy_c, network_tools_c, "Lazily imports and calls")
-    Rel(tool_proxy_c, protect_tools_c, "Lazily imports and calls")
-    Rel(network_tools_c, shared_ref, "Calls analysis, diagnostics, discovery, connectivity modules")
-    Rel(protect_tools_c, shared_ref, "Calls Protect subsystem")
+    Rel(registry_c, tool_metadata_c, "Holds one per tool")
+    Rel(runner_c, catalog_c, "Gets the built tool")
+    Rel(runner_c, config_c, "Gates credential families")
+    Rel(catalog_c, registry_c, "Reads metadata")
+    Rel(catalog_c, network_tools_c, "Lazily imports")
+    Rel(catalog_c, protect_tools_c, "Lazily imports")
+    Rel(catalog_c, shared_ref, "Lazily imports handlers")
+    Rel(network_tools_c, shared_ref, "Calls the network managers")
+    Rel(protect_tools_c, shared_ref, "Calls the Protect subsystem")
 ```
 
 ### PlantUML Equivalent
@@ -494,24 +528,33 @@ C4Component
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
 Container_Boundary(mcp_sub, "MCP Server") {
-    Component(mcp_server_c, "FastMCP app", "FastMCP", "Exposes search_tools, list_categories, get_tool_info meta-tools")
-    Component(registry_c, "ToolRegistry", "Python", "Singleton: YAML manifest loading, search by query/category/tag")
-    Component(tool_proxy_c, "ToolProxy", "Python", "Lazy-loading proxy with thread-safe importlib deferred load")
-    Component(tool_metadata_c, "ToolMetadata", "Python dataclass", "name, module, handler, description, category, priority, tags")
+    Component(mcp_server_c, "FastMCP app", "FastMCP", "Meta-tools, resources, prompts; direct surface")
+    Component(lifespan_c, "lifespan", "Python", "Shared read-only controller client")
+    Component(config_c, "config.py", "Python", "Config discovery, credential families, settings")
+    Component(registry_c, "ToolRegistry", "Python", "YAML manifest loading and validation, search")
+    Component(catalog_c, "ToolCatalog", "Python", "Builds SDK tools from handlers on first use")
+    Component(runner_c, "ToolRunner", "Python", "Validate, gate, run, mask, package every call")
+    Component(tool_metadata_c, "ToolMetadata", "Python dataclass", "Per-tool manifest fields")
     Component(manifests_c, "manifests/ (7 YAML files)", "YAML", "Tool definitions for 76 analysis, connectivity, diagnostics, discovery, network, observability and protect tools")
-    Component(network_tools_c, "tools/network.py", "Python", "Network tool handler implementations")
-    Component(protect_tools_c, "tools/protect.py", "Python", "Protect tool handler implementations")
+    Component(network_tools_c, "tools/network.py", "Python", "Integration API tools, GET-only client per call")
+    Component(protect_tools_c, "tools/protect.py", "Python", "Protect tools over ReadOnlyProtectApiClient")
 }
 
 Container_Boundary(shared_c, "Shared Library") {
     Component(shared_ref, "All domain modules", "Python", "")
 }
 
-Rel(mcp_server_c, registry_c, "Queries")
+Rel(mcp_server_c, registry_c, "Searches")
+Rel(mcp_server_c, runner_c, "Runs tools")
+Rel(mcp_server_c, lifespan_c, "Starts")
+Rel(lifespan_c, config_c, "Resolves config")
 Rel(registry_c, manifests_c, "Loads YAML")
-Rel(registry_c, tool_proxy_c, "Creates")
-Rel(tool_proxy_c, network_tools_c, "Lazily calls")
-Rel(tool_proxy_c, protect_tools_c, "Lazily calls")
+Rel(registry_c, tool_metadata_c, "Holds")
+Rel(runner_c, catalog_c, "Gets tools")
+Rel(runner_c, config_c, "Gates credentials")
+Rel(catalog_c, network_tools_c, "Lazily imports")
+Rel(catalog_c, protect_tools_c, "Lazily imports")
+Rel(catalog_c, shared_ref, "Lazily imports")
 Rel(network_tools_c, shared_ref, "Delegates")
 Rel(protect_tools_c, shared_ref, "Delegates")
 @enduml
@@ -544,26 +587,32 @@ classDiagram
         -_token_hash: Optional[str]
         +__init__(base_url, site, verify_ssl, username, password, api_token, timeout, max_retries, retry_delay)
         +login() bool
-        +logout() None
-        +get_devices(site) dict
-        +get_clients(site) dict
-        +get_device_stats(device_id) dict
-        +put_device(device_id, data) dict
-        -_request(method, endpoint, data) dict
-        -_retry_request(method, endpoint, data) dict
-        -_authenticate_token() bool
-        -_authenticate_user_pass() bool
+        +logout() bool
+        +get_sites() list
+        +get_devices(site_id) dict
+        +get_clients(site_id) dict
+        +get_device_details(site_id, device_id) dict
+        +get_lldp_info(site_id, device_id) dict
+        +update_device_port_table(device_id, port_table) bool
+        +verify_port_update(device_id, port_idx, expected_name, max_retries) bool
+        -_retry_request(func, *args, **kwargs) Any
+        -_perform_login() bool
+        -_update_port_overrides(device_id, device_details, port_table) bool
     }
 
     class EnhancedUnifiApiClient {
         +base_url: str
         +site: str
         +session: requests.Session
+        +is_unifi_os: bool
         +__init__(base_url, site, verify_ssl, username, password, api_token, timeout, max_retries, retry_delay)
-        +get_port_overrides(device_id) list
-        +set_port_overrides(device_id, overrides) dict
-        +provision_device(device_id) dict
-        +async_get_devices() Coroutine
+        +login() bool
+        +get_devices(site_id) dict
+        +get_device_details(device_id) dict
+        +update_device_port_overrides(device_id, port_updates, auto_provision) bool
+        +force_provision(device_mac) bool
+        +verify_port_update_enhanced(device_id, port_updates, max_attempts, wait_per_attempt) dict
+        +batch_update_with_verification(device_id, port_updates, verify_updates, auto_provision) tuple
     }
 
     class UnifiConfig {
@@ -583,17 +632,14 @@ classDiagram
     }
 
     class ToolkitAdapter {
-        +api_client: UnifiApiClient
+        +api_client: EnhancedUnifiApiClient
         +__init__(api_client)
         +find_device_sync(query) list
-        +find_ip_sync(ip_address) dict
-        +find_mac_sync(mac_address) dict
-        +analyze_network_sync() dict
-        +health_check_sync() dict
+        +analyze_link_quality_sync(device_id) dict
+        +network_health_check_sync() dict
     }
 
-    EnhancedUnifiApiClient --|> UnifiApiClient : extends
-    ToolkitAdapter --> UnifiApiClient : wraps
+    ToolkitAdapter --> EnhancedUnifiApiClient : wraps
     UnifiApiClient --> UnifiConfig : configured by
 ```
 
@@ -611,20 +657,19 @@ class UnifiApiClient {
     -_username: Optional[str]
     -_password: Optional[str]
     +login() bool
-    +logout() None
-    +get_devices(site) dict
-    +get_clients(site) dict
-    -_request(method, endpoint, data) dict
-    -_retry_request(method, endpoint, data) dict
-    -_authenticate_token() bool
-    -_authenticate_user_pass() bool
+    +logout() bool
+    +get_devices(site_id) dict
+    +get_clients(site_id) dict
+    +update_device_port_table(device_id, port_table) bool
+    -_retry_request(func, *args, **kwargs) Any
+    -_update_port_overrides(device_id, device_details, port_table) bool
 }
 
 class EnhancedUnifiApiClient {
-    +get_port_overrides(device_id) list
-    +set_port_overrides(device_id, overrides) dict
-    +provision_device(device_id) dict
-    +async_get_devices() Coroutine
+    +update_device_port_overrides(device_id, port_updates, auto_provision) bool
+    +force_provision(device_mac) bool
+    +verify_port_update_enhanced(device_id, port_updates) dict
+    +batch_update_with_verification(device_id, port_updates) tuple
 }
 
 class UnifiConfig {
@@ -638,14 +683,13 @@ class UnifiConfig {
 }
 
 class ToolkitAdapter {
-    +api_client: UnifiApiClient
+    +api_client: EnhancedUnifiApiClient
     +find_device_sync(query) list
-    +find_ip_sync(ip) dict
-    +find_mac_sync(mac) dict
+    +analyze_link_quality_sync(device_id) dict
+    +network_health_check_sync() dict
 }
 
-EnhancedUnifiApiClient --|> UnifiApiClient
-ToolkitAdapter --> UnifiApiClient
+ToolkitAdapter --> EnhancedUnifiApiClient
 UnifiApiClient --> UnifiConfig
 @enduml
 ```
@@ -681,14 +725,19 @@ classDiagram
         +ai_ports: dict[str, AiPort]
         +sensors: dict
         +lights: dict
-        +doorbells: dict
+        +chimes: dict
+        +doorlocks: dict
         +__init__(config: ProtectConfig) None
         +__aenter__() UniFiProtectClient
         +__aexit__(exc_type, exc_val, exc_tb) None
-        +connect() None
+        +connect() bool
         +disconnect() None
-        -_handle_disconnect() None
-        -_reconnect_loop() None
+        +refresh() None
+        +get_camera(camera_id) Camera
+        +get_camera_by_name(name) Camera
+        +get_ai_port(ai_port_id) AiPort
+        +get_cameras_by_ai_port(ai_port_id) list
+        +get_third_party_cameras() list
     }
 
     class ProtectConfig {
@@ -711,44 +760,44 @@ classDiagram
     }
 
     class EventHandler {
-        -_client: UniFiProtectClient
-        -_subscriptions: list
-        +subscribe(callback, filter) Callable
-        +unsubscribe(token) None
-        -_dispatch(message) None
+        +client: UniFiProtectClient
+        +subscription_count: int
+        +subscribe(callback, event_filter) UnsubscribeFunc
+        +clear_subscriptions() None
+        -_handle_ws_message(msg) None
+        -_dispatch_event(subscription, event) None
     }
 
     class EventAnalytics {
-        -_client: UniFiProtectClient
-        -_handler: EventHandler
-        -_event_buffer: deque
+        +client: UniFiProtectClient
+        +event_handler: EventHandler
         +start() None
         +stop() None
-        +get_motion_stats() MotionStats
-        +get_smart_detect_counts() dict
-        +get_device_health() DeviceHealth
+        +get_motion_stats(window) EventAggregation
+        +get_smart_detect_stats(window) SmartDetectStats
+        +get_device_health(device_id) DeviceHealth
+        +subscribe_correlations(callback) UnsubscribeFunc
     }
 
     class DeviceHealthMonitor {
-        -_client: UniFiProtectClient
-        -_handler: EventHandler
-        -_health_cache: dict
-        -_poll_interval: int
-        +subscribe_health_changes(callback) Callable
+        +client: UniFiProtectClient
+        +thresholds: HealthThresholds
+        +subscribe_health_changes(callback) UnsubscribeFunc
         +start() Coroutine
         +stop() None
-        -_poll_devices() Coroutine
-        -_detect_transitions() None
+        +get_fleet_summary() dict
+        -_periodic_health_check() Coroutine
+        -_determine_transition(old_status, new_status) HealthTransition
     }
 
     class MQTTBridge {
-        -_protect_client: UniFiProtectClient
-        -_config: MQTTConfig
-        -_handler: EventHandler
+        +config: MQTTConfig
+        +is_connected: bool
         +start() Coroutine
         +stop() Coroutine
-        -_publish_event(event) Coroutine
-        -_publish_discovery(device) Coroutine
+        +publish_device_state(device_id, state_type, value) Coroutine
+        -_publish_message(message) Coroutine
+        -_publish_discovery() Coroutine
     }
 
     UniFiProtectClient --> ConnectionState : tracks state via
@@ -779,8 +828,9 @@ class UniFiProtectClient {
     -_bootstrap: Bootstrap
     +cameras: dict
     +ai_ports: dict
-    +connect() None
+    +connect() bool
     +disconnect() None
+    +refresh() None
 }
 
 class ProtectConfig {
@@ -793,13 +843,13 @@ class ProtectConfig {
 }
 
 class EventHandler {
-    +subscribe(callback, filter) Callable
-    -_dispatch(message) None
+    +subscribe(callback, event_filter) UnsubscribeFunc
+    -_dispatch_event(subscription, event) None
 }
 
 class EventAnalytics {
-    +get_motion_stats() MotionStats
-    +get_smart_detect_counts() dict
+    +get_motion_stats(window) EventAggregation
+    +get_smart_detect_stats(window) SmartDetectStats
 }
 
 class DeviceHealthMonitor {
@@ -809,8 +859,8 @@ class DeviceHealthMonitor {
 
 class MQTTBridge {
     +start() Coroutine
-    -_publish_event(event) Coroutine
-    -_publish_discovery(device) Coroutine
+    -_publish_message(message) Coroutine
+    -_publish_discovery() Coroutine
 }
 
 UniFiProtectClient --> ConnectionState
@@ -1124,7 +1174,7 @@ The C4 diagrams above show the system as a whole. Provider-specific behavior is 
 | UniFi Network | [providers/unifi-network.md](providers/unifi-network.md) | Synchronous legacy REST client, async integrations API client, port mapping, analysis, discovery, connectivity, and network control wrappers. |
 | UniFi Protect + MQTT | [providers/unifi-protect-mqtt.md](providers/unifi-protect-mqtt.md) | Async Protect client, WebSocket events, device repository, health/analytics, AI Port support, and Home Assistant MQTT discovery/state publishing. |
 | AXIS provisioning | [providers/axis-provisioning.md](providers/axis-provisioning.md) | Scripted AXIS camera/device desired-state reconciliation through VAPIX, JSON API, ONVIF helpers, and MQTT target configuration. |
-| MCP and automation | [providers/mcp-automation.md](providers/mcp-automation.md) | FastMCP stdio server, discovery meta-tools, YAML manifests, registry/proxy lazy loading, and automation entry points. |
+| MCP and automation | [providers/mcp-automation.md](providers/mcp-automation.md) | FastMCP stdio server, the discovery and direct surfaces, YAML manifests, lazy tool building (`ToolCatalog`), read-only execution (`ToolRunner` and the guards), and automation entry points. |
 
 ```mermaid
 C4Container
@@ -1141,16 +1191,16 @@ C4Container
         Container(cli, "CLI entry points", "Typer / argparse", "Human-operated terminal workflows")
         Container(network_provider, "Network provider modules", "requests + httpx", "Topology, port naming, diagnostics, discovery, and Network control plane")
         Container(protect_provider, "Protect provider modules", "asyncio + uiprotect", "Protect inventory, events, AI Port, analytics, health, and MQTT bridge")
-        Container(mcp_provider, "MCP automation interface", "FastMCP + YAML manifests", "Progressive tool discovery and lazy-loading tool registry")
+        Container(mcp_provider, "MCP automation interface", "FastMCP + YAML manifests", "Progressive tool discovery, lazy tool building and read-only execution through ToolRunner")
     }
 
     Rel(admin, cli, "Runs commands", "shell")
-    Rel(agent, mcp_provider, "Discovers tool metadata", "MCP stdio")
+    Rel(agent, mcp_provider, "Discovers and runs read-only tools", "MCP stdio")
     Rel(cli, network_provider, "Calls workflows")
     Rel(cli, protect_provider, "Calls Protect workflows")
     Rel(mcp_provider, network_provider, "References registered tool wrappers")
     Rel(mcp_provider, protect_provider, "References Protect tool wrappers")
-    Rel(network_provider, network_controller, "Reads/writes", "HTTPS REST")
+    Rel(network_provider, network_controller, "Reads; CLI commands write, the MCP server never does", "HTTPS REST")
     Rel(protect_provider, protect_controller, "Bootstraps and subscribes", "HTTPS / WSS")
     Rel(protect_provider, mqtt_broker, "Publishes discovery and state", "MQTT")
 ```
@@ -1166,7 +1216,7 @@ The `discover` workflow now treats switch-port labels as desired state. For ever
 3. Existing current name only when the port is active and the discovered client label is weak.
 4. `Port x` when no device is connected, where `x` is the UniFi port index.
 
-Writes are sent to `port_overrides`, not `port_table`. `port_table` is controller/device state; `port_overrides` is the writable configuration the UniFi UI persists.
+A plain `discover` previews: it chooses the names and writes the report and the diagram, but sends nothing to the controller. Only `discover --apply` writes. Writes are sent to `port_overrides`, not `port_table`. `port_table` is controller/device state; `port_overrides` is the writable configuration the UniFi UI persists.
 
 ```mermaid
 C4Dynamic
@@ -1177,20 +1227,20 @@ C4Dynamic
     Container_Boundary(shared_library, "unifi_mapper shared library") {
         Component(run_methods, "run_methods.py", "Python", "Builds desired names for every router and switch port")
         Component(naming, "_choose_port_name", "Python", "Chooses LLDP name, client name, active current name, or Port x")
-        Component(mapper, "UnifiPortMapper", "Python", "Batches per-device port name updates and provisions devices")
+        Component(mapper, "UnifiPortMapper", "Python", "With --apply only: batches per-device port name updates and provisions devices")
         Component(api, "UnifiApiClient", "requests", "Reads controller state and writes durable port_overrides")
     }
     System_Ext(controller, "UniFi Network Controller", "Stores device state and switch-port configuration")
-    ContainerDb(report, "Reports and diagrams", "Markdown / Graphviz / Mermaid", "Generated topology artefacts")
+    ContainerDb(report, "Reports and diagrams", "Markdown / Graphviz", "Generated topology artefacts (png, svg or html)")
 
     Rel(admin, cli, "1. Runs command", "shell")
     Rel(cli, run_methods, "2. Delegates discovery", "Python call")
     Rel(run_methods, api, "3. Reads devices, port_table, clients, LLDP", "HTTPS REST")
     Rel(api, controller, "4. GET /stat/device and /stat/sta", "HTTPS")
     Rel(run_methods, naming, "5. Selects desired name per port", "Python call")
-    Rel(run_methods, mapper, "6. Sends per-device desired updates", "Python call")
-    Rel(mapper, api, "7. Persists merged port_overrides", "PUT /rest/device by id")
-    Rel(api, controller, "8. Writes port_overrides and force-provision", "HTTPS REST")
+    Rel(run_methods, mapper, "6. With --apply, sends per-device desired updates", "Python call")
+    Rel(mapper, api, "7. With --apply, persists merged port_overrides", "PUT /rest/device by id")
+    Rel(api, controller, "8. With --apply, writes port_overrides and force-provision", "HTTPS REST")
     Rel(run_methods, report, "9. Emits report and topology diagram", "file output")
 ```
 
@@ -1226,7 +1276,8 @@ sequenceDiagram
     participant Server as unifi-mcp FastMCP server
     participant Registry as ToolRegistry
     participant Manifest as YAML manifests
-    participant Proxy as ToolProxy
+    participant Runner as ToolRunner
+    participant Catalog as ToolCatalog
     participant Tool as Tool implementation module
 
     User->>Assistant: "Find the STP tools"
@@ -1237,26 +1288,32 @@ sequenceDiagram
     Registry-->>Server: matching summaries
     Server-->>Assistant: tool names and descriptions
     Assistant->>Server: get_tool_info("discover_stp_topology")
-    Server->>Registry: get_metadata(tool_name)
-    Registry-->>Server: full metadata and parameter schema
-    Note over Registry,Tool: Host code can call get_tool(name).execute(...); ToolProxy imports the implementation only on first execution.
-    Registry->>Proxy: get_tool(name)
-    Proxy->>Tool: importlib.import_module(...)
+    Server->>Catalog: find(tool_name)
+    Catalog->>Tool: import the handler on first use
+    Catalog-->>Server: input and output schemas, title, annotations
+    Server-->>Assistant: full tool spec
+    Assistant->>Server: execute_tool("discover_stp_topology", {})
+    Server->>Runner: run(name, params)
+    Note over Runner: refuse mutating tools, validate, gate the credential family
+    Runner->>Tool: call the handler (read-only guarded client)
+    Tool-->>Runner: STPTopology
+    Runner-->>Server: masked envelope
+    Server-->>Assistant: ok envelope with the result
 ```
 
 ## Key Design Decisions
 
 ### Synchronous Network API, Asynchronous Protect API
 
-The Network API client (`UnifiApiClient`, `EnhancedUnifiApiClient`) uses `requests` (synchronous). The Protect client (`UniFiProtectClient`) uses `asyncio` and the `uiprotect` library. This split reflects the fundamental difference between the two product lines: the Network API is a request-response REST API that maps naturally to synchronous code; the Protect API requires a persistent WebSocket subscription for real-time event delivery, which demands an async runtime. The `ToolkitAdapter` class exists specifically to bridge these two models when the MCP server needs to call both from a single async context.
+The original port-naming path (`UnifiApiClient`, `EnhancedUnifiApiClient`) and the read-only port diagnostics use `requests` (synchronous). The analysis, diagnostics, discovery and connectivity tools and the MCP server use the async `httpx` clients (`UniFiClient` for the classic controller API, `UniFiNetworkClient` for the Integration API), and the Protect client (`UniFiProtectClient`) uses `asyncio` and the `uiprotect` library, because Protect needs a persistent WebSocket subscription for real-time events. The sync port-diagnostics tools run under the MCP server too, each behind the sync read-only guard. The `ToolkitAdapter` class gives `unifi-network-toolkit` synchronous versions of three tools over its sync client; the MCP server doesn't use it.
 
 ### Retryable vs Permanent Exception Split
 
-The exception hierarchy divides all errors into `UniFiRetryableError` and `UniFiPermanentError` before further specialisation. This binary distinction is load-bearing: the retry loop in `UnifiApiClient._retry_request()` catches `UniFiRetryableError` and applies exponential backoff, while `UniFiPermanentError` propagates immediately. This prevents pointless retries on authentication failures (wrong password will always fail) while correctly retrying transient network issues.
+The exception hierarchy divides all errors into `UniFiRetryableError` and `UniFiPermanentError` before further specialisation. The retry loop in `UnifiApiClient._retry_request()` follows the same split: it retries timeouts, connection errors and 5xx, 408 and 429 responses with exponential backoff, while a 401 or 403 (`UniFiAuthenticationError`) or another 4xx (`UniFiPermissionError`) raises at once. When the attempts run out, a timeout raises `UniFiTimeoutError` and a connection failure `UniFiConnectionError`; an HTTP error that kept failing raises the base `UniFiApiError`. This prevents pointless retries on authentication failures (wrong password will always fail) while correctly retrying transient network issues.
 
-### Credential Sanitisation in the API Client
+### Credential Handling in the API Client
 
-`UnifiApiClient` stores SHA-256 hashes of credentials alongside the raw values, and all logging methods call `_sanitize_for_logging()` before writing. This is an active defence against credential leakage into log files, which is a real operational risk in always-on network automation scripts.
+`UnifiApiClient` keeps a short SHA-256 hash of each credential next to the raw value (`_hash_for_verification()`), so a credential can be checked without exposing it, and logs the controller URL through `_sanitize_for_logging()`. Masking secrets in MCP results and errors, and in CLI error text, is the job of `core/utils/redact.py`.
 
 ### Code Mode Pattern in the MCP Server
 
@@ -1264,7 +1321,7 @@ The MCP server exposes `search_tools`, `list_categories`, `get_tool_info` and `e
 
 ### YAML Manifests as the Tool Contract
 
-Tool definitions live in YAML manifests rather than Python decorators. This separates the tool contract (what a tool is called, what it does, what parameters it accepts) from the implementation (how it does it). The `ToolRegistry` loads manifests lazily; `ToolProxy` defers the actual `importlib.import_module()` call until the tool is first executed. The practical result is fast MCP server startup even with a large tool catalogue.
+Tool definitions live in YAML manifests rather than Python decorators. This separates the tool contract (what a tool is called, what it does, what parameters it accepts, which credential family it needs, whether it mutates) from the implementation (how it does it). The `ToolRegistry` loads and validates manifests lazily; `ToolCatalog` defers the actual `importlib.import_module()` call until a tool is first described or run (`ToolProxy` does the same for `ToolRegistry.execute`). The practical result is fast MCP server startup even with a large tool catalogue.
 
 ### Ground Truth Verification
 
