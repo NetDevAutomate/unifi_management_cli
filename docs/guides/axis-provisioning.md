@@ -559,7 +559,7 @@ Keep them in a file outside the repository, for example `~/.config/axiscam/onvif
 Create it with an editor rather than a shell command, so the password stays out of your
 shell history:
 
-```bash
+```text
 ONVIF_USERNAME=onvifuser
 ONVIF_PASSWORD=<password>
 ONVIF_CAMERAS='Intercom=198.51.100.11,Camera_1=198.51.100.12'
