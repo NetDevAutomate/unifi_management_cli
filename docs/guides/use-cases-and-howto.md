@@ -1018,8 +1018,8 @@ Switches
 +------------------+--------------+------------+---------------+------------------+
 | Name             | Model        | Firmware   | IP            | Upgrade Available|
 +------------------+--------------+------------+---------------+------------------+
-| Core-SW-01       | USW-Pro-24   | 6.6.57     | 192.0.2.2   | 6.6.72          |
-| Access-SW-01     | USW-Lite-8   | 6.5.32     | 192.0.2.3   | --               |
+| Core-SW-01       | USW-Pro-24   | 6.6.57     | 192.0.2.2     | 6.6.72           |
+| Access-SW-01     | USW-Lite-8   | 6.5.32     | 192.0.2.3     | --               |
 +------------------+--------------+------------+---------------+------------------+
 
 Warning: 1 device(s) have firmware updates available
@@ -1117,7 +1117,7 @@ protect_config = ProtectConfig(
 )
 
 mqtt_config = MQTTConfig(
-    host="192.0.2.100",       # MQTT broker IP
+    host="192.0.2.100",                # MQTT broker IP
     port=1883,
     topic_prefix="unifi/protect",
     discovery_prefix="homeassistant",  # HA MQTT discovery prefix
