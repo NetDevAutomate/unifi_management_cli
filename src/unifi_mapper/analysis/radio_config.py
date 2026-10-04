@@ -57,7 +57,7 @@ RADIO_WRITE_FIELDS = (
 def _coerce_radio_value(field: str, value):
     """Match the type the controller stores for a radio field.
 
-    Fixed channels are stored as `int` (`Lounge na=60`, `Puzzle na=157`); only the
+    Fixed channels are stored as `int` (`AP B na=60`, `AP C na=157`); only the
     sentinel `'auto'` is a string. Writing `'149'` is accepted by the API and then
     ignored — the silent-no-op failure mode this repo exists to detect.
     """
@@ -303,7 +303,8 @@ def build_optimisation_plan(devices: list[dict]) -> list[dict]:
     Recommendations:
     - 5GHz: increase to 80MHz width
     - 2.4GHz: reduce tx_power to 12 dBm
-    - Kitchen 5GHz: move off channel 36 to channel 44
+    - 5GHz on an AP whose name contains one hard-coded room word: move off channel 36 to
+      channel 44
     - Enable min_rssi at -75 on all APs
     """
     changes = []

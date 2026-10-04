@@ -301,7 +301,8 @@ async def execute_tool(
 
     Args:
         tool_name: Name of the tool (e.g. "inspect_switch_port").
-        params: Keyword arguments, as listed by get_tool_info (e.g. {"switch": "Office", "port": 5}).
+        params: Keyword arguments, as listed by get_tool_info (e.g.
+            {"switch": "Switch A", "port": 5}).
 
     Returns:
         {"ok": True, "result": ...} on success, or

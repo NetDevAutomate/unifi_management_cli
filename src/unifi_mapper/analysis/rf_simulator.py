@@ -36,7 +36,7 @@ class SimulationResult:
         ap_name: Name of the AP the simulation applied to.
         band: Band that was simulated (2.4 or 5 GHz).
         scenario: Human-readable description of the question asked, e.g.
-            "force HARD_DISABLE on Kitchen 2.4 GHz" or "set Kitchen 5 GHz
+            "force HARD_DISABLE on AP D 2.4 GHz" or "set AP D 5 GHz
             width to 80 MHz".
         recommendation: Fully-populated :class:`APRecommendation` for the
             simulated scenario — including displaced-client impacts so

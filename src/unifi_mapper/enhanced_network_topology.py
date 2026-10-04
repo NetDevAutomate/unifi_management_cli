@@ -770,7 +770,7 @@ class NetworkTopology:
         """Extract location from device name.
 
         Args:
-            name: Device name (e.g., "Office Switch" or "Lounge US 8")
+            name: Device name (e.g., "Garage Switch" or "Attic US 8")
 
         Returns:
             Location name or "Core" if not found

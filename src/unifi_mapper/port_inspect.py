@@ -7,7 +7,7 @@ gear and the historical client table.
 Example:
     from unifi_mapper.port_inspect import inspect_port, resolve_switch
 
-    switch = resolve_switch(client, site, "Lounge Flex 8")
+    switch = resolve_switch(client, site, "Switch B Flex 8")
     result = inspect_port(client, site, switch, port_idx=7)
     result.render(console)
 """
