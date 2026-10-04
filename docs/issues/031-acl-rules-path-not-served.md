@@ -23,10 +23,9 @@ surface alike.
 
 ## Evidence
 
-- Under `.kiro/review-followups/live-checks/run-7ef13c2/mcp/` (git-ignored):
-  `mcp-discovery-network_api-get_acl_rules.json` and `mcp-direct-network_api-get_acl_rules.json`
-  hold the 404 payload and the one audited GET.
-- `.kiro/review-followups/live-findings.md` (L1).
+- Local evidence, not in the repo (the read-only live checks recorded at `7ef13c2`, finding
+  L1): the `get_acl_rules` results on the discovery and the direct surface hold the 404
+  payload and the one audited GET.
 - Ubiquiti's Network API reference for v10.6.102 lists the resource as
   `/v1/sites/{siteId}/acl-rules` (`GET` and `POST`), with `GET`, `PUT` and `DELETE` on
   `/v1/sites/{siteId}/acl-rules/{aclRuleId}`.
@@ -60,5 +59,5 @@ returns a reference-shaped rule through the tool. All of them failed on the old 
 
 Live after the fix (the six network tools in-process, behind their guard): `get_acl_rules`
 returned `[]` with no error, and all six tools succeeded; 11 audited GETs, 0 violations.
-Evidence (git-ignored): `.kiro/review-followups/iter2/f17/probe.json` and
-`.kiro/review-followups/iter2/network-api/f17-wip/result.json`.
+Local evidence, not in the repo: a path probe (recorded at `7ef13c2`) and the six tools'
+results (at `1f79d47`), both with the fix applied before it landed as `fb4ff9e`.

@@ -23,10 +23,9 @@ surfaces.
 
 ## Evidence
 
-- Under `.kiro/review-followups/live-checks/run-7ef13c2/mcp/` (git-ignored):
-  `mcp-discovery-network_api-get_dns_policies.json` and
-  `mcp-direct-network_api-get_dns_policies.json` hold the 404 payload and the audited GET.
-- `.kiro/review-followups/live-findings.md` (L2).
+- Local evidence, not in the repo (the read-only live checks recorded at `7ef13c2`, finding
+  L2): the `get_dns_policies` results on both surfaces hold the 404 payload and the audited
+  GET.
 - Ubiquiti's Network API reference for v10.6.102 lists the resource as
   `/v1/sites/{siteId}/dns/policies` (`GET` and `POST`), with `GET`, `PUT` and `DELETE` on
   `/v1/sites/{siteId}/dns/policies/{dnsPolicyId}`.
@@ -55,6 +54,6 @@ the GET-only guard refuses each of them before any I/O;
 returns a reference-shaped policy through the tool. All of them failed on the old path.
 
 Live after the fix: `get_dns_policies` returned `[]` with no error; 11 audited GETs for the
-site lookup and the six tools, 0 violations. Evidence (git-ignored):
-`.kiro/review-followups/iter2/f17/probe.json` and
-`.kiro/review-followups/iter2/network-api/f17-wip/result.json`.
+site lookup and the six tools, 0 violations. Local evidence, not in the repo: a path probe
+(recorded at `7ef13c2`) and the six tools' results (at `1f79d47`), both with the fix applied
+before it landed as `fb4ff9e`.

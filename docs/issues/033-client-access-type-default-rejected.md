@@ -22,10 +22,9 @@ issue 011).
 
 ## Evidence
 
-- Under `.kiro/review-followups/live-checks/run-7ef13c2/mcp/` (git-ignored):
-  `mcp-discovery-network_api-get_clients.json` and `mcp-direct-network_api-get_clients.json`:
+- Local evidence, not in the repo (the read-only live checks recorded at `7ef13c2`, finding
+  L3): the `get_clients` results on both surfaces carry
   `access.type: Input should be 'GUEST', 'USER' or 'HOTSPOT' [input_value='DEFAULT']`.
-- `.kiro/review-followups/live-findings.md` (L3).
 
 ## Impact
 
@@ -60,8 +59,9 @@ design and fails on a plain `ClientAccessType | str` (checked by swapping that i
 Live (read-only: the `get_clients` tool in-process, behind its GET-only guard, request
 audit on): 98 clients returned (31 wired, 67 wireless), every `access.type` the `DEFAULT`
 member, and no other `ClientInfo` field rejected a live value; 11 audited GETs (the site
-lookup and the six network tools), 0 violations. Evidence:
-`.kiro/review-followups/iter2/network-api/f16-wip/result.json` (git-ignored).
+lookup and the six network tools), 0 violations. Local evidence, not in the repo: the six
+tools' results, recorded on top of `7ef13c2` with the fix applied before it landed as
+`1f79d47`.
 
 Follow-up: `ClientInfo.type` had the same failure mode. Ubiquiti's reference documents
 `TELEPORT` clients, which `ClientType` (`WIRED`, `WIRELESS`, `VPN`) would have rejected, again

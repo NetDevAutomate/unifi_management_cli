@@ -33,9 +33,9 @@ taken from the orchestrator's report.
 
 ## Evidence
 
-- `.kiro/review-followups/iter2/network-api/variant-a-production/result.json` (resolver
-  status, `--check` output and the six tool results) and `variant-b-console-token/`, both
-  git-ignored.
+- Local evidence, not in the repo, recorded at `06d2f6a`: for the run with
+  `UNIFI_NETWORK_API_KEY` and the run with the console token in its place, the resolver
+  status, the `--check` output and the six tool results.
 
 ## Impact
 

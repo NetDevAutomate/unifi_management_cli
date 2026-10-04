@@ -34,12 +34,12 @@ drops data or would fail validation:
 
 ## Evidence
 
-- The reference: `.kiro/review-followups/iter2/docs/openapi-v10.6.102.json` (downloaded from
-  developer.ui.com; git-ignored).
-- Live, recorded in `.kiro/review-followups/live-checks/run-7ef13c2/` (git-ignored): the port
-  diagnostics' Integration API device details carry `state: ONLINE` and `features` and
-  `interfaces` as objects; the device list's `features` for an access point is
-  `["accessPoint"]` (`iter2/stats-path/probe.json`).
+- The reference: Ubiquiti's Network API OpenAPI document for v10.6.102, downloaded from
+  developer.ui.com (kept locally, not in the repo).
+- Live, in the read-only live checks and the device-statistics probe recorded at `7ef13c2`
+  (local evidence, not in the repo): the port diagnostics' Integration API device details
+  carry `state: ONLINE` and `features` and `interfaces` as objects; the device list's
+  `features` for an access point is `["accessPoint"]`.
 
 ## Impact
 

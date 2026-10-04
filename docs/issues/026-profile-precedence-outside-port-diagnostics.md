@@ -83,5 +83,5 @@ after. The snapshot had 81 ports with an override `portconf_id`, 0 of them diffe
 port table's (port 5 on `USW Flex XG` included), and no port used the dropped keys; replay
 verdict PASS with no changed finding or aggregate, and no live change either. The fix
 therefore changes nothing on today's network; it matters while an override's profile hasn't
-been applied, as in the fixtures. Evidence: `.kiro/review-followups/issue-026/diff.md`
-(git-ignored).
+been applied, as in the fixtures. Evidence: the replay diff, kept locally and not in the
+repo (recorded at `5d21cdc`).
