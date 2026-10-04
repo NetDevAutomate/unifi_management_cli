@@ -217,7 +217,8 @@ readiness, key names only).
 
 **Prompts.** `troubleshoot_port_link(switch, port)`, a read-only investigation of a port
 linking at the wrong speed, flapping or staying down; `plan_stp_change()`, which steers an STP
-change to the CLI (`stp analyze` → `stp report` → `stp optimize --plan` → `stp apply --plan`).
+change to the CLI (`stp analyze` → `stp report` → `stp optimize --plan` → `stp apply --plan`,
+which previews unless `--no-dry-run` is given).
 
 **Annotations.** Catalog tools carry `readOnlyHint: true` (except `snapshot_radio_config`, which
 writes a local file), `destructiveHint: false`, `openWorldHint` (false for the six STP pipeline

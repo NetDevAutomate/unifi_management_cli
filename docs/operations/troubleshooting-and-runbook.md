@@ -901,11 +901,12 @@ uv run unifi-mapper stp analyze
 uv run unifi-mapper stp optimize --dry-run
 uv run unifi-mapper stp optimize --plan reports/stp-plan.json
 
-# Apply after review during a maintenance window
-uv run unifi-mapper stp apply --plan reports/stp-plan.json
+# Apply after review during a maintenance window (stp apply previews unless --no-dry-run,
+# then asks for confirmation unless --force)
+uv run unifi-mapper stp apply --plan reports/stp-plan.json --no-dry-run
 
-# Roll back the same bundle if post-checks fail
-uv run unifi-mapper stp rollback reports/stp-plan.json
+# Roll back the same bundle if post-checks fail (also previews unless --no-dry-run)
+uv run unifi-mapper stp rollback reports/stp-plan.json --no-dry-run
 
 # Validate root, path costs, Root Guard recommendations, and 10G readiness
 uv run unifi-mapper stp validate-10g --planned-switches 2
@@ -921,7 +922,8 @@ uv run unifi-mapper stp report -o stp-report-$(date +%Y%m%d).md
 2. Run preflight: `uv run unifi-mapper stp preflight --simulate-add USW-Flex-XG:2 --uplink "Edge USW Flex XG 10G"`
 3. Generate plan: `uv run unifi-mapper stp optimize --plan reports/stp-plan.json`
 4. Confirm the expected root in the plan is the gateway-connected core switch.
-5. Apply plan: `uv run unifi-mapper stp apply --plan reports/stp-plan.json`
+5. Apply plan: `uv run unifi-mapper stp apply --plan reports/stp-plan.json --no-dry-run`
+   (without `--no-dry-run` it only previews)
 6. Verify: `stp analyze`, `stp validate-10g`, `stp guard`, and `stp diff reports/stp-baseline.json`
 7. Roll back if the wrong root is elected, uplinks block unexpectedly, or critical path-cost/counter findings appear.
 
@@ -1100,8 +1102,8 @@ The change-plan path stores both forward changes and rollback changes. If an app
 # Check current live state
 uv run unifi-mapper stp analyze
 
-# Revert using the recorded rollback bundle
-uv run unifi-mapper stp rollback reports/stp-plan.json
+# Revert using the recorded rollback bundle (previews unless --no-dry-run)
+uv run unifi-mapper stp rollback reports/stp-plan.json --no-dry-run
 
 # Verify after rollback
 uv run unifi-mapper stp analyze

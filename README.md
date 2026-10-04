@@ -148,9 +148,11 @@ unifi-mapper stp analyze
 unifi-mapper stp optimize --dry-run
 unifi-mapper stp optimize --plan reports/stp-plan.json
 
-# Apply or rollback an approved maintenance-window plan
+# Apply or roll back an approved plan in a maintenance window. Both only preview unless
+# --no-dry-run is given, and then ask for confirmation unless --force is given
 unifi-mapper stp apply --plan reports/stp-plan.json
-unifi-mapper stp rollback reports/stp-plan.json
+unifi-mapper stp apply --plan reports/stp-plan.json --no-dry-run
+unifi-mapper stp rollback reports/stp-plan.json --no-dry-run
 
 # Validate 10G readiness, guard placement, drift, and snapshots
 unifi-mapper stp validate-10g --planned-switches 2
@@ -476,8 +478,8 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `inventory update-firmware` | Update device firmware (writes) |
 | `stp analyze` | Current STP topology and root eligibility |
 | `stp optimize` | Preview or plan optimal priority changes |
-| `stp apply` | Apply an approved change plan (writes) |
-| `stp rollback` | Revert a previously applied plan (writes) |
+| `stp apply` | Apply an approved change plan (previews; writes with `--no-dry-run`) |
+| `stp rollback` | Revert a previously applied plan (previews; writes with `--no-dry-run`) |
 | `stp preflight` | Simulate adding planned switches and report expected root state |
 | `stp validate-10g` | Validate 10G readiness before adding switches |
 | `stp guard` | Guard placement checks |

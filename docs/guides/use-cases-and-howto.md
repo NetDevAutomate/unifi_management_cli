@@ -1649,13 +1649,13 @@ flowchart TD
     D --> E[stp optimize --plan stp-plan.json]
     E --> F{Maintenance window approved?}
     F -->|No| G[Stop with plan artefacts only]
-    F -->|Yes| H[stp apply --plan stp-plan.json]
+    F -->|Yes| H[stp apply --plan stp-plan.json --no-dry-run]
     H --> I[stp analyze]
     I --> J[stp validate-10g --planned-switches 2]
     J --> K[stp guard]
     K --> L[analyze vlan-coverage --required-vlans ...]
     L --> M{Any critical finding?}
-    M -->|Yes| N[stp rollback stp-plan.json]
+    M -->|Yes| N[stp rollback stp-plan.json --no-dry-run]
     M -->|No| O[stp snapshot --output post-change.json]
     O --> P[stp diff baseline.json]
 ```
@@ -1675,8 +1675,10 @@ uv run unifi-mapper stp preflight \
 uv run unifi-mapper stp optimize --dry-run
 uv run unifi-mapper stp optimize --plan reports/stp-plan.json
 
-# 4. Apply during the maintenance window
+# 4. Apply during the maintenance window: without --no-dry-run, stp apply only previews,
+#    and it asks for confirmation unless --force is given
 uv run unifi-mapper stp apply --plan reports/stp-plan.json
+uv run unifi-mapper stp apply --plan reports/stp-plan.json --no-dry-run
 
 # 5. Verify independently
 uv run unifi-mapper stp analyze
@@ -1685,7 +1687,8 @@ uv run unifi-mapper stp guard
 uv run unifi-mapper stp diff reports/stp-baseline.json
 
 # 6. Roll back if post-checks show the wrong root, blocked uplinks, or critical path/counter findings
-uv run unifi-mapper stp rollback reports/stp-plan.json
+#    (like apply, rollback previews unless --no-dry-run)
+uv run unifi-mapper stp rollback reports/stp-plan.json --no-dry-run
 ```
 
 ### 10G Expansion Readiness
