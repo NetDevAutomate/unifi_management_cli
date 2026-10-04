@@ -78,10 +78,16 @@ def test_resolve_switch_says_when_the_controller_returned_no_devices():
 def test_resolve_switch_by_ip_or_mac():
     """resolve_switch also matches on IP and MAC substrings."""
     devices = [
-        {'_id': '1', 'type': 'usw', 'name': 'A', 'ip': '192.0.2.50', 'mac': 'aa:bb:cc:dd:ee:ff'},
+        {
+            '_id': '1',
+            'type': 'usw',
+            'name': 'A',
+            'ip': '198.51.100.50',
+            'mac': 'aa:bb:cc:dd:ee:ff',
+        },
     ]
     c = _fake_client(devices)
-    assert resolve_switch(c, 'default', '192.0.2.50')['_id'] == '1'
+    assert resolve_switch(c, 'default', '198.51.100.50')['_id'] == '1'
     assert resolve_switch(c, 'default', 'AA:BB:CC')['_id'] == '1'
 
 
@@ -238,7 +244,7 @@ def test_inspect_port_end_to_end_with_mocks():
                 'mac': '02:00:fe:02:00:01',
                 'connected_at': 1768400179,
                 'last_seen': 1768400196,
-                'ip': '203.0.113.1',
+                'ip': '192.0.2.1',
             },
         },
     ]

@@ -48,7 +48,7 @@ def _switch(
         'mac': mac,
         'type': 'usw',
         'state': state,
-        'ip': '203.0.113.32',
+        'ip': '192.0.2.32',
         'uplink': {'uplink_mac': uplink_mac, 'uplink_remote_port': 2, 'type': 'wire'},
         'port_table': [
             {

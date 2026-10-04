@@ -123,12 +123,14 @@ class TestBaseDeviceHelpers:
 
     def test_parse_host_string(self) -> None:
         """Test parsing string host."""
-        assert BaseDevice._parse_host('192.0.2.100') == '192.0.2.100'  # type: ignore[reportPrivateUsage]
+        parsed = BaseDevice._parse_host('192.0.2.100')  # type: ignore[reportPrivateUsage]
+        assert parsed == '192.0.2.100'
 
     def test_parse_host_ipv4address(self) -> None:
         """Test parsing IPv4Address host."""
         host = IPv4Address('192.0.2.100')
-        assert BaseDevice._parse_host(host) == '192.0.2.100'  # type: ignore[reportPrivateUsage]
+        parsed = BaseDevice._parse_host(host)  # type: ignore[reportPrivateUsage]
+        assert parsed == '192.0.2.100'
 
     def test_parse_host_none(self) -> None:
         """Test parsing None host."""
