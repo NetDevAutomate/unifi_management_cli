@@ -64,3 +64,5 @@ the reasoning stays next to the code it explains.
 | [051](051-verify-cli-help-example-held-a-password.md) | `verify_cli`'s help example held a real-looking password, and it is in pushed history | open, decision needed |
 | [052](052-class-names-outside-the-docs-guard.md) | Class names in the docs are outside the docs-drift guard | open |
 | [053](053-mcp-counts-in-prose-match-any-registry-count.md) | A tool count in prose only has to match one of the registry's counts | open |
+| [054](054-identifier-guard-skips-public-and-link-local-addresses.md) | The identifier guard skips public IPv4 and link-local IPv6 addresses from the captures | open |
+| [055](055-env-guard-counts-a-mention-as-a-read.md) | The env-var guard counts a variable as read when any string in the code names it | open |
