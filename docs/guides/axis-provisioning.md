@@ -95,7 +95,7 @@ The configuration file defines all devices, the user accounts to provision, ONVI
 
 # User accounts to ensure exist on every device
 users:
-  - name: ataylor
+  - name: camadmin
     password: "changeme-strong-password"
     role: administrator
 
@@ -113,7 +113,7 @@ mqtt:
 
 # Device inventory
 devices:
-  - name: Camera 1
+  - name: Camera_1
     address: 198.51.100.12
     port: 80
     username: root
@@ -122,7 +122,7 @@ devices:
     model: "P3245-V"
     vendor: AXIS
     mqtt:
-      topic: "axis/Camera 1"
+      topic: "axis/camera-1"
 
   - name: Intercom
     address: 198.51.100.11
@@ -215,7 +215,7 @@ Connects to each device and checks current state, but makes no changes. Reports 
 ### Provision a Specific Device
 
 ```bash
-uv run python scripts/axis_provision.py --device Camera 1
+uv run python scripts/axis_provision.py --device Camera_1
 ```
 
 The `--device` value is matched case-insensitively against the `name` field in the config. Exits with an error if the name is not found.
@@ -254,12 +254,12 @@ uv run python scripts/axis_provision.py --config /etc/axis/production.yaml
 Each provisioning task is reported with a status indicator:
 
 ```
-Camera 1 (198.51.100.12) - P3245-V
+Camera_1 (198.51.100.12) - P3245-V
   Serial: ACCC8EXXXXXX
-  MQTT Topic: axis/Camera 1
-  o user:ataylor: User 'ataylor' already exists
+  MQTT Topic: axis/camera-1
+  o user:camadmin: User 'camadmin' already exists
   ✓ onvif:onvifuser: Created ONVIF user 'onvifuser'
-  o mqtt: MQTT already configured: mqtt://192.0.2.10:1883 topic=axis/Camera 1
+  o mqtt: MQTT already configured: mqtt://192.0.2.10:1883 topic=axis/camera-1
   Status: success
 ```
 
@@ -485,7 +485,7 @@ When the script reports `ONVIF user 'X' requires manual setup via web UI (API re
 After the manual step, re-run the provisioner with `--dry-run` to confirm the ONVIF user is now detected:
 
 ```bash
-uv run python scripts/axis_provision.py --dry-run --device Camera 1
+uv run python scripts/axis_provision.py --dry-run --device Camera_1
 ```
 
 If the ONVIF user created via the web UI is returned by the `onvifuser.cgi` API, the provisioner will detect it and report `action: none` on subsequent runs.
@@ -556,7 +556,7 @@ Before running, edit the camera list in the script:
 ```python
 cameras = [
     ("198.51.100.11", 80, "onvifuser", "***REMOVED***", "Intercom"),
-    ("198.51.100.12", 80, "onvifuser", "***REMOVED***", "Camera 1"),
+    ("198.51.100.12", 80, "onvifuser", "***REMOVED***", "Camera_1"),
 ]
 ```
 
@@ -598,7 +598,7 @@ Provides four subcommands for stream validation. Edit `CAMERAS` at the top of th
 ```python
 CAMERAS = [
     CameraConfig("Intercom", "198.51.100.11", 80, "onvif", "your-password"),
-    CameraConfig("Camera 1", "198.51.100.12", 80, "onvif", "your-password"),
+    CameraConfig("Camera_1", "198.51.100.12", 80, "onvif", "your-password"),
 ]
 ```
 

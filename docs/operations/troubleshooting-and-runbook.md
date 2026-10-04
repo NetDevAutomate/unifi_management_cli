@@ -870,7 +870,7 @@ uv run unifi-mapper stp report -o stp-report-$(date +%Y%m%d).md
 **Maintenance-window checklist**:
 
 1. Capture baseline: `uv run unifi-mapper stp snapshot --output reports/stp-baseline.json`
-2. Run preflight: `uv run unifi-mapper stp preflight --simulate-add USW-Flex-XG:2 --uplink "Xray3 USW Flex XG 10G"`
+2. Run preflight: `uv run unifi-mapper stp preflight --simulate-add USW-Flex-XG:2 --uplink "Edge USW Flex XG 10G"`
 3. Generate plan: `uv run unifi-mapper stp optimize --plan reports/stp-plan.json`
 4. Confirm the expected root in the plan is the gateway-connected core switch.
 5. Apply plan: `uv run unifi-mapper stp apply --plan reports/stp-plan.json`
@@ -1064,7 +1064,7 @@ If the rollback also fails, stop automated changes and use the UniFi UI/API to i
 ```bash
 # Locate device by name or IP
 uv run unifi-network-toolkit find device "DeviceName"
-uv run unifi-network-toolkit find ip 192.168.1.x
+uv run unifi-network-toolkit find ip 192.0.2.x
 
 # Check port connectivity to uplink device
 uv run unifi-network-toolkit analyze link-quality

@@ -122,7 +122,7 @@ Edit the file with your controller details:
 
 ```bash
 # UniFi Controller Connection
-UNIFI_URL=https://192.0.2.1          # Controller URL (no trailing slash)
+UNIFI_URL=https://192.0.2.1            # Controller URL (no trailing slash)
 UNIFI_SITE=default                      # Site name (default for most installations)
 
 # Authentication - use API token when possible
@@ -365,7 +365,7 @@ uv run unifi-network-toolkit find device "USW-Pro-24"
 
 ```bash
 uv run unifi-network-toolkit find ip 192.0.2.100
-uv run unifi-network-toolkit find ip 10.0.0.1
+uv run unifi-network-toolkit find ip 198.51.100.1
 ```
 
 **Find a device by MAC address**
@@ -390,7 +390,7 @@ When using Claude with the MCP server configured, you can ask natural-language q
 flowchart LR
     A([User has a query]) --> B{Query type?}
     B -->|Device name| C[find device 'name']
-    B -->|IP address| D[find ip 192.168.x.x]
+    B -->|IP address| D[find ip 192.0.2.x]
     B -->|MAC address| E[find mac aa:bb:cc:dd:ee:ff]
     B -->|Client path| F[client_trace via MCP]
     C --> G[Returns: name, model, IP, MAC, location]
@@ -1267,7 +1267,7 @@ Look for the hammer icon in Claude Desktop, which indicates MCP tools are availa
 | "Which switches need firmware updates?" | `get_firmware_report` |
 | "Is there a broadcast storm?" | `detect_storms` |
 | "Trace where client aa:bb:cc is connected" | `client_trace` |
-| "Check firewall rules between 10.0.0.1 and 192.0.2.1" | `firewall_check` |
+| "Check firewall rules between 198.51.100.1 and 192.0.2.1" | `firewall_check` |
 | "What VLANs exist and are they configured correctly?" | `get_networks`, `diagnose_vlans` |
 
 **Step 5: Tool discovery pattern (how the AI navigates tools)**
@@ -1639,8 +1639,8 @@ uv run unifi-mapper stp snapshot --output reports/stp-baseline.json
 # 2. Simulate planned Flex XG additions and expected root election
 uv run unifi-mapper stp preflight \
   --simulate-add USW-Flex-XG:2 \
-  --uplink "Xray3 USW Flex XG 10G" \
-  --uplink "Mike2 10G Aggregation USW Flex XG" \
+  --uplink "Edge USW Flex XG 10G" \
+  --uplink "Aggregation USW Flex XG" \
   --output reports/stp-preflight.json
 
 # 3. Generate a reversible change plan
@@ -1686,8 +1686,8 @@ Use VLAN coverage when a planned Flex XG or trunk uplink must carry known VLANs.
 ```bash
 uv run unifi-mapper analyze vlan-coverage \
   --required-vlans 1,10,20,30,40,50 \
-  --planned-uplink "Xray3 USW Flex XG 10G" \
-  --planned-uplink "Mike2 10G Aggregation USW Flex XG"
+  --planned-uplink "Edge USW Flex XG 10G" \
+  --planned-uplink "Aggregation USW Flex XG"
 ```
 
 The audit flags trunk/planned-uplink ports missing required VLANs. Access/client ports are ignored so the report stays focused on inter-switch paths.

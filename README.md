@@ -37,7 +37,7 @@ cp .env.example ~/.config/unifi_management_cli/prod.env
 **Required Settings:**
 
 ```bash
-UNIFI_URL=https://192.0.2.1           # UniFi controller URL
+UNIFI_URL=https://192.0.2.1             # UniFi controller URL
 UNIFI_SITE=default                       # Site name (usually 'default')
 UNIFI_CONSOLE_API_TOKEN=your_api_token   # Recommended authentication
 
@@ -188,8 +188,8 @@ unifi-mapper ports refresh
 unifi-mapper ports refresh --apply
 
 # Inspect a single port in depth (link state, LLDP peer, client identity, counters)
-unifi-mapper ports inspect "Hotel3 India3 USW Flex 2.5G 5" 2
-unifi-mapper ports inspect "Hotel3 India3 USW Flex 2.5G 5" 2 --json
+unifi-mapper ports inspect "Access USW Flex 2.5G 5" 2
+unifi-mapper ports inspect "Access USW Flex 2.5G 5" 2 --json
 ```
 
 `ports inspect` resolves the switch by name, model, IP or MAC and reports everything the
@@ -225,8 +225,8 @@ Down ports are reverted to their default (`Port N`): a label naming hardware tha
 
 | Guard | Prevents |
 |-------|----------|
-| Weak-label protection | `Google Streamer 4K` → `02:00:fe:02:00:0f` when a client stops reporting a hostname |
-| Name ranking | A raw MAC representing a multi-client port instead of `Hotel3-Apple-TV +2` |
+| Weak-label protection | `Google Streamer 4K` → `02:00:00:00:00:01` when a client stops reporting a hostname |
+| Name ranking | A raw MAC representing a multi-client port instead of `Media-Player +2` |
 | Cosmetic-change skip | Churn such as `AI-Port` → `AI Port` |
 | `+N` flap suppression | A device that comes and goes oscillating the multi-client counter every run |
 
@@ -257,7 +257,7 @@ unifi-mapper ports diagnose "Office Flex XG" 5 --compare-profile "Access 10G" --
 
 Every diagnostic command accepts `--json`, resolves the switch by exact name or MAC
 before trying a partial name (so `"USW Flex XG"` is not confused with
-`"Hotel3 USW Flex XG 10G"`), and takes any switch and any port index.
+`"Core USW Flex XG 10G"`), and takes any switch and any port index.
 
 They are read-only by construction, not by convention: after login the client's HTTP
 session is wrapped by a transport guard that allows `GET` (except `cmd/` and `upd/`
@@ -717,7 +717,7 @@ uv run python scripts/axis_provision.py
 uv run python scripts/axis_provision.py --dry-run
 
 # Provision specific device
-uv run python scripts/axis_provision.py --device Camera 1
+uv run python scripts/axis_provision.py --device Camera_1
 
 # Enable debug logging
 uv run python scripts/axis_provision.py --debug
