@@ -6,35 +6,23 @@ Usage:
     uv run python scripts/onvif_stream.py streams       # List all stream URIs
     uv run python scripts/onvif_stream.py snapshot      # Capture snapshots
     uv run python scripts/onvif_stream.py test-rtsp     # Test RTSP connectivity
+
+Each command runs against every camera in ONVIF_CAMERAS (NAME=HOST[:PORT],...) with the
+ONVIF_USERNAME and ONVIF_PASSWORD account. Keep them in a file outside the repository and
+pass it with "uv run --env-file FILE python scripts/onvif_stream.py ...". The script stops
+before connecting to any camera if one of them is unset.
 """
 
 import asyncio
 import onvif
 import os
 import sys
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
 from onvif import ONVIFCamera
+from onvif_config import CameraConfig, ConfigError, load_cameras
 
 
 WSDL_DIR = os.path.join(os.path.dirname(onvif.__file__), 'wsdl')
-
-
-@dataclass
-class CameraConfig:
-    """ONVIF camera connection settings."""
-
-    name: str
-    ip: str
-    port: int
-    user: str
-    password: str
-
-
-# Camera configurations
-CAMERAS = [
-    CameraConfig('Intercom', '198.51.100.11', 80, 'onvif', '***REMOVED***'),
-    CameraConfig('Camera 1', '198.51.100.12', 80, 'onvif', '***REMOVED***'),
-]
 
 
 async def get_camera(config: CameraConfig) -> ONVIFCamera:
@@ -217,34 +205,34 @@ async def test_rtsp(config: CameraConfig):
         print(f'  ❌ Failed: {e}')
 
 
-async def main():
+COMMANDS: dict[str, Callable[[CameraConfig], Awaitable[None]]] = {
+    'info': show_info,
+    'streams': list_streams,
+    'snapshot': capture_snapshot,
+    'test-rtsp': test_rtsp,
+}
+
+
+async def main() -> None:
     """Run the ONVIF stream test CLI."""
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)
 
     command = sys.argv[1].lower()
-
-    if command == 'info':
-        for cam in CAMERAS:
-            await show_info(cam)
-
-    elif command == 'streams':
-        for cam in CAMERAS:
-            await list_streams(cam)
-
-    elif command == 'snapshot':
-        for cam in CAMERAS:
-            await capture_snapshot(cam)
-
-    elif command == 'test-rtsp':
-        for cam in CAMERAS:
-            await test_rtsp(cam)
-
-    else:
+    action = COMMANDS.get(command)
+    if action is None:
         print(f'Unknown command: {command}')
         print(__doc__)
         sys.exit(1)
+
+    try:
+        cameras = load_cameras()
+    except ConfigError as e:
+        sys.exit(f'onvif_stream.py: {e}')
+
+    for cam in cameras:
+        await action(cam)
 
 
 if __name__ == '__main__':

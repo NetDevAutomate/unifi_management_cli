@@ -11,7 +11,7 @@ Primary responsibilities:
 - Read desired camera/device configuration from YAML.
 - Reconcile supported AXIS settings through VAPIX and modern JSON APIs.
 - Configure MQTT where firmware exposes a supported API.
-- Test ONVIF streams and snapshots where credentials are already available.
+- Test ONVIF streams and snapshots with the account and camera list from the `ONVIF_*` environment variables.
 - Respect firmware limitations where AXIS has removed legacy VAPIX user-management endpoints.
 
 ## Component Diagram
@@ -25,9 +25,11 @@ C4Component
     Container_Boundary(scripts, "AXIS Scripts") {
         Component(axis_provision, "scripts/axis_provision.py", "Python", "Reads YAML desired state and reconciles supported AXIS settings")
         Component(onvif_stream, "scripts/onvif_stream.py", "Python / ONVIF", "Tests ONVIF profiles, stream URIs, and snapshots")
+        Component(onvif_config, "scripts/onvif_config.py", "Python", "Reads ONVIF_USERNAME, ONVIF_PASSWORD and ONVIF_CAMERAS; stops the run if one is unset")
         Component(axis_config, "~/.config/axiscam/config.yaml", "YAML", "Desired device inventory, credentials, MQTT, and ONVIF settings")
     }
 
+    System_Ext(onvif_env, "ONVIF_* environment", "ONVIF account and camera list, e.g. from a file outside the repo through uv run --env-file")
     System_Ext(axis_device, "AXIS Camera / Device", "VAPIX, JSON API, ONVIF")
     System_Ext(mqtt_broker, "MQTT Broker", "MQTT")
     System_Ext(operator_ui, "AXIS Web UI", "Manual ONVIF user fallback on newer firmware")
@@ -37,6 +39,8 @@ C4Component
     Rel(axis_provision, axis_config, "Reads desired state")
     Rel(axis_provision, axis_device, "Applies supported settings", "HTTPS VAPIX / JSON API")
     Rel(axis_provision, mqtt_broker, "Configures device MQTT target indirectly", "device-side MQTT")
+    Rel(onvif_stream, onvif_config, "Loads cameras and account before connecting")
+    Rel(onvif_config, onvif_env, "Reads")
     Rel(onvif_stream, axis_device, "Reads profiles and snapshot URI", "ONVIF / HTTP")
     Rel(admin, operator_ui, "Creates ONVIF users when firmware blocks API automation")
 ```

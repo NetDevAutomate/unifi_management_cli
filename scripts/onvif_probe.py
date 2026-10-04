@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """Probe ONVIF cameras with onvif-zeep-async: device info, capabilities and stream URIs.
 
-A live-camera probe, not a pytest test: it connects to the cameras listed in ``main()``.
+A live-camera probe, not a pytest test: it connects to every camera in ``ONVIF_CAMERAS``
+with the ``ONVIF_USERNAME`` and ``ONVIF_PASSWORD`` account (see ``onvif_config.py``), and
+stops before connecting to any camera if one of them is unset::
+
+    uv run --env-file ~/.config/axiscam/onvif.env python scripts/onvif_probe.py
 """
 
 import asyncio
 import onvif
 import os
+import sys
 from onvif import ONVIFCamera
+from onvif_config import ConfigError, load_cameras
 
 
 # WSDL files are bundled with the onvif package
@@ -76,18 +82,18 @@ async def probe_camera(ip: str, port: int, user: str, password: str) -> bool:
 
 
 async def main() -> None:
-    """Probe both cameras."""
-    cameras = [
-        ('198.51.100.11', 80, 'onvifuser', '***REMOVED***', 'Intercom'),
-        ('198.51.100.12', 80, 'onvifuser', '***REMOVED***', 'Camera 1'),
-    ]
+    """Probe every camera in ``ONVIF_CAMERAS``."""
+    try:
+        cameras = load_cameras()
+    except ConfigError as e:
+        sys.exit(f'onvif_probe.py: {e}')
 
     results = {}
-    for ip, port, user, password, name in cameras:
+    for cam in cameras:
         print(f'\n{"#" * 60}')
-        print(f'# {name}')
+        print(f'# {cam.name}')
         print('#' * 60)
-        results[name] = await probe_camera(ip, port, user, password)
+        results[cam.name] = await probe_camera(cam.ip, cam.port, cam.user, cam.password)
 
     print(f'\n{"=" * 60}')
     print('SUMMARY')

@@ -1640,7 +1640,8 @@ The async `core/` and `protect/` stacks use separate exception classes (`ToolErr
 | `audit_port_labels.py` | Read-only census explaining why `ports refresh` proposes few changes |
 | `verify_format_safety.py` | Checks that a formatting sweep changed no code semantics |
 | `axis_provision.py` | AXIS camera and device provisioning from `~/.config/axiscam/config.yaml` (writes to the devices; see the [AXIS guide](../guides/axis-provisioning.md)) |
-| `onvif_probe.py`, `onvif_stream.py` | ONVIF camera probes and stream tests; both name the site's own cameras ([issue 041](../issues/041-onvif-scripts-hard-code-cameras.md)) |
+| `onvif_probe.py`, `onvif_stream.py` | ONVIF camera probes and stream tests. Neither keeps a camera address, name or credential in the source: both load them through `onvif_config.py` and stop before connecting if one is unset ([issue 041](../issues/041-onvif-scripts-hard-code-cameras.md)) |
+| `onvif_config.py` | Reads the ONVIF account and camera list from `ONVIF_USERNAME`, `ONVIF_PASSWORD` and `ONVIF_CAMERAS` (`NAME=HOST[:PORT]`, comma-separated); imports nothing from the ONVIF library |
 | `apply_ap_tx_power_auto.py` | Releases a manual 5 GHz transmit power back to the controller's auto mode (writes, through `apply_radio_config`) |
 | `apply_ap_channel_plan.py`, `apply_stp_priorities_custom.py`, `remediate_stp_post_apply.py` | One-off controller changes for this site (channel plan, STP priorities, post-apply STP remediation). They write to the controller and target its devices by name ([issue 046](../issues/046-real-device-names-in-code-and-history.md)) |
 

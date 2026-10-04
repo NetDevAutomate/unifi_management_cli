@@ -547,23 +547,46 @@ If all four methods fail to confirm ONVIF support, the device is treated as non-
 Two scripts are provided to validate ONVIF integration after provisioning. Both connect to
 real cameras, so neither is part of the pytest suite.
 
+#### Camera List and Credentials
+
+Neither script keeps a camera address, name or password in the repository. Both read three
+environment variables, through `scripts/onvif_config.py`:
+
+| Variable | Value |
+| --- | --- |
+| `ONVIF_USERNAME` | The ONVIF account on the cameras (an `onvif.users` entry in the config above) |
+| `ONVIF_PASSWORD` | That account's password |
+| `ONVIF_CAMERAS` | Comma-separated `NAME=HOST[:PORT]` entries; the port defaults to 80 |
+
+Keep them in a file outside the repository, for example `~/.config/axiscam/onvif.env`.
+Create it with an editor rather than a shell command, so the password stays out of your
+shell history:
+
+```bash
+ONVIF_USERNAME=onvifuser
+ONVIF_PASSWORD=<password>
+ONVIF_CAMERAS='Intercom=198.51.100.11,Camera_1=198.51.100.12'
+```
+
+Then make it readable only by you, and pass it to each run with `uv run --env-file`:
+
+```bash
+chmod 600 ~/.config/axiscam/onvif.env
+uv run --env-file ~/.config/axiscam/onvif.env python scripts/onvif_probe.py
+```
+
+If a variable is unset or empty, or an `ONVIF_CAMERAS` entry is malformed, the script exits
+with status 1 before it connects to any camera, and the message names what to set (never the
+password). `unifi-mapper` and `unifi-mcp` don't read these variables.
+
 #### Basic ONVIF Probe (`onvif_probe.py`)
 
-Tests connection, retrieves device information, enumerates capabilities, and lists media profiles with stream URIs.
-
-Before running, edit the camera list in the script:
-
-```python
-cameras = [
-    ("198.51.100.11", 80, "onvifuser", "***REMOVED***", "Intercom"),
-    ("198.51.100.12", 80, "onvifuser", "***REMOVED***", "Camera_1"),
-]
-```
+Tests connection, retrieves device information, enumerates capabilities, and lists media profiles with stream URIs, for every camera in `ONVIF_CAMERAS`.
 
 Run:
 
 ```bash
-uv run python scripts/onvif_probe.py
+uv run --env-file ~/.config/axiscam/onvif.env python scripts/onvif_probe.py
 ```
 
 Expected successful output:
@@ -593,29 +616,20 @@ Media Profiles (2):
 
 #### Stream and Snapshot Test (`onvif_stream.py`)
 
-Provides four subcommands for stream validation. Edit `CAMERAS` at the top of the script to match your environment before running:
-
-```python
-CAMERAS = [
-    CameraConfig("Intercom", "198.51.100.11", 80, "onvif", "your-password"),
-    CameraConfig("Camera_1", "198.51.100.12", 80, "onvif", "your-password"),
-]
-```
-
-Available subcommands:
+Provides four subcommands for stream validation. Each runs against every camera in `ONVIF_CAMERAS`, as the `ONVIF_USERNAME` account:
 
 ```bash
 # Display device information (manufacturer, model, firmware, serial)
-uv run python scripts/onvif_stream.py info
+uv run --env-file ~/.config/axiscam/onvif.env python scripts/onvif_stream.py info
 
 # List all stream URIs for each media profile
-uv run python scripts/onvif_stream.py streams
+uv run --env-file ~/.config/axiscam/onvif.env python scripts/onvif_stream.py streams
 
 # Capture a JPEG snapshot from each camera (saved to /tmp/)
-uv run python scripts/onvif_stream.py snapshot
+uv run --env-file ~/.config/axiscam/onvif.env python scripts/onvif_stream.py snapshot
 
 # Test RTSP connectivity using ffprobe (requires ffmpeg installed)
-uv run python scripts/onvif_stream.py test-rtsp
+uv run --env-file ~/.config/axiscam/onvif.env python scripts/onvif_stream.py test-rtsp
 ```
 
 #### AXIS XAddr Localhost Bug
@@ -645,7 +659,9 @@ rtsp://198.51.100.12/axis-media/media.amp?videocodec=h264
 rtsp://onvifuser:***REMOVED***@198.51.100.12/axis-media/media.amp?videocodec=h264
 ```
 
-The `streams` subcommand prints both forms for convenience.
+The `streams` subcommand prints both forms for convenience, and `test-rtsp` prints the
+authenticated form. That form carries `ONVIF_PASSWORD`, so keep this output out of tickets and
+shared logs.
 
 ---
 
@@ -705,7 +721,7 @@ If the debug output shows `status=401`, the credential in the config is wrong. I
 
 **ONVIF probe script fails with `[Errno 111] Connection refused` on port 80**
 
-The `onvif_probe.py` and `onvif_stream.py` scripts connect to port 80 by default. Some AXIS camera models redirect HTTP to HTTPS. Check whether the device is accessible on port 443 and update the port value in the script's camera list accordingly.
+The `onvif_probe.py` and `onvif_stream.py` scripts connect to port 80 by default. Some AXIS camera models redirect HTTP to HTTPS. Check whether the device is accessible on port 443 and, if so, give that camera's `ONVIF_CAMERAS` entry the port (`NAME=HOST:443`).
 
 **ONVIF `GetStreamUri` returns `127.0.0.1` in the RTSP URI**
 
