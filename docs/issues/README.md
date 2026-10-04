@@ -54,3 +54,6 @@ the reasoning stays next to the code it explains.
 | [041](041-onvif-scripts-hard-code-cameras.md) | The ONVIF scripts hard-code the site's cameras, and `onvif_stream.py` a camera password | open, decision needed |
 | [042](042-settings-with-no-effect.md) | Five documented settings have no effect on `unifi-mapper` | open, decision needed |
 | [043](043-inventory-ignores-the-root-config.md) | `unifi-mapper inventory` ignores the root `--config` and `UNIFI_CONFIG` | open |
+| [044](044-discover-mermaid-and-dot-write-a-placeholder.md) | `discover --format mermaid` and `--format dot` write a placeholder, not a diagram | open, decision needed |
+| [045](045-configure-logging-is-never-called.md) | `configure_logging` is never called, so `UNIFI_MAPPER_DEBUG` does nothing | open, decision needed |
+| [046](046-real-device-names-in-code-and-history.md) | Tests, scripts and unpushed commits carry device names from the live network | open, decision needed |
