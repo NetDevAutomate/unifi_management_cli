@@ -520,7 +520,7 @@ classDiagram
 
 ### 6.2 `enhanced_api_client.py`
 
-**Purpose.** A second-generation synchronous client that adds automatic device provisioning (`force-provision`) after port updates and enhanced per-port verification. Intended to supersede `api_client.py` for the port-naming workflow.
+**Purpose.** A second synchronous client (it does not subclass `UnifiApiClient`) that adds automatic device provisioning (`force-provision`) after port updates and enhanced per-port verification. `unifi-network-toolkit` uses it for its `analyze`, `diagnose` and `find` commands, through `ToolkitAdapter`.
 
 **Key class.** `EnhancedUnifiApiClient`
 
@@ -533,7 +533,7 @@ classDiagram
 
 **Key difference from `api_client.py`.** This client checks `meta.rc` in the JSON response body (not just HTTP status) to detect silent API failures that return `200 OK` with an error payload.
 
-**Dependencies.** `exceptions.py`, `requests`, `httpx`
+**Dependencies.** `exceptions.py`, `requests`
 
 ---
 
@@ -1574,7 +1574,7 @@ sequenceDiagram
     TOOL-->>RUN: STPTopology model
     RUN->>RUN: mask secrets, package the envelope
     RUN-->>MCP: CallToolResult
-    MCP-->>Agent: {"ok": true, "result": ...}
+    MCP-->>Agent: ok envelope with the result
 ```
 
 **MCP interface layers.**
