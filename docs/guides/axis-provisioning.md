@@ -54,11 +54,8 @@ Required packages (installed automatically via `uv sync`):
 - `httpx` - Async HTTP client with Digest authentication support
 - `pyyaml` - YAML config parsing
 
-For the ONVIF scripts (`onvif_probe.py`, `onvif_stream.py`), an additional package is required:
-
-```bash
-uv add onvif-zeep-async
-```
+The ONVIF scripts (`onvif_probe.py`, `onvif_stream.py`) also need `onvif-zeep-async`. It is
+a core dependency of the project, so `uv sync` installs it too; there is nothing to add.
 
 For RTSP stream testing, `ffprobe` (part of `ffmpeg`) must be available on the system PATH:
 
