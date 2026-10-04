@@ -7,8 +7,11 @@ from ``docs/artefacts/``, and ``scripts/*.sh``), offline and without a controlle
 - every documented ``unifi-mapper``, ``unifi-inventory``, ``unifi-network-toolkit`` and
   ``unifi-mcp`` invocation resolves to a real command, every option exists on that command,
   and no root shortcut flag sits before a subcommand that refuses it (exit 2);
-- MCP tool names, ``unifi://`` resources and prompts exist, and tool counts, the category
-  tables and the MCP guide's tool index equal what ``ToolRegistry()`` holds;
+- MCP tool names, ``unifi://`` resources and prompts exist. The category table rows, the
+  tool index, the surface sums, the "Of the N" split sentence and the ``--check`` output equal
+  what ``ToolRegistry()`` holds; any other tool count in an MCP line only has to equal one of
+  the registry's counts (``McpFacts.valid``), so a stale total that matches a category's count
+  can pass;
 - the ``diagnose all`` check count and list match ``typer_cli.diagnose_all``;
 - relative links and ``#anchors`` resolve, and no doc names a machine-local path;
 - every ``UNIFI_*``, ``PROTECT_*`` and ``XDG_*`` variable a doc names is read by the code;
@@ -39,12 +42,14 @@ import re
 import shlex
 import subprocess
 import typer
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
+from tests.markdown_blocks import code_blocks
 from unifi_mapper.inventory_cli import inventory_app
 from unifi_mapper.mcp import server as mcp_server
 from unifi_mapper.mcp.catalog import is_direct
-from unifi_mapper.mcp.registry import CREDENTIAL_FAMILIES, ToolRegistry
+from unifi_mapper.mcp.registry import CREDENTIAL_FAMILIES, ToolMetadata, ToolRegistry
 from unifi_mapper.network_cli import create_main_parser
 from unifi_mapper.typer_cli import app
 
@@ -52,6 +57,9 @@ from unifi_mapper.typer_cli import app
 REPO = Path(__file__).resolve().parent.parent
 HISTORICAL = ('docs/issues/', 'docs/solutions/')
 MCP_GUIDE = 'docs/mcp-server/MCP_SERVER_GUIDE.md'
+
+# Every test here is offline by design; block_network fails any test that reaches a network.
+pytestmark = pytest.mark.usefixtures('block_network')
 
 # Each tree maps a command path ('' is the program itself) to (is a group, {option: takes a
 # value}).
@@ -65,7 +73,9 @@ Tree = dict[str, tuple[bool, dict[str, bool]]]
 
 @functools.cache
 def _tracked() -> frozenset[str]:
-    """Return every path in the git index."""
+    """Return every path in the git index; skip outside a git checkout (an sdist, say)."""
+    if not (REPO / '.git').exists():
+        pytest.skip('not a git checkout: the docs guard reads the git index')
     out = subprocess.run(
         ['git', 'ls-files'], cwd=REPO, capture_output=True, text=True, check=True
     ).stdout
@@ -99,36 +109,6 @@ def _current_docs() -> dict[str, str]:
 def _all_problems(docs: Mapping[str, str], detector: Callable[[str, str], list[str]]) -> list[str]:
     """Run one ``(path, text)`` detector over a set of docs."""
     return [problem for path, text in docs.items() for problem in detector(path, text)]
-
-
-FENCE_OPEN = re.compile(r'(`{3,}|~{3,})([^`]*)$')
-
-
-def code_blocks(text: str) -> Iterator[tuple[int, str, list[str]]]:
-    """Yield ``(first body line, info string, body lines)`` for each fenced code block.
-
-    Args:
-        text: Markdown text.
-
-    Yields:
-        One tuple per block, line numbers 1-based. A fence that is never closed runs to the
-        end of the text, as in CommonMark.
-    """
-    fence: str | None = None
-    info, start, body = '', 0, []
-    for n, line in enumerate(text.splitlines(), 1):
-        stripped = line.strip()
-        if fence is None:
-            opening = FENCE_OPEN.match(stripped)
-            if opening:
-                fence, info, start, body = opening.group(1), opening.group(2).strip(), n + 1, []
-        elif stripped.startswith(fence) and not stripped.strip(fence[0]):
-            yield start, info, body
-            fence = None
-        else:
-            body.append(line)
-    if fence is not None:
-        yield start, info, body
 
 
 def _code_lines(text: str) -> set[int]:
@@ -408,8 +388,27 @@ def _registry() -> ToolRegistry:
     return ToolRegistry()
 
 
+@dataclass(frozen=True)
+class McpFacts:
+    """The MCP numbers the docs may state, computed from the registry by ``_facts()``.
+
+    ``valid`` holds every count a free-text claim may equal: the total, a category, a surface,
+    the meta-tools, the mutating and pipeline tools, the category count and the open-world and
+    non-idempotent tools. The exact checks use the named fields.
+    """
+
+    total: int
+    categories: dict[str, int]
+    mutating: int
+    pipeline: int
+    direct_catalog: int
+    meta_tools: int
+    direct_listed: int
+    valid: frozenset[int]
+
+
 @functools.cache
-def _facts() -> dict[str, object]:
+def _facts() -> McpFacts:
     """Return the MCP numbers the docs may state, computed from the registry."""
     registry = _registry()
     metas = {
@@ -418,28 +417,30 @@ def _facts() -> dict[str, object]:
     categories = {c: len(v) for c, v in registry.get_categories().items()}
     direct = sum(1 for m in metas.values() if is_direct(m))
     meta_tools = len(mcp_server.META_TOOLS)
-    facts: dict[str, object] = {
-        'total': len(metas),
-        'categories': categories,
-        'mutating': sum(1 for m in metas.values() if m.mutates),
-        'pipeline': sum(1 for m in metas.values() if m.pipeline),
-        'direct_catalog': direct,
-        'meta_tools': meta_tools,
-        'direct_listed': direct + meta_tools,
-    }
-    facts['valid'] = {
-        facts['total'],
+    mutating = sum(1 for m in metas.values() if m.mutates)
+    pipeline = sum(1 for m in metas.values() if m.pipeline)
+    valid = {
+        len(metas),
         direct,
         direct + meta_tools,
         meta_tools,
-        facts['mutating'],
-        facts['pipeline'],
+        mutating,
+        pipeline,
         len(categories),
         *categories.values(),
         sum(1 for m in metas.values() if not m.open_world),
         sum(1 for m in metas.values() if not m.idempotent),
     }
-    return facts
+    return McpFacts(
+        total=len(metas),
+        categories=categories,
+        mutating=mutating,
+        pipeline=pipeline,
+        direct_catalog=direct,
+        meta_tools=meta_tools,
+        direct_listed=direct + meta_tools,
+        valid=frozenset(valid),
+    )
 
 
 @functools.cache
@@ -455,7 +456,8 @@ def _known_names() -> frozenset[str]:
         names |= set(re.findall(r'^\s*([a-z_][a-z0-9_]*)\s*[:=]', source, re.M))
         names.add(path.stem)
     for manifest in (REPO / 'src/unifi_mapper/mcp/manifests').glob('*.yaml'):
-        names |= set(re.findall(r'^\s{6,}([a-z_][a-z0-9_]*):', manifest.read_text(), re.M))
+        text = manifest.read_text(encoding='utf-8')
+        names |= set(re.findall(r'^\s{6,}([a-z_][a-z0-9_]*):', text, re.M))
     return frozenset(names)
 
 
@@ -496,7 +498,7 @@ def _line_of(text: str, offset: int) -> int:
     return text.count('\n', 0, offset) + 1
 
 
-def mcp_count_problems(path: str, text: str, facts: Mapping[str, object]) -> list[str]:
+def mcp_count_problems(path: str, text: str, facts: McpFacts) -> list[str]:
     """Return ``path:line: problem`` for each MCP count that the registry doesn't support.
 
     Checks tool and category counts in MCP lines, category table rows, the tool index's
@@ -510,9 +512,7 @@ def mcp_count_problems(path: str, text: str, facts: Mapping[str, object]) -> lis
     Returns:
         The problems in file order.
     """
-    valid = facts['valid']
-    categories = facts['categories']
-    assert isinstance(valid, set) and isinstance(categories, dict)
+    valid, categories = facts.valid, facts.categories
     problems = []
     for n, line in enumerate(text.splitlines(), 1):
         if 'mcp' in path.lower() or 'MCP' in line or 'tool' in line.lower():
@@ -528,21 +528,21 @@ def mcp_count_problems(path: str, text: str, facts: Mapping[str, object]) -> lis
                 problems.append(f'{path}:{n}: {m.group(1)} has {categories[m.group(1)]} tools')
         for m in SURFACE_SUM.finditer(line):
             numbers = tuple(int(g) for g in m.groups())
-            expected = (facts['direct_listed'], facts['meta_tools'], facts['direct_catalog'])
+            expected = (facts.direct_listed, facts.meta_tools, facts.direct_catalog)
             if numbers != expected:
                 problems.append(f'{path}:{n}: surface sum {m.group(0)} should be {expected}')
-    expected = (facts['total'], facts['mutating'], facts['pipeline'], facts['direct_catalog'])
+    expected = (facts.total, facts.mutating, facts.pipeline, facts.direct_catalog)
     for m in SPLIT_SENTENCE.finditer(text):
         if tuple(int(g) for g in m.groups()) != expected:
             problems.append(f'{path}:{_line_of(text, m.start())}: split should be {expected}')
-    expected = (facts['total'], facts['meta_tools'], facts['direct_listed'])
+    expected = (facts.total, facts.meta_tools, facts.direct_listed)
     for m in CHECK_OUTPUT.finditer(text):
         if tuple(int(g) for g in m.groups()) != expected:
             problems.append(f'{path}:{_line_of(text, m.start())}: --check should be {expected}')
     return problems
 
 
-def _marks(meta: object) -> str:
+def _marks(meta: ToolMetadata) -> str:
     """Return the tool index's marks column for one tool."""
     marks = [
         label
@@ -633,8 +633,7 @@ def test_mcp_detectors_report_unknown_names_resources_and_counts() -> None:
         'demo.md:1: unknown resource unifi://no/such/thing',
     ]
     facts = _facts()
-    total, listed, meta = facts['total'], facts['direct_listed'], facts['meta_tools']
-    assert isinstance(total, int) and isinstance(listed, int) and isinstance(meta, int)
+    total, listed, meta = facts.total, facts.direct_listed, facts.meta_tools
     text = (
         f'The MCP server registers {total + 100} tools in two categories.\n'
         '| analysis | 1 |\n'
@@ -665,12 +664,11 @@ def test_tool_index_detector_reports_a_missing_tool_and_a_wrong_column() -> None
     ]
 
 
-@pytest.mark.usefixtures('block_network')
 def test_documented_mcp_names_resources_and_counts_match_the_server() -> None:
     """Names, URIs and counts in the current docs come from the registry and the server."""
     facts = _facts()
     listed = anyio.run(mcp_server.create_server('direct').list_tools)
-    assert len(listed) == facts['direct_listed'] == facts['direct_catalog'] + facts['meta_tools']
+    assert len(listed) == facts.direct_listed == facts.direct_catalog + facts.meta_tools
     docs = _current_docs()
     claims = sum(len(COUNT.findall(t)) for t in docs.values())
     assert claims > 20, f'found only {claims} count claims: has the wording moved?'
@@ -989,9 +987,7 @@ PRIVATE_NETWORKS = tuple(
 # local captures; the same allowlist as the local privacy check. A string joins only after a
 # check that it is a product or factory string, never a site name (a room, owner or place).
 GENERIC_NAMES = frozenset({'Dream Machine Pro Max', 'US 8 60W', 'U6 LR', 'PoE Out + Data'})
-GENERIC_NAME = re.compile(
-    r'^(Port \d+|default|LAN|WAN\d?|Default|Internal|Guest|IoT|Management)$', re.I
-)
+GENERIC_NAME = re.compile(r'^(Port \d+|default|LAN|WAN\d?|Internal|Guest|IoT|Management)$', re.I)
 
 
 def mac_problems(path: str, text: str) -> list[str]:

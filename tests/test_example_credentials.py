@@ -19,6 +19,7 @@ its ONVIF scripts stopped holding the cameras' credentials (``15b0f60``, issue 0
 from __future__ import annotations
 
 import io
+import pytest
 import re
 import subprocess
 import tokenize
@@ -65,7 +66,13 @@ def password_examples(path: str, text: str) -> list[str]:
 
 
 def _tracked_sources() -> list[Path]:
-    """Return every tracked Python file under ``src/`` and ``scripts/``."""
+    """Return every tracked Python file under ``src/`` and ``scripts/``.
+
+    Skips the calling test outside a git checkout (an sdist, say): the list comes from the
+    git index.
+    """
+    if not (REPO / '.git').exists():
+        pytest.skip('not a git checkout: the scan reads the git index')
     out = subprocess.run(
         ['git', 'ls-files', '--', 'src/*.py', 'scripts/*.py'],
         cwd=REPO,
@@ -77,6 +84,7 @@ def _tracked_sources() -> list[Path]:
 
 
 def test_scan_reports_a_password_in_a_usage_example() -> None:
+    """Each password shape the scan exists for is reported at its own line."""
     value = 'x' * 8  # assembled at run time, so this file holds no password-looking literal
     source = (
         f'EPILOG = """\n  tool --user admin --password {value}\n"""\n'
@@ -94,6 +102,7 @@ def test_scan_reports_a_password_in_a_usage_example() -> None:
 
 
 def test_scan_allows_placeholders_and_ignores_code() -> None:
+    """Placeholders, variables, empty values and real code are never reported."""
     source = (
         'EPILOG = "tool --password \'<password>\' or --password $UNIFI_PASSWORD"\n'
         'DOC = \'Client(password=SecretStr("<password>")) or password={password}\'\n'
@@ -104,6 +113,7 @@ def test_scan_allows_placeholders_and_ignores_code() -> None:
 
 
 def test_no_usage_example_in_src_or_scripts_shows_a_password() -> None:
+    """No tracked file under ``src/`` or ``scripts/`` shows a password in an example."""
     sources = _tracked_sources()
     assert len(sources) > 100, f'found only {len(sources)} tracked files under src/ and scripts/'
     assert any(path.parent.name == 'scripts' for path in sources)

@@ -22,6 +22,7 @@ import re
 import typer
 from collections.abc import Iterator
 from pathlib import Path
+from tests.markdown_blocks import code_blocks
 from unifi_mapper.typer_cli import app
 
 
@@ -51,33 +52,6 @@ def _registered_commands(t: typer.Typer, prefix: str = '') -> set[str]:
     return found
 
 
-def _code_blocks(text: str) -> Iterator[tuple[str, list[str]]]:
-    """Yield ``(info string, lines)`` for each fenced code block in ``text``.
-
-    Pairs every opening fence with its own closing fence whatever the info string
-    (``bash``, ``text``, ``json`` ...). A regex that only knows ``bash`` blocks pairs a
-    ``text`` block's closing fence with the next block's opening fence, which silently
-    turns every later block inside out. A fence that is never closed runs to the end of
-    the document, as in CommonMark, so its commands are still checked.
-    """
-    fence: str | None = None
-    info = ''
-    body: list[str] = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if fence is None:
-            opening = re.match(r'(`{3,}|~{3,})([^`]*)$', stripped)
-            if opening:
-                fence, info, body = opening.group(1), opening.group(2).strip(), []
-        elif stripped.startswith(fence) and not stripped.strip(fence[0]):
-            yield info, body
-            fence = None
-        else:
-            body.append(line)
-    if fence is not None:
-        yield info, body
-
-
 def _documented_commands() -> set[str]:
     """Extract unifi-mapper command paths from README fenced code blocks.
 
@@ -87,7 +61,7 @@ def _documented_commands() -> set[str]:
     """
     text = README.read_text(encoding='utf-8')
     documented: set[str] = set()
-    for info, block in _code_blocks(text):
+    for _start, info, block in code_blocks(text):
         if info not in ('', 'bash', 'sh'):
             continue
         for line in block:
@@ -113,25 +87,25 @@ def _documented_commands() -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_code_blocks_pair_fences_whatever_the_info_string():
+def test_code_blocks_pair_fences_whatever_the_info_string() -> None:
     """A ``text`` block must not swallow the next ``bash`` block, as the old regex let it."""
     text = '```text\nnot a command\n```\n\nprose\n\n```bash\nunifi-mapper ports refresh\n```\n'
-    assert list(_code_blocks(text)) == [
-        ('text', ['not a command']),
-        ('bash', ['unifi-mapper ports refresh']),
+    assert list(code_blocks(text)) == [
+        (2, 'text', ['not a command']),
+        (8, 'bash', ['unifi-mapper ports refresh']),
     ]
 
 
-def test_code_blocks_run_an_unclosed_fence_to_the_end():
+def test_code_blocks_run_an_unclosed_fence_to_the_end() -> None:
     """A last fence that is never closed is still a block, so its commands are checked."""
     text = '```bash\nunifi-mapper version\n```\n\n```sh\nunifi-mapper ports refresh\n'
-    assert list(_code_blocks(text)) == [
-        ('bash', ['unifi-mapper version']),
-        ('sh', ['unifi-mapper ports refresh']),
+    assert list(code_blocks(text)) == [
+        (2, 'bash', ['unifi-mapper version']),
+        (6, 'sh', ['unifi-mapper ports refresh']),
     ]
 
 
-def test_readme_documents_at_least_the_known_command_groups():
+def test_readme_documents_at_least_the_known_command_groups() -> None:
     """Guard against the extractor silently matching nothing."""
     documented = _documented_commands()
     assert len(documented) > 15, f'extractor found only {len(documented)} commands'
@@ -140,7 +114,7 @@ def test_readme_documents_at_least_the_known_command_groups():
 
 
 @pytest.mark.parametrize('command', sorted(_documented_commands()))
-def test_every_readme_command_is_registered(command: str):
+def test_every_readme_command_is_registered(command: str) -> None:
     """Every unifi-mapper example in the README resolves to a real command."""
     registered = _registered_commands(app)
     # A documented path may name a group whose subcommands are listed separately
@@ -160,7 +134,7 @@ def test_every_readme_command_is_registered(command: str):
 # ---------------------------------------------------------------------------
 
 
-def test_main_guard_is_after_every_command_definition():
+def test_main_guard_is_after_every_command_definition() -> None:
     """No command may be defined below the __main__ guard.
 
     A guard placed mid-module calls app() and exits during `python -m`
@@ -186,7 +160,7 @@ def test_main_guard_is_after_every_command_definition():
     )
 
 
-def test_command_set_is_identical_for_both_invocation_paths():
+def test_command_set_is_identical_for_both_invocation_paths() -> None:
     """Importing the module registers the same commands the guard path would.
 
     Re-importing under a fresh module name proves registration does not depend
@@ -198,7 +172,7 @@ def test_command_set_is_identical_for_both_invocation_paths():
     assert _registered_commands(module.app) == _registered_commands(app)
 
 
-def test_documented_groups_expose_expected_command_counts():
+def test_documented_groups_expose_expected_command_counts() -> None:
     """Lock the subcommand counts that the mid-file guard silently reduced."""
     registered = _registered_commands(app)
     for group, minimum in (
@@ -228,7 +202,7 @@ def _reference_table_commands() -> set[str]:
     return {m.group(1) for m in re.finditer(r'^\| `([a-z0-9 \-]+)`', section, re.M)}
 
 
-def test_command_reference_table_lists_every_command():
+def test_command_reference_table_lists_every_command() -> None:
     """Every registered command appears in the README reference table."""
     missing = sorted(_registered_commands(app) - _reference_table_commands())
     assert not missing, (
@@ -236,7 +210,7 @@ def test_command_reference_table_lists_every_command():
     )
 
 
-def test_command_reference_table_has_no_phantom_commands():
+def test_command_reference_table_has_no_phantom_commands() -> None:
     """The README reference table lists nothing that does not exist."""
     phantom = sorted(_reference_table_commands() - _registered_commands(app))
     assert not phantom, (
@@ -263,7 +237,7 @@ def _help_texts(command: click.Command, path: str) -> Iterator[tuple[str, str]]:
             yield from _help_texts(sub, f'{path} {name}')
 
 
-def test_help_text_names_no_internal_tracker_reference():
+def test_help_text_names_no_internal_tracker_reference() -> None:
     """Code-review F34: ``discover --help`` ended with "(issue 027)", which users can't use."""
     texts = list(_help_texts(typer.main.get_command(app), TYPER_ENTRY_POINT))
     assert len(texts) > 100, f'the walk found only {len(texts)} help texts: has the CLI moved?'
