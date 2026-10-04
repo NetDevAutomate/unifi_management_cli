@@ -656,9 +656,12 @@ rtsp://198.51.100.12/axis-media/media.amp?videocodec=h264
 rtsp://onvifuser:***REMOVED***@198.51.100.12/axis-media/media.amp?videocodec=h264
 ```
 
-The `streams` subcommand prints both forms for convenience, and `test-rtsp` prints the
-authenticated form. That form carries `ONVIF_PASSWORD`, so keep this output out of tickets and
-shared logs.
+The `streams` subcommand prints the bare URI and the authenticated form with the password
+masked (`onvifuser:***@`), and `test-rtsp` prints the masked form. Error text, including the
+ffprobe excerpt, is masked the same way, so neither command shows `ONVIF_PASSWORD`. To play a
+stream, build the authenticated form by hand from the masked line. `test-rtsp` passes the
+credentials to ffprobe on its command line, so other local users can see them in the process
+list while it runs.
 
 ---
 
