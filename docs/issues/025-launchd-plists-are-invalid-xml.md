@@ -1,5 +1,5 @@
 ---
-title: "unifi-cron.sh writes launchd plists that are invalid XML, so macOS schedules never load"
+title: "`unifi-cron.sh` writes launchd plists that are invalid XML, so macOS schedules never load"
 date: 2026-10-03
 status: open, decision needed
 severity: medium
@@ -7,7 +7,7 @@ components: [scripts/unifi-cron.sh]
 found_by: MCP uvx standards work (convergence fixer, iteration 2, while fixing code-review F5)
 ---
 
-# unifi-cron.sh writes launchd plists that are invalid XML, so macOS schedules never load
+# `unifi-cron.sh` writes launchd plists that are invalid XML, so macOS schedules never load
 
 ## Problem
 

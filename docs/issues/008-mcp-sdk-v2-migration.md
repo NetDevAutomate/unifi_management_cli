@@ -1,5 +1,5 @@
 ---
-title: "Migrate the MCP server to the SDK v2 MCPServer API"
+title: "Migrate the MCP server to the SDK v2 `MCPServer` API"
 date: 2026-10-02
 status: open
 severity: low

@@ -15,10 +15,10 @@ the reasoning stays next to the code it explains.
 | [002](002-port-counter-baseline-has-no-producer.md) | The port counter baseline store has no producer | resolved (`55b67b0`) |
 | [003](003-integration-api-undocumented-base-path.md) | The Network Integration API client uses an undocumented base path | open |
 | [004](004-no-counter-history.md) | There is no on-disk history of port error counters | resolved (`55b67b0`) |
-| [005](005-pyright-errors-in-protect-monitor.md) | pyright reports 3 errors in monitors/protect_monitor.py | resolved (`b4cd19e`) |
+| [005](005-pyright-errors-in-protect-monitor.md) | pyright reports 3 errors in `monitors/protect_monitor.py` | resolved (`b4cd19e`) |
 | [006](006-mcp-guide-and-server-docstrings-stale.md) | The MCP guide and server docstrings miss the observability category and new counts | resolved (`c518915`) |
 | [007](007-bare-discover-writes-by-default.md) | `unifi-mapper --connected-devices` writes port names by default | resolved (`27bca7c`) |
-| [008](008-mcp-sdk-v2-migration.md) | Migrate the MCP server to the SDK v2 MCPServer API | open |
+| [008](008-mcp-sdk-v2-migration.md) | Migrate the MCP server to the SDK v2 `MCPServer` API | open |
 | [009](009-mcp-default-tool-surface.md) | Should the MCP server list every tool (the direct surface) by default? | open, decision needed |
 | [010](010-cwd-relative-state-files.md) | Radio snapshots and several baselines are written relative to the working directory | open, decision needed |
 | [011](011-network-protect-errors-as-success.md) | Network and Protect MCP tools return failures as successful results | open, decision needed |
