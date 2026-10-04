@@ -19,20 +19,49 @@ This project provides a complete suite of tools for managing UniFi networks:
 # Install dependencies
 uv sync
 
-# Install shell completions (optional)
-uv run python -m unifi_mapper.cli install-completions bash
-# or for zsh:
-uv run python -m unifi_mapper.cli install-completions zsh
+# Install shell completions (optional): bash or zsh; --force overwrites
+uv run unifi-mapper install-completions bash
+# or let Typer install them for the current shell (fish included):
+uv run unifi-mapper --install-completion
 ```
+
+### Entry points
+
+| Command | What it is | Config file |
+| --- | --- | --- |
+| `unifi-mapper` | The main CLI: discovery, port labels and diagnostics, analysis, STP, radio, inventory | `--config` or `UNIFI_CONFIG`, else the default search below |
+| `unifi-inventory` | The four `inventory` commands as their own program | Each command's own `--config`, else the default search |
+| `unifi-network-toolkit` | The older argparse toolkit: `analyze`, `diagnose`, `find`, `discover`, `install-completions` | `--config`, default `~/.config/unifi_management_cli/prod.env` |
+| `unifi-mcp` | The MCP server (see [MCP Server](#mcp-server-ai-assisted-troubleshooting)) | Its own search; never a `.env` in the working directory |
+
+```bash
+unifi-inventory list --filter switch,ap --show-upgrade
+unifi-inventory check-updates --filter switch
+unifi-inventory firmware-skew
+unifi-inventory update-firmware --filter ap --dry-run   # writes without --dry-run, after a prompt
+unifi-network-toolkit install-completions bash
+```
+
+`unifi-network-toolkit discover` still writes port names unless `--dry-run` is given
+([issue 015](docs/issues/015-other-discover-entry-points-write-by-default.md)); use
+`unifi-mapper discover`, which only previews unless `--apply` is given.
 
 ## Configuration
 
-Create configuration file following XDG Base Directory specification:
+Create the configuration file following the XDG Base Directory specification:
 
 ```bash
 mkdir -p ~/.config/unifi_management_cli
 cp .env.example ~/.config/unifi_management_cli/prod.env
+chmod 600 ~/.config/unifi_management_cli/prod.env
 ```
+
+`unifi-mapper` reads one env file: `--config PATH` (or `UNIFI_CONFIG=PATH`), else
+`${XDG_CONFIG_HOME:-~/.config}/unifi_management_cli/prod.env`, then `default.env` in the same
+directory, else a `.env` in the working directory (the legacy fallback). A `.env` in the
+working directory never overrides `--config`. The `inventory` commands don't see the root
+`--config` or `UNIFI_CONFIG` yet; give them their own `--config` after the subcommand
+([issue 043](docs/issues/043-inventory-ignores-the-root-config.md)).
 
 **Required Settings:**
 
@@ -47,12 +76,24 @@ UNIFI_CONSOLE_API_TOKEN=your_api_token   # Recommended authentication
 
 UNIFI_VERIFY_SSL=false                   # false for self-signed certificates
 UNIFI_TIMEOUT=10                         # API timeout in seconds
-
-# Gateway SSH, for the latency matrix and bandwidth tests. Enable SSH in UniFi OS first
-# (Settings > Control Plane > Console); UNIFI_PASSWORD is never used for SSH.
-UNIFI_SSH_USERNAME=root                  # SSH user on UDM (default: root)
-UNIFI_SSH_PASSWORD=your_ssh_password     # required: the SSH password set in UniFi OS
 ```
+
+**Optional credential families.** Each is read only by the commands that need it:
+
+| Family | Keys | Used by |
+| --- | --- | --- |
+| Gateway SSH | `UNIFI_SSH_PASSWORD` (required), `UNIFI_SSH_USERNAME` (default `root`) | `diagnose latency-matrix` and `diagnose bandwidth` only (no MCP tool uses SSH) |
+| `network_api` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID`, all three | The six MCP network tools |
+| `protect` | `PROTECT_HOST`, `PROTECT_USERNAME`, `PROTECT_PASSWORD` | The five MCP Protect tools and the Protect monitor |
+
+Other settings: `UNIFI_STP_OVERRIDES` (the STP override file, default
+`~/.config/unifi_management_cli/stp_overrides.yaml`) and `XDG_STATE_HOME` (where the counter
+baselines and history go, see [Link error baselines and
+history](#link-error-baselines-and-history)). `.env.example` lists every key with its
+default, including the optional `UNIFI_NETWORK_*` and `PROTECT_*` settings and five settings
+that have no effect on `unifi-mapper` yet
+([issue 042](docs/issues/042-settings-with-no-effect.md)). The MCP server's `UNIFI_MCP_*`
+settings are covered in its [section](#mcp-server-ai-assisted-troubleshooting).
 
 ## Usage
 
@@ -135,8 +176,11 @@ unifi-mapper inventory check-updates
 ### Diagnostics
 
 ```bash
-# Run all 11 diagnostic checks with pass/warn/fail summary
+# Run all 15 diagnostic checks with a pass/warn/fail summary
 unifi-mapper diagnose all
+
+# Overall health on its own
+unifi-mapper diagnose health --detailed
 
 # Gateway latency matrix — SSH to UDM, ping all device/client IPs
 unifi-mapper diagnose latency-matrix
@@ -147,9 +191,28 @@ unifi-mapper diagnose bandwidth 192.0.2.50 --bidir --duration 10
 unifi-mapper diagnose bandwidth 192.0.2.50 --reverse --parallel 4
 ```
 
-The `diagnose all` runner checks: link quality, capacity, port profiles, MTU, SFP, radio, firmware skew, DHCP pool, PoE budget, client density, and uplink redundancy.
+`diagnose all` runs 15 checks: link quality, capacity planning, port profiles, MTU
+consistency, SFP diagnostics, radio optimisation, firmware skew, DHCP pools, PoE budget,
+client density, uplink redundancy, uplink VLAN transparency, device power budget, foreign
+bridges and telemetry freshness.
 
-Latency matrix and bandwidth tests SSH to the gateway, so they need SSH enabled in UniFi OS (Settings > Control Plane > Console) and `UNIFI_SSH_PASSWORD` in your config, plus `UNIFI_SSH_USERNAME` if the SSH user isn't `root`. Without `UNIFI_SSH_PASSWORD` both stop before connecting to anything: `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH.
+The latency matrix and bandwidth tests SSH to the gateway, so they need SSH enabled in
+UniFi OS (Settings > Control Plane > Console) and `UNIFI_SSH_PASSWORD` in your config, plus
+`UNIFI_SSH_USERNAME` if the SSH user isn't `root`. Without `UNIFI_SSH_PASSWORD` both exit 1
+before connecting to anything, with:
+
+```text
+❌ [CONFIG_MISSING] UNIFI_SSH_PASSWORD is not set. The gateway SSH login has its own password; UNIFI_PASSWORD (the UniFi OS login) is never sent over SSH
+💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
+```
+
+`UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH. Every address and number is
+checked before it reaches the gateway's command line, which is shell-quoted as well:
+`diagnose bandwidth` refuses a target that isn't an IP address (an IPv6 zone id included),
+and the latency matrix skips such a target and says why. The SSH session doesn't verify the
+gateway's host key yet (`known_hosts=None`,
+[issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)), so run these only on a
+network you trust.
 
 ### Radio Management
 
@@ -276,6 +339,32 @@ never wrote to the controller. Undocumented values such as `speed_caps` are repo
 alongside the ports that share the same value, rather than decoded by guesswork. Counter
 rates are withheld when the device did not inform between samples, since a stale snapshot
 would read as zero errors.
+
+### Fleet Audits (read-only)
+
+```bash
+# Port errors and drops (healthy ports too with --include-healthy)
+unifi-mapper analyze link-quality --include-healthy
+
+# Ports below their capability or forced into a speed trap; exits 2 on a CRITICAL or HIGH finding
+unifi-mapper analyze link-speeds --switch "Core USW Flex XG 10G" --json
+
+# Where each port profile is used, and which profiles are traps
+unifi-mapper analyze port-profile-usage --hide-unused
+
+# MTU on inter-switch links; uplinks that can't carry tagged VLANs
+unifi-mapper analyze mtu
+unifi-mapper analyze uplink-transparency
+
+# PoE output per switch, and switch input power headroom
+unifi-mapper analyze poe-budget --json
+unifi-mapper analyze power-budget --warn-pct 80
+
+# Single-uplink switches, clients per access point, DHCP pool use
+unifi-mapper analyze uplink-redundancy
+unifi-mapper analyze client-density
+unifi-mapper analyze dhcp-pools
+```
 
 ### Analysis Tools
 
@@ -416,7 +505,7 @@ Run any command with `--help` for its options.
 # Check schedule status
 ./scripts/unifi-cron.sh status
 
-# Run all audits immediately
+# Run every task once now (port naming included, which writes port names)
 ./scripts/unifi-cron.sh run-all
 
 # Update or remove schedules
@@ -424,7 +513,7 @@ Run any command with `--help` for its options.
 ./scripts/unifi-cron.sh uninstall
 ```
 
-Schedules: link errors + roaming every 5 min, config drift + health + radio hourly, port naming every 30 min.
+Schedules: the link-error history (`analyze link-errors --record`) and roaming snapshots every 5 minutes; config drift, `diagnose all` and the radio report hourly; port naming every 30 minutes, which writes port names (`--apply`).
 
 > [!IMPORTANT]
 > **Upgrading an installed schedule.** `install` copies each task's command line into the
@@ -462,7 +551,7 @@ uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp
 uv tool install --python 3.12 /ABS/PATH/TO/unifi_management_cli
 ```
 
-Credentials come from an env file, not the client config: `--config PATH`, else `UNIFI_CONFIG`, else `~/.config/unifi_management_cli/prod.env` (or `default.env`). A `.env` in the working directory is never read. Example client entry (`mcpServers` JSON, as used by kiro-cli, Claude Code and Claude Desktop):
+Credentials come from an env file, not the client config: `--config PATH`, else `UNIFI_CONFIG`, else `$XDG_CONFIG_HOME/unifi_management_cli/prod.env` and then `~/.config/unifi_management_cli/prod.env` (each followed by `default.env`), else the legacy `~/.config/unifi_network_mapper/prod.env` with a deprecation warning. A `.env` in the working directory is never read. Example client entry (`mcpServers` JSON, as used by kiro-cli, Claude Code and Claude Desktop):
 
 ```json
 {
@@ -479,7 +568,14 @@ Credentials come from an env file, not the client config: `--config PATH`, else 
 }
 ```
 
-`UNIFI_MCP_TOOL_SURFACE=direct` lists every read-only tool to hosts that defer tool schemas; the default `discovery` surface lists four meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`). The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch mode, the Codex config, all environment variables, the error codes and the config discovery rules. The [MCP standards review](docs/mcp-server/MCP_STANDARDS_REVIEW.md) audits the server against the MCP specification and SDK guidance.
+`UNIFI_MCP_TOOL_SURFACE=direct` lists every read-only tool to hosts that defer tool schemas; the default `discovery` surface lists four meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`).
+
+- `unifi-mcp --check` prints where the config comes from, which credential families are ready (key names only, never values) and how many tools each surface lists, then exits 0 if the controller family is ready, else 1. It never contacts the controller, Keychain or 1Password.
+- The `network_api` family needs all three of `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID`. The legacy config file sets only the key, so with it the six network tools return `CONFIG_MISSING` ([issue 037](docs/issues/037-launch-config-network-family-incomplete.md)).
+- The five Protect tools need `PROTECT_HOST`, `PROTECT_USERNAME` and `PROTECT_PASSWORD`; use a dedicated local, view-only Protect account. They haven't been verified against a live console yet ([issue 034](docs/issues/034-protect-has-no-live-account.md)).
+- Logs go to stderr only, at `UNIFI_MCP_LOG_LEVEL` (a loguru level, default `WARNING`), so `--version`, `--help` and `--check` print no log lines by default. The SDK still writes an `INFO Processing request of type …` line to stderr for each request, and httpx an `HTTP Request:` line for each controller call ([issue 020](docs/issues/020-mcp-protocol-follow-ups.md)).
+
+The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch mode, the Codex config, all environment variables, the error codes and the config discovery rules. The [MCP standards review](docs/mcp-server/MCP_STANDARDS_REVIEW.md) audits the server against the MCP specification and SDK guidance.
 
 **Available Tools (76 total):**
 
@@ -615,7 +711,7 @@ UniFi Network Application 10.0.162+ resolves most device-level rejection issues.
 - Performance Analysis: Bottleneck identification
 - Connectivity Analysis: Connection troubleshooting
 - Security Audit: Security configuration review
-- Comprehensive Runner: 11-check `diagnose all` with pass/warn/fail summary
+- Comprehensive Runner: 15-check `diagnose all` with pass/warn/fail summary
 - Gateway Latency Matrix: SSH-based ping sweep across all device and client IPs
 - Bandwidth Test: iperf3-based throughput measurement via SSH to gateway
 - DHCP Pool Analysis: Pool utilization and exhaustion detection
@@ -641,6 +737,11 @@ UniFi Network Application 10.0.162+ resolves most device-level rejection issues.
 
 Comprehensive async Python library for UniFi Protect with real-time event processing and Home Assistant integration.
 
+> [!NOTE]
+> Connect with a dedicated local, view-only Protect account, not the console's admin login.
+> The MCP Protect tools use this library behind a read-only client and haven't been verified
+> against a live console yet ([issue 034](docs/issues/034-protect-has-no-live-account.md)).
+
 ### Features
 
 | Feature | Description |
@@ -657,7 +758,7 @@ from unifi_mapper.protect import ProtectConfig, UniFiProtectClient
 
 config = ProtectConfig(
     host="192.0.2.1",
-    username="admin",
+    username="protect-viewer",
     password="your_password",
     verify_ssl=False,
 )
