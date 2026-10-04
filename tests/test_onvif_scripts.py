@@ -14,29 +14,17 @@ user's environment is never read (every variable is unset or set with ``monkeypa
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import pytest
 import sys
 import types
-from pathlib import Path
+from tests.script_modules import SCRIPTS, load_script
 from typing import Any
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 VARIABLES = ('ONVIF_USERNAME', 'ONVIF_PASSWORD', 'ONVIF_CAMERAS')
 FAKE_PASSWORD = 'not-a-camera-password'  # pragma: allowlist secret
 
 pytestmark = pytest.mark.usefixtures('block_network')
-
-
-def _load(name: str, monkeypatch: pytest.MonkeyPatch) -> Any:
-    """Load ``scripts/<name>.py`` and register it, so the scripts' own imports find it."""
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / f'{name}.py')
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    monkeypatch.setitem(sys.modules, name, module)
-    spec.loader.exec_module(module)
-    return module
 
 
 @pytest.fixture
@@ -44,7 +32,7 @@ def config(monkeypatch: pytest.MonkeyPatch) -> Any:
     """``scripts/onvif_config.py``, with every ONVIF variable unset."""
     for var in VARIABLES:
         monkeypatch.delenv(var, raising=False)
-    return _load('onvif_config', monkeypatch)
+    return load_script('onvif_config', monkeypatch)
 
 
 @pytest.fixture
@@ -165,7 +153,7 @@ def test_stream_script_stops_before_connecting_when_unset(
     command: str,
 ) -> None:
     """Every stream command stops with the missing variables before building a camera."""
-    stream = _load('onvif_stream', monkeypatch)
+    stream = load_script('onvif_stream', monkeypatch)
     monkeypatch.setattr(sys, 'argv', ['onvif_stream.py', command])
 
     with pytest.raises(SystemExit) as excinfo:
@@ -183,7 +171,7 @@ def test_stream_script_reports_usage_without_reading_the_environment(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """An unknown command prints the usage and exits 1 without reading the environment."""
-    stream = _load('onvif_stream', monkeypatch)
+    stream = load_script('onvif_stream', monkeypatch)
     monkeypatch.setattr(sys, 'argv', ['onvif_stream.py', 'no-such-command'])
 
     with pytest.raises(SystemExit) as excinfo:
@@ -198,7 +186,7 @@ def test_probe_script_stops_before_connecting_when_unset(
     config: Any, cameras_built: list[tuple[object, ...]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The probe stops with the missing variables before building a camera."""
-    probe = _load('onvif_probe', monkeypatch)
+    probe = load_script('onvif_probe', monkeypatch)
     monkeypatch.setenv('ONVIF_USERNAME', 'onvifuser')
 
     with pytest.raises(SystemExit) as excinfo:
@@ -220,7 +208,7 @@ def test_rtsp_check_reports_each_failing_camera_and_moves_on(
     The camera stub fails on construction, before ffprobe runs, which is the path that used to
     stop the whole run with an UnboundLocalError.
     """
-    stream = _load('onvif_stream', monkeypatch)
+    stream = load_script('onvif_stream', monkeypatch)
     for var, value in _env().items():
         monkeypatch.setenv(var, value)
     monkeypatch.setattr(sys, 'argv', ['onvif_stream.py', 'test-rtsp'])

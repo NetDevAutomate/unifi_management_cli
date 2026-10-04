@@ -15,37 +15,26 @@ read. ``scripts/`` is not an importable package, so the modules are loaded by pa
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import pytest
 import sys
 from pathlib import Path
+from tests.script_modules import load_script
 from typing import Any, NoReturn
 from unifi_mapper.core.models.stp import STPTopology, SwitchSTPConfig
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 # A site name that must never be echoed back in an error message.
 SENTINEL = 'Sentinel Site Name'
 
 pytestmark = pytest.mark.usefixtures('block_network')
 
 
-def _load(name: str, monkeypatch: pytest.MonkeyPatch) -> Any:
-    """Load ``scripts/<name>.py`` and register it, so the scripts' own imports find it."""
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / f'{name}.py')
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    monkeypatch.setitem(sys.modules, name, module)
-    spec.loader.exec_module(module)
-    return module
-
-
 @pytest.fixture
 def targets(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Any:
     """``scripts/site_targets.py``, with ``XDG_CONFIG_HOME`` in a temporary directory."""
     monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'xdg-config'))
-    return _load('site_targets', monkeypatch)
+    return load_script('site_targets', monkeypatch)
 
 
 def _write(tmp_path: Path, data: object) -> Path:
@@ -244,7 +233,7 @@ def test_channel_plan_script_stops_without_a_targets_file(
     targets: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """No targets file: exit 2, naming the default path, before any config read."""
-    mod = _load('apply_ap_channel_plan', monkeypatch)
+    mod = load_script('apply_ap_channel_plan', monkeypatch)
     monkeypatch.setattr(mod, 'load_config', _fail)
     monkeypatch.setattr(mod, '_load_aps', _fail)
 
@@ -259,7 +248,7 @@ def test_channel_plan_script_refuses_a_self_colliding_plan(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A plan whose entries share a 40MHz block stops with exit 2 before any config read."""
-    mod = _load('apply_ap_channel_plan', monkeypatch)
+    mod = load_script('apply_ap_channel_plan', monkeypatch)
     monkeypatch.setattr(mod, 'load_config', _fail)
     monkeypatch.setattr(mod, '_load_aps', _fail)
     plan = {'channel_plan': [['AP-1', 157, '40'], ['AP-2', 161, '40']]}
@@ -276,7 +265,7 @@ def test_stp_priorities_script_stops_without_a_targets_file(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """No targets file: exit 2 before the STP topology is read from the controller."""
-    mod = _load('apply_stp_priorities_custom', monkeypatch)
+    mod = load_script('apply_stp_priorities_custom', monkeypatch)
     monkeypatch.setattr(mod, 'discover_stp_topology', _fail)
     missing = tmp_path / 'missing.json'
 
@@ -292,7 +281,7 @@ def test_post_apply_script_stops_without_a_targets_file(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """No targets file: exit 2 before the controller config or the topology is read."""
-    mod = _load('remediate_stp_post_apply', monkeypatch)
+    mod = load_script('remediate_stp_post_apply', monkeypatch)
     monkeypatch.setattr(mod, 'load_env_from_config', _fail)
     monkeypatch.setattr(mod, 'discover_stp_topology', _fail)
     missing = tmp_path / 'missing.json'
@@ -314,7 +303,7 @@ def test_stp_changes_put_the_root_first_whatever_the_file_order(
     intended root must come first. The example's keys are alphabetical (the
     ``pretty-format-json`` hook sorts them), so the order of the file is not the apply order.
     """
-    mod = _load('apply_stp_priorities_custom', monkeypatch)
+    mod = load_script('apply_stp_priorities_custom', monkeypatch)
     priorities = dict(sorted(targets.stp_priorities(targets.EXAMPLE).items()))
     root = min(priorities, key=priorities.__getitem__)
     assert next(iter(priorities)) != root, 'the premise: the first key is not the root'

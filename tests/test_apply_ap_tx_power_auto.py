@@ -11,36 +11,27 @@ change both sets the mode AND asks for the override to be deleted.
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
+import pytest
+from tests.script_modules import load_script
 from typing import Any
 
 
-_SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'apply_ap_tx_power_auto.py'
-
-
-def _load() -> Any:
-    spec = importlib.util.spec_from_file_location('apply_ap_tx_power_auto', _SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+@pytest.fixture
+def mod(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """``scripts/apply_ap_tx_power_auto.py``."""
+    return load_script('apply_ap_tx_power_auto', monkeypatch)
 
 
 # ─── Detection ────────────────────────────────────────────────────────────────
 
 
-def test_needs_update_flags_a_manual_override_hiding_under_auto_mode() -> None:
+def test_needs_update_flags_a_manual_override_hiding_under_auto_mode(mod: Any) -> None:
     """The pathological case: mode already reads 'auto' but power is pinned."""
-    mod = _load()
-
     assert mod.needs_update({'radio': 'na', 'tx_power_mode': 'auto', 'tx_power': 6}) is True
 
 
-def test_needs_update_ignores_a_genuinely_automatic_radio() -> None:
+def test_needs_update_ignores_a_genuinely_automatic_radio(mod: Any) -> None:
     """No manual override and a sane mode means nothing to do."""
-    mod = _load()
-
     assert mod.needs_update({'radio': 'na', 'tx_power_mode': 'auto'}) is False
     # At the threshold the radio is acceptable, so it is left alone.
     threshold = mod.MIN_ACCEPTABLE_DBM
@@ -48,10 +39,8 @@ def test_needs_update_ignores_a_genuinely_automatic_radio() -> None:
     assert mod.needs_update(radio) is False
 
 
-def test_needs_update_flags_low_and_medium_modes() -> None:
+def test_needs_update_flags_low_and_medium_modes(mod: Any) -> None:
     """A named low/medium mode counts even with no numeric override."""
-    mod = _load()
-
     assert mod.needs_update({'radio': 'na', 'tx_power_mode': 'low'}) is True
     assert mod.needs_update({'radio': 'na', 'tx_power_mode': 'medium'}) is True
     assert mod.needs_update({'radio': 'na', 'tx_power_mode': 'high'}) is False
@@ -60,10 +49,8 @@ def test_needs_update_flags_low_and_medium_modes() -> None:
 # ─── The emitted change ───────────────────────────────────────────────────────
 
 
-def test_change_for_sets_auto_and_removes_the_override() -> None:
+def test_change_for_sets_auto_and_removes_the_override(mod: Any) -> None:
     """Setting the mode alone would be a no-op, so the change must do both."""
-    mod = _load()
-
     change = mod.change_for({'_id': 'abc123', 'name': 'Charlie2 U6-Pro'})
 
     assert change['device_id'] == 'abc123'

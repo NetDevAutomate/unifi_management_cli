@@ -20,38 +20,24 @@ layout is still tested here.
 
 from __future__ import annotations
 
-import importlib.util
 import pytest
-import sys
-from pathlib import Path
+from tests.script_modules import load_script
 from typing import Any
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
-
 pytestmark = pytest.mark.usefixtures('block_network')
-
-
-def _load(name: str, monkeypatch: pytest.MonkeyPatch) -> Any:
-    """Load ``scripts/<name>.py`` and register it, so the scripts' own imports find it."""
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / f'{name}.py')
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    monkeypatch.setitem(sys.modules, name, module)
-    spec.loader.exec_module(module)
-    return module
 
 
 @pytest.fixture
 def targets(monkeypatch: pytest.MonkeyPatch) -> Any:
     """``scripts/site_targets.py``, registered for the script's import."""
-    return _load('site_targets', monkeypatch)
+    return load_script('site_targets', monkeypatch)
 
 
 @pytest.fixture
 def mod(targets: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
     """``scripts/apply_ap_channel_plan.py``."""
-    return _load('apply_ap_channel_plan', monkeypatch)
+    return load_script('apply_ap_channel_plan', monkeypatch)
 
 
 @pytest.fixture
