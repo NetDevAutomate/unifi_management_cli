@@ -5,6 +5,7 @@ repository (issue 041). Both read three environment variables:
 
 - ``ONVIF_USERNAME`` and ``ONVIF_PASSWORD``: the ONVIF account on the cameras;
 - ``ONVIF_CAMERAS``: comma-separated ``NAME=HOST[:PORT]`` entries (port 80 when omitted).
+  A host is a name or an IPv4 address; IPv6 literals aren't supported.
 
 Keep them in a file outside the repository and pass it to each run, for example::
 
@@ -56,17 +57,19 @@ def _parse_camera(entry: str) -> tuple[str, str, int]:
         The camera's name, host and port (``DEFAULT_PORT`` when the entry has none).
 
     Raises:
-        ConfigError: If the entry has no name or host, or its port isn't 1-65535.
+        ConfigError: If the entry has no name or host, has a ``:`` with no port after it, or
+            its port isn't a decimal number from 1 to 65535.
     """
     name, sep, address = (part.strip() for part in entry.partition('='))
-    host, port_text = address, ''
+    host, colon, port_text = address, '', ''
     if address.count(':') == 1:
-        host, _, port_text = address.partition(':')
-    if not sep or not name or not host:
+        host, colon, port_text = address.partition(':')
+    if not sep or not name or not host or (colon and not port_text):
         raise ConfigError(f'{CAMERAS_VAR} entry {entry!r} is not NAME=HOST[:PORT]. {HELP}')
     if not port_text:
         return name, host, DEFAULT_PORT
-    if not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
+    # isdecimal, not isdigit: a superscript digit passes isdigit but int() rejects it.
+    if not port_text.isdecimal() or not 1 <= int(port_text) <= 65535:
         raise ConfigError(f'{CAMERAS_VAR} entry {entry!r} has a port outside 1-65535')
     return name, host, int(port_text)
 

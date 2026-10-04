@@ -553,7 +553,7 @@ environment variables, through `scripts/onvif_config.py`:
 | --- | --- |
 | `ONVIF_USERNAME` | The ONVIF account on the cameras (an `onvif.users` entry in the config above) |
 | `ONVIF_PASSWORD` | That account's password |
-| `ONVIF_CAMERAS` | Comma-separated `NAME=HOST[:PORT]` entries; the port defaults to 80 |
+| `ONVIF_CAMERAS` | Comma-separated `NAME=HOST[:PORT]` entries; the port defaults to 80. `HOST` is a name or an IPv4 address (IPv6 literals aren't supported) |
 
 Keep them in a file outside the repository, for example `~/.config/axiscam/onvif.env`.
 Create it with an editor rather than a shell command, so the password stays out of your

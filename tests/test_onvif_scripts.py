@@ -135,6 +135,8 @@ def test_an_empty_variable_counts_as_unset(config: Any, value: str) -> None:
         'Camera A=',
         'Camera A=:8080',
         'Camera A=192.0.2.10:http',
+        'Camera A=192.0.2.10:',
+        'Camera A=192.0.2.10:8\N{SUPERSCRIPT TWO}',
         'Camera A=192.0.2.10:0',
         'Camera A=192.0.2.10:65536',
         'Camera A=192.0.2.10, Camera B',
