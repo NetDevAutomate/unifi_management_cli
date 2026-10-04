@@ -20,7 +20,7 @@ import json
 import pytest
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from unifi_mapper.core.models.stp import STPTopology, SwitchSTPConfig
 
 
@@ -55,7 +55,7 @@ def _write(tmp_path: Path, data: object) -> Path:
     return path
 
 
-def _fail(*_args: object, **_kwargs: object) -> None:
+def _fail(*_args: object, **_kwargs: object) -> NoReturn:
     """Stand in for any config read or controller call: reaching one fails the test."""
     raise AssertionError('a site script went past its targets check')
 

@@ -139,7 +139,7 @@ async def capture_snapshot(config: CameraConfig, output_dir: str = '/tmp'):
         print(f'  ❌ Failed: {e}')
 
 
-async def check_rtsp(config: CameraConfig):
+async def check_rtsp(config: CameraConfig) -> None:
     """Test RTSP stream connectivity (the ``test-rtsp`` command).
 
     A camera that fails, before or during the ffprobe run, is reported, and the caller moves
