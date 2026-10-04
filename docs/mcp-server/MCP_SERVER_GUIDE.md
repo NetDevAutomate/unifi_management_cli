@@ -4,9 +4,15 @@
 
 `unifi-mcp` is a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server over
 the same Python modules the `unifi-mapper` CLI uses. It registers **76 tools** in seven
-categories (see [Tool categories](#tool-categories)). Every tool it will run is read-only
-against the controller: tools that change the controller are refused over MCP, and changes go
-through the CLI's plan → review → apply flow (see [Control boundary](#mcp-control-boundary)).
+categories (see [Tool categories](#tool-categories) and the [tool index](#tool-index)). Every
+tool it will run is read-only against the controller. The three tools that would change it
+are refused over MCP (see [Control boundary](#mcp-control-boundary)); those changes go through
+the `unifi-mapper` `stp` and `radio` commands, which preview by default and write only when
+told (`stp apply --plan … --no-dry-run`, `stp optimize --apply`, `radio optimize --apply`,
+`radio restore --apply`). Not every CLI write previews first: `unifi-network-toolkit discover`
+and `python -m unifi_mapper.cli` still write port names unless `--dry-run` is given
+([issue 015](../issues/015-other-discover-entry-points-write-by-default.md)), and
+`inventory update-firmware` asks for confirmation instead of previewing.
 The [MCP standards review](MCP_STANDARDS_REVIEW.md) audits the server against the MCP
 specification and SDK guidance, and lists the decisions still open.
 
@@ -116,6 +122,17 @@ controllers:
 | `controller` | `UNIFI_URL`/`UNIFI_HOST`, `UNIFI_PORT`, `UNIFI_SITE`, `UNIFI_VERIFY_SSL`, `UNIFI_CONSOLE_API_TOKEN`/`UNIFI_API_TOKEN`, `UNIFI_USERNAME`, `UNIFI_PASSWORD`, `UNIFI_SSH_USERNAME`, `UNIFI_SSH_PASSWORD` | URL or host, plus a token or username and password |
 | `network_api` | `UNIFI_NETWORK_*` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID` |
 | `protect` | `PROTECT_*` | `PROTECT_HOST`, `PROTECT_USERNAME` and `PROTECT_PASSWORD` |
+
+- `UNIFI_SSH_USERNAME` and `UNIFI_SSH_PASSWORD` travel with the controller family so a file
+  stays one site, but no MCP tool uses them: only the CLI's `diagnose latency-matrix` and
+  `diagnose bandwidth` SSH to the gateway.
+- The `network_api` family needs all three keys. A file that sets only
+  `UNIFI_NETWORK_API_KEY`, as the legacy `~/.config/unifi_network_mapper/prod.env` in
+  [issue 037](../issues/037-launch-config-network-family-incomplete.md) does, leaves the six
+  network tools at `[CONFIG_MISSING]`.
+- For `protect`, use a dedicated local, view-only Protect account, not the console's admin
+  login. The five Protect tools haven't been verified against a live console yet
+  ([issue 034](../issues/034-protect-has-no-live-account.md)).
 
 - A family with **any** key in the client's environment belongs to the environment and is
   never topped up from the file (a partial export stays not-ready and `--check` says so).
@@ -427,7 +444,127 @@ uv run unifi-mcp --check
 3. **Run** `uv run pytest tests/mcp -q`. `tests/mcp/test_manifest_parity.py` checks every
    entry against its handler (import, parameters, schemas, pipeline and sampling rules,
    title, credential family), so a new tool needs no edit there.
-4. **Update the docs**: the category counts in this guide and in the README.
+4. **Update the docs**: the category counts in this guide and in the README, and the
+   [tool index](#tool-index) below.
 
 The design rationale and the decisions still open are in the
 [MCP standards review](MCP_STANDARDS_REVIEW.md).
+
+## Tool Index
+
+All 76 registered tools by category, generated from `ToolRegistry()`. **Family** is
+the credential family a tool needs (`none`: it computes from its input). **Marks**:
+*mutating* tools are never listed or run over MCP; *pipeline* tools are reachable only
+through `execute_tool`; *writes a local file* drops `readOnlyHint`. Every other tool is
+on the direct surface.
+
+### analysis (46)
+
+| Tool | Family | Marks | Description |
+| --- | --- | --- | --- |
+| `analyze_client_density` | `controller` |  | Wireless clients per access point with average signal strength. WARNING above 30 clients on one AP, CRITICAL above 50. Read-only. |
+| `analyze_link_quality` | `controller` |  | Port health and error analysis for link quality assessment |
+| `analyze_mac_table` | `controller` |  | MAC address table analysis and flapping detection |
+| `analyze_radio_optimization` | `controller` |  | Analyze Wi-Fi radio channel reuse and transmit power settings |
+| `analyze_traffic_matrix` | `controller` |  | Analyze available UniFi traffic statistics for top flows and 10G placement hints |
+| `apply_radio_optimization` | `controller` | mutating | Apply recommended radio optimisations (80MHz 5GHz, reduced 2.4GHz power, min RSSI). Auto-snapshots before applying. |
+| `apply_stp_changes` | `controller` | mutating | Apply STP priority changes via API (supports dry-run mode) |
+| `audit_link_speeds` | `controller` |  | Fleet-wide audit of negotiated switch-port speeds. Flags half duplex, ports forced to a speed that are down or linked at another rate, and autonegotiated ports below their Integration API maxSpeedMbps (the 10G-at-5G downgrade). Raw speed_caps is never decoded, only compared for equality between ports when the Integration API has no capability. Stale devices are excluded. Paged findings. Read-only. |
+| `audit_mtu_consistency` | `controller` |  | Audit MTU and jumbo-frame consistency across inter-switch links |
+| `audit_port_profile_usage` | `controller` |  | Where every port profile is applied (each port's effective profile, the override winning over the port table) and which profiles are traps. Flags profiles that force a speed, port overrides that shadow their profile's speed, autoneg or native network, ports referencing a deleted profile, duplicate and unused profiles. Paged profiles. Read-only. |
+| `audit_power_budget` | `controller` |  | Audit switch INPUT power headroom - whether a switch's own power source (DC adapter or PoE-in) can run its active PHYs. Distinct from PoE output budget. Catches the failure where a compact multi-gig switch on an undersized adapter reboots as more ports go active. Only reports against published vendor figures; unlisted models yield no ceiling. |
+| `audit_sfp_diagnostics` | `controller` |  | Pull SFP/SFP+ module identity and DOM diagnostics from UniFi port tables |
+| `audit_stp_guard_recommendations` | `none` | pipeline | Audit Root Guard candidates and STP topology-change counters |
+| `audit_stp_path_costs` | `controller` | pipeline | Audit STP path costs for IEEE long-path-cost consistency |
+| `audit_uplink_transparency` | `controller` |  | Detect switches whose elected uplink port cannot carry tagged VLANs (for example a switch that re-homed onto an access port with tagged_vlan_mgmt=block_all), which silently severs every tagged VLAN behind it while untagged traffic keeps working |
+| `audit_vlan_coverage` | `controller` |  | Check required VLAN coverage on trunk and planned uplink ports |
+| `calculate_optimal_priorities` | `controller` | pipeline | Calculate optimal bridge priorities based on network hierarchy |
+| `check_device_freshness` | `controller` |  | Authoritative two-sample freshness check - verifies last_seen, uptime and cumulative counters actually advance, using healthy peers as the control. SLOW: sleeps ~200s between samples because devices only inform every 75-90s. Distinguishes reboots (uptime reset) from staleness, and reports inconclusive if no peer advanced. |
+| `check_dhcp_pool_utilization` | `controller` |  | DHCP pool utilisation per DHCP-enabled network - active clients against the configured range. WARNING at 80%, CRITICAL at 90% (near exhaustion). Read-only. |
+| `check_poe_budget` | `controller` |  | PoE OUTPUT budget per switch - watts drawn by powered devices against the switch's PoE budget, headroom and high-draw ports (over 5 W). WARNING at 80%, CRITICAL at 90%. Distinct from audit_power_budget, which audits the switch's own input power. Read-only. |
+| `check_uplink_redundancy` | `controller` |  | Count the uplink ports of every switch with their speed and state, and flag switches with a single uplink (a single point of failure) or none. Read-only. |
+| `create_stp_change_plan` | `none` | pipeline | Create convergence-aware STP priority change plan with rollback bundle |
+| `detect_foreign_bridges` | `controller` |  | Detect wired third-party (foreign) bridges inside the UniFi L2 domain - consumer mesh units and unmanaged switches that forward frames but do not participate in RSTP. Flags CRITICAL when one bridge touches two switch ports (an L2 loop spanning tree cannot break) or sits on a trunk profile (exports every VLAN to its fabric). |
+| `detect_ip_conflicts` | `controller` |  | Find IP address conflicts between devices on the network |
+| `detect_storms` | `controller` |  | Detect broadcast and multicast storms on network segments |
+| `detect_stp_config_drift` | `none` | pipeline | Compare live STP topology against desired intent mapping |
+| `diagnose_vlans` | `controller` |  | Comprehensive VLAN diagnostics and configuration validation |
+| `diff_stp_snapshots` | `none` | pipeline | Diff two STP topology snapshots |
+| `discover_stp_topology` | `controller` |  | Discover current STP topology from all switches |
+| `find_lag_candidates` | `controller` |  | Find parallel healthy links that could be configured as LACP LAGs |
+| `format_10g_validation_report_markdown` | `controller` | pipeline | Format 10G expansion validation report as markdown |
+| `format_stp_report_markdown` | `controller` | pipeline | Format STP report as markdown with mermaid diagrams |
+| `generate_stp_report` | `controller` | pipeline | Generate comprehensive STP optimization report |
+| `get_capacity_report` | `controller` |  | Network capacity planning and utilization report |
+| `get_firmware_report` | `controller` |  | Firmware security assessment and update recommendations |
+| `get_radio_channel_report` | `controller` |  | Generate a channel utilization report showing current state and recommended changes for all APs. |
+| `monitor_lags` | `controller` |  | LAG (Link Aggregation Group) health monitoring |
+| `optimize_radio_channels` | `controller` |  | Auto-optimise Wi-Fi channel assignments based on utilization data. Returns recommendations for both 5GHz and 2.4GHz bands with before/after comparison. |
+| `restore_radio_config` | `controller` | mutating | Restore radio configuration from a previously saved snapshot file. |
+| `snapshot_radio_config` | `controller` | writes a local file | Snapshot current radio configuration for all APs. Use before making changes to enable rollback. |
+| `snapshot_stp_topology` | `none` | pipeline | Create serializable STP topology snapshot |
+| `stp_preflight_simulate_add` | `none` | pipeline | Simulate planned switch additions and STP root expectations |
+| `summarise_freshness` | `controller` |  | Classify whether each device's reported telemetry is live or a stale snapshot, using state plus last_seen age. The controller returns complete plausible port tables for devices that stopped informing hours ago; call this before trusting any port state. |
+| `validate_10g_expansion_readiness` | `controller` |  | Validate STP, 10G link readiness, and port errors before adding USW Flex XG switches |
+| `validate_port_profiles` | `controller` |  | Validate STP Edge, BPDU Guard, and uplink safety on applied port profiles |
+| `validate_qos` | `controller` |  | QoS configuration validation and policy checking |
+
+### connectivity (4)
+
+| Tool | Family | Marks | Description |
+| --- | --- | --- | --- |
+| `check_inter_vlan_routing` | `controller` |  | Check endpoint VLANs and firewall verdict for inter-VLAN routing |
+| `firewall_check` | `controller` |  | Verify firewall rules and policies affecting traffic flow |
+| `path_analysis` | `controller` |  | Network path analysis between two endpoints |
+| `traceroute` | `controller` |  | Layer 3 path tracing to destination |
+
+### diagnostics (8)
+
+| Tool | Family | Marks | Description |
+| --- | --- | --- | --- |
+| `connectivity_analysis` | `controller` |  | Connection troubleshooting and path analysis |
+| `diagnose_switch_port` | `controller` |  | Read-only evidence bundle for one switch port, for vendor tickets. Switch identity and Network application version, the raw port_table entry with negotiation fields and raw speed_caps, the full port override with both profile ids side by side, an optional diff of two port profiles, where the controller places each client, events and system log, counter samples with the recorded counter history, every port on the switch and the Integration API port capability. Includes request_audit as proof that collection never wrote to the controller. counter_samples above 1 blocks for 100 s per extra sample. |
+| `diff_port_profiles` | `controller` |  | Key-by-key diff of two port profiles (rest/portconf) with identity and attr_* metadata kept separate, referenced networks resolved to names and VLANs, and every switch port that runs each profile with its live speed. Read-only. |
+| `get_switch_ports` | `controller` |  | Every port on one switch with the switch identity. Per port the name, media, speed, duplex, autoneg, up, STP state, effective profile and whether an override sets it, raw speed_caps, PoE, LLDP neighbour, clients and error, CRC and link-down counters. Device model, firmware, uptime, state, system stats and thermal and power fields. Read-only. |
+| `inspect_switch_port` | `controller` |  | Deep inspection of a single switch port: link state, effective VLAN and port profile, the connected device (UniFi or third-party, with fingerprint model and confidence), DHCP lease vs static addressing verdict, LLDP neighbour resolved to an adopted device, error counters and PoE state |
+| `network_health_check` | `controller` |  | Overall infrastructure health monitoring and assessment |
+| `performance_analysis` | `controller` |  | Network performance analysis and bottleneck identification |
+| `security_audit` | `controller` |  | Security configuration review and vulnerability assessment |
+
+### discovery (5)
+
+| Tool | Family | Marks | Description |
+| --- | --- | --- | --- |
+| `client_trace` | `controller` |  | End-to-end client path analysis through the network |
+| `find_device` | `controller` |  | Search for devices by name, IP address, or MAC address |
+| `find_ip` | `controller` |  | Locate device and port by IP address |
+| `find_mac` | `controller` |  | MAC address location tracking across the network |
+| `get_client_history` | `controller` |  | Where the controller places a client, across stat/sta, v2 clients/active, v2 clients/history, rest/user and stat/user, including offline records and previous ports and link rates. With switch and port, each record is checked against that port from its own location fields, independently of how it was found. Read-only. |
+
+### network (6)
+
+| Tool | Family | Marks | Description |
+| --- | --- | --- | --- |
+| `get_acl_rules` | `network_api` |  | List ACL rules and their configurations |
+| `get_clients` | `network_api` |  | List connected clients with fingerprinting data |
+| `get_dns_policies` | `network_api` |  | List DNS policies and configurations |
+| `get_firewall_policies` | `network_api` |  | List firewall policies between zones |
+| `get_firewall_zones` | `network_api` |  | List all firewall zones and their configurations |
+| `get_networks` | `network_api` |  | List networks/VLANs and their configurations |
+
+### observability (2)
+
+| Tool | Family | Marks | Description |
+| --- | --- | --- | --- |
+| `get_device_events` | `controller` |  | Events, alarms, system log and admin audit entries that mention a device, one of its ports, or a client. Pages stat/event, reads list/alarm and pages the v2 system-log classes device-alert, admin-activity, update-alert and client-alert. Each source reports its record count, truncation and the earliest entry returned, which is the observed retention. Read-only. |
+| `get_port_counter_rates` | `controller` |  | Sample one port's error, drop, CRC and link-down counters and report per-minute rates with a trust verdict that withholds rates when the device did not inform between samples. BLOCKS for (samples - 1) x interval_seconds, about 100 s by default; use samples=1 for a single snapshot. Existing baselines and the recorded counter history (baselines.history, with first_increase per counter) are compared, never written. Read-only. |
+
+### protect (5)
+
+| Tool | Family | Marks | Description |
+| --- | --- | --- | --- |
+| `get_cameras` | `protect` |  | List all cameras and their status |
+| `get_doorbells` | `protect` |  | List video doorbells and their status |
+| `get_lights` | `protect` |  | List smart lights and floodlights |
+| `get_nvr_info` | `protect` |  | Get NVR (Network Video Recorder) information and status |
+| `get_sensors` | `protect` |  | List door/window sensors and their status |
