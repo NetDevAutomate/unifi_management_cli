@@ -39,10 +39,13 @@ async def build_changes(priorities: dict[str, int]) -> list[STPChange]:
     """Derive the STP priority changes required to reach the target topology.
 
     Args:
-        priorities: The explicit priority for each switch, by name.
+        priorities: The explicit priority for each switch, by name, in any order.
 
     Returns:
-        One change per switch whose current priority differs.
+        One change per switch whose current priority differs, lowest new priority first
+        (then by name). ``apply_stp_changes`` writes and provisions in list order, so the
+        intended root is established first whatever order the targets file holds, and
+        ``render_diff`` previews the order that is applied.
     """
     topology = await discover_stp_topology()
     by_name = {sw.name: sw for sw in topology.switches}
@@ -73,14 +76,19 @@ async def build_changes(priorities: dict[str, int]) -> list[STPChange]:
             print(f'    - {n}')
         print()
 
-    return changes
+    return sorted(changes, key=_apply_order)
+
+
+def _apply_order(change: STPChange) -> tuple[int, str]:
+    """Sort key: the lowest priority (the intended root) first, then the switch name."""
+    return change.new_priority, change.device_name
 
 
 def render_diff(changes: list[STPChange]) -> None:
     """Print the pending STP priority changes as a human-readable diff."""
     print(f'{"Switch":<42}{"Current":>10}{"New":>10}{"Delta":>12}')
     print('-' * 74)
-    for c in sorted(changes, key=lambda x: (x.new_priority, x.device_name)):
+    for c in sorted(changes, key=_apply_order):
         delta = c.new_priority - c.current_priority
         arrow = '▲' if delta > 0 else '▼'
         print(

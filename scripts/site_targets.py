@@ -149,7 +149,9 @@ def stp_priorities(
         environ: The environment for the default path; ``os.environ`` when None.
 
     Returns:
-        ``{switch name: priority}``.
+        ``{switch name: priority}``, in the file's order. The order doesn't matter:
+        ``apply_stp_priorities_custom.py`` applies the lowest priority, the intended root,
+        first.
 
     Raises:
         TargetsError: The file or section is missing, or an entry is malformed.

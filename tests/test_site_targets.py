@@ -21,6 +21,7 @@ import pytest
 import sys
 from pathlib import Path
 from typing import Any
+from unifi_mapper.core.models.stp import STPTopology, SwitchSTPConfig
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
@@ -252,3 +253,41 @@ def test_post_apply_script_stops_without_a_targets_file(
     argv = ['remediate_stp_post_apply.py', '--targets', str(missing)]
     assert _run(mod, argv, monkeypatch) == 2
     assert str(missing) in capsys.readouterr().out
+
+
+# ─── The STP script applies the intended root first ──────────────────────────
+
+
+def test_stp_changes_put_the_root_first_whatever_the_file_order(
+    targets: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``build_changes`` returns the lowest priority first, and the preview shows that order.
+
+    ``apply_stp_changes`` writes and provisions one switch at a time, in list order, so the
+    intended root must come first. The example's keys are alphabetical (the
+    ``pretty-format-json`` hook sorts them), so the order of the file is not the apply order.
+    """
+    mod = _load('apply_stp_priorities_custom', monkeypatch)
+    priorities = dict(sorted(targets.stp_priorities(targets.EXAMPLE).items()))
+    root = min(priorities, key=priorities.__getitem__)
+    assert next(iter(priorities)) != root, 'the premise: the first key is not the root'
+    switches = [
+        SwitchSTPConfig(device_id=f'device-{n}', name=name, mac='')
+        for n, name in enumerate(priorities, 1)
+    ]
+
+    async def _topology() -> STPTopology:
+        """Every switch at the default priority, so every one of them changes."""
+        return STPTopology(switches=switches)
+
+    monkeypatch.setattr(mod, 'discover_stp_topology', _topology)
+    monkeypatch.setattr(mod, 'apply_stp_changes', _fail)
+
+    changes = asyncio.run(mod.build_changes(priorities))
+    mod.render_diff(changes)
+
+    order = [c.device_name for c in changes]
+    assert order[0] == root
+    assert order == sorted(priorities, key=lambda name: (priorities[name], name))
+    rows = [line for line in capsys.readouterr().out.splitlines()[2:] if line.strip()]
+    assert [row[:42].strip() for row in rows] == order
