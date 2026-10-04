@@ -15,13 +15,18 @@ from ``docs/artefacts/``, and ``scripts/*.sh``), offline and without a controlle
 - the ``diagnose all`` check count and list match ``typer_cli.diagnose_all``;
 - relative links and ``#anchors`` resolve, and no doc names a machine-local path;
 - every ``UNIFI_*``, ``PROTECT_*`` and ``XDG_*`` variable a doc names is read by the code;
-- privacy: MAC addresses are locally administered, no private, link-local or CGNAT IPv4
-  address appears, and no device or client name from the local captures
-  (``reports/*.json``, when they exist) appears in a doc or under ``src/unifi_mapper/``.
+- privacy: MAC addresses in docs are locally administered, no private, link-local or CGNAT
+  IPv4 address appears in a doc, and no device or client name from the local captures
+  (``reports/*.json``, when they exist) appears in a doc, under ``src/unifi_mapper/``, or in a
+  tracked file under ``tests/`` or ``scripts/``. Tests and scripts also hold no MAC address,
+  serial number, 24-hex or UUID device or site ID, address in a captured /24 or IPv6 address
+  in a captured /48 from those captures (decision 11: the repository is public). The docs'
+  MAC rule can't apply there, since a fixture may keep a public vendor OUI; a name equal to a
+  model string the code classifies (``analysis/model_capabilities``) is generic.
 
 Each detector is a pure function over ``(path, text)`` and has a negative self-test on a
 synthetic snippet, so no guard can pass because it matched nothing. Failures name
-``path:line`` and a kind, never a matched address or device name.
+``path:line`` and a kind, never a matched address, identifier or device name.
 
 "Current" docs are everything except ``docs/issues/`` and ``docs/solutions/``, which record
 history and proposals on purpose; links, local paths and privacy cover every doc.
@@ -46,6 +51,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from tests.markdown_blocks import code_blocks
+from unifi_mapper.analysis import model_capabilities
 from unifi_mapper.inventory_cli import inventory_app
 from unifi_mapper.mcp import server as mcp_server
 from unifi_mapper.mcp.catalog import is_direct
@@ -1035,6 +1041,22 @@ def ipv4_problems(path: str, text: str) -> list[str]:
     return problems
 
 
+@functools.cache
+def _model_strings() -> frozenset[str]:
+    """Return the model tokens the code classifies, normalised as ``classify_model`` does."""
+    tokens: set[str] = set()
+    for attribute in dir(model_capabilities):
+        value = getattr(model_capabilities, attribute)
+        if attribute.endswith('_TOKENS') and isinstance(value, tuple):
+            tokens.update(str(token) for token in value)
+    return frozenset(tokens)
+
+
+def is_model_string(name: str) -> bool:
+    """True for a name that is just a model the code knows, such as a device's default name."""
+    return re.sub(r'[\s_-]', '', name).upper() in _model_strings()
+
+
 def local_device_names(reports: Path) -> frozenset[str]:
     """Return the device and client names in the local ``reports/*.json`` captures.
 
@@ -1042,7 +1064,8 @@ def local_device_names(reports: Path) -> frozenset[str]:
     new capture can't fail the suite: a ``name`` is taken from a record that also carries a
     ``mac`` or ``device_id``, and a ``hostname`` or ``device_name`` from any record, never from
     a port (a record with a ``port_idx``). Strings longer than 4 and shorter than 60
-    characters count, minus generic words, bare numbers and ``GENERIC_NAMES``.
+    characters count, minus generic words, bare numbers, ``GENERIC_NAMES`` and model strings
+    the code classifies (a device that kept its model as its name names no site).
 
     Args:
         reports: The directory holding the captures.
@@ -1077,7 +1100,10 @@ def local_device_names(reports: Path) -> frozenset[str]:
     return frozenset(
         n
         for n in names
-        if not GENERIC_NAME.match(n) and not re.fullmatch(r'[\d.]+', n) and n not in GENERIC_NAMES
+        if not GENERIC_NAME.match(n)
+        and not re.fullmatch(r'[\d.]+', n)
+        and n not in GENERIC_NAMES
+        and not is_model_string(n)
     )
 
 
@@ -1125,6 +1151,7 @@ def test_privacy_detectors_report_real_looking_identifiers(tmp_path: Path) -> No
         'devices': [
             {'name': 'Synthetic Lounge Switch', 'mac': '02:00:00:00:00:01'},
             {'name': 'U6 LR', 'device_id': 'a' * 24},
+            {'name': 'USW-Flex-XG', 'mac': '02:00:00:00:00:02'},
             {'name': 'Synthetic Port Label', 'port_idx': 4},
         ],
         'clients': [{'hostname': 'synthetic-laptop'}, {'hostname': 'Port 3'}],
@@ -1133,6 +1160,8 @@ def test_privacy_detectors_report_real_looking_identifiers(tmp_path: Path) -> No
     }
     (tmp_path / 'capture.json').write_text(json.dumps(captures), encoding='utf-8')
     names = local_device_names(tmp_path)
+    # 'USW-Flex-XG' is a model the code classifies: a device that kept its default name.
+    assert is_model_string('USW-Flex-XG') and not is_model_string('Synthetic Core Switch')
     assert names == {'Synthetic Lounge Switch', 'synthetic-laptop', 'Synthetic Core Switch'}
     assert device_name_problems('demo.md', text, _names_pattern(names)) == [
         'demo.md:3: device name from the local captures'
@@ -1147,21 +1176,255 @@ def test_documented_identifiers_are_documentation_values() -> None:
     assert _all_problems(docs, ipv4_problems) == []
 
 
+def _tracked_texts(prefixes: tuple[str, ...]) -> dict[str, str]:
+    """Return ``{path: text}`` for every tracked UTF-8 file under ``prefixes``."""
+    texts: dict[str, str] = {}
+    for path in sorted(_tracked()):
+        if not path.startswith(prefixes) or not (REPO / path).is_file():
+            continue
+        try:
+            texts[path] = (REPO / path).read_text(encoding='utf-8')
+        except UnicodeDecodeError:
+            continue
+    return texts
+
+
 def test_no_device_name_from_the_local_captures() -> None:
-    """No doc and no source file names a device from the local captures."""
+    """No doc, source, test or script file names a device from the local captures."""
     names = local_device_names(REPO / 'reports')
     if not names:
         pytest.skip('no local captures in reports/ (a fresh clone): nothing to compare')
     pattern = _names_pattern(names)
     sources = {
-        p: (REPO / p).read_text(encoding='utf-8')
-        for p in sorted(_tracked())
-        if p.startswith('src/unifi_mapper/') and p.endswith(('.py', '.yaml'))
+        p: t
+        for p, t in _tracked_texts(('src/unifi_mapper/',)).items()
+        if p.endswith(('.py', '.yaml'))
     }
-    corpus = {**_docs(), **sources}
+    corpus = {**_docs(), **sources, **_tracked_texts(('tests/', 'scripts/'))}
+    assert any(p.startswith('tests/') for p in corpus) and any(
+        p.startswith('scripts/') for p in corpus
+    ), 'no tracked test or script read: has the corpus moved?'
     problems = _all_problems(corpus, lambda p, t: device_name_problems(p, t, pattern))
     assert problems == [], (
         'a device or client name from reports/*.json appears on these lines (the name is not '
         'shown). Replace it with a placeholder, or, if it is a product model or a factory port '
         'label rather than a site name, add it to GENERIC_NAMES once that is checked.'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Privacy in tests and scripts: identifiers from the local captures
+# ---------------------------------------------------------------------------
+
+# A fixture may keep a public vendor OUI, so the docs' MAC rule above can't apply to tests/
+# and scripts/: there a MAC, serial, ID or address counts only when the local captures hold it.
+BARE_MAC = re.compile(r'(?<![0-9A-Za-z])[0-9A-Fa-f]{12}(?![0-9A-Za-z])')
+HEX_ID = re.compile(r'(?<![0-9A-Za-z])[0-9a-fA-F]{24}(?![0-9A-Za-z])')
+UUID_ID = re.compile(
+    r'(?<![0-9A-Fa-f-])[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}(?![0-9A-Fa-f-])'
+)
+IPV6 = re.compile(r'(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![0-9A-Fa-f:])')
+WORD_TOKEN = re.compile(r'[0-9A-Za-z]{6,}')
+CIDR_SUFFIX = re.compile(r'/(\d{1,2})\b')
+NOT_AN_ADDRESS = re.compile(r'version|firmware|build', re.I)
+# Global unicast and unique-local IPv6, minus the documentation prefix.
+SITE_V6 = tuple(ipaddress.IPv6Network(n) for n in ('2000::/3', 'fc00::/7'))
+DOC_V6 = ipaddress.IPv6Network('2001:db8::/32')
+
+
+@dataclass(frozen=True)
+class CapturedIdentifiers:
+    """The identifiers of the live network that the local captures hold.
+
+    Attributes:
+        macs: MAC addresses, as 12 lower-case hex digits.
+        serials: Serial numbers, lower case.
+        ids: 24-hex object IDs and UUIDs (device and site IDs), lower case.
+        subnets: The /24 of every private, link-local or CGNAT address.
+        prefixes: The /48 of every global or unique-local IPv6 address.
+    """
+
+    macs: frozenset[str]
+    serials: frozenset[str]
+    ids: frozenset[str]
+    subnets: frozenset[ipaddress.IPv4Network]
+    prefixes: frozenset[ipaddress.IPv6Network]
+
+    def __bool__(self) -> bool:
+        """True when the captures held any identifier."""
+        return bool(self.macs or self.serials or self.ids or self.subnets or self.prefixes)
+
+
+def _mac_digits(token: str) -> str | None:
+    """Return a MAC-shaped token as 12 lower-case hex digits; None for all zeros or ones."""
+    digits = re.sub('[^0-9A-Fa-f]', '', token).lower()
+    if len(digits) != 12 or set(digits) == {'0'} or set(digits) == {'f'}:
+        return None
+    return digits
+
+
+def _json_strings(node: object, key: str = '') -> list[tuple[str, str]]:
+    """Return ``(key, value)`` for every string value in a parsed JSON document."""
+    if isinstance(node, dict):
+        return [pair for k, v in node.items() for pair in _json_strings(v, str(k))]
+    if isinstance(node, list):
+        return [pair for item in node for pair in _json_strings(item, key)]
+    return [(key, node.strip())] if isinstance(node, str) else []
+
+
+def captured_identifiers(reports: Path) -> CapturedIdentifiers:
+    """Collect the MACs, serials, IDs, subnets and IPv6 prefixes in ``reports/*.json``.
+
+    Args:
+        reports: The directory holding the captures.
+
+    Returns:
+        The identifiers; empty when there are no captures (a fresh clone).
+    """
+    macs: set[str] = set()
+    serials: set[str] = set()
+    ids: set[str] = set()
+    subnets: set[ipaddress.IPv4Network] = set()
+    prefixes: set[ipaddress.IPv6Network] = set()
+    for capture in sorted(reports.glob('*.json')):
+        try:
+            document = json.loads(capture.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        for key, value in _json_strings(document):
+            lower_key = key.lower()
+            if MAC.fullmatch(value) or ('mac' in lower_key and BARE_MAC.fullmatch(value)):
+                digits = _mac_digits(value)
+                if digits:
+                    macs.add(digits)
+            if (
+                'serial' in lower_key
+                and re.fullmatch(r'[0-9A-Za-z-]{6,}', value)
+                and sum(c.isdigit() for c in value) >= 2
+            ):
+                serials.add(value.lower())
+            if (HEX_ID.fullmatch(value) or UUID_ID.fullmatch(value)) and not value.isdigit():
+                ids.add(value.lower())
+            if NOT_AN_ADDRESS.search(key):
+                continue
+            try:
+                address = ipaddress.ip_address(value.split('/')[0])
+            except ValueError:
+                continue
+            if isinstance(address, ipaddress.IPv4Address):
+                if any(address in network for network in PRIVATE_NETWORKS):
+                    subnets.add(ipaddress.IPv4Network(f'{address}/24', strict=False))
+            elif any(address in network for network in SITE_V6) and address not in DOC_V6:
+                prefixes.add(ipaddress.IPv6Network(f'{address}/48', strict=False))
+    return CapturedIdentifiers(
+        frozenset(macs),
+        frozenset(serials),
+        frozenset(ids),
+        frozenset(subnets),
+        frozenset(prefixes),
+    )
+
+
+def _address_kind(token: str, captured: CapturedIdentifiers) -> str | None:
+    """Return the problem kind when an IPv4 or IPv6 token lies in a captured network."""
+    try:
+        address = ipaddress.ip_address(token)
+    except ValueError:
+        return None
+    if isinstance(address, ipaddress.IPv4Address):
+        if any(address in subnet for subnet in captured.subnets):
+            return 'address in a captured subnet'
+    elif any(address in prefix for prefix in captured.prefixes):
+        return 'IPv6 address in a captured prefix'
+    return None
+
+
+def captured_identifier_problems(path: str, text: str, captured: CapturedIdentifiers) -> list[str]:
+    """Return ``path:line: problem`` for each identifier on a line that the captures hold.
+
+    Args:
+        path: The repo-relative file name.
+        text: The file's text.
+        captured: The identifiers from ``captured_identifiers``.
+
+    Returns:
+        The problems in file order, one per kind and line, without the identifier.
+    """
+    problems = []
+    for n, line in enumerate(text.splitlines(), 1):
+        kinds: set[str] = set()
+        for rx in (MAC, BARE_MAC):
+            for m in rx.finditer(line):
+                digits = _mac_digits(m.group(0))
+                if digits in captured.macs:
+                    kinds.add('MAC address')
+                elif digits in captured.serials:
+                    kinds.add('serial number')
+        if any(m.group(0).lower() in captured.serials for m in WORD_TOKEN.finditer(line)):
+            kinds.add('serial number')
+        for rx in (HEX_ID, UUID_ID):
+            if any(m.group(0).lower() in captured.ids for m in rx.finditer(line)):
+                kinds.add('device or site ID')
+        for m in IPV4.finditer(line):
+            cidr = CIDR_SUFFIX.match(line, m.end())
+            if cidr and int(cidr.group(1)) < 24:
+                continue  # an RFC 1918 block, say: it names no site subnet
+            if (kind := _address_kind(m.group(0), captured)) is not None:
+                kinds.add(kind)
+        for m in IPV6.finditer(line):
+            if (kind := _address_kind(m.group(0), captured)) is not None:
+                kinds.add(kind)
+        problems += [f'{path}:{n}: {kind} from the local captures' for kind in sorted(kinds)]
+    return problems
+
+
+def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: Path) -> None:
+    """Captured MACs, serials, IDs, subnets and prefixes are reported; look-alikes are not."""
+    # Built at run time, so this file holds no literal a privacy scan could take for real.
+    mac = ':'.join(['3c', '22', 'fb', '12', '34', '56'])  # universally administered
+    host = '.'.join(['10', '20', '30', '40'])
+    neighbour = '.'.join(['10', '20', '30', '99'])
+    elsewhere = '.'.join(['10', '20', '31', '5'])
+    prefix_host = ':'.join(['3fff', '1', '2', '0', '0', '0', '0', '10'])
+    neighbour_v6 = ':'.join(['3fff', '1', '2', 'ab', '0', '0', '0', '1'])
+    serial = 'SYN' + '0123456789'
+    object_id = '5f0e1d2c' + '3b4a5968' + '77665544'
+    site_id = '-'.join(['12345678', '90ab', '4cde', '8f01', '23456789abcd'])
+    capture = {
+        'devices': [
+            {'mac': mac, 'ip': host, 'serial': serial, '_id': object_id, 'ip6': prefix_host},
+            {'version': host, 'site_id': site_id},
+        ]
+    }
+    (tmp_path / 'capture.json').write_text(json.dumps(capture), encoding='utf-8')
+    captured = captured_identifiers(tmp_path)
+    text = (
+        f"MAC '{mac.upper()}', bare {mac.replace(':', '')}.\n"
+        f'Same vendor, other NIC: {mac[:9]}00:00:01; documentation MAC 00:00:5E:00:53:01.\n'
+        f'Hosts {neighbour}; elsewhere {elsewhere}, 10.0.0.0/8 and 192.0.2.10.\n'
+        f'Serial {serial.lower()}, object {object_id.upper()}, site {site_id}.\n'
+        f'IPv6 {neighbour_v6}; documentation 2001:db8::1.\n'
+    )
+    assert captured_identifier_problems('demo.py', text, captured) == [
+        'demo.py:1: MAC address from the local captures',
+        'demo.py:3: address in a captured subnet from the local captures',
+        'demo.py:4: device or site ID from the local captures',
+        'demo.py:4: serial number from the local captures',
+        'demo.py:5: IPv6 address in a captured prefix from the local captures',
+    ]
+
+
+def test_tests_and_scripts_hold_no_identifier_from_the_local_captures() -> None:
+    """No tracked test or script holds a MAC, serial, ID or address the captures hold."""
+    captured = captured_identifiers(REPO / 'reports')
+    if not captured:
+        pytest.skip('no local captures in reports/ (a fresh clone): nothing to compare')
+    files = _tracked_texts(('tests/', 'scripts/'))
+    assert len(files) > 100, f'read only {len(files)} files: has the corpus moved?'
+    problems = _all_problems(files, lambda p, t: captured_identifier_problems(p, t, captured))
+    assert problems == [], (
+        'a network identifier from reports/*.json appears on these lines (the value is not '
+        'shown). Use a documentation value: 192.0.2.0/24, 198.51.100.0/24 or 203.0.113.0/24, '
+        '2001:db8::/32, or a 02:00:00:... MAC (keep a public vendor OUI only where a test '
+        'needs the vendor).'
     )
