@@ -35,10 +35,10 @@ ACCESS_PROFILE = {
 def _switch(
     *,
     name: str = 'Mike2 USW Lite 16 PoE',
-    mac: str = '02:00:fe:02:00:15',
+    mac: str = '02:00:1e:00:00:01',
     uplink_port_idx: int = 16,
     portconf_id: str = 'prof-trunk',
-    uplink_mac: str = '02:00:fe:02:00:0b',
+    uplink_mac: str = '02:00:17:00:00:01',
     state: int = 1,
 ) -> dict[str, object]:
     """Build a minimal switch device dict with one elected uplink port."""
@@ -74,7 +74,7 @@ def _aggregation() -> dict[str, object]:
     return {
         '_id': 'sw-flex8',
         'name': 'Mike2 USW Flex 2.5G 8 PoE',
-        'mac': '02:00:fe:02:00:0b',
+        'mac': '02:00:17:00:00:01',
         'type': 'usw',
         'state': 1,
         'port_table': [],
@@ -99,7 +99,7 @@ def test_access_port_uplink_severs_tagged_vlans_is_critical() -> None:
     """The Lounge failure: uplink via a block_all access port severs every tagged VLAN."""
     report = audit_uplink_transparency_from_data(
         devices=[
-            _switch(uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05'),
+            _switch(uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:13:00:00:01'),
             _aggregation(),
         ],
         port_profiles=[TRUNK_PROFILE, ACCESS_PROFILE],
@@ -122,7 +122,7 @@ def test_management_vlan_severed_is_called_out() -> None:
     """When the switch's own mgmt IP sits in a severed VLAN, say so explicitly."""
     report = audit_uplink_transparency_from_data(
         devices=[
-            _switch(uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05'),
+            _switch(uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:13:00:00:01'),
             _aggregation(),
         ],
         port_profiles=[TRUNK_PROFILE, ACCESS_PROFILE],
@@ -140,7 +140,7 @@ def test_management_vlan_severed_is_called_out() -> None:
 def test_foreign_bridge_uplink_is_flagged() -> None:
     """An uplink whose remote end is not an adopted UniFi device is a loop risk."""
     report = audit_uplink_transparency_from_data(
-        devices=[_switch(uplink_mac='02:00:fe:02:00:05'), _aggregation()],
+        devices=[_switch(uplink_mac='02:00:13:00:00:01'), _aggregation()],
         port_profiles=[TRUNK_PROFILE, ACCESS_PROFILE],
         networks=NETWORKS,
     )
@@ -170,7 +170,7 @@ def test_stale_device_is_annotated_but_still_reported() -> None:
             _switch(
                 uplink_port_idx=13,
                 portconf_id='prof-access',
-                uplink_mac='02:00:fe:02:00:05',
+                uplink_mac='02:00:13:00:00:01',
                 state=0,
             ),
             _aggregation(),
@@ -244,7 +244,7 @@ def test_access_point_is_not_treated_as_a_switch() -> None:
                 'mac': 'aa:bb:cc:dd:ee:ff',
                 'type': 'uap',
                 'state': 1,
-                'uplink': {'uplink_mac': '02:00:fe:02:00:0b'},
+                'uplink': {'uplink_mac': '02:00:17:00:00:01'},
                 'port_table': [
                     {
                         'port_idx': 5,
@@ -276,10 +276,10 @@ def test_forward_all_without_explicit_tagged_mgmt_is_a_full_trunk() -> None:
             {
                 '_id': 'sw-flexxg',
                 'name': 'Hotel3 USW Flex 2.5G 8',
-                'mac': '02:00:fe:02:00:0e',
+                'mac': '02:00:1a:00:00:01',
                 'type': 'usw',
                 'state': 1,
-                'uplink': {'uplink_mac': '02:00:fe:02:00:0b'},
+                'uplink': {'uplink_mac': '02:00:17:00:00:01'},
                 'port_table': [
                     {
                         'port_idx': 10,
@@ -308,8 +308,8 @@ def test_lldp_on_elected_port_overrides_stale_uplink_mac() -> None:
     (LLDP proved it) while uplink_mac still named the old eero, producing a false
     third-party-bridge finding.
     """
-    switch = _switch(uplink_port_idx=16, portconf_id='prof-trunk', uplink_mac='02:00:fe:02:00:05')
-    switch['lldp_table'] = [{'local_port_idx': 16, 'chassis_id': '02:00:fe:02:00:0b'}]
+    switch = _switch(uplink_port_idx=16, portconf_id='prof-trunk', uplink_mac='02:00:13:00:00:01')
+    switch['lldp_table'] = [{'local_port_idx': 16, 'chassis_id': '02:00:17:00:00:01'}]
 
     report = audit_uplink_transparency_from_data(
         devices=[switch, _aggregation()],
@@ -322,8 +322,8 @@ def test_lldp_on_elected_port_overrides_stale_uplink_mac() -> None:
 
 def test_lldp_confirming_foreign_bridge_still_flags() -> None:
     """LLDP naming a non-UniFi chassis on the uplink port is a genuine finding."""
-    switch = _switch(uplink_port_idx=13, portconf_id='prof-trunk', uplink_mac='02:00:fe:02:00:0b')
-    switch['lldp_table'] = [{'local_port_idx': 13, 'chassis_id': '02:00:fe:02:00:05'}]
+    switch = _switch(uplink_port_idx=13, portconf_id='prof-trunk', uplink_mac='02:00:17:00:00:01')
+    switch['lldp_table'] = [{'local_port_idx': 13, 'chassis_id': '02:00:13:00:00:01'}]
 
     report = audit_uplink_transparency_from_data(
         devices=[switch, _aggregation()],
@@ -333,7 +333,7 @@ def test_lldp_confirming_foreign_bridge_still_flags() -> None:
 
     assert len(report.findings) == 1
     assert report.findings[0].remote_is_unifi is False
-    assert report.findings[0].remote_uplink_mac == '02:00:fe:02:00:05'
+    assert report.findings[0].remote_uplink_mac == '02:00:13:00:00:01'
 
 
 def test_long_stale_device_does_not_assert_topology() -> None:
@@ -344,7 +344,7 @@ def test_long_stale_device_does_not_assert_topology() -> None:
     bridge is not evidence of current topology.
     """
     switch = _switch(
-        uplink_port_idx=5, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05', state=0
+        uplink_port_idx=5, portconf_id='prof-access', uplink_mac='02:00:13:00:00:01', state=0
     )
     switch['last_seen'] = 1_000_000  # 8 hours before `now` below
 
@@ -371,7 +371,7 @@ def test_long_stale_device_does_not_assert_topology() -> None:
 def test_recently_offline_device_is_still_asserted() -> None:
     """Data only minutes old is still trustworthy, so a real fault must still be CRITICAL."""
     switch = _switch(
-        uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05', state=0
+        uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:13:00:00:01', state=0
     )
     switch['last_seen'] = 1_000_000
 
@@ -392,7 +392,7 @@ def test_recently_offline_device_is_still_asserted() -> None:
 def test_staleness_threshold_is_configurable() -> None:
     """The cutoff can be tuned per call."""
     switch = _switch(
-        uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:fe:02:00:05', state=0
+        uplink_port_idx=13, portconf_id='prof-access', uplink_mac='02:00:13:00:00:01', state=0
     )
     switch['last_seen'] = 1_000_000
 
@@ -435,7 +435,7 @@ def test_gateway_without_uplink_is_skipped() -> None:
             {
                 '_id': 'udm',
                 'name': 'Dream Machine Pro Max',
-                'mac': '02:00:fe:02:00:01',
+                'mac': '02:00:10:00:00:01',
                 'type': 'udm',
                 'state': 1,
                 'port_table': [{'port_idx': 1, 'name': 'wan', 'up': True}],

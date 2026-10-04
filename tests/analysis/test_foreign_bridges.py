@@ -12,10 +12,10 @@ from __future__ import annotations
 from unifi_mapper.analysis.foreign_bridges import detect_foreign_bridges_from_data
 
 
-FLEX8 = '02:00:fe:02:00:0b'
-FLEX5 = '02:00:fe:02:00:0d'
-EERO = '02:00:fe:02:00:03'
-EERO2 = '02:00:fe:02:00:05'
+FLEX8 = '02:00:17:00:00:01'
+FLEX5 = '02:00:19:00:00:01'
+EERO = '02:00:11:00:00:01'
+EERO2 = '02:00:13:00:00:01'
 
 TRUNK = {
     '_id': 'prof-trunk',

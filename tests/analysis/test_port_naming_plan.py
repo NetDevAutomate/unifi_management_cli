@@ -72,7 +72,7 @@ def test_resolves_ap_peer_from_chassis_id_not_system_name() -> None:
         _switch(
             'Ultra',
             [_port(1, 'PoE Out + Data')],
-            lldp=[{'local_port_idx': 1, 'chassis_id': 'ap:aa', 'port_id': '02:00:fe:02:00:08'}],
+            lldp=[{'local_port_idx': 1, 'chassis_id': 'ap:aa', 'port_id': '02:00:15:00:00:01'}],
         ),
         _ap('Bravo4 U6-Pro', 'ap:aa'),
     ]
@@ -100,7 +100,7 @@ def test_appends_remote_port_when_peer_reports_a_usable_port_id() -> None:
 
 
 def test_drops_remote_port_id_when_it_is_only_a_mac() -> None:
-    entry = {'chassis_id': 'ap:aa', 'port_id': '02:00:fe:02:00:16'}
+    entry = {'chassis_id': 'ap:aa', 'port_id': '02:00:1e:00:00:02'}
     assert resolve_peer(entry, {'ap:aa': {'name': 'Hotel3 U6 IW Kilo3'}}) == 'Hotel3 U6 IW Kilo3'
 
 
@@ -143,7 +143,7 @@ def test_unresolvable_peer_falls_through_to_clients() -> None:
 def test_does_not_overwrite_a_real_name_with_a_mac() -> None:
     """'Google Streamer 4K' must survive a poll where its client reports no hostname."""
     devices = [_switch('A', [_port(9, 'Google Streamer 4K')], mac='sw:01')]
-    clients = [_client('02:00:fe:02:00:0f', 'sw:01', 9)]
+    clients = [_client('02:00:1b:00:00:01', 'sw:01', 9)]
 
     plan = build_port_name_plan(devices, clients)
 
@@ -153,7 +153,7 @@ def test_does_not_overwrite_a_real_name_with_a_mac() -> None:
 def test_does_replace_a_placeholder_with_a_mac() -> None:
     """An address still beats 'Port 9' — some label is better than none."""
     devices = [_switch('A', [_port(9, 'Port 9')], mac='sw:01')]
-    clients = [_client('02:00:fe:02:00:0f', 'sw:01', 9)]
+    clients = [_client('02:00:1b:00:00:01', 'sw:01', 9)]
 
     plan = build_port_name_plan(devices, clients)
 
@@ -161,9 +161,9 @@ def test_does_replace_a_placeholder_with_a_mac() -> None:
 
 
 def test_would_lose_information_predicate() -> None:
-    assert would_lose_information('Google Streamer 4K', '02:00:fe:02:00:0f') is True
-    assert would_lose_information('Port 9', '02:00:fe:02:00:0f') is False
-    assert would_lose_information('0200fe00000a', '02:00:fe:02:00:0f') is False
+    assert would_lose_information('Google Streamer 4K', '02:00:1b:00:00:01') is True
+    assert would_lose_information('Port 9', '02:00:1b:00:00:01') is False
+    assert would_lose_information('0200fe00000a', '02:00:1b:00:00:01') is False
 
 
 # ─── Guard 1b: a vendor OUI string must not replace a curated label ──────────
@@ -220,12 +220,12 @@ def test_would_lose_information_covers_vendor_strings() -> None:
 
 
 def test_multi_client_port_prefers_a_named_device_over_a_mac() -> None:
-    """'Hotel3-Apple-TV' was nearly renamed to '02:00:fe:02:00:06 +2'."""
+    """'Hotel3-Apple-TV' was nearly renamed to '02:00:14:00:00:01 +2'."""
     devices = [_switch('A', [_port(2, 'Port 2')], mac='sw:01')]
     clients = [
-        _client('02:00:fe:02:00:06', 'sw:01', 2),
-        _client('02:00:fe:02:00:0c', 'sw:01', 2, name='Hotel3-Apple-TV'),
-        _client('02:00:fe:02:00:07', 'sw:01', 2, hostname='jetkvm-c83ef561d14c'),
+        _client('02:00:14:00:00:01', 'sw:01', 2),
+        _client('02:00:18:00:00:01', 'sw:01', 2, name='Hotel3-Apple-TV'),
+        _client('02:00:14:00:00:02', 'sw:01', 2, hostname='jetkvm-c83ef561d14c'),
     ]
 
     plan = build_port_name_plan(devices, clients)
@@ -259,8 +259,8 @@ def test_is_cosmetic_change_predicate() -> None:
 
 def test_suffix_flap_is_suppressed() -> None:
     """A Synology that comes and goes flipped 'ax-… +1' <-> 'ax-…' on every run."""
-    devices = [_switch('A', [_port(5, 'papa4-0200fe000009 +1')], mac='sw:01')]
-    clients = [_client('02:00:fe:02:00:10', 'sw:01', 5, hostname='papa4-0200fe000009')]
+    devices = [_switch('A', [_port(5, 'ax-02001c000001 +1')], mac='sw:01')]
+    clients = [_client('02:00:1c:00:00:01', 'sw:01', 5, hostname='ax-02001c000001')]
 
     assert build_port_name_plan(devices, clients).count == 0
 
@@ -317,7 +317,7 @@ def test_real_labels_are_not_placeholders() -> None:
 
 def test_weak_label_detection() -> None:
     assert is_weak_label('0200fe00000a') is True
-    assert is_weak_label('02:00:fe:02:00:0f') is True
+    assert is_weak_label('02:00:1b:00:00:01') is True
     assert is_weak_label('MacMiniM4') is False
 
 
@@ -386,7 +386,7 @@ def test_down_port_keeps_a_factory_placeholder() -> None:
 
 def test_down_port_with_a_mac_label_reverts_to_the_default() -> None:
     """A bare hardware address on a dead port carries nothing worth keeping."""
-    devices = [_switch('A', [_port(2, '02:00:fe:02:00:0f', up=False)], mac='sw:01')]
+    devices = [_switch('A', [_port(2, '02:00:1b:00:00:01', up=False)], mac='sw:01')]
 
     plan = build_port_name_plan(devices, [])
 

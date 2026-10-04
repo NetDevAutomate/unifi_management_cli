@@ -35,7 +35,7 @@ ADOPTED = {
 # Factory-reset switch awaiting adoption: the controller returns no '_id' at all.
 UNADOPTED = {
     'name': 'USW Flex 2.5G 5',
-    'mac': '02:00:fe:02:00:0d',
+    'mac': '02:00:19:00:00:01',
     'type': 'usw',
     'state': 2,
     'adopted': False,

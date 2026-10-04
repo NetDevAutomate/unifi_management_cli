@@ -71,7 +71,7 @@ def test_choose_port_name_uses_clients_when_lldp_is_only_mac():
 
     name, source = _choose_port_name(
         2,
-        {'remote_device_name': '02:00:fe:00:00:08'},
+        {'remote_device_name': '02:00:1c:00:00:03'},
         {2: [{'name': 'MacMini'}]},
         port_mapper,
     )

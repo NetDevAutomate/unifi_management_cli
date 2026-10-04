@@ -94,7 +94,7 @@ def test_resolve_switch_by_ip_or_mac():
 # The three-switch set that made 'USW Flex XG' ambiguous before exact matching existed.
 FLEX_XG_SWITCHES = [
     {
-        '_id': '0000000000000000000000a1',
+        '_id': 'ab0000000000000000000001',
         'type': 'usw',
         'name': 'USW Flex XG',
         'model': 'USFXG',
@@ -125,10 +125,10 @@ def test_resolve_switch_exact_name_beats_token_match():
     """An exact name wins even though two other names contain every token."""
     c = _fake_client(FLEX_XG_SWITCHES)
     switch, matched_by, candidates = resolve_switch_match(c, 'default', 'usw flex xg')
-    assert switch['_id'] == '0000000000000000000000a1'
+    assert switch['_id'] == 'ab0000000000000000000001'
     assert matched_by == 'exact_name'
     assert candidates == [switch]
-    assert resolve_switch(c, 'default', 'USW Flex XG')['_id'] == '0000000000000000000000a1'
+    assert resolve_switch(c, 'default', 'USW Flex XG')['_id'] == 'ab0000000000000000000001'
 
 
 @pytest.mark.parametrize('query', ['02:00:00:00:00:02', '02-00-00-00-00-02', '0200.0000.0002'])
@@ -177,8 +177,8 @@ def test_resolve_switch_match_can_consider_every_device_type():
 
 def test_resolve_mac_adopted_device():
     """_resolve_mac returns kind='device' for an adopted-UniFi-gear MAC."""
-    dev_idx = {'02:00:fe:02:00:01': {'name': 'UDM', 'model': 'UDMPROMAX', 'ip': '10.0.0.1'}}
-    got = _resolve_mac('02:00:fe:02:00:01', dev_idx, {})
+    dev_idx = {'02:00:10:00:00:01': {'name': 'UDM', 'model': 'UDMPROMAX', 'ip': '10.0.0.1'}}
+    got = _resolve_mac('02:00:10:00:00:01', dev_idx, {})
     assert got.kind == 'device'
     assert got.name == 'UDM'
     assert got.model == 'UDMPROMAX'
@@ -187,13 +187,13 @@ def test_resolve_mac_adopted_device():
 def test_resolve_mac_historical_client():
     """_resolve_mac returns kind='client' for a historical client MAC."""
     user_idx = {
-        '02:00:fe:02:00:11': {
+        '02:00:1c:00:00:02': {
             'name': 'axis-cam-1',
             'hostname': 'axis',
             'oui': 'Axis Communications',
         }
     }
-    got = _resolve_mac('02:00:fe:02:00:11', {}, user_idx)
+    got = _resolve_mac('02:00:1c:00:00:02', {}, user_idx)
     assert got.kind == 'client'
     assert got.name == 'axis-cam-1'
     assert got.vendor == 'Axis Communications'
@@ -229,7 +229,7 @@ def test_inspect_port_end_to_end_with_mocks():
         '_id': device_id,
         'name': 'Lounge Flex 8',
         'model': 'USWED37',
-        'mac': '02:00:fe:02:00:0b',
+        'mac': '02:00:17:00:00:01',
         'type': 'usw',
     }
     port_table = [
@@ -241,7 +241,7 @@ def test_inspect_port_end_to_end_with_mocks():
             'poe_class': 'Class 3',
             'last_connection': {
                 'connected': False,
-                'mac': '02:00:fe:02:00:01',
+                'mac': '02:00:10:00:00:01',
                 'connected_at': 1768400179,
                 'last_seen': 1768400196,
                 'ip': '192.0.2.1',
@@ -264,7 +264,7 @@ def test_inspect_port_end_to_end_with_mocks():
                 'type': 'udm',
                 'name': 'UDM Pro Max',
                 'model': 'UDMPROMAX',
-                'mac': '02:00:fe:02:00:01',
+                'mac': '02:00:10:00:00:01',
                 'ip': '1.2.3.5',
             },
         ]
@@ -284,7 +284,7 @@ def test_inspect_port_end_to_end_with_mocks():
     result = inspect_port(c, 'default', switch, 7)
     assert result.port_idx == 7
     assert result.up is False
-    assert result.last_connection['mac'] == '02:00:fe:02:00:01'
+    assert result.last_connection['mac'] == '02:00:10:00:00:01'
     assert result.identity is not None
     assert result.identity.kind == 'device'
     assert result.identity.name == 'UDM Pro Max'
@@ -324,10 +324,10 @@ def test_freshness_flags_stale_cache_scenario():
         'last_connection': {
             'connected': True,
             'last_seen': 1_700_000_000,
-            'mac': '02:00:fe:02:00:11',
+            'mac': '02:00:1c:00:00:02',
         },
     }
-    active = {'mac': '02:00:fe:02:00:11', 'sw_port': 7}
+    active = {'mac': '02:00:1c:00:00:02', 'sw_port': 7}
     r = _compute_freshness(pt, active_client=active, now_epoch=1_700_000_000)
     assert r.is_suspicious is True
     # Should fire all four rules

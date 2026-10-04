@@ -1172,7 +1172,7 @@ def _make_rogue_entry(
     band: str = 'ng',
     bw: int = 20,
     freq: int = 2437,
-    ap_mac: str = '02:00:fe:02:00:04',
+    ap_mac: str = '02:00:12:00:00:01',
     age: int = 0,
     last_seen: int = 1777896779,
     is_ubnt: bool = False,
@@ -1228,7 +1228,7 @@ class TestNeighbourScan:
             _make_rogue_entry(is_ubnt=True, signal=-60),
             _make_rogue_entry(is_ubnt=False, signal=-70),
         ]
-        result = _group_rogue_entries(entries, {'02:00:fe:02:00:04': 'AP-1'})
+        result = _group_rogue_entries(entries, {'02:00:12:00:00:01': 'AP-1'})
         total = sum(len(ap['neighbours']) for ap in result)
         assert total == 1
 
@@ -1238,7 +1238,7 @@ class TestNeighbourScan:
             _make_rogue_entry(age=0, signal=-60),
             _make_rogue_entry(age=301, signal=-65, bssid='aa:bb:cc:dd:ee:ff'),
         ]
-        result = _group_rogue_entries(entries, {'02:00:fe:02:00:04': 'AP-1'})
+        result = _group_rogue_entries(entries, {'02:00:12:00:00:01': 'AP-1'})
         total = sum(len(ap['neighbours']) for ap in result)
         assert total == 1
 

@@ -24,10 +24,10 @@ def test_valid_file_round_trip(tmp_path: Path) -> None:
         '\n'.join(
             [
                 'root_eligible_macs:',
-                '  - 02:00:fe:02:00:09',
+                '  - 02:00:16:00:00:01',
                 '  - aabb-ccdd-eeff',
                 'force_access_macs:',
-                '  - 02:00:fe:02:00:13',
+                '  - 02:00:1D:00:00:01',
             ]
         ),
         encoding='utf-8',
@@ -35,10 +35,10 @@ def test_valid_file_round_trip(tmp_path: Path) -> None:
 
     result = load_stp_overrides(target)
 
-    assert result.is_root_eligible_override('02:00:fe:02:00:09')
+    assert result.is_root_eligible_override('02:00:16:00:00:01')
     assert result.is_root_eligible_override('AA:BB:CC:DD:EE:FF')
     assert not result.is_root_eligible_override('00:00:00:00:00:00')
-    assert result.is_force_access('02-00-fe-02-00-13')
+    assert result.is_force_access('02-00-1d-00-00-01')
     assert not result.is_force_access('11:22:33:44:55:66')
     assert result.source_path == target
 

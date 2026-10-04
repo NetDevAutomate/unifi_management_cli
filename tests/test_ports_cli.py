@@ -99,7 +99,7 @@ def test_list_json(cli):
 
 def test_list_raw_includes_the_sanitised_device_record(cli):
     data = _json(cli.run('ports', 'list', SWITCH_NAME, '--json', '--raw'))
-    assert data['device']['raw']['serial'] == 'FAKESERIAL0001'
+    assert data['device']['raw']['serial'] == 'aaaaaaaaaa0001'
     assert 'x_authkey' not in data['device']['raw']
 
 

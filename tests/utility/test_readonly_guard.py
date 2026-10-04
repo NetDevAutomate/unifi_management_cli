@@ -54,7 +54,7 @@ def test_get_is_allowed_and_audited_without_host_or_query(guarded):
 
 
 @pytest.mark.parametrize(
-    'url', [f'{API}/cmd/devmgr', f'{API}/upd/device/0000000000000000000000a1', f'{API}/CMD/x']
+    'url', [f'{API}/cmd/devmgr', f'{API}/upd/device/ab0000000000000000000001', f'{API}/CMD/x']
 )
 def test_get_under_cmd_or_upd_is_refused(guarded, url):
     session, audit, inner = guarded
@@ -88,7 +88,7 @@ def test_post_to_allowlisted_query_endpoints_is_allowed(guarded, url):
 @pytest.mark.parametrize(
     'url',
     [
-        f'{API}/rest/device/0000000000000000000000a1',
+        f'{API}/rest/device/ab0000000000000000000001',
         f'{API}/rest/portconf/0000000000000000000000b1',
         f'{API}/rest/networkconf',
         f'{API}/upd/device/x',
@@ -113,7 +113,7 @@ def test_post_outside_the_allowlist_is_refused(guarded, url):
 def test_write_verbs_are_refused(guarded, verb):
     session, audit, inner = guarded
     with pytest.raises(ReadOnlyViolation):
-        getattr(session, verb)(f'{API}/rest/device/0000000000000000000000a1', json={})
+        getattr(session, verb)(f'{API}/rest/device/ab0000000000000000000001', json={})
     assert getattr(inner, verb).call_count == 0
     assert audit == []
 
@@ -225,7 +225,7 @@ def test_a_relogin_rewraps_the_new_session_with_the_same_audit(inner):
     fresh.get.assert_called_once()
     assert audit == [STAT_DEVICE, STAT_DEVICE]  # login traffic is not audited
     with pytest.raises(ReadOnlyViolation):
-        client.session.put(f'{API}/rest/device/0000000000000000000000a1', json={})
+        client.session.put(f'{API}/rest/device/ab0000000000000000000001', json={})
     fresh.put.assert_not_called()
 
 
