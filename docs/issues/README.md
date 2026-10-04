@@ -59,3 +59,4 @@ the reasoning stays next to the code it explains.
 | [046](046-real-device-names-in-code-and-history.md) | Tests, scripts and unpushed commits carry device names from the live network | open, decision needed |
 | [047](047-install-completions-fish-and-all-fail.md) | `unifi-mapper install-completions` accepts `fish` and `all` but installs only bash and zsh | open |
 | [048](048-cli-and-mcp-config-searches-differ.md) | With `XDG_CONFIG_HOME` set, the CLI and the MCP server search different config files | open, decision needed |
+| [049](049-lines-over-99-characters.md) | 225 tracked lines are longer than the 99-character limit, and nothing enforces it | open, decision needed |
