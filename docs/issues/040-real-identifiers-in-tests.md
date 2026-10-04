@@ -1,19 +1,40 @@
 ---
-title: "Test fixtures carry MAC addresses and addresses from the live network"
+title: "Test fixtures carried MAC addresses and addresses from the live network"
 date: 2026-10-04
 status: open, decision needed
 severity: low
-components: [tests]
+components: [tests, history]
 found_by: docs and repo hygiene review (privacy scan)
 ---
 
-# Test fixtures carry MAC addresses and addresses from the live network
+# Test fixtures carried MAC addresses and addresses from the live network
+
+## Status
+
+- Fixed at HEAD. The repository is public, so this review replaced the identifiers:
+  - `29879cf`: every address in a subnet the local captures show is now in an RFC 5737
+    documentation range, with the same host part, in 19 test files.
+  - `a78d403`: the MAC addresses, a serial number and a device ID are synthetic values in
+    11 test files. Each MAC is locally administered, and MACs that shared a vendor prefix
+    still share one.
+  - `4845976`: `tests/test_docs_consistency.py` fails when a tracked test or script holds a
+    MAC address, serial number, device or site ID, or an address in a subnet or IPv6 prefix
+    that the local captures (`reports/*.json`) hold. It skips on a fresh clone, and it reports
+    the file, line and kind only.
+- The history still holds the old values. The eight files below were on `origin/main`
+  before `d045079`; `062a0e5` (not pushed) added a live address; and the removed lines of
+  `29879cf` and `a78d403` hold the values they replaced. Only a history rewrite removes them.
+  The rewrite the user asked for, to purge two passwords
+  ([issue 041](041-onvif-scripts-hard-code-cameras.md),
+  [issue 051](051-verify-cli-help-example-held-a-password.md)), runs separately, after this
+  review, and its force-push needs the user's explicit confirmation.
 
 ## Problem
 
-A privacy scan compared the identifiers in tracked files with local captures of the live
-network. The docs were cleaned in `e6a6aae`, but eight test files still use MAC addresses of
-real devices on that network, and three of them also addresses in its subnets (marked):
+As found, at `80c11fe`: a privacy scan compared the identifiers in tracked files with local
+captures of the live network. The docs were cleaned in `e6a6aae`, but eight test files still
+used MAC addresses of real devices on that network, and three of them also addresses in its
+subnets (marked):
 
 - `tests/analysis/test_foreign_bridges.py` (addresses too)
 - `tests/analysis/test_link_error_tracking_unadopted.py`
@@ -24,7 +45,9 @@ real devices on that network, and three of them also addresses in its subnets (m
 - `tests/test_port_naming.py`
 - `tests/utility/test_overrides.py`
 
-All eight predate `d045079`, so they are already on `origin/main`.
+All eight predate `d045079`, so they are on `origin/main`. The wider scan behind the fix also
+counted generic examples in the site's subnets, a serial number and a device ID, in 26 test
+files in all.
 
 Separately, `062a0e5` (not pushed) added an address from the live network to
 `tests/mcp/test_execute_call_shapes.py`. `b062b17` replaced it with a documentation address,
@@ -37,12 +60,7 @@ breaks for fresh clones, CI or users.
 
 ## Decision needed
 
-Recommendation:
-
-1. Replace the MACs with locally administered `02:00:00:…` values and the addresses with
-   RFC 5737 documentation addresses, as `tests/fixtures_unifi.py` already does. Check each
-   test first: an assertion that depends on a vendor OUI (an OUI lookup, a vendor name)
-   needs that OUI kept and only the device bytes changed.
-2. Before the unpushed commits are pushed, decide whether to rewrite `062a0e5`. It is the
-   user's call: the rewrite changes every later commit hash, including the `resolved_by`
-   hashes the issue files record.
+What is left: whether the history rewrite also covers these identifiers, that is the pushed
+history of the eight test files, `062a0e5`, and the removed lines of `29879cf` and
+`a78d403`. It is the user's call: a rewrite changes every later commit hash, including the
+`resolved_by` hashes the issue files record, and every clone has to be re-made afterwards.
