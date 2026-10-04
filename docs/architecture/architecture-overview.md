@@ -1495,7 +1495,7 @@ flowchart TD
     DotEnv -->|"not found"| Missing
 ```
 
-A set `XDG_CONFIG_HOME` replaces `~/.config` here rather than going before it, unlike the MCP server's search ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)). Only the root option of `unifi-mapper` reads `UNIFI_CONFIG` (`typer_cli.py:103`). The standalone `unifi-inventory` program ignores that variable: without its own `--config` it goes straight to the `XDG_CONFIG_HOME` step. The `inventory` commands take their own `--config` and ignore the root one ([issue 043](../issues/043-inventory-ignores-the-root-config.md)); `unifi-network-toolkit` defaults its `--config` to `~/.config/unifi_management_cli/prod.env`.
+A set `XDG_CONFIG_HOME` replaces `~/.config` here rather than going before it, unlike the MCP server's search ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)). Of the CLI programs, only the root `--config` option of `unifi-mapper` (`typer_cli.main`) reads `UNIFI_CONFIG`; the MCP server reads it too (below). The standalone `unifi-inventory` program ignores that variable: without its own `--config` it goes straight to the `XDG_CONFIG_HOME` step. The `inventory` commands take their own `--config` and ignore the root one ([issue 043](../issues/043-inventory-ignores-the-root-config.md)); `unifi-network-toolkit` defaults its `--config` to `~/.config/unifi_management_cli/prod.env`.
 
 ### Credential fallback chain (MCP / toolkit)
 

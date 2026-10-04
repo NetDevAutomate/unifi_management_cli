@@ -25,6 +25,7 @@ C4Component
     Container_Boundary(scripts, "AXIS Scripts") {
         Component(axis_provision, "scripts/axis_provision.py", "Python", "Reads YAML desired state and reconciles supported AXIS settings")
         Component(onvif_stream, "scripts/onvif_stream.py", "Python / ONVIF", "Tests ONVIF profiles, stream URIs, and snapshots")
+        Component(onvif_probe, "scripts/onvif_probe.py", "Python / ONVIF", "Probes each listed camera over ONVIF")
         Component(onvif_config, "scripts/onvif_config.py", "Python", "Reads ONVIF_USERNAME, ONVIF_PASSWORD and ONVIF_CAMERAS; stops the run if one is unset")
         Component(axis_config, "~/.config/axiscam/config.yaml", "YAML", "Desired device inventory, credentials, MQTT, and ONVIF settings")
     }
@@ -36,12 +37,15 @@ C4Component
 
     Rel(admin, axis_provision, "Runs", "shell")
     Rel(admin, onvif_stream, "Runs", "shell")
+    Rel(admin, onvif_probe, "Runs", "shell")
     Rel(axis_provision, axis_config, "Reads desired state")
     Rel(axis_provision, axis_device, "Applies supported settings", "HTTPS VAPIX / JSON API")
     Rel(axis_provision, mqtt_broker, "Configures device MQTT target indirectly", "device-side MQTT")
     Rel(onvif_stream, onvif_config, "Loads cameras and account before connecting")
+    Rel(onvif_probe, onvif_config, "Loads cameras and account before connecting")
     Rel(onvif_config, onvif_env, "Reads")
     Rel(onvif_stream, axis_device, "Reads profiles and snapshot URI", "ONVIF / HTTP")
+    Rel(onvif_probe, axis_device, "Reads device information, capabilities and stream URIs", "ONVIF")
     Rel(admin, operator_ui, "Creates ONVIF users when firmware blocks API automation")
 ```
 
