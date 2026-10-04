@@ -66,3 +66,4 @@ the reasoning stays next to the code it explains.
 | [053](053-mcp-counts-in-prose-match-any-registry-count.md) | A tool count in prose only has to match one of the registry's counts | open |
 | [054](054-identifier-guard-skips-public-and-link-local-addresses.md) | The identifier guard skips public IPv4 and link-local IPv6 addresses from the captures | open |
 | [055](055-env-guard-counts-a-mention-as-a-read.md) | The env-var guard counts a variable as read when any string in the code names it | open |
+| [056](056-mcp-name-guard-knows-every-assigned-name.md) | The MCP-name guard counts any name assigned in `src/` as known, local variables included | open |
