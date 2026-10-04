@@ -102,8 +102,10 @@ can't be removed without rewriting published commits.
    repository.
 3. History: the user has asked for a history rewrite that removes the two passwords
    ([issue 041](041-onvif-scripts-hard-code-cameras.md),
-   [issue 051](051-verify-cli-help-example-held-a-password.md)). Decide, before the unpushed
-   commits are pushed, whether the same rewrite also covers the names:
+   [issue 051](051-verify-cli-help-example-held-a-password.md)). The user has approved
+   removing the network details in the unpushed commits in the same rewrite. Only the names
+   in the pushed history are still to decide. The orchestrator sets the exact commit list.
+   The copies are:
    - the six commits above, and the pushed history of the scripts' literals;
    - the removed lines of `e5696b5` and `99c3856`, which hold the names they replaced.
      `a78d403` also changed three lines that still held a name, which `e5696b5` then

@@ -19,8 +19,8 @@ found_by: docs and repo hygiene review (privacy scan)
   `15b0f60`, the `origin/main` tip included. The user has asked for the history to be
   rewritten to remove it. That rewrite runs separately, after this review, and its
   force-push needs the user's explicit confirmation.
-- The user still has to rotate the camera password: a rewrite can't recall the copies that
-  were already made.
+- The user reports that the camera password has been changed everywhere it was used. The old
+  value stays in the history until the orchestrator's rewrite purges it.
 
 ## Problem
 
@@ -37,22 +37,23 @@ running, but the committed lists were the live ones.
 
 ## Impact
 
-Anyone with a copy of the repository, or of its history, has the password of that ONVIF
-account. If the password is reused elsewhere the exposure is wider. The addresses and names
+Anyone with a copy of the repository, or of its history, had the password of that ONVIF
+account. Where the password was reused, the exposure was wider. The user has since changed
+it everywhere it was used. The addresses and names
 describe the site's camera network. Nothing breaks for fresh clones or CI.
 
 ## Decision needed
 
 What is left, in this order:
 
-1. User action: change that ONVIF account's password on the cameras, then put the new one
-   in the file that `ONVIF_PASSWORD` comes from. Removing the value from the file at HEAD
-   doesn't help with the copies in the pushed history.
+1. Done by the user: the ONVIF account's password has been changed on the cameras and
+   everywhere else it was used (the user's report; not checked here). The new value belongs
+   in the file that `ONVIF_PASSWORD` comes from.
 2. Done in `15b0f60`: both scripts read their camera list and account from the environment,
    and the repository keeps only placeholders.
 3. The history rewrite the user asked for: it purges this password and the one in
    [issue 051](051-verify-cli-help-example-held-a-password.md). Its force-push needs the
    user's explicit confirmation, and every clone has to be re-made afterwards.
 
-Why this still needs a decision: steps 1 and 3 are actions only the user can take or
-confirm.
+Why this still needs a decision: the rewrite's force-push in step 3 needs the user's
+explicit confirmation.

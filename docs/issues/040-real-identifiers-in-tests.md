@@ -70,9 +70,11 @@ breaks for fresh clones, CI or users.
 
 ## Decision needed
 
-What is left: whether the history rewrite also covers these identifiers, that is the pushed
-history of the eight test files, `062a0e5`, the removed lines of `29879cf` and `a78d403`,
-and the removed lines of `e6a6aae` and `3afa3bc` (the 45 doc and docstring lines above,
-public since before this review). It is the user's call: a rewrite changes every later
-commit hash, including the `resolved_by` hashes the issue files record, and every clone has
-to be re-made afterwards.
+What is left: the history copies of these identifiers, that is the pushed history of the
+eight test files, `062a0e5`, the removed lines of `29879cf` and `a78d403`, and the removed
+lines of `e6a6aae` and `3afa3bc` (the 45 doc and docstring lines above, public since before
+this review). The user has approved removing the network details in the unpushed commits in
+the same rewrite as the passwords. Only the identifiers in the pushed history are still to
+decide. The orchestrator sets the exact commit list. A rewrite changes every later commit
+hash, including the `resolved_by` hashes the issue files record, and every clone has to be
+re-made afterwards.
