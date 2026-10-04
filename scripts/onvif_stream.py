@@ -41,7 +41,7 @@ async def get_camera(config: CameraConfig) -> ONVIFCamera:
     return camera
 
 
-async def show_info(config: CameraConfig):
+async def show_info(config: CameraConfig) -> None:
     """Show camera information."""
     print(f'\n{"=" * 60}')
     print(f'📷 {config.name} ({config.ip})')
@@ -63,7 +63,7 @@ async def show_info(config: CameraConfig):
         print(f'  Status: ❌ Failed - {e}')
 
 
-async def list_streams(config: CameraConfig):
+async def list_streams(config: CameraConfig) -> None:
     """List all available stream URIs."""
     print(f'\n{"=" * 60}')
     print(f'🎬 {config.name} ({config.ip}) - Stream URIs')
@@ -98,7 +98,7 @@ async def list_streams(config: CameraConfig):
         print(f'  ❌ Failed: {e}')
 
 
-async def capture_snapshot(config: CameraConfig, output_dir: str = '/tmp'):
+async def capture_snapshot(config: CameraConfig, output_dir: str = '/tmp') -> None:
     """Capture a snapshot from the camera."""
     print(f'\n📸 Capturing snapshot from {config.name}...')
 
