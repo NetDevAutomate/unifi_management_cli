@@ -8,7 +8,7 @@ classified as 'Core' because it is gateway-adjacent).
 
 USAGE
 -----
-1. Review the PRIORITY_OVERRIDES table below.
+1. Put each switch's priority in this site's targets file (``site_targets.py``).
 2. Run with no flags to dry-run.
 3. Run with --apply to commit.
 """
@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from site_targets import TargetsError, stp_priorities
 from typing import Any
 from unifi_mapper.analysis.stp_optimizer import (
     STPChange,
@@ -27,42 +28,28 @@ from unifi_mapper.analysis.stp_optimizer import (
 
 
 # -----------------------------------------------------------------------------
-# Explicit priority assignments (Option B: Lounge XG primary, Shed XG secondary)
+# The explicit priorities, {switch name: priority}, come from this site's targets
+# file through site_targets.stp_priorities (issue 046); the repository keeps
+# placeholders only, in site-targets.example.json. Lower wins: the primary root
+# takes 4096, the secondary 8192, and each tier below a higher multiple of 4096.
 # -----------------------------------------------------------------------------
-PRIORITY_OVERRIDES: dict[str, int] = {
-    # 10G BACKBONE — roots
-    'Mike2 10G Aggregation USW Flex XG': 4096,  # PRIMARY ROOT
-    'Xray3 USW Flex XG 10G': 8192,  # SECONDARY ROOT
-    # GATEWAY — in-topology, not root
-    'Dream Machine Pro Max': 12288,
-    # ACCESS TIER 3 (aggregation / dense edge)
-    'Mike2 USW Flex 2.5G 8 PoE': 20480,  # was wrongly 4096
-    'Mike2 USW-Ultra-210W': 20480,
-    'Xray3 USW-Lite-16-PoE': 20480,  # demoted from 'Core'
-    # ACCESS TIER 4
-    'Victor3 USW Flex 2.5G 8 PoE': 24576,
-    'Victor3 USW Flex 2.5G 5': 24576,
-    'Victor3 Whiskey3 USW Flex 2.5G 5': 24576,
-    'Mike2 USW Flex 2.5G 5': 24576,
-    'Mike2 USW Lite 8 PoE': 24576,
-    'Hotel3 USW Lite 8 PoE': 24576,
-    'Juliett USW Flex 2.5G 5': 24576,
-    'Foxtrot3 USW Flex 2.5G 5': 24576,
-    # ACCESS TIER 5 (leaves)
-    'Victor3 Juliett3 US 8 60W': 28672,
-    'Victor3 India3 US 8 60W': 28672,
-    'Xray3 Yankee3 US 8 60W': 28672,
-}
 
 
-async def build_changes() -> list[STPChange]:
-    """Derive the STP priority changes required to reach the target topology."""
+async def build_changes(priorities: dict[str, int]) -> list[STPChange]:
+    """Derive the STP priority changes required to reach the target topology.
+
+    Args:
+        priorities: The explicit priority for each switch, by name.
+
+    Returns:
+        One change per switch whose current priority differs.
+    """
     topology = await discover_stp_topology()
     by_name = {sw.name: sw for sw in topology.switches}
     changes: list[STPChange] = []
     missing: list[str] = []
 
-    for name, new_priority in PRIORITY_OVERRIDES.items():
+    for name, new_priority in priorities.items():
         sw = by_name.get(name)
         if sw is None:
             missing.append(name)
@@ -107,11 +94,21 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description='Apply custom STP priorities.')
     parser.add_argument('--apply', action='store_true', help='Commit changes (default: dry-run)')
     parser.add_argument('--force', '-f', action='store_true', help='Skip confirmation prompt')
+    parser.add_argument(
+        '--targets',
+        help='Path to the site targets file (default: the XDG config directory)',
+    )
     args = parser.parse_args()
+
+    try:
+        priorities = stp_priorities(args.targets)
+    except TargetsError as exc:
+        print(f'apply_stp_priorities_custom.py: {exc}')
+        return 2
 
     print('📡 Fetching current STP topology...')
     try:
-        changes = await build_changes()
+        changes = await build_changes(priorities)
     except Exception as exc:
         # discover_stp_topology reaches the controller, so auth failure, an
         # unreachable host or a TLS problem all land here. Without this the

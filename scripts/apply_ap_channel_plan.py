@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
+from site_targets import TargetsError, channel_plan
 from unifi_mapper.analysis.radio_config import apply_radio_config
 from unifi_mapper.cli import get_default_config_path, load_env_from_config
 from unifi_mapper.core.utils.client import UniFiClient
@@ -39,32 +40,18 @@ def load_config(config: str | None = None) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Plan: (AP name, 5GHz primary channel, width MHz as the controller stores it)
+# The plan: (AP name, 5GHz primary channel, width MHz as the controller stores it),
+# read from this site's targets file by site_targets.channel_plan (issue 046). The
+# repository keeps placeholders only, in site-targets.example.json.
 #
 # `ht` is a STRING in this codebase (radio_config.py writes '80'); an int is
 # accepted by the API and then ignored - the silent-no-op class that
-# _coerce_radio_value's docstring warns about.
+# _coerce_radio_value's docstring warns about. The loader rejects an int width.
 #
 # Every entry must occupy a distinct 40MHz block. `find_overlaps` enforces it at
-# startup, so a self-colliding plan cannot reach the network.
+# startup, so a self-colliding plan cannot reach the network. Entries apply in the
+# file's order: put the AP you are connected through last.
 # -----------------------------------------------------------------------------
-CHANNEL_PLAN: list[tuple[str, int, str]] = [
-    ('Charlie2 U6-Pro', 36, '40'),
-    # Was 161, which shares the 157+161 block with Sierra3 below - two APs on
-    # identical spectrum, in a script whose purpose is removing contention.
-    # 44+48 is the only free NON-DFS block, so a long-range AP is not subject
-    # to radar-triggered channel changes.
-    ('U6 LR', 44, '40'),
-    ('Yankee U6-Pro', 52, '40'),
-    ('Mike2 U6 Pro', 60, '40'),
-    ('Bravo4 U6-Pro', 112, '40'),
-    ('Juliett U6 IW', 120, '40'),
-    ('Hotel3 U6-Pro', 132, '40'),
-    ('Victor3 U6-Pro', 149, '40'),
-    ('Sierra3 U6-Pro', 157, '40'),
-    # Oscar-Papa goes LAST - this is the AP the operator is connected via.
-    ('Oscar Papa U6-Pro', 140, '40'),
-]
 
 # Canonical 5GHz bonded blocks. A primary channel plus a width determines which
 # 20MHz channels are actually occupied, which is what "non-overlapping" means.
@@ -133,13 +120,23 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true', help='Commit (default: dry-run)')
     parser.add_argument('--config', help='Path to a .env config file (default: XDG lookup)')
+    parser.add_argument(
+        '--targets',
+        help='Path to the site targets file (default: the XDG config directory)',
+    )
     args = parser.parse_args()
+
+    try:
+        plan = channel_plan(args.targets)
+    except TargetsError as exc:
+        print(f'apply_ap_channel_plan.py: {exc}')
+        return 2
 
     # Validate the plan BEFORE touching config or the network: it is a pure data
     # check, so a self-colliding plan should be reported even with no credentials.
-    overlaps = find_overlaps(CHANNEL_PLAN)
+    overlaps = find_overlaps(plan)
     if overlaps:
-        print('CHANNEL_PLAN is self-inconsistent - refusing to touch the network:')
+        print('The channel plan is self-inconsistent - refusing to touch the network:')
         for name_a, name_b, shared in overlaps:
             print(f'    {name_a} and {name_b} both occupy {list(shared)}')
         return 2
@@ -156,7 +153,7 @@ async def main() -> int:
     rows: list[tuple[str, str, str]] = []
     missing: list[str] = []
 
-    for name, channel, width in CHANNEL_PLAN:
+    for name, channel, width in plan:
         device = by_name.get(name)
         if device is None:
             missing.append(name)
@@ -204,7 +201,7 @@ async def main() -> int:
         print('Re-run with --apply to commit.')
         return 0
 
-    print('\nApplying (Oscar-Papa last, to preserve the operator shell)...\n')
+    print('\nApplying in plan order (the last AP is the one you are connected through)...\n')
     results: list[dict] = []
     for change, (name, _, after) in zip(changes, rows, strict=True):
         print(f'  -> {name}: {after} ... ', end='', flush=True)
@@ -225,7 +222,7 @@ async def main() -> int:
         return 2
 
     print('\nAPs will restart their 5GHz radios over the next 30-60s.')
-    print('Wi-Fi may drop briefly when Oscar Papa U6-Pro applies.')
+    print(f'Wi-Fi may drop briefly when {plan[-1][0]} applies.')
     return 0
 
 

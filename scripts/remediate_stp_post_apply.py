@@ -9,6 +9,7 @@ import copy
 import json
 from datetime import datetime
 from pathlib import Path
+from site_targets import TargetsError, post_apply_ports
 from typing import Any, cast
 from unifi_mapper.analysis.stp_optimizer import (
     apply_stp_changes,
@@ -21,13 +22,9 @@ from unifi_mapper.core.utils.client import UniFiClient
 
 JsonDict = dict[str, Any]
 
-TARGET_PORT_PROFILE = 'Trunk VLAN 1 Home 10 Gbps'
-TARGET_PORTS = {
-    'Mike2 10G Aggregation USW Flex XG': {
-        2: 'Xray3 USW Flex XG 10G',
-        3: 'Mike2 USW Flex 2.5G 8 PoE',
-    }
-}
+# The port profile to apply and the ports to apply it to come from this site's targets
+# file through site_targets.post_apply_ports (issue 046); the repository keeps
+# placeholders only, in site-targets.example.json.
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,12 +48,27 @@ def parse_args() -> argparse.Namespace:
         action='store_true',
         help='Apply changes. Without this flag the script only reports planned actions.',
     )
+    parser.add_argument(
+        '--targets',
+        default=None,
+        help='Path to the site targets file (default: the XDG config directory).',
+    )
     return parser.parse_args()
 
 
-async def main() -> None:
-    """Run the remediation workflow."""
+async def main() -> int:
+    """Run the remediation workflow.
+
+    Returns:
+        0 when the report was written; 2 when the site targets can't be read, which is
+        checked before the controller config is read or the controller is contacted.
+    """
     args = parse_args()
+    try:
+        profile_name, target_ports_by_switch = post_apply_ports(args.targets)
+    except TargetsError as exc:
+        print(f'remediate_stp_post_apply.py: {exc}')
+        return 2
     config_path = args.config or get_default_config_path()
     load_env_from_config(str(config_path))
 
@@ -74,7 +86,7 @@ async def main() -> None:
             {
                 'category': 'Port Errors',
                 'reason': 'CRC/error counters are physical/link evidence, not a safe API mutation.',
-                'action': 'Inspect Xray3 USW Flex XG 10G port 3 cabling/transceiver if the counter increases.',
+                'action': 'Inspect the cabling and transceiver of a port whose counter increases.',
             },
             {
                 'category': 'LAG',
@@ -97,13 +109,13 @@ async def main() -> None:
     async with UniFiClient() as client:
         devices = await client.get_devices()
         profiles = await client.get(client.build_path('rest/portconf'))
-        profile = _find_profile(profiles, TARGET_PORT_PROFILE)
+        profile = _find_profile(profiles, profile_name)
         if profile is None:
-            raise RuntimeError(f'Port profile not found: {TARGET_PORT_PROFILE}')
+            raise RuntimeError(f'Port profile not found: {profile_name}')
 
         for device in devices:
             device_name = str(device.get('name') or '')
-            target_ports = TARGET_PORTS.get(device_name)
+            target_ports = target_ports_by_switch.get(device_name)
             if not target_ports:
                 continue
             actions = _normalise_device_ports(device, target_ports, str(profile['_id']))
@@ -114,6 +126,7 @@ async def main() -> None:
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2, sort_keys=True))
     print(json.dumps(report, indent=2, sort_keys=True))
+    return 0
 
 
 def _find_profile(profiles: object, name: str) -> JsonDict | None:
@@ -191,4 +204,4 @@ async def _replace_port_overrides(client: UniFiClient, device: JsonDict) -> None
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()))

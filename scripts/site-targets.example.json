@@ -1,0 +1,76 @@
+{
+  "_comment": "Placeholders only. Copy to ~/.config/unifi_management_cli/site-targets.json (or pass --targets PATH), outside the repository, and replace each name with this site's. See scripts/site_targets.py.",
+  "apply_ap_channel_plan": {
+    "channel_plan": [
+      [
+        "AP-1",
+        36,
+        "40"
+      ],
+      [
+        "AP-2",
+        44,
+        "40"
+      ],
+      [
+        "AP-3",
+        52,
+        "40"
+      ],
+      [
+        "AP-4",
+        60,
+        "40"
+      ],
+      [
+        "AP-5",
+        112,
+        "40"
+      ],
+      [
+        "AP-6",
+        120,
+        "40"
+      ],
+      [
+        "AP-7",
+        132,
+        "40"
+      ],
+      [
+        "AP-8",
+        149,
+        "40"
+      ],
+      [
+        "AP-9",
+        157,
+        "40"
+      ],
+      [
+        "AP-10",
+        140,
+        "40"
+      ]
+    ]
+  },
+  "apply_stp_priorities_custom": {
+    "priorities": {
+      "Gateway": 12288,
+      "Switch A": 4096,
+      "Switch B": 8192,
+      "Switch C": 20480,
+      "Switch D": 24576,
+      "Switch E": 28672
+    }
+  },
+  "remediate_stp_post_apply": {
+    "port_profile": "Port profile name",
+    "ports": {
+      "Switch A": {
+        "2": "AP-1",
+        "3": "AP-2"
+      }
+    }
+  }
+}
