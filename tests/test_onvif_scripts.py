@@ -236,3 +236,147 @@ def test_rtsp_check_reports_each_failing_camera_and_moves_on(
     assert out.count('❌ Failed') == 2
     assert len(cameras_built) == 2
     assert FAKE_PASSWORD not in out
+
+
+# The password sentinel for the masking tests. Its first four characters appear nowhere else
+# in the output, so a truncated copy of it is detectable too.
+SENTINEL = 'zq9x' + '-sentinel-k4'
+STREAM_PATH = '/axis-media/media.amp'
+
+
+def _bare_uri(host: str) -> str:
+    """Return the stream URI a camera reports: no credentials, built from parts at run time."""
+    return 'rtsp' + '://' + host + STREAM_PATH
+
+
+def _profile() -> types.SimpleNamespace:
+    """Return one media profile with the fields the stream commands read."""
+    resolution = types.SimpleNamespace(Width=1920, Height=1080)
+    encoder = types.SimpleNamespace(Resolution=resolution, Encoding='H264')
+    return types.SimpleNamespace(Name='Profile 1', token='p1', VideoEncoderConfiguration=encoder)
+
+
+class _FakeMedia:
+    """Stands in for the ONVIF media service: one profile, and the camera's bare URI."""
+
+    def __init__(self, host: str) -> None:
+        """Remember the camera's host for the URI."""
+        self.host = host
+
+    async def GetProfiles(self) -> list[types.SimpleNamespace]:  # noqa: N802 (ONVIF API name)
+        """Return a single profile."""
+        return [_profile()]
+
+    async def GetStreamUri(self, _request: object) -> types.SimpleNamespace:  # noqa: N802
+        """Return the bare stream URI."""
+        return types.SimpleNamespace(Uri=_bare_uri(self.host))
+
+
+class _FakeCamera:
+    """Stands in for a connected ``ONVIFCamera``."""
+
+    def __init__(self, host: str) -> None:
+        """Remember the camera's host for the media service."""
+        self.host = host
+
+    async def create_media_service(self) -> _FakeMedia:
+        """Return the fake media service."""
+        return _FakeMedia(self.host)
+
+    async def close(self) -> None:
+        """Do nothing: there is no connection."""
+
+
+@pytest.fixture
+def stream_with_fakes(
+    config: Any, cameras_built: list[tuple[object, ...]], monkeypatch: pytest.MonkeyPatch
+) -> tuple[Any, list[list[str]]]:
+    """``onvif_stream`` with fake cameras, a failing ffprobe and ``SENTINEL`` as the password.
+
+    ffprobe exits 1 and echoes its input URI in stderr, as it does on an auth failure. The
+    padding puts the password across the 100-character cut the script applies to stderr.
+
+    Returns:
+        The module, and the argument list of every ffprobe call.
+    """
+    stream = load_script('onvif_stream', monkeypatch)
+    for var, value in _env(ONVIF_PASSWORD=SENTINEL).items():
+        monkeypatch.setenv(var, value)
+
+    async def _get_camera(camera_config: Any) -> _FakeCamera:
+        return _FakeCamera(camera_config.ip)
+
+    calls: list[list[str]] = []
+
+    def _ffprobe(args: list[str], **_kwargs: object) -> Any:
+        calls.append(args)
+        uri = args[-1]
+        pad = 'x' * (96 - uri.index(SENTINEL))  # an unmasked cut would keep 4 characters
+        stderr = f'{pad}{uri}: Server returned 401 Unauthorized'
+        return stream.subprocess.CompletedProcess(args, 1, stdout='', stderr=stderr)
+
+    monkeypatch.setattr(stream, 'get_camera', _get_camera)
+    monkeypatch.setattr(stream.subprocess, 'run', _ffprobe)
+    return stream, calls
+
+
+@pytest.mark.parametrize('command', ['streams', 'test-rtsp'])
+def test_stream_commands_mask_the_password(
+    stream_with_fakes: tuple[Any, list[list[str]]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+) -> None:
+    """``streams`` and ``test-rtsp`` print the authenticated URI with the password masked."""
+    stream, _ = stream_with_fakes
+    monkeypatch.setattr(sys, 'argv', ['onvif_stream.py', command])
+
+    asyncio.run(stream.main())
+
+    captured = capsys.readouterr()
+    assert SENTINEL[:4] not in captured.out + captured.err
+    masked = 'onvifuser:' + stream.MASK + '@192.0.2.10' + STREAM_PATH
+    assert masked in captured.out
+
+
+def test_rtsp_check_passes_the_full_uri_to_ffprobe(
+    stream_with_fakes: tuple[Any, list[list[str]]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ffprobe still gets the credentials; only the printed copy and its stderr are masked."""
+    stream, calls = stream_with_fakes
+    monkeypatch.setattr(sys, 'argv', ['onvif_stream.py', 'test-rtsp'])
+
+    asyncio.run(stream.main())
+
+    assert [args[-1] for args in calls] == [
+        _bare_uri(host).replace('://', '://onvifuser:' + SENTINEL + '@')
+        for host in ('192.0.2.10', '192.0.2.11')
+    ]
+    out = capsys.readouterr().out
+    assert out.count('ffprobe failed:') == 2
+    assert SENTINEL[:4] not in out
+
+
+@pytest.mark.parametrize('command', ['info', 'streams', 'snapshot', 'test-rtsp'])
+def test_an_error_message_holding_the_password_is_masked(
+    stream_with_fakes: tuple[Any, list[list[str]]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+) -> None:
+    """An exception whose text carries the password is printed with it masked."""
+    stream, _ = stream_with_fakes
+
+    async def _failing_camera(camera_config: Any) -> None:
+        raise OSError(f'cannot open {camera_config.ip} as onvifuser/{SENTINEL}')
+
+    monkeypatch.setattr(stream, 'get_camera', _failing_camera)
+    monkeypatch.setattr(sys, 'argv', ['onvif_stream.py', command])
+
+    asyncio.run(stream.main())
+
+    captured = capsys.readouterr()
+    assert captured.out.count('onvifuser/' + stream.MASK) == 2
+    assert SENTINEL[:4] not in captured.out + captured.err

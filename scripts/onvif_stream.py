@@ -11,6 +11,9 @@ Each command runs against every camera in ONVIF_CAMERAS (NAME=HOST[:PORT],...) w
 ONVIF_USERNAME and ONVIF_PASSWORD account. Keep them in a file outside the repository and
 pass it with "uv run --env-file FILE python scripts/onvif_stream.py ...". The script stops
 before connecting to any camera if one of them is unset.
+
+The output never shows ONVIF_PASSWORD: stream URIs are printed as rtsp://USER:***@HOST/...,
+and error text is masked the same way.
 """
 
 import asyncio
@@ -24,6 +27,39 @@ from onvif_config import CameraConfig, ConfigError, load_cameras
 
 
 WSDL_DIR = os.path.join(os.path.dirname(onvif.__file__), 'wsdl')
+MASK = '***'
+
+
+def _redact(text: object, config: CameraConfig) -> str:
+    """Return ``text`` as a string with the camera's password replaced by ``MASK``.
+
+    Every string this script prints that could hold the password (a stream URI, ffprobe's
+    error output, an exception message) goes through here first.
+
+    Args:
+        text: The value to print; it is converted with ``str``.
+        config: The camera whose password must not appear.
+
+    Returns:
+        The text, with every occurrence of the password masked.
+    """
+    value = str(text)
+    if config.password:
+        value = value.replace(config.password, MASK)
+    return value
+
+
+def _with_credentials(uri: str, config: CameraConfig) -> str:
+    """Return ``uri`` with the camera's ONVIF account added after ``rtsp://``.
+
+    Args:
+        uri: The stream URI the camera reported.
+        config: The camera whose user and password to add.
+
+    Returns:
+        The authenticated URI. Pass it to ffprobe; print it only through ``_redact``.
+    """
+    return uri.replace('rtsp://', f'rtsp://{config.user}:{config.password}@')
 
 
 async def get_camera(config: CameraConfig) -> ONVIFCamera:
@@ -60,11 +96,14 @@ async def show_info(config: CameraConfig) -> None:
 
         await camera.close()
     except Exception as e:
-        print(f'  Status: ❌ Failed - {e}')
+        print(f'  Status: ❌ Failed - {_redact(e, config)}')
 
 
 async def list_streams(config: CameraConfig) -> None:
-    """List all available stream URIs."""
+    """List all available stream URIs (the ``streams`` command).
+
+    Each profile's URI is printed bare and with the ONVIF account added, the password masked.
+    """
     print(f'\n{"=" * 60}')
     print(f'🎬 {config.name} ({config.ip}) - Stream URIs')
     print('=' * 60)
@@ -87,15 +126,14 @@ async def list_streams(config: CameraConfig) -> None:
                 {'StreamSetup': stream_setup, 'ProfileToken': profile.token}
             )
 
-            # Fix 127.0.0.1 in RTSP URI and build authenticated version
+            # Fix 127.0.0.1 in RTSP URI; show the authenticated form with the password masked
             rtsp_uri = uri_response.Uri.replace('127.0.0.1', config.ip)
-            auth_uri = rtsp_uri.replace('rtsp://', f'rtsp://{config.user}:{config.password}@')
-            print(f'  URI: {rtsp_uri}')
-            print(f'  Auth URI: {auth_uri}')
+            print(f'  URI: {_redact(rtsp_uri, config)}')
+            print(f'  Auth URI: {_redact(_with_credentials(rtsp_uri, config), config)}')
 
         await camera.close()
     except Exception as e:
-        print(f'  ❌ Failed: {e}')
+        print(f'  ❌ Failed: {_redact(e, config)}')
 
 
 async def capture_snapshot(config: CameraConfig, output_dir: str = '/tmp') -> None:
@@ -117,7 +155,7 @@ async def capture_snapshot(config: CameraConfig, output_dir: str = '/tmp') -> No
 
         # Fix 127.0.0.1 in snapshot URI
         fixed_snapshot_uri = snapshot_uri.Uri.replace('127.0.0.1', config.ip)
-        print(f'  Snapshot URI: {fixed_snapshot_uri}')
+        print(f'  Snapshot URI: {_redact(fixed_snapshot_uri, config)}')
 
         # Download snapshot using httpx
         import httpx
@@ -136,14 +174,15 @@ async def capture_snapshot(config: CameraConfig, output_dir: str = '/tmp') -> No
 
         await camera.close()
     except Exception as e:
-        print(f'  ❌ Failed: {e}')
+        print(f'  ❌ Failed: {_redact(e, config)}')
 
 
 async def check_rtsp(config: CameraConfig) -> None:
     """Test RTSP stream connectivity (the ``test-rtsp`` command).
 
     A camera that fails, before or during the ffprobe run, is reported, and the caller moves
-    on to the next one.
+    on to the next one. ffprobe gets the full authenticated URI; the printed URI and any error
+    text have the password masked.
     """
     print(f'\n🔗 Testing RTSP for {config.name}...')
 
@@ -162,11 +201,11 @@ async def check_rtsp(config: CameraConfig) -> None:
             {'StreamSetup': stream_setup, 'ProfileToken': profile.token}
         )
 
-        # Fix 127.0.0.1 and add auth credentials
+        # Fix 127.0.0.1 and add auth credentials (ffprobe gets them; the output masks them)
         fixed_uri = uri_response.Uri.replace('127.0.0.1', config.ip)
-        rtsp_uri = fixed_uri.replace('rtsp://', f'rtsp://{config.user}:{config.password}@')
+        rtsp_uri = _with_credentials(fixed_uri, config)
 
-        print(f'  Stream URI: {rtsp_uri}')
+        print(f'  Stream URI: {_redact(rtsp_uri, config)}')
 
         # Test with ffprobe if available
         result = subprocess.run(
@@ -195,9 +234,11 @@ async def check_rtsp(config: CameraConfig) -> None:
             if len(parts) >= 3:
                 print(f'  ✅ Stream OK: {parts[2]} {parts[0]}x{parts[1]}')
             else:
-                print(f'  ✅ Stream OK: {result.stdout.strip()}')
+                print(f'  ✅ Stream OK: {_redact(result.stdout.strip(), config)}')
         else:
-            print(f'  ⚠️  ffprobe failed: {result.stderr[:100] if result.stderr else "no output"}')
+            # Mask before truncating, so a cut can't leave part of the password showing.
+            detail = _redact(result.stderr, config)[:100] if result.stderr else 'no output'
+            print(f'  ⚠️  ffprobe failed: {detail}')
 
         await camera.close()
     except FileNotFoundError:
@@ -205,7 +246,7 @@ async def check_rtsp(config: CameraConfig) -> None:
     except subprocess.TimeoutExpired:
         print('  ❌ RTSP connection timeout')
     except Exception as e:
-        print(f'  ❌ Failed: {e}')
+        print(f'  ❌ Failed: {_redact(e, config)}')
 
 
 COMMANDS: dict[str, Callable[[CameraConfig], Awaitable[None]]] = {
