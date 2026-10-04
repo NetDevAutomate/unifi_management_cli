@@ -73,11 +73,14 @@ Recommendation:
    the name itself (switch resolution, port-label planning), so the fixture and its
    assertions change together.
 2. Scripts: move the site-specific one-offs out of the tracked tree, into a git-ignored
-   local directory, or make them read their targets from a config file, as
-   [issue 041](041-onvif-scripts-hard-code-cameras.md) recommends for the ONVIF scripts.
-3. History: decide, before the unpushed commits are pushed, whether to rewrite these five
-   together with `062a0e5` ([issue 040](040-real-identifiers-in-tests.md)). A rewrite changes
-   every later commit hash, including the `resolved_by` hashes the issue files record.
+   local directory, or make them read their targets from the environment or a config file,
+   as `15b0f60` did for the ONVIF scripts ([issue 041](041-onvif-scripts-hard-code-cameras.md)).
+3. History: the user has asked for a history rewrite that removes the two passwords
+   ([issue 041](041-onvif-scripts-hard-code-cameras.md),
+   [issue 051](051-verify-cli-help-example-held-a-password.md)). Decide, before the unpushed
+   commits are pushed, whether the same rewrite also covers these five and `062a0e5`
+   ([issue 040](040-real-identifiers-in-tests.md)). A rewrite changes every later commit
+   hash, including the `resolved_by` hashes the issue files record.
 4. The radio rule: drop the room-word channel move from `build_optimisation_plan`, or read it
    from a config file, so `radio optimize` makes the same plan on any site.
 
