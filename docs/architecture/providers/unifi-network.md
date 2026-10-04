@@ -7,7 +7,7 @@
 The UniFi Network provider covers all modules that talk to the UniFi Network controller or reason about Network controller data. It has three client paths:
 
 - `api_client.py` and `enhanced_api_client.py`: synchronous `requests` clients, used by the original topology and port-mapping workflows, the inventory commands and the read-only port diagnostics.
-- `core/utils/client.py`: the async `httpx` `UniFiClient` for the classic controller API, used by the `analysis/`, `diagnostics/`, `discovery/` and `connectivity/` tools.
+- `core/utils/client.py`: the async `httpx` `UniFiClient` for the classic controller API, used by the async tools in `analysis/`, `diagnostics/`, `discovery/` and `connectivity/`. The port diagnostics are the exception: they use the synchronous clients above.
 - `network/client.py`: the async `httpx` `UniFiNetworkClient` for the Integration API under `/proxy/network/integrations/v1`, used by the `network/` managers and the MCP `network` tools.
 
 All three are intentionally present. The synchronous path preserves the mature port-naming workflow and ground-truth verification behavior; the async paths give the analysis toolkit and the newer network control modules typed clients.

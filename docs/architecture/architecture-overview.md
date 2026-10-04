@@ -124,7 +124,6 @@ graph TB
     AT --> API
     AT --> SSH
     AT --> CD
-    NCP --> CD
     PR --> PC
     PR --> CD
     MCP --> AT
@@ -383,7 +382,7 @@ def _multi_read_consistency_check(
 
 ### enhanced_network_topology.py
 
-Wraps `DeviceInfo` and `PortInfo` objects into a graph and renders diagrams via Graphviz (PNG/SVG/DOT) or produces Mermaid markup directly. `network_topology.py` is a thin re-export shim so existing code imports continue to work without modification.
+Wraps `DeviceInfo` and `PortInfo` objects into a graph. PNG and SVG render through Graphviz from the DOT source `_generate_dot_source()` builds, and HTML is an interactive diagram. `generate_dot_diagram` and `generate_mermaid_diagram` write a one-line placeholder, not a diagram ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)). `network_topology.py` is a thin re-export shim so existing code imports continue to work without modification.
 
 ---
 
@@ -1472,7 +1471,7 @@ The CLI entry points (`cli.get_default_config_path`, used by `unifi-mapper` and 
 
 ```mermaid
 flowchart TD
-    EnvCli["--config CLI flag or UNIFI_CONFIG env var"]
+    EnvCli["--config CLI flag, or UNIFI_CONFIG (unifi-mapper)"]
     HasXdg{"XDG_CONFIG_HOME set?"}
     XdgDir["$XDG_CONFIG_HOME/unifi_management_cli/"]
     HomeDir["~/.config/unifi_management_cli/"]
@@ -1496,7 +1495,7 @@ flowchart TD
     DotEnv -->|"not found"| Missing
 ```
 
-A set `XDG_CONFIG_HOME` replaces `~/.config` here rather than going before it, unlike the MCP server's search ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)). The `inventory` commands take their own `--config` and ignore the root one ([issue 043](../issues/043-inventory-ignores-the-root-config.md)); `unifi-network-toolkit` defaults its `--config` to `~/.config/unifi_management_cli/prod.env`.
+A set `XDG_CONFIG_HOME` replaces `~/.config` here rather than going before it, unlike the MCP server's search ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)). Only the root option of `unifi-mapper` reads `UNIFI_CONFIG` (`typer_cli.py:103`). The standalone `unifi-inventory` program ignores that variable: without its own `--config` it goes straight to the `XDG_CONFIG_HOME` step. The `inventory` commands take their own `--config` and ignore the root one ([issue 043](../issues/043-inventory-ignores-the-root-config.md)); `unifi-network-toolkit` defaults its `--config` to `~/.config/unifi_management_cli/prod.env`.
 
 ### Credential fallback chain (MCP / toolkit)
 
