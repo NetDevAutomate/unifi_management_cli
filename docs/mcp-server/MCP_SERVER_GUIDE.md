@@ -387,4 +387,43 @@ uv run pyright src/
 uv run unifi-mcp --check
 ```
 
+### Adding a tool
+
+1. **Write the handler** in the module that owns the logic (for example
+   `src/unifi_mapper/analysis/<topic>.py`), with type hints and a Google docstring. The
+   signature is the input schema: `ToolCatalog` builds the SDK tool with
+   `Tool.from_function`, so parameter names, types and defaults are what the model sees.
+   Return a typed value (usually a pydantic model) so the tool gets an `outputSchema`; an
+   untyped return is listed without one and must be added to `NO_OUTPUT_SCHEMA_ALLOWLIST` in
+   `tests/mcp/test_manifest_parity.py`. Open the controller with
+   `async with UniFiClient() as client:`: under the server it borrows the shared, read-only
+   guarded connection. Raise `ToolError(message, error_code, suggestion, related_tools)` for
+   expected failures; every tool a hint names must be registered
+   (`tests/mcp/test_related_tools.py`).
+2. **Add a manifest entry** under `tools:` in `src/unifi_mapper/mcp/manifests/<category>.yaml`.
+   `MANIFEST_KEYS` in `mcp/registry.py` lists the allowed keys and their types; an unknown key
+   or a wrong type fails `ToolRegistry(strict=True)`, which the tests use.
+
+   | Key | Default | Meaning |
+   | --- | --- | --- |
+   | `module` | required | Import path of the handler's module |
+   | `handler` | the tool name | Function name in `module` |
+   | `title` | the name, title-cased | `Tool.title`; the tests require an explicit one |
+   | `description` | empty | What the model reads when choosing the tool |
+   | `priority`, `tags` | `P2`, none | Search ranking and search terms |
+   | `parameters` | none | One entry per handler parameter; `required: true` exactly for those without a default |
+   | `credentials` | `controller` | `controller`, `network_api`, `protect` or `none`; `network.yaml` entries must be `network_api`, `protect.yaml` entries `protect`, and `none` only for a module that imports no client |
+   | `mutates` | `false` | `true` for anything that changes the controller: never listed, refused with `MUTATION_REFUSED`. An `apply_*` or `restore_*` tool without it fails `tests/mcp/test_execute.py` |
+   | `pipeline` | `false` | `true` when a required parameter is a model another tool produces; reachable only through `execute_tool` |
+   | `writes_local` | `false` | Writes a local file; drops `readOnlyHint` |
+   | `idempotent` | `true` | `false` for wall-clock sampling (any `interval_seconds`, `samples` or `counter_samples` parameter) |
+   | `open_world` | `true` | `false` when the tool only computes from its input |
+   | `mcp` | `true` | `false` keeps it off the direct surface |
+   | `aliases` | none | Deprecated parameter name → handler parameter name |
+
+3. **Run** `uv run pytest tests/mcp -q`. `tests/mcp/test_manifest_parity.py` checks every
+   entry against its handler (import, parameters, schemas, pipeline and sampling rules,
+   title, credential family), so a new tool needs no edit there.
+4. **Update the docs**: the category counts in this guide and in the README.
+
 `docs/mcp-server/IMPLEMENTATION_PROMPT.md` is the original design prompt, kept for history.
