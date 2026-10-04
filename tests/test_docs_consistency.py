@@ -1438,6 +1438,10 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
     host = '.'.join(['10', '20', '30', '40'])
     neighbour = '.'.join(['10', '20', '30', '99'])
     elsewhere = '.'.join(['10', '20', '31', '5'])
+    # A dotted version string that parses as a private address: its key ('version') says it
+    # is no address, so its /24 must not become a captured subnet.
+    version = '.'.join(['10', '99', '0', '1'])
+    version_neighbour = '.'.join(['10', '99', '0', '7'])
     prefix_host = ':'.join(['3fff', '1', '2', '0', '0', '0', '0', '10'])
     neighbour_v6 = ':'.join(['3fff', '1', '2', 'ab', '0', '0', '0', '1'])
     serial = 'SYN' + '0123456789'
@@ -1446,7 +1450,7 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
     capture = {
         'devices': [
             {'mac': mac, 'ip': host, 'serial': serial, '_id': object_id, 'ip6': prefix_host},
-            {'version': host, 'site_id': site_id},
+            {'version': version, 'site_id': site_id},
         ]
     }
     (tmp_path / 'capture.json').write_text(json.dumps(capture), encoding='utf-8')
@@ -1457,6 +1461,7 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
         f'Hosts {neighbour}; elsewhere {elsewhere}, 10.0.0.0/8 and 192.0.2.10.\n'
         f'Serial {serial.lower()}, object {object_id.upper()}, site {site_id}.\n'
         f'IPv6 {neighbour_v6}; documentation 2001:db8::1.\n'
+        f'Next to the version string: {version_neighbour}.\n'
     )
     assert captured_identifier_problems('demo.py', text, captured) == [
         'demo.py:1: MAC address from the local captures',
