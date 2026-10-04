@@ -54,7 +54,7 @@ Required packages (installed automatically via `uv sync`):
 - `httpx` - Async HTTP client with Digest authentication support
 - `pyyaml` - YAML config parsing
 
-For ONVIF testing scripts (`test_onvif.py`, `onvif_stream.py`), an additional package is required:
+For the ONVIF scripts (`onvif_probe.py`, `onvif_stream.py`), an additional package is required:
 
 ```bash
 uv add onvif-zeep-async
@@ -544,9 +544,10 @@ If all four methods fail to confirm ONVIF support, the device is treated as non-
 
 ### Testing ONVIF Connectivity
 
-Two test scripts are provided to validate ONVIF integration after provisioning.
+Two scripts are provided to validate ONVIF integration after provisioning. Both connect to
+real cameras, so neither is part of the pytest suite.
 
-#### Basic ONVIF Test (`test_onvif.py`)
+#### Basic ONVIF Probe (`onvif_probe.py`)
 
 Tests connection, retrieves device information, enumerates capabilities, and lists media profiles with stream URIs.
 
@@ -562,7 +563,7 @@ cameras = [
 Run:
 
 ```bash
-uv run python scripts/test_onvif.py
+uv run python scripts/onvif_probe.py
 ```
 
 Expected successful output:
@@ -702,9 +703,9 @@ uv run python scripts/axis_provision.py --debug --device DeviceName
 
 If the debug output shows `status=401`, the credential in the config is wrong. If it shows a connection exception, the device is genuinely unreachable.
 
-**ONVIF test script fails with `[Errno 111] Connection refused` on port 80**
+**ONVIF probe script fails with `[Errno 111] Connection refused` on port 80**
 
-The `test_onvif.py` and `onvif_stream.py` scripts connect to port 80 by default. Some AXIS camera models redirect HTTP to HTTPS. Check whether the device is accessible on port 443 and update the port value in the test script's camera list accordingly.
+The `onvif_probe.py` and `onvif_stream.py` scripts connect to port 80 by default. Some AXIS camera models redirect HTTP to HTTPS. Check whether the device is accessible on port 443 and update the port value in the script's camera list accordingly.
 
 **ONVIF `GetStreamUri` returns `127.0.0.1` in the RTSP URI**
 

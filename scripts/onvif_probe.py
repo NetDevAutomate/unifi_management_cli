@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Simple ONVIF camera test script using onvif-zeep-async."""
+"""Probe ONVIF cameras with onvif-zeep-async: device info, capabilities and stream URIs.
+
+A live-camera probe, not a pytest test: it connects to the cameras listed in ``main()``.
+"""
 
 import asyncio
 import onvif
@@ -11,8 +14,8 @@ from onvif import ONVIFCamera
 WSDL_DIR = os.path.join(os.path.dirname(onvif.__file__), 'wsdl')
 
 
-async def test_camera(ip: str, port: int, user: str, password: str):
-    """Test ONVIF connection and get camera info."""
+async def probe_camera(ip: str, port: int, user: str, password: str):
+    """Probe an ONVIF connection and print the camera's info."""
     print(f'\n{"=" * 60}')
     print(f'Testing ONVIF: {ip}:{port} as {user}')
     print('=' * 60)
@@ -63,7 +66,7 @@ async def test_camera(ip: str, port: int, user: str, password: str):
 
 
 async def main():
-    """Test both cameras."""
+    """Probe both cameras."""
     cameras = [
         ('198.51.100.11', 80, 'onvifuser', '***REMOVED***', 'Intercom'),
         ('198.51.100.12', 80, 'onvifuser', '***REMOVED***', 'Camera 1'),
@@ -74,7 +77,7 @@ async def main():
         print(f'\n{"#" * 60}')
         print(f'# {name}')
         print('#' * 60)
-        results[name] = await test_camera(ip, port, user, password)
+        results[name] = await probe_camera(ip, port, user, password)
 
     print(f'\n{"=" * 60}')
     print('SUMMARY')
