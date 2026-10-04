@@ -4,9 +4,9 @@
 checks the whole documentation set (``README.md``, ``.env.example``, ``docs/**/*.md`` apart
 from ``docs/artefacts/``, and ``scripts/*.sh``), offline and without a controller:
 
-- every documented ``unifi-mapper``, ``unifi-inventory`` and ``unifi-network-toolkit``
-  invocation resolves to a real command, every option exists on that command, and no root
-  shortcut flag sits before a subcommand that refuses it (exit 2);
+- every documented ``unifi-mapper``, ``unifi-inventory``, ``unifi-network-toolkit`` and
+  ``unifi-mcp`` invocation resolves to a real command, every option exists on that command,
+  and no root shortcut flag sits before a subcommand that refuses it (exit 2);
 - MCP tool names, ``unifi://`` resources and prompts exist, and tool counts, the category
   tables and the MCP guide's tool index equal what ``ToolRegistry()`` holds;
 - the ``diagnose all`` check count and list match ``typer_cli.diagnose_all``;
@@ -143,8 +143,13 @@ def _code_lines(text: str) -> set[int]:
 # CLI invocations
 # ---------------------------------------------------------------------------
 
-ENTRY = re.compile(r'(?<![\w/-])(unifi-mapper|unifi-inventory|unifi-network-toolkit)(?=\s|$|`)')
-INLINE = re.compile(r'`((?:unifi-mapper|unifi-inventory|unifi-network-toolkit)[^`]*)`')
+ENTRY = re.compile(
+    r'(?<![\w/-])(unifi-mapper|unifi-inventory|unifi-network-toolkit|unifi-mcp)(?=\s|$|`)'
+)
+# The lookahead keeps `unifi-mcp-launch.sh` (a script, not the program) out.
+INLINE = re.compile(
+    r'`((?:unifi-mapper|unifi-inventory|unifi-network-toolkit|unifi-mcp)(?=[\s`])[^`]*)`'
+)
 COMMAND_START = re.compile(r'(?:^\s*#?\s*|\brun\s+|\$\s|`)$')
 STOP = {'|', '||', '&&', ';', '>', '>>', '2>', '2>&1', '&', '#', '<<'}
 NUMBER = re.compile(r'-?\d+(\.\d+)?')
@@ -191,6 +196,7 @@ def _trees() -> dict[str, Tree]:
         'unifi-mapper': _click_tree(typer.main.get_command(app)),
         'unifi-inventory': _click_tree(typer.main.get_command(inventory_app)),
         'unifi-network-toolkit': _argparse_tree(create_main_parser()),
+        'unifi-mcp': _argparse_tree(mcp_server._arg_parser()),
     }
 
 
@@ -274,7 +280,8 @@ def _resolve(program: str, tree: Tree, tokens: list[str]) -> list[str]:
             if name in ('--help', '-h', '--…'):
                 continue
             if name not in options:
-                problems.append(f'unknown option {name} for "{program} {path}".')
+                where = f'{program} {path}'.strip()
+                problems.append(f'unknown option {name} for "{where}".')
                 continue
             if not path:
                 root_flags.append(name)
@@ -330,8 +337,11 @@ def test_cli_detector_reports_unknown_flags_commands_and_refused_root_flags() ->
         'unifi-mapper no-such-command\n'
         'unifi-mapper discover --format svg \\\n'
         '  --output reports/x.md\n'
+        'uvx --from . unifi-mcp --surface direct --no-such-flag\n'
         '```\n'
         'Inline: `unifi-network-toolkit find mac 02:00:00:00:00:01 --bogus`.\n'
+        'Inline: `unifi-mcp --check --bogus`, but not `scripts/unifi-mcp-launch.sh --x`'
+        ' or `unifi-mcp-launch.sh --x`.\n'
     )
     problems = cli_problems('demo.md', text, _trees())
     assert problems == [
@@ -339,16 +349,19 @@ def test_cli_detector_reports_unknown_flags_commands_and_refused_root_flags() ->
         'demo.md:3: root --dry-run before ports exits 2',
         'demo.md:4: root --apply before discover exits 2',
         'demo.md:5: unknown command "unifi-mapper no-such-command"',
-        'demo.md:9: unknown option --bogus for "unifi-network-toolkit find mac".',
+        'demo.md:8: unknown option --no-such-flag for "unifi-mcp".',
+        'demo.md:10: unknown option --bogus for "unifi-network-toolkit find mac".',
+        'demo.md:11: unknown option --bogus for "unifi-mcp".',
     ]
 
 
 def test_documented_invocations_resolve() -> None:
     """Every invocation in the current docs names a real command with real options."""
     docs = _current_docs()
-    count = sum(len(invocations(p, t)) for p, t in docs.items())
-    assert count > 150, f'the extractor found only {count} invocations: has the format moved?'
+    found = [program for p, t in docs.items() for _line, program, _rest in invocations(p, t)]
+    assert len(found) > 150, f'the extractor found only {len(found)} invocations: format moved?'
     trees = _trees()
+    assert {program: found.count(program) > 5 for program in trees} == dict.fromkeys(trees, True)
     assert _all_problems(docs, lambda p, t: cli_problems(p, t, trees)) == []
 
 
