@@ -25,7 +25,7 @@ wheels/
 venv/
 ENV/
 
-# Environment files
+# Environment files (./.env may be a local CLI env symlink)
 .env
 .env.local
 .env.*.local
@@ -59,12 +59,6 @@ CLAUDE.md
 
 # macOS
 .DS_Store
-
-# Secrets
-.secrets.baseline
-
-# UV lock file
-uv.lock
 
 # Logs
 *.log
@@ -128,14 +122,8 @@ docs/artefacts/*.webp
 docs/artefacts/.pipeline-state.json
 docs/artefacts/unifi_management_cli_content.md
 
-# Local CLI env symlink
-/.env
-
 # Sisyphus agent session scratch
 .yolo-sisyphus/
 
 # Specifications
 specs/
-
-# Graphify Ouitput
-graphify-out/
