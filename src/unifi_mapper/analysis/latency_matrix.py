@@ -223,8 +223,7 @@ def _parse_ping_output(target: dict, output: str) -> LatencyResult:
     RTT figures are kept only when some packets came back.
     """
     stats = parse_ping_output(output)
-    reachable = stats.loss_pct < 100
-    if reachable and stats.rtt_avg is not None:
+    if stats.reachable and stats.rtt_avg is not None:
         return LatencyResult(
             ip=target['ip'],
             name=target['name'],
@@ -241,6 +240,6 @@ def _parse_ping_output(target: dict, output: str) -> LatencyResult:
         ip=target['ip'],
         name=target['name'],
         target_type=target['type'],
-        reachable=reachable,
+        reachable=stats.reachable,
         packet_loss=stats.loss_pct,
     )

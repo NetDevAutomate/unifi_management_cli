@@ -78,3 +78,17 @@ def test_loss_computed_from_counts_when_pct_missing() -> None:
 def test_fractional_loss_is_read_whole() -> None:
     stats = parse_ping_output('3 packets transmitted, 2 received, 33.3333% packet loss')
     assert stats.loss_pct == 33.3333
+
+
+def test_only_the_loss_line_decides_reachability_when_no_counts_parse() -> None:
+    # The packet counts line is missing, so received stays 0; the loss line still says
+    # some replies came back. Callers have one rule: PingStats.reachable.
+    assert parse_ping_output('--- stats ---\n50% packet loss').reachable
+    assert not parse_ping_output('--- stats ---\n100% packet loss').reachable
+
+
+def test_counted_replies_decide_reachability_when_the_counts_parse() -> None:
+    # 1 of 10000: the computed loss rounds to 100.0, but a reply came back.
+    stats = parse_ping_output('10000 packets transmitted, 1 received')
+    assert stats.loss_pct == 100.0
+    assert stats.reachable

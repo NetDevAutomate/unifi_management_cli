@@ -372,6 +372,12 @@ class TestLatencyMatrix:
         result = _parse_ping_output(target, '')
         assert result.reachable is False
 
+    def test_the_matrix_uses_the_parser_s_reachability_rule(self) -> None:
+        target = {'ip': '192.0.2.10', 'name': 'Switch A', 'type': 'device'}
+        one_of_many = _parse_ping_output(target, '10000 packets transmitted, 1 received\n')
+        assert one_of_many.reachable is True  # the computed loss rounds to 100.0
+        assert _parse_ping_output(target, '50% packet loss\n').reachable is True
+
     def test_build_target_list_deduplicates(self) -> None:
         devices = [{'ip': '192.0.2.1', 'name': 'GW', 'mac': 'aa:00', 'model': 'UDM'}]
         clients = [{'ip': '192.0.2.1', 'name': 'dup'}, {'ip': '192.0.2.50', 'name': 'PC'}]
