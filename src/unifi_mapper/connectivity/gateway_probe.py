@@ -323,6 +323,14 @@ async def resolve_probe_target(target: str) -> tuple[str, str | None]:
     the adopted devices and the clients together (:func:`match_identities`: exact identities
     first, then a unique partial name). The address found goes through ``require_ip``.
 
+    Args:
+        target: An IP address, or a device or client name, hostname or MAC (or a unique part
+            of a name).
+
+    Returns:
+        ``(address, name)``: the checked address, and the name it resolved from (None when
+        ``target`` was an address).
+
     Raises:
         ToolError: ``DEVICE_NOT_FOUND`` for no match or one naming the candidates,
             ``DEVICE_OFFLINE`` for a match with no address, ``INVALID_IP`` for an address

@@ -225,7 +225,14 @@ def find_client(clients: list[Any], query: str) -> dict[str, Any] | None:
     """The client a query names: exact name, hostname, MAC or IP first, then a unique part.
 
     Pure. The same rule as ``gateway ping``'s target (``gateway_probe.match_identities``,
-    over the clients only). Returns None when nothing matches.
+    over the clients only).
+
+    Args:
+        clients: The controller's client records (``stat/sta``).
+        query: A client's name, hostname, MAC or IP, or a unique part of a name.
+
+    Returns:
+        The matching client record, or None when nothing matches.
 
     Raises:
         ToolError: ``DEVICE_NOT_FOUND`` naming the candidates when more than one matches.
@@ -241,6 +248,14 @@ def client_network(entry: dict[str, Any], networks: list[Any]) -> tuple[str | No
 
     An untagged LAN the controller lists is VLAN 1, so its HTTP probe runs from that LAN's
     interface; the VLAN is None only when the client's network can't be resolved.
+
+    Args:
+        entry: The client's record (its ``network_id``, else its ``network`` name, is used).
+        networks: The controller's legacy ``rest/networkconf`` records.
+
+    Returns:
+        ``(network name, VLAN ID)``; the VLAN is None for a network the list doesn't hold or
+        whose VLAN is outside 1-4094.
     """
     rows = [n for n in networks if isinstance(n, dict)]
     network_id, name = entry.get('network_id'), entry.get('network')
@@ -293,6 +308,15 @@ def skipped_layers(address: str | None, host: str, vlan: int | None) -> dict[str
 
     Ping and flows need the client's address; DNS needs a probe URL host that is a name; the
     HTTP probe needs the client's VLAN, since the gateway's default path is not it.
+
+    Args:
+        address: The client's IP address, or None when the controller reports none.
+        host: The probe URL's host.
+        vlan: The client's VLAN ID (:func:`client_network`), or None.
+
+    Returns:
+        Layer name (``ping``, ``flows``, ``dns``, ``http``) to the reason it is not run; empty
+        when every layer can run.
     """
     skip: dict[str, str] = {}
     if not address:

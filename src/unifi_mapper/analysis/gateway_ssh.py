@@ -221,6 +221,9 @@ def check_exit_status(
         program: The program's name, for the message.
         result_codes: The statuses that carry a result (``ping`` 0 and 1, ``conntrack`` 0).
 
+    Returns:
+        ``result`` itself, so a call can wrap the command it checks.
+
     Raises:
         ToolError: ``API_ERROR`` for any other status.
     """

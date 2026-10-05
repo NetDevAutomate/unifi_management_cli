@@ -3,8 +3,8 @@
 Pure: no I/O. Ported from the July work's VLAN sampler (a local archive, not in the repo),
 logic unchanged. A network's interface is the one whose address lies in the network's
 ``ip_subnet``, never one assumed from a ``br<vlan>`` naming convention, which survives neither
-renumbering nor a gateway migration. Used by ``gateway http --vlan`` (and, later, the VLAN
-traffic sampler).
+renumbering nor a gateway migration. Used by ``gateway http --vlan`` and the VLAN traffic
+sampler (``vlan-traffic sample``, ``analysis/vlan_traffic.py``).
 """
 
 import ipaddress

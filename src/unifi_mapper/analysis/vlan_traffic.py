@@ -3,10 +3,12 @@
 The controller keeps no per-VLAN byte counter, and its own reports age out within weeks, so
 one sample reads every ``br*`` bridge interface's cumulative byte counters on the gateway,
 over SSH in one command, and stores a row per VLAN in the local store
-(``analysis/vlan_traffic_store.py``), whose rollups and reports give honest 1w, 1m and 1y
-averages and peaks. A VLAN is matched to its interface by subnet, never by a ``br<vlan>``
-naming convention (``analysis/vlan_interfaces.py``); a VLAN with no live interface is listed
-under ``unresolved``, never dropped.
+(``analysis/vlan_traffic_store.py``), whose rollups and reports give 1w, 1m and 1y averages
+and peaks. A VLAN is matched to its interface by subnet, never by a ``br<vlan>`` naming
+convention (``analysis/vlan_interfaces.py``); a VLAN with no live interface is listed under
+``unresolved``, never dropped. Counters are read for ``br*`` bridges only, so a VLAN whose
+matched interface is not a bridge is listed under ``skipped`` (no counters), never sampled
+from another interface.
 
 The controller's network list is read through ``UniFiClient()``, which borrows the
 read-only holder the CLI installs (the legacy ``rest/networkconf`` records, whose subnets

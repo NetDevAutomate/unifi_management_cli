@@ -227,6 +227,16 @@ def interval_rows(samples: list[ApSample], essid: str | None) -> list[dict[str, 
 
     A missing sample has no counters; the next sample's delta runs from the last one that
     read. The first sample read of each AP has no interval, so no delta.
+
+    Args:
+        samples: The capture's samples, in the order taken (both roles interleaved).
+        essid: The tracked SSID; without it no delta is computed.
+
+    Returns:
+        One dict per sample: ``role``, its ``index`` within the role, ``utc``, ``missing``
+        and ``reason``, the load and channel readings, the TX packet and retry deltas and
+        ``retry_pct`` (None without an interval or under :data:`MIN_INTERVAL_PACKETS`), and
+        its ``pings``.
     """
     rows: list[dict[str, Any]] = []
     last: dict[str, ApSample] = {}

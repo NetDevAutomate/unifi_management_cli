@@ -276,6 +276,12 @@ def read_backup(path: Path) -> bytes:
     at most one byte more than that size is read, so a file that grew after the check (a
     download still running) is refused rather than read past the cap.
 
+    Args:
+        path: A path :func:`check_backup_path` accepted.
+
+    Returns:
+        The file's bytes.
+
     Raises:
         ToolError: ``CONFIG_INVALID`` for a link, a non-regular file, a file past the cap or
             one that changed while it was read; ``BACKUP_NOT_FOUND`` when the file is gone.
@@ -299,8 +305,16 @@ def read_backup(path: Path) -> bytes:
 def verify_backup_file(path: Path) -> dict[str, Any]:
     """Read a checked backup path (:func:`read_backup`) and verify it.
 
-    Adds ``path`` and ``size_bytes``. The file's bytes are handed over, not kept, so they are
-    freed once decrypted.
+    The file's bytes are handed over, not kept, so they are freed once decrypted.
+
+    Args:
+        path: A path :func:`check_backup_path` accepted.
+
+    Returns:
+        :func:`verify_backup_bytes`'s result plus ``path`` and ``size_bytes``.
+
+    Raises:
+        ToolError: :func:`read_backup`'s errors.
     """
     buffer = [read_backup(path)]
     size = len(buffer[0])
