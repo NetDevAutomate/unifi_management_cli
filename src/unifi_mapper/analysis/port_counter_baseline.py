@@ -32,10 +32,12 @@ def state_dir() -> Path:
     """Return the state root: ``$XDG_STATE_HOME/unifi_mapper`` or ``~/.local/state/unifi_mapper``.
 
     Read at call time, so a changed ``XDG_STATE_HOME`` (tests isolate it per test)
-    takes effect immediately. Nothing is created here.
+    takes effect immediately. A relative ``XDG_STATE_HOME`` (``~`` is not expanded) is
+    ignored, as the XDG Base Directory spec says, so the root is never relative to the
+    working directory. Nothing is created here.
     """
     state_home = os.environ.get('XDG_STATE_HOME')
-    if state_home:
+    if state_home and Path(state_home).is_absolute():
         return Path(state_home) / STATE_DIR_NAME
     return Path.home() / '.local' / 'state' / STATE_DIR_NAME
 

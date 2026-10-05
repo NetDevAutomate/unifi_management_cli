@@ -261,6 +261,26 @@ def _fake_uv_env(tmp_path: Path) -> dict[str, str]:
     }
 
 
+def test_a_relative_xdg_state_home_is_ignored_for_the_default_output(tmp_path: Path) -> None:
+    """Review N2: the XDG spec ignores a relative path; honoured, it was the working directory."""
+    cwd = tmp_path / 'cwd'
+    cwd.mkdir()
+    env = {**_fake_uv_env(tmp_path), 'XDG_STATE_HOME': 'state'}
+    result = subprocess.run(
+        ['bash', str(AUDIT)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+        cwd=cwd,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    audits = tmp_path / '.local' / 'state' / 'unifi_mapper' / 'audits'
+    assert [p.name for p in audits.iterdir()] and list(cwd.iterdir()) == []
+    assert f'Reports: {audits}/' in result.stdout
+
+
 def test_the_printed_apply_commands_carry_the_audits_own_config(tmp_path: Path) -> None:
     """Review B6: pasted with --apply, a bare command acted on the default config's controller."""
     config = tmp_path / 'site a.env'  # a space: the printed command must quote it

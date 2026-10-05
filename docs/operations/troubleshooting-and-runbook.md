@@ -1407,7 +1407,7 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_SSH_USERNAME` | No | `root` | String | Gateway SSH user. |
 | `UNIFI_STP_OVERRIDES` | No | `~/.config/unifi_management_cli/stp_overrides.yaml` | File path | Root-eligible and forced-access switch MACs for the STP optimiser. |
 | `XDG_CONFIG_HOME` | No | `~/.config` | Directory path | Overrides XDG config base directory. |
-| `XDG_STATE_HOME` | No | `~/.local/state` | Directory path | Base of `unifi_mapper/`, where the link-error baselines and counter history live. |
+| `XDG_STATE_HOME` | No | `~/.local/state` | Absolute directory path (a relative one is ignored, as the XDG spec says) | Base of `unifi_mapper/`, where the link-error baselines and counter history live. |
 
 The `network_api` family (`UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and
 `UNIFI_NETWORK_SITE_ID`, all three required) and the MCP server's `UNIFI_MCP_*` settings are

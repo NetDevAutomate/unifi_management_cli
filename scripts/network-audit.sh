@@ -83,7 +83,10 @@ if [[ -n "${CONFIG_PATH}" && ! -r "${CONFIG_PATH}" ]]; then
     die "--config ${CONFIG_PATH} is missing or unreadable"
 fi
 if [[ -z "${OUTPUT_DIR}" ]]; then
-    OUTPUT_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/unifi_mapper/audits/${STAMP}"
+    # A relative XDG_STATE_HOME is ignored, as the XDG spec says (it would be the cwd).
+    STATE_HOME="${XDG_STATE_HOME:-}"
+    [[ "${STATE_HOME}" == /* ]] || STATE_HOME="${HOME}/.local/state"
+    OUTPUT_DIR="${STATE_HOME}/unifi_mapper/audits/${STAMP}"
 fi
 [[ -e "${OUTPUT_DIR}" && ! -d "${OUTPUT_DIR}" ]] && die "--output-dir ${OUTPUT_DIR} is not a directory"
 mkdir -p "${OUTPUT_DIR}"

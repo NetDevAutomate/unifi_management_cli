@@ -89,7 +89,8 @@ UNIFI_TIMEOUT=10                         # API timeout in seconds
 Other settings: `UNIFI_STP_OVERRIDES` (the STP override file, default
 `~/.config/unifi_management_cli/stp_overrides.yaml`) and `XDG_STATE_HOME` (where the counter
 baselines and history go, see [Link error baselines and
-history](#link-error-baselines-and-history)). `.env.example` lists every key with its
+history](#link-error-baselines-and-history); a relative value is ignored, as the XDG spec
+says). `.env.example` lists every key with its
 default, including the optional `UNIFI_NETWORK_*` and `PROTECT_*` settings and five settings
 that have no effect on `unifi-mapper` yet
 ([issue 042](docs/issues/042-settings-with-no-effect.md)). The MCP server's `UNIFI_MCP_*`

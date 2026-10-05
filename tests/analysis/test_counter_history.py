@@ -66,6 +66,18 @@ def test_state_dir_defaults_to_local_state(monkeypatch):
     assert state_dir() == Path.home() / '.local' / 'state' / 'unifi_mapper'
 
 
+@pytest.mark.parametrize('value', ['state', './state', '~/state', ''])
+def test_a_relative_or_empty_xdg_state_home_is_ignored(monkeypatch, value):
+    """The XDG spec: a relative path in these variables is invalid and must be ignored.
+
+    Honoured, it would put every state file (the call log, the VLAN store, the baselines)
+    relative to the working directory (review N2).
+    """
+    monkeypatch.setenv('XDG_STATE_HOME', value)
+    assert state_dir() == Path.home() / '.local' / 'state' / 'unifi_mapper'
+    assert state_dir().is_absolute()
+
+
 def test_snapshots_from_devices_keys_switch_ports_and_reads_crc():
     unadopted = {'type': 'usw', 'port_table': [{'port_idx': 1, 'rx_errors': 9}]}
     ap = {'_id': 'ap1', 'type': 'uap', 'port_table': [{'port_idx': 1, 'rx_errors': 9}]}

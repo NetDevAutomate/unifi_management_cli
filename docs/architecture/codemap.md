@@ -1494,7 +1494,7 @@ sequenceDiagram
 
 Writers, all behind explicit flags of `analyze link-errors`: `--snapshot` (both baselines) and `--record` (`append_history`, through the shared `core/utils/jsonl.append_capped_jsonl`: `fcntl.flock` on `port-counter-history.jsonl.lock`, append, then compaction through a temp file and `os.replace` only once the oldest line is a day past `--retention-days` (default 14) or the file passes the 64 MiB cap, trimming to 80% of the cap, so a full file is not rewritten on every run). Issues [002](../issues/002-port-counter-baseline-has-no-producer.md) and [004](../issues/004-no-counter-history.md) record the decision.
 
-**State location.** `port_counter_baseline.state_dir()` is `$XDG_STATE_HOME/unifi_mapper` when set, otherwise `~/.local/state/unifi_mapper`. It holds `port-counters.json` (`default_baseline_path()`), `link-error-baseline.json` (`default_link_error_baseline_path()`) and `port-counter-history.jsonl` (`default_history_path()`).
+**State location.** `port_counter_baseline.state_dir()` is `$XDG_STATE_HOME/unifi_mapper` when that is set to an absolute path, otherwise `~/.local/state/unifi_mapper` (a relative `XDG_STATE_HOME` is ignored, as the XDG spec says, so state is never relative to the working directory). It holds `port-counters.json` (`default_baseline_path()`), `link-error-baseline.json` (`default_link_error_baseline_path()`) and `port-counter-history.jsonl` (`default_history_path()`).
 
 **Counter semantics.** `diff_snapshots()` clamps negative deltas to zero. That prevents device reboot or counter reset noise from appearing as negative errors, but it also means reset detection must come from timestamps or surrounding device uptime rather than the delta value alone.
 
