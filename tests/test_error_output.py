@@ -155,9 +155,13 @@ def test_every_loguru_handler_in_src_has_diagnose_off() -> None:
 
 def test_the_config_repr_holds_no_secret() -> None:
     config = UnifiConfig(
-        base_url='https://192.0.2.1', username='admin', password=FAKE_PW, api_token=FAKE_PW
+        base_url='https://192.0.2.1',
+        username='FAKE-USER-NAME',
+        password=FAKE_PW,
+        api_token=FAKE_PW,
     )
     assert FAKE_PW not in repr(config)
+    assert 'FAKE-USER-NAME' not in repr(config)  # half of the login, kept out too
     assert config.password == FAKE_PW  # still there, only hidden from repr
 
 

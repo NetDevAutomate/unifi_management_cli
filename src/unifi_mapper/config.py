@@ -19,9 +19,10 @@ class UnifiConfig:
 
     base_url: str
     site: str = 'default'
-    # Kept out of repr, so a traceback or log line that shows the config shows no secret.
+    # Kept out of repr, so a traceback or log line that shows the config shows no secret
+    # (nor the user name, half of the login).
     api_token: Optional[str] = field(default=None, repr=False)
-    username: Optional[str] = None
+    username: Optional[str] = field(default=None, repr=False)
     password: Optional[str] = field(default=None, repr=False)
     verify_ssl: bool = False
     timeout: int = 10
