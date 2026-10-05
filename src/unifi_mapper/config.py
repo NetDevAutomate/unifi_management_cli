@@ -85,7 +85,8 @@ class UnifiConfig:
                         key, val = line.split('=', 1)
                         os.environ[key.strip()] = val.strip().strip('"').strip("'")
                     except ValueError:
-                        log.warning(f'Invalid line in {env_file}:{line_num}: {line}')
+                        # Never echo the line: it may be a credential missing its '='.
+                        log.warning(f"Invalid line in {env_file}:{line_num} (no '=' found)")
                         continue
 
         # Check for required environment variable

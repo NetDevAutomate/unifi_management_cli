@@ -7,6 +7,7 @@ import argparse
 import logging
 import sys
 from .completions import install_completions
+from .core.utils.redact import redact_text, redact_traceback
 from pathlib import Path
 from typing import Any, Dict
 
@@ -233,7 +234,7 @@ def main():
         # Re-read --config itself: a stray ./.env must never override it.
         config = UnifiConfig.from_env(str(args.config))
     except Exception as e:
-        log.error(f'Configuration error: {e}')
+        log.error(f'Configuration error: {redact_text(e)}')
         log.error(f'Check your config file: {args.config}')
         sys.exit(1)
 
@@ -255,11 +256,9 @@ def main():
         log.info('Operation cancelled by user')
         sys.exit(1)
     except Exception as e:
-        log.error(f'Error: {e}')
+        log.error(f'Error: {redact_text(e)}')
         if args.debug:
-            import traceback
-
-            traceback.print_exc()
+            sys.stderr.write(redact_traceback(e))
         sys.exit(1)
 
 
@@ -409,7 +408,7 @@ def handle_diagnose_command(args, config):
 def print_link_quality_results(results: Dict[str, Any]):
     """Print link quality analysis results in formatted output."""
     if 'error' in results:
-        log.error(f'Analysis failed: {results["error"]}')
+        log.error(f'Analysis failed: {redact_text(results["error"])}')
         return
 
     print('\n🔍 Link Quality Analysis')
@@ -432,7 +431,7 @@ def print_link_quality_results(results: Dict[str, Any]):
 def print_network_health_results(results: Dict[str, Any]):
     """Print network health results in formatted output."""
     if 'error' in results:
-        log.error(f'Health check failed: {results["error"]}')
+        log.error(f'Health check failed: {redact_text(results["error"])}')
         return
 
     print('\n🏥 Network Health Report')

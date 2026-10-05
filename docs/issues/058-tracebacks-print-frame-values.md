@@ -67,10 +67,20 @@ line that showed a caught exception goes through `redact_text` (`typer_cli._erro
 frame but redacts each exception message. An AST test fails on any CLI print of a caught
 exception that isn't redacted, and on any `print_exception` call in either CLI.
 
+A second follow-up (the July port's review B5) closed the argparse CLIs and the env-file
+loaders that every CLI runs. `cli.load_env_from_config` and `UnifiConfig.from_env` report a
+line without `=` as `Invalid line in <file>:<n> (no '=' found)` and never echo it, because a
+password typed with a space instead of `=` has no `name=value` shape to mask.
+`unifi-network-toolkit`, `verify_cli` and the legacy `cli.main` pass every error line through
+`redact_text`, and their `--debug` traceback through `redact.redact_traceback`. The AST test
+covers all five CLI modules and every logging level, and fails on `print_exc` as well.
+
 Tests: `tests/test_error_output.py` asserts the flag on all 8 apps and, by AST, that every
 `typer.Typer(` and `logger.add(` in `src/` sets it off and no `show_locals=True` remains; that
 the config's repr holds no password; and that a `logger.exception` from a frame holding a
 sentinel credential writes no sentinel, after the server's setup and after the CLI's swap.
 `tests/test_ports_cli.py` runs `ports list` through the real `_readonly_client` on a password
 config: an unexpected error is one redacted `Error:` line, and a login failure still prints
-exactly one `❌` line.
+exactly one `❌` line. `tests/test_error_output.py` also drives a malformed password line
+through both loaders, and a configuration error, an unexpected error and the `--debug`
+traceback through each argparse CLI, with a generated fake credential that must not appear.

@@ -8,6 +8,7 @@ import logging
 import sys
 from .api_client import UnifiApiClient
 from .config import UnifiConfig
+from .core.utils.redact import redact_text, redact_traceback
 from .ground_truth_verification import verify_with_ground_truth
 
 
@@ -98,7 +99,7 @@ def main():
         # Re-read --config itself: a stray ./.env must never override it.
         config = UnifiConfig.from_env(str(args.config))
     except Exception as e:
-        log.error(f'Configuration error: {e}')
+        log.error(f'Configuration error: {redact_text(e)}')
         log.error(f'Check your config file: {args.config}')
         sys.exit(1)
 
@@ -119,7 +120,7 @@ def main():
             sys.exit(1)
 
     except Exception as e:
-        log.error(f'Failed to create API client: {e}')
+        log.error(f'Failed to create API client: {redact_text(e)}')
         sys.exit(1)
 
     # Execute verification based on arguments
@@ -140,11 +141,9 @@ def main():
         log.info('Verification cancelled by user')
         sys.exit(1)
     except Exception as e:
-        log.error(f'Verification error: {e}')
+        log.error(f'Verification error: {redact_text(e)}')
         if args.debug:
-            import traceback
-
-            traceback.print_exc()
+            sys.stderr.write(redact_traceback(e))
         sys.exit(1)
 
 

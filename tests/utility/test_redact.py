@@ -9,6 +9,7 @@ from unifi_mapper.core.utils.redact import (
     mask_secrets,
     mcp_secret_values,
     redact_text,
+    redact_traceback,
     strip_secrets,
 )
 
@@ -263,3 +264,33 @@ def test_preshared_values_are_masked_in_free_text():
 def test_community_is_an_ordinary_word_in_free_text():
     text = 'see community.ui.com for the release notes; community=public'
     assert redact_text(text) == text
+
+
+def _caught(raiser) -> BaseException:
+    try:
+        raiser()
+    except BaseException as error:  # noqa: BLE001 - the test wants whatever was raised
+        return error
+    raise AssertionError('expected an exception')
+
+
+def test_redact_traceback_masks_causes_notes_and_groups():
+    def _chained() -> None:
+        try:
+            raise KeyError(f'password={FAKE}')
+        except KeyError as cause:
+            error = RuntimeError(f'login failed: token={FAKE}')
+            error.add_note(f'retry with api_key={FAKE}')
+            raise error from cause
+
+    def _grouped() -> None:
+        raise ExceptionGroup('probes', [ValueError(f'secret={FAKE}'), OSError('timed out')])
+
+    for raiser in (_chained, _grouped):
+        text = redact_traceback(_caught(raiser))
+        assert 'Traceback' in text and text.endswith('\n')
+        assert FAKE not in text
+    chained = redact_traceback(_caught(_chained))
+    assert 'The above exception was the direct cause' in chained
+    assert 'token=***redacted***' in chained and 'api_key=***redacted***' in chained
+    assert 'secret=***redacted***' in redact_traceback(_caught(_grouped))

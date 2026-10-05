@@ -44,12 +44,16 @@ def load_env_from_config(config_path: str) -> None:
                     value = value.strip().strip('"').strip("'")
                     os.environ[key] = value
                 except ValueError:
-                    log.warning(f'Invalid line in {env_file}:{line_num}: {line}')
+                    # Never echo the line: a password typed with a space instead of '='
+                    # has no name=value shape for redact_text to mask.
+                    log.warning(f"Invalid line in {env_file}:{line_num} (no '=' found)")
 
         log.info(f'Loaded configuration from: {env_file}')
 
     except Exception as e:
-        log.error(f'Error reading config file: {e}')
+        from .core.utils.redact import redact_text
+
+        log.error(f'Error reading config file: {redact_text(e)}')
         sys.exit(1)
 
 
@@ -171,7 +175,9 @@ def main():
         from .port_mapper import UnifiPortMapper
         from .run_methods import run_port_mapper
     except ImportError as e:
-        log.error(f'Import error: {e}')
+        from .core.utils.redact import redact_text
+
+        log.error(f'Import error: {redact_text(e)}')
         log.error("Make sure you've installed the package: uv pip install -e .")
         sys.exit(1)
 
@@ -180,7 +186,9 @@ def main():
         # Re-read --config itself: a stray ./.env must never override it.
         config = UnifiConfig.from_env(str(args.config))
     except ValueError as e:
-        log.error(f'Configuration error: {e}')
+        from .core.utils.redact import redact_text
+
+        log.error(f'Configuration error: {redact_text(e)}')
         log.error(f'Check your config file: {args.config}')
         sys.exit(1)
 
@@ -278,11 +286,11 @@ def main():
         log.info('Operation cancelled by user')
         return 1
     except Exception as e:
-        log.error(f'Error: {e}')
-        if args.debug:
-            import traceback
+        from .core.utils.redact import redact_text, redact_traceback
 
-            traceback.print_exc()
+        log.error(f'Error: {redact_text(e)}')
+        if args.debug:
+            sys.stderr.write(redact_traceback(e))
         return 1
 
 

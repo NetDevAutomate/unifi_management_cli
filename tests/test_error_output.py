@@ -4,18 +4,25 @@ Typer before 0.23 prints each frame's local variables in an uncaught exception's
 and loguru's ``diagnose`` annotates a logged traceback with variable values. Both are off
 everywhere in ``src/``: every ``typer.Typer(...)`` sets ``pretty_exceptions_show_locals=False``,
 every ``logger.add`` sets ``diagnose=False``, no debug path asks for ``show_locals=True``, and
-both CLIs replace loguru's default handler (``diagnose`` on) before anything logs.
+both Typer CLIs replace loguru's default handler (``diagnose`` on) before anything logs.
+
+Every console script's error lines and ``--debug`` traceback go through ``redact_text``, the
+argparse CLIs included, and the shared env-file loaders never echo a malformed line.
 """
 
 import ast
+import logging
 import pytest
+import secrets
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from loguru import logger
 from pathlib import Path
 from tests.fixtures_unifi import FAKE_PW
 from typer.testing import CliRunner
-from unifi_mapper import inventory_cli, typer_cli
+from types import SimpleNamespace
+from unifi_mapper import cli as legacy_cli
+from unifi_mapper import inventory_cli, network_cli, typer_cli, verify_cli
 from unifi_mapper.config import UnifiConfig
 from unifi_mapper.core.utils.logging import replace_default_loguru_handler
 from unifi_mapper.mcp import server
@@ -164,8 +171,15 @@ def test_both_clis_replace_the_default_handler_before_running(
 
 # --- every CLI error line and debug traceback is redacted (M2 council M2-BLOCK-001) ------
 
-CLI_MODULES = [PACKAGE / 'typer_cli.py', PACKAGE / 'inventory_cli.py']
-REDACTING_CALLS = frozenset({'_error_text', 'redact_text', '_fail'})
+CLI_MODULES = [
+    PACKAGE / name
+    for name in ('typer_cli.py', 'inventory_cli.py', 'cli.py', 'network_cli.py', 'verify_cli.py')
+]
+REDACTING_CALLS = frozenset({'_error_text', 'redact_text', 'redact_traceback', '_fail'})
+# Rich and Typer output, plus every stdlib logging and loguru level.
+PRINTING_CALLS = frozenset(
+    {'print', 'log', 'echo', 'secho', 'debug', 'info', 'warning', 'error', 'exception', 'critical'}
+)
 
 
 def _raw_exception_uses(path: Path) -> list[str]:
@@ -180,7 +194,7 @@ def _raw_exception_uses(path: Path) -> list[str]:
                 continue
             func = call.func
             name = func.attr if isinstance(func, ast.Attribute) else getattr(func, 'id', '')
-            if name not in {'print', 'log', 'echo', 'secho'}:
+            if name not in PRINTING_CALLS:
                 continue
             for arg in [*call.args, *(k.value for k in call.keywords)]:
                 protected = {
@@ -204,10 +218,11 @@ def test_no_cli_print_shows_a_caught_exception_unredacted() -> None:
     assert [hit for path in CLI_MODULES for hit in _raw_exception_uses(path)] == []
 
 
-def test_no_cli_debug_path_prints_rich_s_unredacted_traceback() -> None:
+def test_no_cli_debug_path_prints_an_unredacted_traceback() -> None:
     offenders = [
         f'{path.relative_to(PACKAGE)}:{call.lineno}'
-        for path, call in _calls('print_exception')
+        for name in ('print_exception', 'print_exc')
+        for path, call in _calls(name)
         if path in CLI_MODULES
     ]
     assert offenders == []
@@ -220,8 +235,10 @@ def test_the_raw_exception_scan_finds_an_unredacted_print(tmp_path: Path) -> Non
         "    console.print(f'Error: {e}')\n"
         "    console.print(f'Error: {_error_text(e)}')\n"
         "    console.print(f'{redact_text(e)} and {e}')\n"
+        "    log.error(f'Configuration error: {e}')\n"
+        "    log.error(f'Configuration error: {redact_text(e)}')\n"
     )
-    assert _raw_exception_uses(sample) == ['sample.py:4', 'sample.py:6']
+    assert _raw_exception_uses(sample) == ['sample.py:4', 'sample.py:6', 'sample.py:7']
 
 
 @pytest.fixture
@@ -262,3 +279,207 @@ def test_a_tool_error_through_the_analysis_helper_is_redacted(
     assert result.exit_code == 1
     assert 'Failed to fetch device list: token=***redacted***' in result.stderr
     assert FAKE_PW not in result.output
+
+
+# --- the argparse CLIs and the shared env-file loaders (review B5) ----------------------
+
+
+def _fake() -> str:
+    """A credential-shaped value made up for this run, so no literal needs a pragma."""
+    return secrets.token_hex(16)
+
+
+@pytest.mark.parametrize('loader', ['load_env_from_config', 'UnifiConfig.from_env'])
+def test_a_malformed_config_line_is_reported_without_its_text(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+    loader: str,
+) -> None:
+    fake = _fake()
+    env_file = tmp_path / 'typo.env'
+    # A space where the '=' belongs: the line has no name=value shape to redact.
+    lines = [
+        'UNIFI_URL=https://192.0.2.1',
+        f'UNIFI_CONSOLE_API_TOKEN={_fake()}',
+        f'UNIFI_PASSWORD {fake}',
+    ]
+    env_file.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    caplog.set_level(logging.WARNING)
+    if loader == 'load_env_from_config':
+        legacy_cli.load_env_from_config(str(env_file))
+    else:
+        UnifiConfig.from_env(str(env_file))
+    captured = capsys.readouterr()
+    assert 'Invalid line in ' in caplog.text
+    assert "typo.env:3 (no '=' found)" in caplog.text
+    assert fake not in caplog.text + captured.out + captured.err
+
+
+def _config_error(fake: str) -> Callable[..., object]:
+    def _raise(*_args: object, **_kwargs: object) -> object:
+        raise ValueError(f'UNIFI_TIMEOUT is not a number; password={fake}')
+
+    return _raise
+
+
+def _a_config(*_args: object, **_kwargs: object) -> SimpleNamespace:
+    return SimpleNamespace(
+        base_url='https://192.0.2.1',
+        site='default',
+        api_token=None,
+        username=None,
+        password=None,
+        verify_ssl=False,
+        timeout=10,
+        default_format='png',
+        default_output_dir=None,
+        default_diagram_dir=None,
+    )
+
+
+def _boom(fake: str) -> Callable[..., object]:
+    def _raise(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError(f'controller said no, token={fake}')
+
+    return _raise
+
+
+def _run_argparse_cli(
+    monkeypatch: pytest.MonkeyPatch, main: Callable[[], object], argv: list[str]
+) -> int:
+    monkeypatch.setattr(sys, 'argv', argv)
+    try:
+        result = main()
+    except SystemExit as stop:
+        return int(stop.code or 0)
+    return int(result or 0)
+
+
+@pytest.mark.parametrize('cli', ['unifi-network-toolkit', 'legacy unifi-mapper', 'verify'])
+@pytest.mark.parametrize('debug', [False, True])
+def test_the_argparse_clis_redact_a_configuration_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+    cli: str,
+    debug: bool,
+) -> None:
+    fake = _fake()
+    env_file = tmp_path / 'ok.env'
+    env_file.write_text('UNIFI_URL=https://192.0.2.1\n', encoding='utf-8')
+    monkeypatch.setattr(UnifiConfig, 'from_env', _config_error(fake))
+    flags = ['--debug'] if debug else []
+    main, argv = {
+        'unifi-network-toolkit': (
+            network_cli.main,
+            [
+                'unifi-network-toolkit',
+                *flags,
+                '--config',
+                str(env_file),
+                'analyze',
+                'link-quality',
+            ],
+        ),
+        'legacy unifi-mapper': (
+            legacy_cli.main,
+            ['unifi-mapper', *flags, '--config', str(env_file)],
+        ),
+        'verify': (verify_cli.main, ['verify', *flags, '--config', str(env_file)]),
+    }[cli]
+    caplog.set_level(logging.INFO)
+    assert _run_argparse_cli(monkeypatch, main, argv) == 1
+    captured = capsys.readouterr()
+    assert 'Configuration error: ' in caplog.text
+    assert 'password=***redacted***' in caplog.text
+    assert fake not in caplog.text + captured.out + captured.err
+
+
+@pytest.mark.parametrize('cli', ['unifi-network-toolkit', 'legacy unifi-mapper', 'verify'])
+@pytest.mark.parametrize('debug', [False, True])
+def test_the_argparse_clis_redact_an_error_and_its_debug_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+    cli: str,
+    debug: bool,
+) -> None:
+    fake = _fake()
+    env_file = tmp_path / 'ok.env'
+    env_file.write_text('UNIFI_URL=https://192.0.2.1\n', encoding='utf-8')
+    monkeypatch.setattr(UnifiConfig, 'from_env', _a_config)
+    flags = ['--debug'] if debug else []
+    if cli == 'unifi-network-toolkit':
+        monkeypatch.setattr(network_cli, 'handle_analyze_command', _boom(fake))
+        main = network_cli.main
+        argv = [
+            'unifi-network-toolkit',
+            *flags,
+            '--config',
+            str(env_file),
+            'analyze',
+            'link-quality',
+        ]
+    elif cli == 'legacy unifi-mapper':
+        monkeypatch.setattr('unifi_mapper.port_mapper.UnifiPortMapper', _boom(fake))
+        main = legacy_cli.main
+        argv = [
+            'unifi-mapper',
+            *flags,
+            '--config',
+            str(env_file),
+            '--output',
+            str(tmp_path / 'r.md'),
+        ]
+        argv += ['--diagram', str(tmp_path / 'd.png')]
+    else:
+        monkeypatch.setattr(verify_cli, 'UnifiApiClient', _boom(fake))
+        main = verify_cli.main
+        argv = ['verify', *flags, '--config', str(env_file)]
+    caplog.set_level(logging.INFO)
+    assert _run_argparse_cli(monkeypatch, main, argv) == 1
+    captured = capsys.readouterr()
+    assert 'token=***redacted***' in caplog.text
+    assert fake not in caplog.text + captured.out + captured.err
+    if debug and cli != 'verify':  # verify's client-creation error prints no traceback
+        assert 'Traceback' in captured.err and 'RuntimeError' in captured.err
+        assert 'token=***redacted***' in captured.err
+
+
+def test_the_verify_cli_redacts_a_failed_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake = _fake()
+    env_file = tmp_path / 'ok.env'
+    env_file.write_text('UNIFI_URL=https://192.0.2.1\n', encoding='utf-8')
+    monkeypatch.setattr(UnifiConfig, 'from_env', _a_config)
+    monkeypatch.setattr(
+        verify_cli, 'UnifiApiClient', lambda **_kwargs: SimpleNamespace(login=lambda: True)
+    )
+    monkeypatch.setattr(verify_cli, 'analyze_current_state', _boom(fake))
+    caplog.set_level(logging.INFO)
+    argv = ['verify', '--debug', '--config', str(env_file)]
+    assert _run_argparse_cli(monkeypatch, verify_cli.main, argv) == 1
+    captured = capsys.readouterr()
+    assert 'Verification error: ' in caplog.text and 'token=***redacted***' in caplog.text
+    assert 'Traceback' in captured.err
+    assert fake not in caplog.text + captured.out + captured.err
+
+
+@pytest.mark.parametrize(
+    'printer', [network_cli.print_link_quality_results, network_cli.print_network_health_results]
+)
+def test_the_toolkit_redacts_a_tool_s_error_text(
+    caplog: pytest.LogCaptureFixture, printer: Callable[[dict[str, object]], None]
+) -> None:
+    fake = _fake()
+    caplog.set_level(logging.INFO)
+    printer({'error': f'Failed to fetch devices: api_key={fake}'})
+    assert 'api_key=***redacted***' in caplog.text
+    assert fake not in caplog.text
