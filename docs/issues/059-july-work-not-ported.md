@@ -22,6 +22,10 @@ Each line gives the item, why it was not ported, and whether leaving it out brea
 clones, CI or production. The open choices are in issue
 [060](060-decisions-from-the-july-port.md).
 
+This issue was filed at the start of the July port, before its features were rebuilt. Where a
+line says the port *rebuilds* something (a CLI command, an MCP tool, a fixture), that is the
+port's plan at filing time; the issue's last update records the commit that built each one.
+
 ## Not ported
 
 - The `allow_mutation` flag on `execute_tool`, the manifests' `mutation: true` and
@@ -49,14 +53,14 @@ clones, CI or production. The open choices are in issue
   f-strings into shell commands and disabled host-key checking a second time. The existing
   `analysis/gateway_ssh.py` gained the session and command helpers instead. Breaks fresh
   clones, CI or prod: no.
-- `decode_object_timestamps`: folded into `get_config_object`'s `created_utc` field; its
-  `ids=` form is dropped. Breaks fresh clones, CI or prod: no.
+- `decode_object_timestamps`: the port folds it into `get_config_object`'s `created_utc`
+  field; its `ids=` form is dropped. Breaks fresh clones, CI or prod: no.
 - `rogueap` as a config kind: it is detection data, read by `analyze neighbours`. Breaks fresh
   clones, CI or prod: no.
 - The gateway probes (`gateway_ping`, `gateway_traceroute`, `gateway_dns_check`,
   `gateway_http_check`, `get_active_flows`) and `diagnose_client_connectivity` over MCP: they
-  open SSH to the gateway; they ship as CLI commands (`gateway …`,
-  `diagnose client-connectivity`) and MCP exposure is decision D1. Breaks fresh clones, CI or
+  open SSH to the gateway; the port rebuilds them as CLI-only commands (`gateway …`,
+  `diagnose client-connectivity`), and MCP exposure is decision D1. Breaks fresh clones, CI or
   prod: no.
 - `run_spectrum_scan`, `power_cycle_poe_port`, `set_wlan_option`, `set_wlan_ap_group` and
   `run_wan_speedtest`: controller writes or commands; never over MCP, filed as W8, issue
@@ -65,30 +69,32 @@ clones, CI or production. The open choices are in issue
   `cancel_job`): tasks ran outside the tool runner, so they escaped the concurrency cap, the
   tool timeout and cancellation (issue 012), and died with the stdio process. Decision D4.
   Breaks fresh clones, CI or prod: no.
-- `run_ap_health_test` over MCP (decision D4; the sampling ships as `diagnose ap-health`) and
-  its PoE power-cycle phase (W9). Breaks fresh clones, CI or prod: no.
-- `trigger_vlan_traffic_sample`: opens SSH from an MCP call (decision D1); `vlan-traffic
-  sample` covers it on the CLI. Breaks fresh clones, CI or prod: no.
+- `run_ap_health_test` over MCP (decision D4; the port rebuilds the sampling as the CLI-only
+  `diagnose ap-health`) and its PoE power-cycle phase (W9). Breaks fresh clones, CI or prod: no.
+- `trigger_vlan_traffic_sample`: opens SSH from an MCP call (decision D1); the port's CLI
+  command `vlan-traffic sample` covers it. Breaks fresh clones, CI or prod: no.
 - `get_backup_status`: its only known call is a `cmd/backup` POST, a controller command the
   read-only guard refuses (decision D3). Breaks fresh clones, CI or prod: no.
 - The secret-key scan's untested network purposes (`vpn-client`, `site-vpn`): no capture held
   such a network; confirm on a site that has one with a single read-only capture, scanned by
   key path. Breaks fresh clones, CI or prod: no.
 - `system-log/all`, `system-log/critical` and `system-log/triggers`: the read-only allowlist
-  is not widened; `get_recent_events` uses the four allowlisted system-log classes. Breaks
+  is not widened; the port's `get_recent_events` uses the four allowlisted system-log
+  classes. Breaks
   fresh clones, CI or prod: no.
 - The dump script's `stat/event`, `stat/alarm`, `stat/dhcp`, v2 `events` and `mdns` paths:
   they returned 404 in the July capture. Breaks fresh clones, CI or prod: no.
-- `UNIFI_VLAN_TRAFFIC_DB`: replaced by `--db` on each `vlan-traffic` command. Breaks fresh
+- `UNIFI_VLAN_TRAFFIC_DB`: replaced by `--db` on each of the port's `vlan-traffic`
+  commands. Breaks fresh
   clones, CI or prod: no.
 - The hard-coded SSID default and the `reports/` output defaults of the AP-health and dump
   scripts: site-specific, and `reports/` captures carry secrets. Breaks fresh clones, CI or
   prod: no.
 - `network-audit.sh --apply-stp`: `stp apply --plan` already exists. Breaks fresh clones, CI
   or prod: no.
-- `scripts/ap_health_test.py` and `scripts/vlan_traffic_sample.py`: thin wrappers replaced by
-  `diagnose ap-health` and `vlan-traffic sample`. Breaks fresh clones, CI or prod: no.
-- The 17-switch topology capture: ported anonymised as
+- `scripts/ap_health_test.py` and `scripts/vlan_traffic_sample.py`: thin wrappers, replaced by
+  the port's `diagnose ap-health` and `vlan-traffic sample`. Breaks fresh clones, CI or prod: no.
+- The 17-switch topology capture: the port carries it anonymised as
   `tests/fixtures/fleet_17_switch_anonymised.json`, used by the 17-switch STP audit test; the
   real capture stays out. Breaks fresh clones, CI or prod: no.
 - The July MCP tests `test_mutation_enforcement.py`, `test_jobs.py`, `test_health_check.py`,

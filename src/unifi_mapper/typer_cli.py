@@ -1614,8 +1614,9 @@ def diagnose_health(
     """🏥 Overall network health check.
 
     Scores the network 0-100 from device state, adoption, CPU/memory/load, uplinks
-    and firmware, with critical issues, warnings and recommendations. --detailed
-    adds the per-device findings. Read-only.
+    and firmware, with critical issues, warnings and recommendations: 100 when every
+    device is online with no issue. An uplink counts as down only when its state says
+    so. --detailed adds the per-device findings. Read-only.
     """
     from .diagnostics.network_health import network_health_check
 
