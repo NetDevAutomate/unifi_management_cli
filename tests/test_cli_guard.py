@@ -149,32 +149,70 @@ def test_new_commands_run_behind_the_read_only_transport() -> None:
         assert direct <= DIRECT_ASYNCIO_RUN_SITES, 'route new commands through the guard helpers'
 
 
-# Modules the July port added that read the controller. Each must borrow the installed holder:
+# Every module that reads the controller through UniFiClient must borrow the installed holder:
 # a UniFiClient(...) with arguments would bypass it, an httpx.AsyncClient(...) the guard.
-PORTED_CONTROLLER_MODULES = [PACKAGE / 'diagnostics' / 'observability.py']
+# Derived (review F11), so a module added later is scanned without being listed; client.py
+# itself defines the client and the holder.
+CLIENT_MODULE = PACKAGE / 'core' / 'utils' / 'client.py'
+JULY_CONTROLLER_MODULES = (
+    'analysis/ap_health.py',
+    'analysis/vlan_traffic.py',
+    'connectivity/gateway_probe.py',
+    'diagnostics/client_connectivity.py',
+    'diagnostics/observability.py',
+    'diagnostics/wan_health.py',
+)
+
+
+def _names_unifi_client(tree: ast.AST) -> bool:
+    return any(
+        (isinstance(n, ast.Name) and n.id == 'UniFiClient')
+        or (isinstance(n, ast.Attribute) and n.attr == 'UniFiClient')
+        or (isinstance(n, ast.ImportFrom) and any(a.name == 'UniFiClient' for a in n.names))
+        for n in ast.walk(tree)
+    )
+
+
+CONTROLLER_MODULES = sorted(
+    path
+    for path in PACKAGE.rglob('*.py')
+    if path != CLIENT_MODULE and _names_unifi_client(ast.parse(path.read_text(encoding='utf-8')))
+)
 
 
 def _own_clients(tree: ast.AST) -> list[int]:
-    return [
-        n.lineno
-        for n in ast.walk(tree)
-        if isinstance(n, ast.Call)
-        and (
-            (getattr(n.func, 'id', None) == 'UniFiClient' and (n.args or n.keywords))
-            or (getattr(n.func, 'attr', None) == 'AsyncClient')
-        )
-    ]
+    """Lines that build a client of their own: ``UniFiClient`` with arguments, or httpx's."""
+
+    def own(call: ast.Call) -> bool:
+        name = getattr(call.func, 'id', None) or getattr(call.func, 'attr', None)
+        if name == 'AsyncClient':
+            return True
+        return name == 'UniFiClient' and bool(call.args or call.keywords)
+
+    return [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call) and own(n)]
 
 
-@pytest.mark.parametrize('path', PORTED_CONTROLLER_MODULES, ids=lambda p: p.name)
-def test_ported_modules_only_borrow_the_guarded_client(path: Path) -> None:
-    assert path.exists()
+@pytest.mark.parametrize('path', CONTROLLER_MODULES, ids=lambda p: str(p.relative_to(PACKAGE)))
+def test_controller_modules_only_borrow_the_guarded_client(path: Path) -> None:
     assert _own_clients(ast.parse(path.read_text(encoding='utf-8'))) == []
 
 
+def test_the_scan_covers_every_july_controller_module() -> None:
+    scanned = {str(path.relative_to(PACKAGE)) for path in CONTROLLER_MODULES}
+    assert set(JULY_CONTROLLER_MODULES) <= scanned
+    assert len(scanned) > 40, f'only {len(scanned)} modules name UniFiClient: has it moved?'
+    assert str(CLIENT_MODULE.relative_to(PACKAGE)) not in scanned
+
+
 def test_the_own_client_scan_sees_arguments_and_raw_httpx() -> None:
-    sample = 'UniFiClient()\nUniFiClient(creds)\nUniFiClient(credentials=c)\nhttpx.AsyncClient()\n'
-    assert _own_clients(ast.parse(sample)) == [2, 3, 4]
+    sample = (
+        'UniFiClient()\nUniFiClient(creds)\nUniFiClient(credentials=c)\nhttpx.AsyncClient()\n'
+        'client.UniFiClient(creds)\nclient.UniFiClient()\n'
+    )
+    assert _own_clients(ast.parse(sample)) == [2, 3, 4, 5]
+    assert _names_unifi_client(ast.parse('from x import UniFiClient'))
+    assert _names_unifi_client(ast.parse('c.UniFiClient()'))
+    assert not _names_unifi_client(ast.parse('UniFiClientish = 1'))
 
 
 def test_the_host_key_notice_prints_once_per_invocation(
