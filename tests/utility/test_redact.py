@@ -80,6 +80,33 @@ def test_values_are_not_scanned():
     assert removed == []
 
 
+@pytest.mark.parametrize('field', ['key', 'name'])
+def test_a_pair_that_names_a_secret_loses_its_value(field):
+    """A ``{key|name: <secret name>, value: ...}`` pair holds its secret under ``value``."""
+    pair = {field: 'api_token', 'value': FAKE, 'enabled': True}
+    clean, removed = strip_secrets([pair], 'setting')
+    assert clean == [{field: 'api_token', 'enabled': True}]
+    assert removed == ['setting[0].value']
+    masked = mask_secrets(pair, frozenset())
+    assert masked == {field: 'api_token', 'value': REDACTED, 'enabled': True}
+
+
+@pytest.mark.parametrize(
+    'pair',
+    [
+        {'key': 'mgmt', 'value': 'kept'},
+        {'key': 'EVT_SW_Disconnected', 'msg': 'kept'},
+        {'key': 'api_token'},
+        {'key': 7, 'value': 'kept'},
+        {'value': 'kept'},
+    ],
+    ids=['ordinary name', 'event record', 'no value', 'not a string', 'no name'],
+)
+def test_a_pair_that_names_no_secret_keeps_its_value(pair):
+    assert strip_secrets(pair) == (pair, [])
+    assert mask_secrets(pair, frozenset()) == pair
+
+
 @pytest.mark.parametrize(
     'text',
     [

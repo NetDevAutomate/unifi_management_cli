@@ -193,6 +193,13 @@ def test_config_objects_strip_secrets_and_report_only_their_paths() -> None:
     assert FAKE_COMMUNITY not in json.dumps(result)
 
 
+def test_a_setting_that_names_a_secret_in_its_key_loses_its_value() -> None:
+    setting = {'_id': OID_2023, 'key': 'api_token', 'value': FAKE_COMMUNITY}
+    result = config_objects_from_data('setting', [setting])
+    assert result['sanitised_paths'] == ['setting[0].value']
+    assert FAKE_COMMUNITY not in json.dumps(result)
+
+
 def test_config_objects_filter_by_name_and_index_paths_after_the_filter() -> None:
     wlans = [
         {'_id': OID_2023, 'name': 'SSID A', 'x_passphrase': FAKE_PSK},

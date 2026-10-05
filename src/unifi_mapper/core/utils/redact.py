@@ -20,7 +20,10 @@ Rules:
       ordinary word.
     * Bare ``key``, ``name`` and ``id`` keys are never removed. Event records
       use ``key`` for the event type.
-    * Values are not scanned. Free text that may quote a secret (exception
+    * A mapping whose ``key`` or ``name`` is a string naming a secret by the rules above
+      (``{'key': 'api_token', 'value': …}``) loses its ``value`` too: such a pair holds
+      the secret under an ordinary key, so the pair's name decides.
+    * Values are not otherwise scanned. Free text that may quote a secret (exception
       messages, HTTP response bodies) goes through :func:`redact_text` instead.
 
 Example:
@@ -45,6 +48,9 @@ _SUFFIX_SECRET_KEY_RE = re.compile(
 )
 REDACTED = '***redacted***'
 DEFAULT_TEXT_LIMIT = 300
+# A mapping whose `key` or `name` names a secret holds that secret under `value`.
+PAIR_NAME_KEYS = ('key', 'name')
+PAIR_VALUE_KEY = 'value'
 
 # A secret-looking name in free text: x_<anything>, <anything><keyword><anything>, or a name
 # ending in syslog_key or lcm_tracker_seed (the suffix rule; community is an ordinary word),
@@ -100,13 +106,26 @@ def strip_secrets(value: Any, path: str = '') -> tuple[Any, list[str]]:
     return _strip(value, path, removed), removed
 
 
+def _names_a_secret(mapping: dict[Any, Any]) -> bool:
+    """True when a mapping's ``key`` or ``name`` names a secret: its ``value`` holds it.
+
+    A setting shaped ``{'key': 'api_token', 'value': '…'}`` (or with ``name``) keeps its
+    secret under the ordinary key ``value``, so the pair's name decides.
+    """
+    return any(
+        isinstance(mapping.get(field), str) and is_secret_key(mapping[field])
+        for field in PAIR_NAME_KEYS
+    )
+
+
 def _strip(value: Any, path: str, removed: list[str]) -> Any:
     """Recursively copy ``value`` without secret keys, recording removed paths."""
     if isinstance(value, dict):
+        pair_secret = _names_a_secret(value)
         clean: dict[Any, Any] = {}
         for key, item in value.items():
             child = f'{path}.{key}' if path else str(key)
-            if is_secret_key(key):
+            if is_secret_key(key) or (pair_secret and key == PAIR_VALUE_KEY):
                 removed.append(child)
                 continue
             clean[key] = _strip(item, child, removed)
@@ -187,7 +206,8 @@ def mask_secrets(value: Any, secret_values: frozenset[str]) -> Any:
 
     A ``str`` under a key for which :func:`is_secret_key` is true becomes
     :data:`REDACTED`, at any depth (dicts inside lists included); strings nested inside a
-    container under such a key are masked the same way. Non-string values (booleans
+    container under such a key are masked the same way, and so is the ``value`` of a
+    mapping whose ``key`` or ``name`` names a secret. Non-string values (booleans
     such as ``x_has_ssh_hostkey``, numbers, ``None``) are left as they are, and keys
     are never removed, so a masked result stays valid against its output schema. Every
     occurrence of a value in ``secret_values`` inside any other string is replaced
@@ -206,8 +226,15 @@ def mask_secrets(value: Any, secret_values: frozenset[str]) -> Any:
 def _mask(value: Any, ordered: tuple[str, ...], *, under_secret_key: bool) -> Any:
     """Recursively copy ``value`` with secret strings masked."""
     if isinstance(value, dict):
+        pair_secret = _names_a_secret(value)
         return {
-            key: _mask(item, ordered, under_secret_key=under_secret_key or is_secret_key(key))
+            key: _mask(
+                item,
+                ordered,
+                under_secret_key=under_secret_key
+                or is_secret_key(key)
+                or (pair_secret and key == PAIR_VALUE_KEY),
+            )
             for key, item in value.items()
         }
     if isinstance(value, (list, tuple)):
