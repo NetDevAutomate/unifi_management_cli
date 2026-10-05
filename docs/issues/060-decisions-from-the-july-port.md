@@ -17,12 +17,17 @@ does: an SSH probe triggered from an MCP call, a controller command, or a contro
 Each needs a user decision. What was not ported and why is listed in issue
 [059](059-july-work-not-ported.md).
 
+This issue was filed at the start of the July port. It describes as existing only what has
+landed; a command or tool the port builds later is marked "planned in item N" (the port's
+plan, kept outside the repo), and the port's last update records the commit for each.
+
 ## Decision needed
 
-- **D1: expose the class B probes over MCP?** These are the gateway probes (`gateway ping`,
-  `traceroute`, `dns`, `http`, `flows`), `diagnose client-connectivity`,
-  `diagnose latency-matrix`, an on-demand `vlan-traffic sample`, and AP-health sampling with
-  client pings. Recommendation: **not by default, and not before issue
+- **D1: expose the class B probes over MCP?** These are `diagnose latency-matrix` (it exists)
+  and the CLI-only probes the port plans: the gateway probes (`gateway ping`, `traceroute`,
+  `dns`, `http`, `flows`; planned in item 15), `diagnose client-connectivity` and AP-health
+  sampling with client pings (planned in item 16), and an on-demand `vlan-traffic sample`
+  (planned in item 17). Recommendation: **not by default, and not before issue
   [038](038-ssh-host-key-verification-disabled.md) is fixed**: an MCP-triggered probe would
   send the gateway's root SSH password to a host whose key is not verified. If wanted after
   038, add an `active_probe: true` manifest key that keeps a tool off both surfaces unless
@@ -34,8 +39,8 @@ Each needs a user decision. What was not ported and why is listed in issue
   saturates the WAN for 10 to 30 s. Recommendation: **not now**. If wanted: CLI only
   (`diagnose wan --speedtest`, with a confirmation), a body-aware guard policy admitting
   exactly `{cmd: speedtest}` and `{cmd: speedtest-status}` on `cmd/devmgr`, and a test pinning
-  both bodies; never MCP. The controller's scheduled result is already in `get_wan_health`
-  and `diagnose wan`.
+  both bodies; never MCP. The controller's scheduled result needs no command: reading it is
+  `get_wan_health` and `diagnose wan`, planned in item 11.
 - **D3: read the controller's backup list?** The only known call is
   `POST cmd/backup {cmd: list-backups}`. Recommendation: **not now**. If wanted: D2's
   body-aware policy admitting exactly that body on `cmd/backup` (no other `cmd/backup` body,
@@ -67,4 +72,5 @@ explicit `--apply`, re-read to verify, never over MCP.
 
 ## Impact
 
-Until decided, these stay unbuilt. Nothing that exists today depends on them.
+Until decided, these stay unbuilt. Nothing that exists today depends on them. Breaks fresh
+clones, CI or prod: no.

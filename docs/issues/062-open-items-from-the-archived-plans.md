@@ -13,20 +13,23 @@ found_by: July port (plans and session handoffs kept in a local archive, not in 
 
 The July work carried an STP and tooling plan, an improvement plan and four session
 handoffs (2026-05-04, 2026-07-22, 2026-07-23 and 2026-07-24). They are kept in a local
-archive (not in the repo). Each item was checked against this repository after the July port;
-this issue lists only what is still open, so the plans need not be carried forward.
+archive (not in the repo). Each item was checked against this repository at filing time, at
+the start of the July port, and is checked again in the port's last update. This issue lists
+only what is still open, so the plans need not be carried forward. It describes as existing
+only what has landed; work the port builds later is marked "planned in item N" (the port's
+plan, kept outside the repo).
 
 Done or tracked elsewhere (not repeated below): root eligibility by model class, the STP
 change plan with apply and rollback, Root Guard and TCN recommendations, path-cost audit, SFP
 and MTU audits, the drops-only counter threshold, LAG candidates, VLAN coverage, the traffic
 matrix, XDG state with STP snapshots and diffs, preflight simulation, PoE budget, STP drift,
 the STP MCP tools, counter-reset detection, neighbour-aware channel scoring, the Phase D RF
-strategy work, the one-shot STP priority audit (`stp audit-priorities`) and the VLAN traffic
-collector (both from the July port), and MCP tools for link errors, roaming, config drift and
-neighbours (issues [010](010-cwd-relative-state-files.md) and
-[018](018-read-only-tool-proposals.md)). The 2026-07-22 handoff's other items were site
-operations, not repository work; its code item was the July port itself. An unattended
-weekly `radio auto-channel --apply` is decision W10 in issue
+strategy work, and MCP tools for link errors, roaming, config drift and neighbours (issues
+[010](010-cwd-relative-state-files.md) and [018](018-read-only-tool-proposals.md)). The July
+port plans two more: a one-shot STP priority audit (`stp audit-priorities`, planned in item
+14) and the VLAN traffic collector (planned in item 17). The 2026-07-22 handoff's other items
+were site operations, not repository work; its code item was the July port itself. An
+unattended weekly `radio auto-channel --apply` is decision W10 in issue
 [060](060-decisions-from-the-july-port.md).
 
 ## Still open
@@ -36,8 +39,8 @@ From the STP and tooling plan:
 - **Traffic-aware LAG placement**: weight `find_lag_candidates`' proposals by measured uplink
   utilisation (the traffic matrix), not link count alone.
 - **A fixture-based LAG integration test**: run `find_lag_candidates_from_data` over a
-  fleet-sized fixture and pin the proposals. The anonymised 17-switch fleet in
-  `tests/fixtures/fleet_17_switch_anonymised.json` can serve.
+  fleet-sized fixture and pin the proposals. The anonymised 17-switch fleet the port plans as
+  `tests/fixtures/fleet_17_switch_anonymised.json` (item 14b) can serve once it lands.
 - **Mixed STP mode detection**: report switches whose `stp_mode` differs (RSTP, MSTP, STP).
 - **Edge-port audit**: flag a port with only client neighbours that is not an edge port, and
   an edge port that sees BPDUs or topology changes (`stp guard` covers Root Guard and TCNs
@@ -71,12 +74,12 @@ From the improvement plan:
 From the 2026-07-24 handoff:
 
 - **Directional VLAN A to B traffic** (best effort, from sampled conntrack subnet pairs),
-  beside the per-VLAN aggregates the collector records.
+  beside the per-VLAN aggregates the planned collector records.
 - **Per-period Mermaid diagrams** for the VLAN traffic report.
 - **Per-client retry and loss trend** over time.
 - **An incident-window composite** correlating recent config changes and events with a
-  given time window (`find_recent_config_changes` and `get_recent_events` are the raw
-  material).
+  given time window (`find_recent_config_changes` and `get_recent_events`, planned in items 9
+  and 10, are the raw material once they land).
 
 ## Recommendation
 

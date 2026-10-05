@@ -109,9 +109,9 @@ port's plan at filing time; the issue's last update records the commit that buil
   [062](062-open-items-from-the-archived-plans.md). Breaks fresh clones, CI or prod: no.
 - `reports/` captures: raw controller JSON with credentials included; never carried into the
   repo. Breaks fresh clones, CI or prod: no.
-- 13 personal scripts kept in a git-ignored personal folder on the archive host (a crash monitor,
-  11 one-off investigation scripts and an upgrade-ordering script): personal, ignored on both
-  hosts, kept outside the repo. Breaks fresh clones, CI or prod: no.
+- 13 personal scripts kept in a git-ignored personal folder beside the archived July branch
+  (a crash monitor, 11 one-off investigation scripts and an upgrade-ordering script):
+  personal, git-ignored, kept outside the repo. Breaks fresh clones, CI or prod: no.
 
 ## Recommendation
 
