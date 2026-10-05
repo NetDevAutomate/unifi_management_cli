@@ -50,6 +50,22 @@ def _no_live_ssh(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
+def isolated_credentials(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Opt-in credential isolation for a test module directly under ``tests/``.
+
+    The isolation of ``tests/mcp/`` (``tests/credential_isolation.py``), plus a chdir into
+    ``tmp_path``, so neither the live ``prod.env`` nor ``./.env`` resolves. A new module
+    that runs CLI commands declares ``pytestmark = pytest.mark.usefixtures(
+    'isolated_credentials')``.
+    """
+    from tests.credential_isolation import isolate_credentials
+
+    isolate_credentials(request, monkeypatch, tmp_path, chdir=True)
+
+
+@pytest.fixture
 def block_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail any test that tries to reach a real network (opt-in).
 

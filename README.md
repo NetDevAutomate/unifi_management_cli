@@ -201,9 +201,12 @@ bridges and telemetry freshness.
 The latency matrix and bandwidth tests SSH to the gateway, so they need SSH enabled in
 UniFi OS (Settings > Control Plane > Console) and `UNIFI_SSH_PASSWORD` in your config, plus
 `UNIFI_SSH_USERNAME` if the SSH user isn't `root`. Without `UNIFI_SSH_PASSWORD` both exit 1
-before connecting to anything, and print this on stderr:
+before connecting to anything, and print this on stderr (the first line, once per command,
+comes before every SSH command runs; see
+[issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)):
 
 ```text
+⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key is not verified (issue 038).
 ❌ [CONFIG_MISSING] UNIFI_SSH_PASSWORD is not set. The gateway SSH login has its own password; UNIFI_PASSWORD (the UniFi OS login) is never sent over SSH
 💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
 ```

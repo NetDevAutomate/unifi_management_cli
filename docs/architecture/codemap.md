@@ -858,17 +858,17 @@ The `core/` package provides shared infrastructure consumed by the async analysi
 
 | Method | Description |
 |---|---|
-| `connect()` | Opens httpx session, detects UniFi OS, authenticates; under the MCP server it borrows the lifespan's shared client instead |
+| `connect()` | Opens httpx session, detects UniFi OS, authenticates; under the MCP server, and in the CLI's analysis and SSH commands, it borrows the installed shared client instead |
 | `disconnect()` | Closes session and logs out |
 | `get_devices()`, `get_device(device_id)`, `get_device_ports(device_id)` | Device and port reads |
 | `get_lldp_table(device_id)` | Returns the LLDP table for a device |
 | `get_clients()`, `get_rogue_aps()`, `get_networks()`, `get_network_topology()` | Client, neighbour-AP, network and topology reads |
 | `get(path)`, `post(path)`, `put(path)` | Raw requests on the site API |
-| `update_device_port()`, `update_port_names()`, `force_provision()` | Write helpers; under the MCP server the read-only transport refuses them |
+| `update_device_port()`, `update_port_names()`, `force_provision()` | Write helpers; under the MCP server, and in the CLI's analysis and SSH commands, the read-only transport refuses them |
 
 **Authentication.** Prefers token (`X-API-KEY` header). Falls back to username/password POST against `/api/auth/login` (UniFi OS) or `/api/login` (legacy).
 
-**Read-only under MCP.** The shared client the MCP lifespan installs (connect timeout 10 s, request timeout 30 s) sends every request through `core/utils/readonly.py`'s `ReadOnlyAsyncTransport`, which refuses a write with `ReadOnlyViolation` before any I/O. After a 401 it logs in again once and retries the request once.
+**Read-only under MCP.** The shared client the MCP lifespan installs (connect timeout 10 s, request timeout 30 s) sends every request through `core/utils/readonly.py`'s `ReadOnlyAsyncTransport`, which refuses a write with `ReadOnlyViolation` before any I/O. After a 401 it logs in again once and retries the request once. The CLI installs the same holder for each command run through `_run_analysis` or `_run_gateway_ssh` (`typer_cli._guarded`), so those commands log in once and can't write; its other direct async reads are [issue 064](../issues/064-cli-reads-outside-the-read-only-transport.md).
 
 **Dependencies.** `core/utils/auth.py`, `core/utils/errors.py`, `httpx`
 

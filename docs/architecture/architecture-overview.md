@@ -471,7 +471,7 @@ async with UniFiProtectClient(config) as client:
 
 ### UniFiClient (core/utils/client.py)
 
-A second async client built with `httpx` for use by the analysis toolkit. Consumes credentials from the `get_credentials()` fallback chain (see Section 16). This client follows the async context manager pattern and is the standard client for all toolkit tools. Under the MCP server every async controller tool borrows one shared client whose transport is `core/utils/readonly.py`'s `ReadOnlyAsyncTransport`, so a write raises `ReadOnlyViolation` before any I/O; `core/utils/redact.py` then masks secret values in every result and error.
+A second async client built with `httpx` for use by the analysis toolkit. Consumes credentials from the `get_credentials()` fallback chain (see Section 16). This client follows the async context manager pattern and is the standard client for all toolkit tools. Under the MCP server every async controller tool borrows one shared client whose transport is `core/utils/readonly.py`'s `ReadOnlyAsyncTransport`, so a write raises `ReadOnlyViolation` before any I/O; `core/utils/redact.py` then masks secret values in every result and error. The CLI's analysis and SSH commands (those run through `typer_cli._run_analysis` and `_run_gateway_ssh`) borrow one too, installed for the one command by `typer_cli._guarded`; the CLI's other direct async reads don't yet ([issue 064](../issues/064-cli-reads-outside-the-read-only-transport.md)).
 
 ### ToolkitAdapter (toolkit_adapters.py)
 
@@ -828,7 +828,7 @@ classDiagram
 | Module | Purpose |
 | --- | --- |
 | `auth.py` | `Credentials` Pydantic model + `get_credentials()` fallback chain |
-| `client.py` | `UniFiClient` async httpx client used by the toolkit, and `SharedControllerClient`, the one guarded client an MCP server process shares |
+| `client.py` | `UniFiClient` async httpx client used by the toolkit, and `SharedControllerClient`, the one guarded client an MCP server process shares (and that each CLI analysis or SSH command borrows for its run) |
 | `coerce.py` | `int_or_none` and `float_or_none` for controller fields whose JSON type varies by model and firmware |
 | `errors.py` | `ToolError` structured exception + `ErrorCodes` constants |
 | `logging.py` | Loguru helpers; nothing calls `configure_logging` ([issue 045](../issues/045-configure-logging-is-never-called.md)) |

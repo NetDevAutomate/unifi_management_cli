@@ -223,9 +223,12 @@ Authentication issue with devices endpoint. Attempting to re-authenticate...
 `diagnose latency-matrix` and `diagnose bandwidth` run `ping` and `iperf3` on the gateway
 over SSH. They are the only commands that use SSH, and no MCP tool does.
 
-**Symptom**: both exit 1 before connecting to anything, and print this on stderr:
+**Symptom**: both exit 1 before connecting to anything, and print this on stderr (the first
+line, once per command, comes before every SSH command runs; see
+[issue 038](../issues/038-ssh-host-key-verification-disabled.md)):
 
 ```text
+⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key is not verified (issue 038).
 ❌ [CONFIG_MISSING] UNIFI_SSH_PASSWORD is not set. The gateway SSH login has its own password; UNIFI_PASSWORD (the UniFi OS login) is never sent over SSH
 💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
 ```

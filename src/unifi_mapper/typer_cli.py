@@ -11,7 +11,21 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.markup import escape
 from rich.table import Table
-from typing import Annotated, Any, Callable, Coroutine, Iterator, NoReturn, Optional, cast
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Callable,
+    Coroutine,
+    Iterator,
+    NoReturn,
+    Optional,
+    cast,
+)
+
+
+if TYPE_CHECKING:
+    from .core.utils.client import SharedControllerClient
 
 
 # Setup rich console
@@ -33,6 +47,9 @@ class State:
     root_dry_run: bool = False
     root_connected_devices: bool = False
     root_verify_updates: bool = False
+    # Set once the gateway SSH notice has been printed; the root callback clears it on every
+    # invocation, so it prints once per command even when a command opens SSH twice.
+    ssh_notice_shown: bool = False
 
     def take_root_shortcuts(self) -> tuple[bool, bool, bool]:
         """Return and clear the root ``--dry-run``, ``--connected-devices``, ``--verify-updates``.
@@ -153,6 +170,7 @@ def main(
     state.config_path = config if config else get_default_config_path()
     state.debug = debug
     state.take_root_shortcuts()  # clear whatever an earlier in-process invocation left
+    state.ssh_notice_shown = False
 
     if debug:
         setup_logging(debug=True)
@@ -1143,11 +1161,40 @@ def _render_port_profile_usage(report: Any) -> None:
         err_console.print(f'[yellow]⚠ {escape(error.section)}: {escape(error.error)}[/yellow]')
 
 
+def _new_shared_client() -> 'SharedControllerClient':
+    """Build the read-only shared controller client one command borrows (``_guarded``)."""
+    from .core.utils.client import SharedControllerClient
+
+    return SharedControllerClient()
+
+
+# What ``_guarded`` installs; tests replace it to drive the real guard over a mock transport.
+_shared_client_factory: Callable[[], 'SharedControllerClient'] = _new_shared_client
+
+
+async def _guarded[T](load: Callable[[], Coroutine[Any, Any, T]]) -> T:
+    """Run ``load()`` with a read-only ``SharedControllerClient`` installed, then close it.
+
+    Every ``UniFiClient()`` the command opens without explicit credentials borrows the
+    holder, so its requests go through ``ReadOnlyAsyncTransport``, as under the MCP server:
+    a write is refused before it leaves the host. One login serves the whole command.
+    """
+    from .core.utils.client import use_shared_controller_client
+
+    shared = _shared_client_factory()
+    try:
+        with use_shared_controller_client(shared):
+            return await load()
+    finally:
+        await shared.aclose()
+
+
 def _run_analysis[T](load: Callable[[], Coroutine[Any, Any, T]]) -> T:
     """Load the config, run one async read-only analysis and return its report.
 
-    A domain ``ToolError`` (or any other failure) prints its message in red on
-    stderr and exits 1, so ``--json`` output on stdout stays parseable.
+    The analysis runs behind the read-only transport (``_guarded``). A domain ``ToolError``
+    (or any other failure) prints its message in red on stderr and exits 1, so ``--json``
+    output on stdout stays parseable.
     """
     import asyncio
     from .core.utils.errors import ToolError
@@ -1155,7 +1202,7 @@ def _run_analysis[T](load: Callable[[], Coroutine[Any, Any, T]]) -> T:
 
     load_env_from_config(str(state.config_path or get_default_config_path()))
     try:
-        return asyncio.run(load())
+        return asyncio.run(_guarded(load))
     except ToolError as e:
         _fail(e.message)
     except Exception as e:  # noqa: BLE001 - every failure ends the command cleanly
@@ -4183,18 +4230,29 @@ def analyze_neighbours(
 # ─── Bandwidth Test Commands ─────────────────────────────────────────────────
 
 
+GATEWAY_SSH_NOTICE = (
+    "⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key "
+    'is not verified (issue 038).'
+)
+
+
 def _run_gateway_ssh[T](run: Callable[[], Coroutine[Any, Any, T]]) -> T:
     """Run one gateway SSH diagnostic; report a failure on stderr as text, never a traceback.
 
-    Typer's traceback prints every frame's local variables, which here include the SSH
-    password. A ``ToolError`` prints with its code and suggestion; anything else, redacted.
+    Its controller reads run behind the read-only transport (``_guarded``). The host-key
+    notice goes to stderr first, once per invocation. Typer's traceback prints every frame's
+    local variables, which here include the SSH password. A ``ToolError`` prints with its
+    code and suggestion; anything else, redacted.
     """
     import asyncio
     from .core.utils.errors import ToolError
     from .core.utils.redact import redact_text
 
+    if not state.ssh_notice_shown:
+        state.ssh_notice_shown = True
+        err_console.print(GATEWAY_SSH_NOTICE, style='yellow', markup=False, soft_wrap=True)
     try:
-        return asyncio.run(run())
+        return asyncio.run(_guarded(run))
     except ToolError as e:
         _fail(e)
     except Exception as e:  # noqa: BLE001 - every failure ends the command cleanly
