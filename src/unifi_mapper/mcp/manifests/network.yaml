@@ -43,9 +43,22 @@ tools:
     handler: get_clients
     title: Get Clients
     credentials: network_api
-    description: List connected clients with fingerprinting data
+    description: >-
+      List connected clients with fingerprinting data, one page at a time, sorted by client
+      ID. The controller's list is read in full, so total counts every client; pass a page's
+      next_offset as the next offset until it is null. Read-only.
     priority: P1
-    tags: [clients, devices, fingerprint, inventory]
+    tags: [clients, devices, fingerprint, inventory, read-only]
+    parameters:
+      active_only:
+        type: boolean
+        description: Only currently connected clients (default true)
+      limit:
+        type: integer
+        description: Clients per page, 1-1000 (default 200)
+      offset:
+        type: integer
+        description: "Clients to skip: the next_offset of the page before (default 0)"
 
   get_networks:
     module: unifi_mapper.mcp.tools.network

@@ -74,7 +74,7 @@ async def test_get_clients_returns_default_and_user_clients(
     ]
     transport = _serve(monkeypatch, {f'{INTEGRATION}/clients': clients})
 
-    result = await network_tools.get_clients()
+    result = (await network_tools.get_clients())['clients']
 
     assert [c.get('id') for c in result] == ['c-default', 'c-user'], result
     assert [c['access']['type'] for c in result] == ['DEFAULT', 'USER']
@@ -96,10 +96,11 @@ async def test_get_clients_keeps_teleport_and_unknown_connection_types(
     wired = _wired_client('c-wired', 'DEFAULT', '02:00:00:00:00:74')
     _serve(monkeypatch, {f'{INTEGRATION}/clients': [teleport, unknown, wired]})
 
-    result = await network_tools.get_clients()
+    result = (await network_tools.get_clients())['clients']
 
-    assert [c.get('id') for c in result] == ['c-teleport', 'c-new', 'c-wired'], result
-    assert [c['type'] for c in result] == ['TELEPORT', 'SOMETHING_NEW', 'WIRED']
+    # Sorted by id, so a page is stable between calls while the set is unchanged.
+    assert [c.get('id') for c in result] == ['c-new', 'c-teleport', 'c-wired'], result
+    assert [c['type'] for c in result] == ['SOMETHING_NEW', 'TELEPORT', 'WIRED']
 
 
 # Issues 031 and 032: one record each, shaped as Ubiquiti's v10.6.102 reference documents it.
@@ -142,3 +143,120 @@ async def test_acl_and_dns_tools_read_the_served_paths(
 
     assert [r.get('id') for r in result] == [record['id']], result
     assert transport.calls == [('GET', path)]
+
+
+# --- get_clients paging (design 4.11) -------------------------------------------------------
+
+
+class PagedClients(httpx.MockTransport):
+    """The connected-clients list served in pages by its ``offset`` and ``limit`` parameters."""
+
+    def __init__(self, clients: list[dict[str, Any]]) -> None:
+        self.calls: list[tuple[str, str, str]] = []
+        self._clients = clients
+        super().__init__(self._handle)
+
+    def _handle(self, request: httpx.Request) -> httpx.Response:
+        self.calls.append((request.method, request.url.path, request.url.query.decode()))
+        if request.url.path != f'{INTEGRATION}/clients':
+            return httpx.Response(404, json={'statusCode': 404, 'statusName': 'NOT_FOUND'})
+        offset = int(request.url.params.get('offset', 0))
+        limit = int(request.url.params.get('limit', 200))
+        data = self._clients[offset : offset + limit]
+        page = {'offset': offset, 'limit': limit, 'count': len(data)}
+        return httpx.Response(200, json={**page, 'totalCount': len(self._clients), 'data': data})
+
+
+def _many(count: int) -> list[dict[str, Any]]:
+    # Served in reverse id order, so the tool's sort is visible.
+    return [
+        _wired_client(f'c-{i:03d}', 'DEFAULT', f'02:00:00:00:{i // 256:02x}:{i % 256:02x}')
+        for i in reversed(range(count))
+    ]
+
+
+@pytest.fixture
+def paged(monkeypatch: pytest.MonkeyPatch, network_env: None) -> PagedClients:
+    transport = PagedClients(_many(250))  # two Integration API pages of 200
+    monkeypatch.setattr(network_tools, '_inner_transport', lambda _config: transport)
+    return transport
+
+
+async def test_get_clients_pages_a_list_read_in_full(paged: PagedClients) -> None:
+    first = await network_tools.get_clients(limit=100)
+    assert {key: first[key] for key in first if key != 'clients'} == {
+        'total': 250,
+        'returned': 100,
+        'offset': 0,
+        'limit': 100,
+        'next_offset': 100,
+        'truncated': True,
+    }
+    assert [c['id'] for c in first['clients'][:2]] == ['c-000', 'c-001']
+    last = await network_tools.get_clients(limit=100, offset=200)
+    assert (last['total'], last['returned'], last['next_offset'], last['truncated']) == (
+        250,
+        50,
+        None,
+        False,
+    )
+    assert [c['id'] for c in last['clients']][-1] == 'c-249'
+    # Every Integration API page was read for each call, so total counts every client.
+    assert [query for _, _, query in paged.calls] == [
+        'offset=0&limit=200',
+        'offset=200&limit=200',
+    ] * 2
+    assert {method for method, _, _ in paged.calls} == {'GET'}
+
+
+async def test_get_clients_pages_are_disjoint_and_cover_the_list(paged: PagedClients) -> None:
+    seen: list[str] = []
+    offset: int | None = 0
+    while offset is not None:
+        page = await network_tools.get_clients(limit=60, offset=offset)
+        seen += [c['id'] for c in page['clients']]
+        offset = page['next_offset']
+    assert seen == [f'c-{i:03d}' for i in range(250)]
+
+
+async def test_an_offset_past_the_end_is_an_empty_last_page(paged: PagedClients) -> None:
+    page = await network_tools.get_clients(offset=900)
+    assert (page['returned'], page['next_offset'], page['truncated']) == (0, None, False)
+    assert page['clients'] == [] and page['total'] == 250
+
+
+async def test_a_failure_is_one_error_object(
+    monkeypatch: pytest.MonkeyPatch, network_env: None
+) -> None:
+    def _down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError('controller unreachable', request=request)
+
+    transport = httpx.MockTransport(_down)
+    monkeypatch.setattr(network_tools, '_inner_transport', lambda _config: transport)
+    result = await network_tools.get_clients()
+    assert set(result) == {'error'}
+
+
+@pytest.mark.parametrize(
+    'params',
+    [{'limit': 0}, {'limit': 1001}, {'offset': -1}, {'limit': 'ten'}],
+    ids=['limit 0', 'limit 1001', 'negative offset', 'not a number'],
+)
+async def test_bad_bounds_are_refused_before_the_handler_runs(
+    monkeypatch: pytest.MonkeyPatch, network_env: None, params: dict[str, Any]
+) -> None:
+    from unifi_mapper.mcp.registry import ToolRegistry, default_manifests_dir
+    from unifi_mapper.mcp.runner import ToolRunner
+
+    called: list[object] = []
+
+    async def _never(**kwargs: object) -> dict[str, Any]:
+        called.append(kwargs)
+        return {}
+
+    monkeypatch.setattr(network_tools, 'get_clients', _never)
+    runner = ToolRunner(ToolRegistry(default_manifests_dir(), strict=True))
+    out = await runner.run('get_clients', params)
+    assert out.structuredContent is not None
+    assert out.structuredContent['error_code'] == 'INVALID_PARAMETERS'
+    assert called == []

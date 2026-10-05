@@ -176,7 +176,8 @@ async def test_each_network_tool_sends_only_audited_gets(
     sink = tmp_path / 'audit.jsonl'
     configure_request_audit(sink)
 
-    assert await getattr(network_tools, tool)() == []
+    result = await getattr(network_tools, tool)()
+    assert (result['clients'] if tool == 'get_clients' else result) == []  # a page of none
 
     assert recorder.calls, 'the tool sent no request'
     assert all(m == 'GET' and p.startswith(INTEGRATION) for m, p in recorder.calls), recorder.calls

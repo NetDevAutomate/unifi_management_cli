@@ -166,6 +166,12 @@ changed in the file still needs a server restart (issue 020). The sync port-diag
 read-only guard. The `network_api` and `protect` tools open their own guarded client per call
 (the Integration API's GET-only transport, and `ReadOnlyProtectApiClient`).
 
+`get_clients` returns one page, `{total, returned, offset, limit, next_offset, truncated,
+clients}`: `limit` 1-1000 (default 200), sorted by client ID. It reads the controller's whole
+list on every call, so `total` counts every client; pass a page's `next_offset` as the next
+`offset` until it is null. A failure is `{error}`. (It returned a bare list before the July
+port.)
+
 ### Environment variables
 
 | Variable | Default | Valid values | On an invalid value |
@@ -206,7 +212,7 @@ the private `_get_versions_from_api`. No tool uses either.
 | Surface | `tools/list` shows | Size (measured at this commit) |
 | --- | --- | --- |
 | `discovery` (default) | the four meta-tools: `search_tools`, `list_categories`, `get_tool_info`, `execute_tool` | 4 tools, about 6.4k characters |
-| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 75 tools (4 + 71), about 195k characters |
+| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 75 tools (4 + 71), about 196k characters |
 
 On either surface every catalog tool runs through the same `ToolRunner`, so arguments are
 validated, credentials gated, results masked and errors coded identically. The 11 pipeline
@@ -559,7 +565,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
 | `get_acl_rules` | `network_api` |  | List ACL rules and their configurations |
-| `get_clients` | `network_api` |  | List connected clients with fingerprinting data |
+| `get_clients` | `network_api` |  | List connected clients with fingerprinting data, one page at a time, sorted by client ID. The controller's list is read in full, so total counts every client; pass a page's next_offset as the next offset until it is null. Read-only. |
 | `get_dns_policies` | `network_api` |  | List DNS policies and configurations |
 | `get_firewall_policies` | `network_api` |  | List firewall policies between zones |
 | `get_firewall_zones` | `network_api` |  | List all firewall zones and their configurations |
