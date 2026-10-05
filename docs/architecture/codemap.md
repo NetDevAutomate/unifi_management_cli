@@ -1291,7 +1291,7 @@ Uses `requests` (synchronous) rather than `uiprotect`, making it independent of 
 
 **Purpose.** `poc_decrypt.py` is a proof of concept that decrypts a UniFi controller backup (`.unf`) with the controller's fixed AES key and IV (module constants, not settings), extracts the database and parses its BSON collections (`decrypt_backup`, `extract_db_gz`, `decompress_db`, `iter_bson_documents`, `parse_bson_documents`). Run it as `python -m unifi_mapper.backup.poc_decrypt BACKUP.unf`. Its stages never print (a debug log line instead), `decompress_db` follows `gzip.decompress`' member rules with an optional output cap, and a missing dependency raises `ImportError` instead of printing and exiting.
 
-`verify.py` (`verify_backup_bytes`, `check_backup_path`, `verify_config_backup`; `backup verify`, MCP `verify_config_backup`, `credentials: none`) runs those stages offline with a 1 GiB database cap and counts each collection's documents without keeping any, so the result holds structure only. The path is checked before the file is opened: the `.unf` suffix first, then absolute (MCP), a regular file and at most 512 MiB.
+`verify.py` (`verify_backup_bytes`, `check_backup_path`, `verify_config_backup`; `backup verify`, MCP `verify_config_backup`, `credentials: none`) runs those stages offline, the extracted member and the decompressed database each capped at 1 GiB (an oversized member is refused by its declared size before it is inflated), and counts each collection's documents without keeping any, so the result holds structure only. The path is checked before the file is opened: the `.unf` suffix first, then absolute (MCP), a regular file and at most 512 MiB.
 
 ---
 

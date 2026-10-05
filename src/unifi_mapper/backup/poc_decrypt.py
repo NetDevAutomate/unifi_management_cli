@@ -73,7 +73,7 @@ class BSONParseError(BackupDecryptError):
 
 
 class DatabaseTooLargeError(ExtractionError):
-    """The decompressed database passed the size cap it was given."""
+    """The database member, or the decompressed database, passed the size cap it was given."""
 
     pass
 
@@ -106,16 +106,42 @@ def decrypt_backup(encrypted_data: bytes) -> bytes:
         raise DecryptionError(f'AES decryption failed: {e}')
 
 
-def extract_db_gz(zip_data: bytes) -> bytes:
+def _read_member(zf: zipfile.ZipFile, name: str, max_bytes: Optional[int]) -> bytes:
+    """Read one ZIP member, refusing it once it passes ``max_bytes`` (None: no cap).
+
+    The member's declared size is checked first, so an oversized member is refused without
+    inflating any of it; the read then runs in ``_INFLATE_STEP`` pieces and stops as soon as
+    the output passes the cap, in case a reader yields more than its header declares.
+    """
+    info = zf.getinfo(name)
+    if max_bytes is not None and info.file_size > max_bytes:
+        raise DatabaseTooLargeError(f'ZIP member {name!r} is larger than {max_bytes} bytes')
+    chunks: list[bytes] = []
+    size = 0
+    with zf.open(info) as member:
+        while chunk := member.read(_INFLATE_STEP):
+            size += len(chunk)
+            if max_bytes is not None and size > max_bytes:
+                raise DatabaseTooLargeError(
+                    f'ZIP member {name!r} is larger than {max_bytes} bytes'
+                )
+            chunks.append(chunk)
+    return b''.join(chunks)
+
+
+def extract_db_gz(zip_data: bytes, max_bytes: Optional[int] = None) -> bytes:
     """Extract db.gz from decrypted ZIP archive.
 
     Args:
         zip_data: Decrypted ZIP file bytes
+        max_bytes: Refuse a database member larger than this many bytes, before it is
+            inflated (None: no cap, as before).
 
     Returns:
         Contents of db.gz (still gzipped)
 
     Raises:
+        DatabaseTooLargeError: The member passed ``max_bytes``.
         ExtractionError: If extraction fails
     """
     try:
@@ -126,16 +152,18 @@ def extract_db_gz(zip_data: bytes) -> bytes:
 
             # Look for db.gz
             if 'db.gz' in file_list:
-                return zf.read('db.gz')
+                return _read_member(zf, 'db.gz', max_bytes)
 
             # Try alternative names
             for name in file_list:
                 if name.endswith('.gz') or name == 'db':
                     logger.debug('Using alternative: {}', name)
-                    return zf.read(name)
+                    return _read_member(zf, name, max_bytes)
 
             raise ExtractionError(f'No database file found. Contents: {file_list}')
 
+    except DatabaseTooLargeError:
+        raise
     except zipfile.BadZipFile as e:
         raise ExtractionError(f'Invalid ZIP file: {e}')
     except Exception as e:

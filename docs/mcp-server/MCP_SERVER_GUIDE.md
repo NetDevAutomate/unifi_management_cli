@@ -542,7 +542,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `network_health_check` | `controller` |  | Overall infrastructure health monitoring and assessment |
 | `performance_analysis` | `controller` |  | Network performance analysis and bottleneck identification |
 | `security_audit` | `controller` |  | Security configuration review and vulnerability assessment |
-| `verify_config_backup` | `none` |  | Check a downloaded UniFi config backup (.unf) offline: does it decrypt, extract and decompress, and how many documents does each collection hold (device, networkconf, wlanconf, setting and the rest)? Reports structure only, never document contents. The path must be absolute, end in .unf and name a regular file of at most 512 MiB; the database is capped at 1 GiB. Contacts no controller. Read-only. |
+| `verify_config_backup` | `none` |  | Check a downloaded UniFi config backup (.unf) offline: does it decrypt, extract and decompress, and how many documents does each collection hold (device, networkconf, wlanconf, setting and the rest)? Reports structure only, never document contents. The path must be absolute, end in .unf and name a regular file of at most 512 MiB; the database member and the decompressed database are each capped at 1 GiB, and an oversized member is refused before it is inflated. Contacts no controller. Read-only. |
 
 ### discovery (5)
 

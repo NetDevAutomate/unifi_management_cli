@@ -9,11 +9,13 @@ safe order before the file is opened.
 import bson
 import gzip
 import inspect
+import io
 import json
 import os
 import pytest
 import subprocess
 import sys
+import zipfile
 import zlib
 from collections.abc import Iterator
 from loguru import logger
@@ -26,6 +28,7 @@ from tests.backup.synthetic_unf import (
     zip_with,
 )
 from typer.testing import CliRunner
+from typing import cast
 from unifi_mapper.backup import poc_decrypt, verify
 from unifi_mapper.backup.poc_decrypt import (
     DatabaseTooLargeError,
@@ -117,6 +120,55 @@ def test_a_database_over_the_cap_is_too_large() -> None:
     result = verify_backup_bytes(build_unf_bytes(db_gz=db_gz), max_db_bytes=MIB)
     assert result['errors'] == [{'stage': 'decompress', 'error': 'too_large'}]
     assert verify.MAX_DB_BYTES == 1024 * MIB
+
+
+def _deflated_zip(name: str, payload: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(name, payload)
+    return buffer.getvalue()
+
+
+def test_a_deflated_member_over_the_cap_is_refused_before_it_is_inflated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 4 MiB of zeros deflates to a few KiB: the member, not the file, is what is large.
+    zip_data = _deflated_zip('db.gz', b'\x00' * (4 * MIB))
+    assert len(zip_data) < 64 * 1024
+    inflated: list[int] = []
+    real_read = zipfile.ZipExtFile.read
+
+    def _counting_read(self: zipfile.ZipExtFile, n: int | None = -1) -> bytes:
+        data = real_read(self, n)
+        inflated.append(len(data))
+        return data
+
+    monkeypatch.setattr(zipfile.ZipExtFile, 'read', _counting_read)
+    result = verify_backup_bytes(encrypt_unf(zip_data), max_db_bytes=MIB)
+    assert result['valid'] is False
+    assert result['errors'] == [{'stage': 'extract', 'error': 'too_large'}]
+    assert sum(inflated) == 0  # refused by the member's declared size, nothing inflated
+    with pytest.raises(DatabaseTooLargeError):
+        extract_db_gz(zip_data, max_bytes=MIB)
+    assert len(extract_db_gz(zip_data)) == 4 * MIB  # no cap given: the POC is unchanged
+
+
+def test_a_member_that_inflates_past_its_declared_size_is_refused() -> None:
+    class _LyingZip:
+        """A member whose header claims 1 byte but whose stream yields 2 MiB."""
+
+        def getinfo(self, name: str) -> zipfile.ZipInfo:
+            info = zipfile.ZipInfo(name)
+            info.file_size = 1
+            return info
+
+        def open(self, info: zipfile.ZipInfo) -> io.BytesIO:
+            return io.BytesIO(b'\x00' * (2 * MIB))
+
+    lying = cast(zipfile.ZipFile, _LyingZip())
+    with pytest.raises(DatabaseTooLargeError):
+        poc_decrypt._read_member(lying, 'db.gz', MIB)
+    assert poc_decrypt._read_member(lying, 'db.gz', None) == b'\x00' * (2 * MIB)
 
 
 def test_an_empty_database_is_not_valid() -> None:

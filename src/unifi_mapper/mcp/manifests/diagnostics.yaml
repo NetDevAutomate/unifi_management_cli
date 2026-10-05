@@ -181,7 +181,8 @@ tools:
       decompress, and how many documents does each collection hold (device, networkconf,
       wlanconf, setting and the rest)? Reports structure only, never document contents.
       The path must be absolute, end in .unf and name a regular file of at most 512 MiB;
-      the database is capped at 1 GiB. Contacts no controller. Read-only.
+      the database member and the decompressed database are each capped at 1 GiB, and an
+      oversized member is refused before it is inflated. Contacts no controller. Read-only.
     priority: P2
     tags: [backup, restore, verify, offline, read-only]
     parameters:

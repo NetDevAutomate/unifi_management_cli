@@ -1,12 +1,14 @@
 """Verify a UniFi config backup (``.unf``) offline: structure only, never its contents.
 
 ``verify_backup_bytes`` runs the POC decryptor's stages (``backup/poc_decrypt.py``: decrypt,
-extract ``db.gz``, decompress with a 1 GiB cap, walk the BSON documents) and reports whether
-each stage worked and how many documents each collection holds. Documents are counted as
-they are decoded and none is kept, so the result never carries a setting, a password hash
-or any other value from the backup. Expected failures (a foreign or corrupt file) are a
-result with ``valid: false`` and an ``errors`` list naming the stage and the exception class,
-never bytes or messages.
+extract ``db.gz``, decompress, walk the BSON documents) and reports whether each stage worked
+and how many documents each collection holds. The extracted ``db.gz`` member and the
+decompressed database are each capped at 1 GiB: an oversized member is refused by its
+declared size before any of it is inflated, so a small crafted file can't exhaust memory.
+Documents are counted as they are decoded and none is kept, so the result never carries a
+setting, a password hash or any other value from the backup. Expected failures (a foreign
+or corrupt file) are a result with ``valid: false`` and an ``errors`` list naming the stage
+and the exception class, never bytes or messages.
 
 The backup is read from a local path only: no controller is contacted and this module
 imports no client (``credentials: none``). The path is checked before the file is opened:
@@ -50,8 +52,8 @@ def verify_backup_bytes(data: bytes, *, max_db_bytes: int = MAX_DB_BYTES) -> dic
 
     Args:
         data: The ``.unf`` file's bytes.
-        max_db_bytes: Cap on the decompressed database; past it the result is
-            ``too_large``.
+        max_db_bytes: Cap on the extracted ``db.gz`` member and on the decompressed
+            database; past it the result is ``too_large`` at that stage.
 
     Returns:
         ``valid`` (every stage worked and at least one document decoded), ``format``
@@ -80,11 +82,11 @@ def _verify(buffer: list[bytes], max_db_bytes: int) -> dict[str, Any]:
         payload = poc_decrypt.decrypt_backup(data)
         del data
         stage = 'extract'
-        payload = poc_decrypt.extract_db_gz(payload)
+        payload = poc_decrypt.extract_db_gz(payload, max_db_bytes)
         stage = 'decompress'
         payload = poc_decrypt.decompress_db(payload, max_db_bytes)
     except poc_decrypt.DatabaseTooLargeError:
-        result['errors'].append(_error('decompress', 'too_large'))
+        result['errors'].append(_error(stage, 'too_large'))
         return result
     except poc_decrypt.BackupDecryptError as e:
         result['errors'].append(_error(stage, e))
