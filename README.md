@@ -627,8 +627,8 @@ Exit codes, across the commands:
 | Code | Meaning |
 | --- | --- |
 | 0 | Done; a diagnosis found no fault |
-| 1 | An error, reported as one line on stderr (a traceback only with `--debug`, without local variables); some diagnoses (`diagnose client-connectivity`, for example) also exit 1 when they find a fault or a check could not run |
-| 2 | A usage or input error, before anything is read: an unknown option, a value out of range, a file option naming a directory, an invalid value the command checks itself |
+| 1 | An error, reported as one line on stderr (a traceback only with `--debug`, without local variables): a failed read or connection, missing data, or a value a command checks once it runs, such as a `gateway` probe's URL, hostname or interface, or a `diagnose bandwidth` target. Some diagnoses (`diagnose client-connectivity`, for example) also exit 1 when they find a fault or a check could not run |
+| 2 | A usage error, before anything is read: an unknown option, a value outside an option's stated range, a file option naming a directory, an `--output` that can't be written; or an invalid path or value given to a command that contacts nothing (`backup verify`, `diagnose wan-history`, the `vlan-traffic` readers) or to `controller events`' window. Also a check that failed: the validating commands (`analyze port-profiles`, `mtu`, `vlan-coverage`, `uplink-transparency`, `power-budget`, `link-speeds` and `port-profile-usage`, `diagnose all` and `inter-vlan`, `stp drift` and `validate-10g`) exit 2 when their validation fails, `stp apply` and `stp rollback` when a change failed, and `diagnose ap-health` when the printed report could not be written to `--output` |
 | 130 | Interrupted with Ctrl-C after a partial report was printed (`diagnose ap-health`) |
 
 > Invoke commands through the installed `unifi-mapper` script. `python -m unifi_mapper.typer_cli`

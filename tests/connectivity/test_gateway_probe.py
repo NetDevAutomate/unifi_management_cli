@@ -730,6 +730,23 @@ def test_a_bad_value_is_one_error_line_and_no_ssh(cli: FakeSSH) -> None:
     assert cli.connects == []
 
 
+@pytest.mark.parametrize(
+    'args',
+    [
+        ['gateway', 'http', 'ftp://www.example.com/'],
+        ['gateway', 'dns', '--', '-x'],
+        ['gateway', 'http', 'https://www.example.com/', '--vlan', '10', '--interface', 'br0'],
+    ],
+    ids=['not http', 'leading dash', 'vlan and interface'],
+)
+def test_a_value_a_probe_checks_itself_exits_1_before_ssh(cli: FakeSSH, args: list[str]) -> None:
+    """The README's exit-code table (review M1): Typer's own checks exit 2, the probe's 1."""
+    result = runner.invoke(app, args)
+    assert result.exit_code == 1, result.output
+    assert result.stdout == '' and 'CONFIG_INVALID' in result.stderr
+    assert cli.connects == []
+
+
 @pytest.mark.parametrize('command', ['ping', 'traceroute', 'dns', 'http', 'flows'])
 def test_every_command_has_help(command: str) -> None:
     result = runner.invoke(app, ['gateway', command, '--help'])

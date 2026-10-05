@@ -16,6 +16,7 @@ Both are cheap to assert and expensive to rediscover.
 
 from __future__ import annotations
 
+import ast
 import click
 import pytest
 import re
@@ -243,3 +244,51 @@ def test_help_text_names_no_internal_tracker_reference() -> None:
     assert len(texts) > 100, f'the walk found only {len(texts)} help texts: has the CLI moved?'
     leaks = [f'{where}: {text}' for where, text in texts if TRACKER_REFERENCE.search(text)]
     assert not leaks, leaks
+
+
+def _raises_exit_2(function: ast.FunctionDef) -> bool:
+    """Whether the body raises ``typer.Exit(2)`` itself: a check that failed, not usage."""
+    return any(
+        isinstance(node, ast.Raise)
+        and isinstance(node.exc, ast.Call)
+        and isinstance(node.exc.func, ast.Attribute)
+        and node.exc.func.attr == 'Exit'
+        and bool(node.exc.args)
+        and isinstance(node.exc.args[0], ast.Constant)
+        and node.exc.args[0].value == 2
+        for node in ast.walk(function)
+    )
+
+
+def _commands_that_exit_2_on_a_check() -> set[str]:
+    """``group command`` for every command whose body raises ``typer.Exit(2)``."""
+    found: set[str] = set()
+    for node in ast.parse(TYPER_CLI.read_text(encoding='utf-8')).body:
+        if not isinstance(node, ast.FunctionDef) or not _raises_exit_2(node):
+            continue
+        for decorator in node.decorator_list:
+            if not (
+                isinstance(decorator, ast.Call)
+                and isinstance(decorator.func, ast.Attribute)
+                and decorator.func.attr == 'command'
+                and isinstance(decorator.func.value, ast.Name)
+            ):
+                continue
+            group = decorator.func.value.id.removesuffix('_app')
+            name = decorator.args[0]
+            assert isinstance(name, ast.Constant), f'{node.name}: name its command'
+            found.add(f'{group} {name.value}')
+    return found
+
+
+def test_the_exit_code_table_names_every_command_that_exits_2_on_a_failed_check() -> None:
+    """Review M1: the README's exit 2 row said "a usage error" only, while a dozen
+    commands exit 2 when their check fails; every such command must be named there."""
+    lines = README.read_text(encoding='utf-8').splitlines()
+    row = next(line for line in lines if line.startswith('| 2 |'))
+    commands = _commands_that_exit_2_on_a_check()
+    assert {'analyze link-speeds', 'diagnose all', 'stp apply'} <= commands  # the scan works
+    missing = sorted(
+        c for c in commands if f'`{c}`' not in row and f'`{c.split(" ", 1)[1]}`' not in row
+    )
+    assert missing == [], f'name these in the README exit-code table: {missing}'
