@@ -434,18 +434,45 @@ def test_the_two_callers_share_as_text_instead_of_copies() -> None:
     assert not hasattr(bandwidth_test, '_as_text')
 
 
+def _asyncssh_connect_uses(tree: ast.AST) -> list[int]:
+    """Line numbers that reach ``asyncssh.connect``: the attribute, or an import of the name."""
+    lines = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == 'connect'
+            and isinstance(node.value, ast.Name)
+            and node.value.id == 'asyncssh'
+        ):
+            lines.append(node.lineno)
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and (node.module or '').split('.')[0] == 'asyncssh'
+            and any(alias.name in {'connect', '*'} for alias in node.names)
+        ):
+            lines.append(node.lineno)
+    return lines
+
+
 def test_asyncssh_connect_is_called_only_in_gateway_ssh() -> None:
-    callers = []
-    for path in sorted(SRC.rglob('*.py')):
-        for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
-            if (
-                isinstance(node, ast.Attribute)
-                and node.attr == 'connect'
-                and isinstance(node.value, ast.Name)
-                and node.value.id == 'asyncssh'
-            ):
-                callers.append(f'{path.relative_to(SRC)}:{node.lineno}')
+    callers = [
+        f'{path.relative_to(SRC)}:{line}'
+        for path in sorted(SRC.rglob('*.py'))
+        for line in _asyncssh_connect_uses(ast.parse(path.read_text(encoding='utf-8')))
+    ]
     assert [c.split(':')[0] for c in callers] == ['analysis/gateway_ssh.py'], callers
+
+
+def test_the_only_door_scan_sees_an_imported_connect() -> None:
+    sample = (
+        'import asyncssh\n'
+        'from asyncssh import connect\n'
+        'from asyncssh.connection import connect as dial\n'
+        'from asyncssh import *\n'
+        'from asyncssh import SSHClientConnection\n'
+        'asyncssh.connect("192.0.2.1")\n'
+    )
+    assert _asyncssh_connect_uses(ast.parse(sample)) == [2, 3, 4, 6]
 
 
 async def test_a_real_connect_fails_in_every_test() -> None:
@@ -539,6 +566,15 @@ async def test_run_gateway_command_requires_a_timeout_and_a_program() -> None:
         await run_gateway_command(conn, ['true'])  # type: ignore[call-arg]
     with pytest.raises(ValueError):
         await run_gateway_command(conn, [], timeout=1)
+    assert conn.commands == []
+
+
+@pytest.mark.parametrize('argv', ['reboot', b'reboot'])
+async def test_run_gateway_command_refuses_a_string_for_argv(argv: object) -> None:
+    # shlex.join('reboot') would run `r` with five one-letter arguments.
+    conn = _ScriptedConnection()
+    with pytest.raises(TypeError, match='argv must be a list'):
+        await run_gateway_command(conn, argv, timeout=1)  # type: ignore[arg-type]
     assert conn.commands == []
 
 
@@ -745,12 +781,28 @@ def test_require_bounded_float_accepts_the_range(value: float, expected: float) 
     assert require_bounded_float('interval', value, 0.5, 10) == expected
 
 
-@pytest.mark.parametrize('value', [0.49, 10.01, float('nan'), float('inf'), True, '1', None])
+@pytest.mark.parametrize(
+    'value',
+    [
+        *[0.49, 10.01, float('nan'), float('inf'), True, '1', None],
+        pytest.param(10**400, id='huge-int'),
+        pytest.param(-(10**400), id='huge-negative-int'),
+    ],
+)
 def test_require_bounded_float_refuses_anything_else(value: object) -> None:
     with pytest.raises(ToolError) as exc:
         require_bounded_float('interval', value, 0.5, 10)
     assert exc.value.error_code == ErrorCodes.CONFIG_INVALID
     assert 'interval must be a number from 0.5 to 10' in exc.value.message
+
+
+@pytest.mark.parametrize('check', [require_bounded_int, require_bounded_float])
+def test_the_number_checks_redact_the_value_they_refuse(check) -> None:
+    refused = 'password=' + 'fake-value-for-the-echo'  # pragma: allowlist secret
+    with pytest.raises(ToolError) as exc:
+        check('ping count', refused, 1, 100)
+    assert 'fake-value-for-the-echo' not in exc.value.message
+    assert '***redacted***' in exc.value.message
 
 
 # --- both SSH commands report a failure the same way (issue 050) -------------------------

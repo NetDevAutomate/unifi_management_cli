@@ -181,8 +181,12 @@ async def run_gateway_command(
 
     Raises:
         ToolError: ``TIMEOUT`` naming the program and the bound only, never the full line.
+        TypeError: If ``argv`` is a ``str`` or ``bytes``: ``shlex.join`` would run its first
+            character with the rest as one-letter arguments.
         ValueError: If ``argv`` is empty.
     """
+    if isinstance(argv, str | bytes):
+        raise TypeError('argv must be a list of arguments, not a string')
     if not argv:
         raise ValueError('argv must name a program')
     command = shlex.join(argv)
@@ -378,7 +382,8 @@ def require_bounded_int(label: str, value: object, low: int, high: int) -> int:
     if isinstance(value, int) and not isinstance(value, bool) and low <= value <= high:
         return value
     raise ToolError(
-        message=f'{label} must be a whole number from {low} to {high}, not {value!r}',
+        message=f'{label} must be a whole number from {low} to {high}, '
+        f'not {redact_text(repr(value))}',
         error_code=ErrorCodes.CONFIG_INVALID,
     )
 
@@ -400,14 +405,17 @@ def require_bounded_float(label: str, value: object, low: float, high: float) ->
     Raises:
         ToolError: ``CONFIG_INVALID`` if ``value`` is not a finite number in the range.
     """
-    if (
-        isinstance(value, int | float)
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-        and low <= value <= high
-    ):
-        return float(value)
+    # The range check runs first: Python compares an int with a float exactly, while
+    # math.isfinite (and float) raise OverflowError on a huge int.
+    if isinstance(value, int | float) and not isinstance(value, bool) and low <= value <= high:
+        try:
+            number = float(value)
+        except OverflowError:
+            number = math.inf
+        if math.isfinite(number):
+            return number
     raise ToolError(
-        message=f'{label} must be a number from {low:g} to {high:g}, not {value!r}',
+        message=f'{label} must be a number from {low:g} to {high:g}, '
+        f'not {redact_text(repr(value))}',
         error_code=ErrorCodes.CONFIG_INVALID,
     )
