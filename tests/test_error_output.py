@@ -175,7 +175,14 @@ def test_both_clis_replace_the_default_handler_before_running(
 
 CLI_MODULES = [
     PACKAGE / name
-    for name in ('typer_cli.py', 'inventory_cli.py', 'cli.py', 'network_cli.py', 'verify_cli.py')
+    for name in (
+        'typer_cli.py',
+        'inventory_cli.py',
+        'cli.py',
+        'network_cli.py',
+        'verify_cli.py',
+        'backup/poc_decrypt.py',  # python -m unifi_mapper.backup.poc_decrypt
+    )
 ]
 REDACTING_CALLS = frozenset({'_error_text', 'redact_text', 'redact_traceback', '_fail'})
 # Rich and Typer output, plus every stdlib logging and loguru level.
@@ -228,6 +235,35 @@ def test_no_cli_debug_path_prints_an_unredacted_traceback() -> None:
         if path in CLI_MODULES
     ]
     assert offenders == []
+
+
+# Every way the traceback module renders an exception; only redact_traceback may use one.
+TRACEBACK_RENDERERS = (
+    'print_exc',
+    'print_exception',
+    'print_tb',
+    'print_stack',
+    'format_exc',
+    'format_exception',
+    'format_tb',
+    'format_stack',
+)
+
+
+def test_every_traceback_in_src_goes_through_redact_traceback() -> None:
+    allowed = {PACKAGE / 'core' / 'utils' / 'redact.py'}  # redact_traceback itself
+    offenders = [
+        f'{path.relative_to(PACKAGE)}:{call.lineno}'
+        for name in TRACEBACK_RENDERERS
+        for path, call in _calls(name)
+        if path not in allowed
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == 'traceback'
+    ]
+    assert offenders == []
+    renderers = [call for name in TRACEBACK_RENDERERS for path, call in _calls(name)]
+    assert renderers, 'the scan found no call at all: it is not looking where it should'
 
 
 def test_the_raw_exception_scan_finds_an_unredacted_print(tmp_path: Path) -> None:

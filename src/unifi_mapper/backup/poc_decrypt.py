@@ -27,6 +27,7 @@ from datetime import datetime
 from loguru import logger
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from unifi_mapper.core.utils.redact import redact_text, redact_traceback
 
 
 try:
@@ -370,7 +371,7 @@ def dump_collection_detail(
                 formatted = formatted[:5000] + '\n... (truncated)'
             print(formatted)
         except Exception as e:
-            print(f'Error formatting document: {e}')
+            print(f'Error formatting document: {redact_text(e)}')
 
     if output_file:
         with open(output_file, 'w') as f:
@@ -524,13 +525,11 @@ Examples:
                 print(f'  ✗ {coll}: not found')
 
     except BackupDecryptError as e:
-        print(f'\n❌ ERROR: {e}')
+        print(f'\n❌ ERROR: {redact_text(e)}')
         sys.exit(1)
     except Exception as e:
-        print(f'\n❌ UNEXPECTED ERROR: {e}')
-        import traceback
-
-        traceback.print_exc()
+        print(f'\n❌ UNEXPECTED ERROR: {redact_text(e)}')
+        sys.stderr.write(redact_traceback(e))  # every line redacted, no frame values
         sys.exit(1)
 
 

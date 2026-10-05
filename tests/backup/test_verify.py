@@ -379,6 +379,25 @@ def test_the_poc_cli_still_prints_its_warnings_and_summary(
     assert 'ZIP contents' not in out  # a debug log line now
 
 
+def test_the_poc_cli_redacts_an_unexpected_error_and_its_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = 'password=' + 'FAKE-POC-PASSWORD-MUST-NOT-APPEAR'  # pragma: allowlist secret
+
+    def _boom(_data: bytes) -> bytes:
+        raise RuntimeError(f'decrypt failed with {fake}')
+
+    backup = tmp_path / 'synthetic.unf'
+    backup.write_bytes(build_unf_bytes())
+    monkeypatch.setattr(poc_decrypt, 'decrypt_backup', _boom)
+    monkeypatch.setattr(sys, 'argv', ['poc_decrypt', str(backup)])
+    with pytest.raises(SystemExit):
+        poc_decrypt.main()
+    captured = capsys.readouterr()
+    assert 'UNEXPECTED ERROR' in captured.out and 'Traceback' in captured.err
+    assert 'FAKE-POC-PASSWORD' not in captured.out + captured.err
+
+
 def test_importing_without_a_dependency_raises_instead_of_exiting() -> None:
     code = (
         'import sys\n'
