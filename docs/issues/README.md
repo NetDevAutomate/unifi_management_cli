@@ -77,3 +77,4 @@ the reasoning stays next to the code it explains.
 | [064](064-cli-reads-outside-the-read-only-transport.md) | CLI read commands that reach the controller outside the read-only transport | open |
 | [065](065-pre-push-coverage-floor.md) | The pre-push pytest hook fails the 90% coverage floor | open, decision needed |
 | [066](066-backup-collections-unverified-on-a-real-backup.md) | `backup verify` names collections by `_type`, unverified on a real backup | open |
+| [067](067-mcp-tool-failure-helper-duplicated.md) | The network and Protect tools each carry a copy of the redacted-failure helper | open |
