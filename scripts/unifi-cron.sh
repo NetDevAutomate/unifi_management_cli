@@ -28,6 +28,8 @@ LOG_DIR="${LOG_DIR:-$PROJECT_DIR/logs}"
 # link-error-snapshot keeps its name (so uninstall still finds installed jobs) but now appends
 # to the counter history (--record) instead of overwriting the comparison baseline; set the
 # baseline deliberately with `unifi-mapper analyze link-errors --snapshot`.
+# wan-speedtest-record reads the controller's last scheduled speedtest (one read-only GET) and
+# appends it to the WAN history under the XDG state directory; it never starts a speedtest.
 # Intervals: for cron = cron expression, for launchd = seconds
 TASKS=(
     "link-error-snapshot|300|analyze link-errors --record"
@@ -35,6 +37,7 @@ TASKS=(
     "config-drift-check|3600|analyze config-drift"
     "diagnose-all|3600|diagnose all"
     "radio-report|3600|radio report -o reports/channel-report.md"
+    "wan-speedtest-record|3600|diagnose wan --record"
     "port-naming|1800|--verify-updates --connected-devices --apply"
 )
 
@@ -42,6 +45,7 @@ TASKS=(
 CRON_SCHEDULES=(
     "*/5 * * * *"    # every 5 min
     "*/5 * * * *"    # every 5 min
+    "0 * * * *"      # every hour
     "0 * * * *"      # every hour
     "0 * * * *"      # every hour
     "0 * * * *"      # every hour
@@ -222,6 +226,8 @@ run_all() {
     $UV_BIN run unifi-mapper analyze config-drift
     $UV_BIN run unifi-mapper diagnose all
     $UV_BIN run unifi-mapper radio report -o reports/channel-report.md
+    $UV_BIN run unifi-mapper diagnose wan --record
+
     $UV_BIN run unifi-mapper --verify-updates --connected-devices --apply
 
     log "✅ All tasks complete"

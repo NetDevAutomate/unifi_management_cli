@@ -3169,6 +3169,31 @@ def _diagnostic_errors() -> Iterator[None]:
         _fail(f'Error: {redact_text(e)}')
 
 
+@contextmanager
+def _offline_errors() -> Iterator[None]:
+    """Turn failures of a command that never contacts the controller into clean exits.
+
+    A ``ToolError`` exits 2 when it is ``CONFIG_INVALID`` (a bad path or argument) and 1
+    otherwise (no data, a missing file); a ``ValueError`` exits 2; anything else ends as
+    one redacted ``Error:`` line (exit 1), never Typer's traceback.
+    """
+    from .core.utils.errors import ErrorCodes, ToolError
+    from .core.utils.redact import redact_text
+
+    try:
+        yield
+    except ToolError as e:
+        _fail(e, code=2 if e.error_code == ErrorCodes.CONFIG_INVALID else 1)
+    except ValueError as e:
+        _fail(e, code=2)
+    except (typer.Exit, typer.Abort):
+        raise
+    except Exception as e:  # noqa: BLE001 - never Typer's traceback, which prints locals
+        if state.debug:
+            _print_debug_traceback(err_console)
+        _fail(f'Error: {redact_text(e)}')
+
+
 def _resolve(client: Any, site: str, query: str, *, any_device: bool = False) -> JsonDict:
     """Resolve a switch (or any device) or exit 1 listing the candidates."""
     from .diagnostic_reads import resolve_device
@@ -4568,6 +4593,117 @@ def diagnose_ap_retries(
     else:
         console.print(f'[red]⚠ {len(result["flagged"])} VAP(s) above {threshold:g}%[/red]')
     _print_dim_notes(result['notes'])
+
+
+@diagnose_app.command('wan')
+def diagnose_wan(
+    record: bool = typer.Option(
+        False, '--record', help="Append the controller's last speedtest result to the history"
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """🌐 WAN and internet health, and the controller's last scheduled speedtest.
+
+    One read of the controller's health summary: ISP, WAN IP, gateway version, latency,
+    drops and the result of the controller's own scheduled speedtest. Never starts a
+    speedtest. --record appends that result to a history file under the XDG state
+    directory (skipped when the run is already recorded); diagnose wan-history lists it.
+    Read-only towards the controller.
+    """
+    from .diagnostics.wan_health import get_wan_health
+
+    report = _run_analysis(get_wan_health)
+    if as_json:
+        _emit_json(report)
+    else:
+        wan, www, speedtest = report['wan'], report['www'], report['last_speedtest']
+        table = Table(title='🌐 WAN health', show_header=False)
+        table.add_column('Metric', style='cyan')
+        table.add_column('Value')
+        style = 'green' if report['healthy'] else 'red'
+        table.add_row('Healthy', f'[{style}]{"yes" if report["healthy"] else "no"}[/]')
+        table.add_row('WAN / internet', f'{_cell(wan["status"])} / {_cell(www["status"])}')
+        table.add_row('ISP', _cell(wan['isp_name']))
+        table.add_row('WAN IP', _cell(wan['wan_ip']))
+        table.add_row('Gateway version', _cell(wan['gw_version']))
+        table.add_row(
+            'Latency (ms) / drops', f'{_cell(www["latency_ms"])} / {_cell(www["drops"])}'
+        )
+        if speedtest:
+            table.add_row(
+                'Last speedtest',
+                f'↓ {_cell(speedtest["down_mbps"])} / ↑ {_cell(speedtest["up_mbps"])} Mbps, '
+                f'{_cell(speedtest["ping_ms"])} ms ({_cell(speedtest["status"])})',
+            )
+        else:
+            table.add_row('Last speedtest', '—')
+        console.print(table)
+        _print_dim_notes(report['notes'])
+    if record:
+        _record_speedtest(report['last_speedtest'])
+
+
+def _record_speedtest(speedtest: Optional[JsonDict]) -> None:
+    """Append the last speedtest to the history; report the outcome on stderr only."""
+    from .diagnostics.wan_history import append_speedtest, default_speedtest_history_path
+
+    if not speedtest:
+        err_console.print('Nothing to record: the controller reports no speedtest result.')
+        return
+    path = default_speedtest_history_path()
+    try:
+        written = append_speedtest(speedtest, path)
+    except OSError as e:
+        reason = e.strerror or type(e).__name__
+        err_console.print(
+            f'[yellow]⚠ Not recorded: {escape(str(path))}: {escape(reason)}[/yellow]',
+            soft_wrap=True,
+        )
+        return
+    if written is None:
+        err_console.print('Nothing to record: the last speedtest has no run time.')
+    elif written.lines_written == 0:
+        err_console.print('Already recorded: that speedtest run is in the history.')
+    else:
+        err_console.print(f'Recorded the speedtest in {escape(str(path))}', soft_wrap=True)
+
+
+@diagnose_app.command('wan-history')
+def diagnose_wan_history(
+    limit: int = typer.Option(
+        20, '--limit', min=1, max=1000, help='Show at most this many results (1-1000)'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """📈 The WAN speedtest results recorded by diagnose wan --record, newest first.
+
+    Reads the history file under the XDG state directory; contacts nothing. Read-only.
+    """
+    from .diagnostics.wan_history import read_speedtest_history
+
+    with _offline_errors():
+        history = read_speedtest_history(limit=limit)
+    if as_json:
+        _emit_json(history)
+        return
+    if not history['entries']:
+        err_console.print(escape(history['note']), soft_wrap=True)
+        return
+    from datetime import UTC, datetime
+
+    table = Table(title=f'📈 WAN speedtests ({history["returned"]} of {history["total"]})')
+    for column in ('Run (UTC)', 'Down Mbps', 'Up Mbps', 'Ping ms', 'Status'):
+        table.add_column(column)
+    for entry in history['entries']:
+        run = datetime.fromtimestamp(entry['epoch'], tz=UTC).isoformat(timespec='minutes')
+        table.add_row(
+            run,
+            _cell(entry.get('down_mbps')),
+            _cell(entry.get('up_mbps')),
+            _cell(entry.get('ping_ms')),
+            _cell(entry.get('status')),
+        )
+    console.print(table)
 
 
 @controller_app.command('config')

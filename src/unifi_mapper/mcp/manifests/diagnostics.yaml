@@ -140,3 +140,32 @@ tools:
         type: string
         required: true
         description: Second port profile name or _id
+
+  get_wan_health:
+    module: unifi_mapper.diagnostics.wan_health
+    handler: get_wan_health
+    title: Get WAN Health
+    description: >-
+      WAN and internet status from stat/health (ISP, WAN IP, gateway version, latency,
+      drops, throughput) and the result of the controller's last scheduled speedtest. Never
+      starts a speedtest. get_wan_speedtest_history lists the recorded results. Read-only.
+    priority: P1
+    tags: [wan, internet, isp, speedtest, health, read-only]
+
+  get_wan_speedtest_history:
+    module: unifi_mapper.diagnostics.wan_history
+    handler: get_wan_speedtest_history
+    title: Get WAN Speedtest History
+    credentials: none
+    open_world: false
+    description: >-
+      WAN speedtest results recorded by `unifi-mapper diagnose wan --record` (hourly when
+      scheduled), newest first, from the history file under the XDG state directory. Needs
+      no credentials and sends no request; an empty history returns a note on how to record.
+      Read-only.
+    priority: P2
+    tags: [wan, speedtest, history, trend, read-only]
+    parameters:
+      limit:
+        type: integer
+        description: At most this many results, newest first (1-1000, default 100)

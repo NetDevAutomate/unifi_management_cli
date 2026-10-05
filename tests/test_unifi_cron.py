@@ -152,3 +152,41 @@ def test_macos_status_accepts_every_plist_that_install_writes(cron):
     status = run('status')
     assert status.returncode == 0, status.stderr
     assert 'stale' not in status.stdout and 'to reinstall' not in status.stdout
+
+
+# --- the task tables stay in step (July port: wan-speedtest-record) -----------------------
+
+
+def _bash_array(name: str) -> list[str]:
+    text = SCRIPT.read_text(encoding='utf-8')
+    body = text.split(f'{name}=(', 1)[1].split('\n)', 1)[0]
+    return [line.split('#', 1)[0].strip().strip('"') for line in body.splitlines() if '"' in line]
+
+
+def _run_all_body() -> str:
+    text = SCRIPT.read_text(encoding='utf-8')
+    return text.split('run_all() {', 1)[1].split('\n}', 1)[0]
+
+
+def test_tasks_and_cron_schedules_are_parallel_arrays() -> None:
+    tasks, schedules = _bash_array('TASKS'), _bash_array('CRON_SCHEDULES')
+    assert len(tasks) == len(schedules) >= 7
+    names = [task.split('|')[0] for task in tasks]
+    assert schedules[names.index('wan-speedtest-record')] == '0 * * * *'
+
+
+def test_every_task_command_is_in_run_all() -> None:
+    body = _run_all_body()
+    for task in _bash_array('TASKS'):
+        _name, _interval, command = task.split('|')
+        assert f'unifi-mapper {command}' in body, command
+
+
+def test_the_wan_record_task_reads_only_and_runs_before_port_naming() -> None:
+    tasks = _bash_array('TASKS')
+    assert 'wan-speedtest-record|3600|diagnose wan --record' in tasks
+    body = _run_all_body()
+    wan = body.index('unifi-mapper diagnose wan --record')
+    naming = body.index('unifi-mapper --verify-updates --connected-devices --apply')
+    assert wan < naming
+    assert 'port-naming|1800|--verify-updates --connected-devices --apply' in tasks  # unchanged

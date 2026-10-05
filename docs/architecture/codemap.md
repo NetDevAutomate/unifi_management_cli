@@ -80,7 +80,7 @@ The UniFi Management CLI is a Python package (`unifi_mapper`) that provides thre
 
 1. **CLI tools** - argparse and Typer-based command-line interfaces for network operators
 2. **Analysis and diagnostics tools** - 49 analysis modules plus the diagnostics, discovery and connectivity packages
-3. **MCP server** - A FastMCP server that exposes 81 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
+3. **MCP server** - A FastMCP server that exposes 83 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
 
 The codebase contains two generations of API client code. The legacy synchronous path (`api_client.py`, `port_mapper.py`, `run_methods.py`) handles the original port-mapping workflow. The modern async path (`core/utils/client.py`, `network/client.py`, `protect/client.py`) serves the analysis, network control, and Protect integration packages.
 
@@ -115,7 +115,7 @@ graph TB
 
     subgraph "Domain Packages"
         ANA["analysis/\n49 modules, 46 tools"]
-        DIA["diagnostics/\n6 modules, 8 tools"]
+        DIA["diagnostics/\n9 modules, 10 tools"]
         DIS["discovery/\n4 modules, 5 tools"]
         CON["connectivity/\n4 modules, 4 tools"]
         NET["network/\n12 modules"]
@@ -411,7 +411,7 @@ AsyncClient --> Errors
 
 ### 5.2 `typer_cli.py`
 
-**Purpose.** The `unifi-mapper` console script: a Typer + Rich CLI over the port-mapping logic and the analysis packages. Registers the top-level commands (`discover`, `diagram`, `verify`, `capabilities`, `version`, `install-completions`) and the `find`, `analyze`, `diagnose`, `inventory`, `stp`, `radio`, `ports` and `controller` groups, 65 commands in all.
+**Purpose.** The `unifi-mapper` console script: a Typer + Rich CLI over the port-mapping logic and the analysis packages. Registers the top-level commands (`discover`, `diagram`, `verify`, `capabilities`, `version`, `install-completions`) and the `find`, `analyze`, `diagnose`, `inventory`, `stp`, `radio`, `ports` and `controller` groups, 67 commands in all.
 
 **Key objects.**
 
@@ -980,6 +980,7 @@ Diagnostic tools. The first four use `UniFiClient`; `inspect_port.py` and `port_
 | `security_audit.py` | Security posture assessment: open ports, weak auth, unencrypted traffic |
 | `inspect_port.py` | `inspect_switch_port`: deep single-port inspection |
 | `port_diagnostics_tools.py` | `diagnose_switch_port`, `get_switch_ports`, `diff_port_profiles` (diagnostics category), `get_client_history` (discovery) and `get_device_events`, `get_recent_events`, `get_port_counter_rates` (observability) |
+| `wan_health.py`, `wan_history.py` | `build_wan_health`, `get_wan_health`; `append_speedtest`, `read_speedtest_history`, `get_wan_speedtest_history` | WAN and internet status from `stat/health` with the controller's last scheduled speedtest (`diagnose wan`), and its history under the XDG state directory through the capped writer, deduplicated per run (`diagnose wan --record`, `diagnose wan-history`); `wan_history` imports no client, so its tool runs with `credentials: none`. No speedtest is ever started |
 | `observability.py` | `get_device_stats`, `get_ap_retry_rates`, `get_config_object`, `find_recent_config_changes` (observability category; `diagnose device-stats`, `diagnose ap-retries`, `controller config`, `controller config-changes`): pure `*_from_data` cores over controller records, async handlers on the borrowed read-only `UniFiClient()`, secrets stripped at the source |
 
 ---
@@ -1248,7 +1249,7 @@ classDiagram
 
 **Lazy loading.** `ToolProxy._load_implementation()` calls `importlib.import_module` and `getattr` on first `execute()` call, not at startup. `ToolRegistry.execute(name, params)` is the registry's own refuse-mutation choke point over the proxies; the MCP server runs tools through `ToolCatalog` and `ToolRunner` instead (§17.4), which import each handler the same lazy way.
 
-**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (46 tools), `connectivity.yaml` (4), `diagnostics.yaml` (8), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (7), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
+**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (46 tools), `connectivity.yaml` (4), `diagnostics.yaml` (10), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (7), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
 
 ---
 

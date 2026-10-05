@@ -9,7 +9,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **81 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, device stats, AP retry rates and raw config objects with secrets removed, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
+- **83 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, device stats, AP retry rates and raw config objects with secrets removed, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
 - **MCP Server**: AI-assisted network troubleshooting via Model Context Protocol
 
@@ -195,6 +195,11 @@ unifi-mapper diagnose bandwidth 192.0.2.50 --reverse --parallel 4
 
 # One device's CPU, memory, load, uptime, radios and per-VAP TX counters
 unifi-mapper diagnose device-stats "AP 1" --json
+
+# WAN and internet health, and the controller's last scheduled speedtest (never starts one)
+unifi-mapper diagnose wan --json
+unifi-mapper diagnose wan --record          # also append that result to the history
+unifi-mapper diagnose wan-history --limit 24
 
 # Every AP's TX retry rate over 30 s (two device reads, reset-aware; at most 240 s)
 unifi-mapper diagnose ap-retries --radio na --interval 30 --threshold 10
@@ -499,6 +504,8 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `analyze neighbours` | Passive neighbour AP detection and trend |
 | `diagnose all` | Run every diagnostic with a pass/warn/fail summary |
 | `diagnose health` | Overall network health check |
+| `diagnose wan` | WAN health and the controller's last scheduled speedtest (`--record` appends it to the history) |
+| `diagnose wan-history` | The recorded WAN speedtest results, newest first |
 | `diagnose device-stats` | One device's CPU, memory, load, uptime, radios and per-VAP TX counters |
 | `diagnose ap-retries` | Every AP's per-VAP TX retry rate over an interval (two device reads) |
 | `diagnose inter-vlan` | Inter-VLAN routing and firewall verdict between two endpoints |
@@ -550,7 +557,7 @@ Run any command with `--help` for its options.
 ./scripts/unifi-cron.sh uninstall
 ```
 
-Schedules: the link-error history (`analyze link-errors --record`) and roaming snapshots every 5 minutes; config drift, `diagnose all` and the radio report hourly; port naming every 30 minutes, which writes port names (`--apply`).
+Schedules: the link-error history (`analyze link-errors --record`) and roaming snapshots every 5 minutes; config drift, `diagnose all`, the radio report and the WAN speedtest record (`diagnose wan --record`, one read of the controller's last scheduled result, never a new speedtest) hourly; port naming every 30 minutes, which writes port names (`--apply`). `install` and `update` install every task: there is no way to add one task alone, so installing or updating the schedule to get the hourly WAN record also installs `port-naming --apply` ([issue 025](docs/issues/025-launchd-plists-are-invalid-xml.md)).
 
 > [!IMPORTANT]
 > **Upgrading an installed schedule.** `install` copies each task's command line into the
@@ -614,12 +621,12 @@ Credentials come from an env file, not the client config: `--config PATH`, else 
 
 The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch mode, the Codex config, all environment variables, the error codes and the config discovery rules. The [MCP standards review](docs/mcp-server/MCP_STANDARDS_REVIEW.md) audits the server against the MCP specification and SDK guidance.
 
-**Available Tools (81 total):**
+**Available Tools (83 total):**
 
 | Category | Tools | Description |
 |----------|-------|-------------|
 | discovery | 5 | Device/IP/MAC location, client tracing and client history |
-| diagnostics | 8 | Health checks, performance analysis, security audit, single-port inspection, all-ports view, port profile diff, port evidence bundle |
+| diagnostics | 10 | Health checks, performance analysis, security audit, single-port inspection, all-ports view, port profile diff, port evidence bundle, WAN health and recorded speedtests |
 | observability | 7 | Event, alarm, system-log and admin-audit history; port counter rates and history; site-wide recent events; one device's stats, AP retry rates, raw config objects and the config-change timeline |
 | connectivity | 4 | Firewall checks, path analysis, traceroute, inter-VLAN endpoint validation |
 | network | 6 | Firewall zones/policies, ACLs, DNS, clients, VLANs |
@@ -668,11 +675,11 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (81 tools via the MCP SDK's FastMCP)
+└── MCP Server (83 tools via the MCP SDK's FastMCP)
 
 Analysis Toolkit
 ├── Analysis Tools (46 tools)
-├── Diagnostics (8 tools)
+├── Diagnostics (10 tools)
 ├── Discovery (5 tools)
 ├── Observability (7 tools)
 ├── Connectivity (4 tools)

@@ -95,9 +95,9 @@ C4Container
 
 ## Verification
 
-- Registry: 81 tools in 7 categories; 3 mutating, 11 pipeline, 67 on the direct catalog.
-- `unifi-mcp --check` (offline): `tool_count` 81; `listed_tools` 4 on `discovery`, 71 on
-  `direct`. The 71 are the 67 direct catalog tools plus the 4 meta-tools.
+- Registry: 83 tools in 7 categories; 3 mutating, 11 pipeline, 69 on the direct catalog.
+- `unifi-mcp --check` (offline): `tool_count` 83; `listed_tools` 4 on `discovery`, 73 on
+  `direct`. The 73 are the 69 direct catalog tools plus the 4 meta-tools.
 - Offline suite at `cb356b0`: 2964 passed, 3 skipped (the three `slow`-marked packaging tests,
   two of which are also `network`-marked). With the slow tests opted in,
   `uv run pytest --run-slow tests/mcp/test_packaging.py`: 4 passed.

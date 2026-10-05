@@ -819,9 +819,31 @@ uv run unifi-network-toolkit diagnose performance --device Core-SW-01
 | `get_client_history` | Where the controller places a client, current and offline |
 | `get_device_events` | Events, alarms, system log and admin audit for a device, port or client |
 | `get_port_counter_rates` | Sampled port error rates with a trust verdict (blocks while sampling) |
+| `get_wan_health` | WAN and internet status and the controller's last scheduled speedtest |
+| `get_wan_speedtest_history` | The speedtest results recorded by `diagnose wan --record` |
 
 The `ports` CLI group has the same read-only diagnostics: `ports list`, `ports profile-diff`,
 `ports client`, `ports events`, `ports counters` and `ports diagnose` (see the README).
+
+**WAN health and speedtest history**
+
+```bash
+# WAN and internet status, and the controller's last scheduled speedtest
+uv run unifi-mapper diagnose wan
+
+# Record that result in the history under the XDG state directory (deduplicated per run)
+uv run unifi-mapper diagnose wan --record
+
+# The recorded results, newest first
+uv run unifi-mapper diagnose wan-history --limit 24
+```
+
+Nothing here starts a speedtest: that is a controller command, and it saturates the WAN for
+10 to 30 seconds. The controller runs its own speedtests on the schedule set in UniFi
+Network; `diagnose wan` reads the last result, and the scheduled `wan-speedtest-record`
+task records it hourly once the schedule is installed. Installing or updating the schedule
+installs every task, `port-naming --apply` included
+([issue 025](../issues/025-launchd-plists-are-invalid-xml.md)).
 
 **Connectivity tools (firewall and path analysis)**
 
@@ -1237,7 +1259,7 @@ sensor.back_door_sensor_battery
 
 ### Description
 
-The MCP (Model Context Protocol) server exposes the toolkit's 81 tools to AI assistants (every one it runs is read-only against the controller). When connected to an MCP client such as kiro-cli, Claude Code or Claude Desktop, you can ask natural-language questions about your network and the assistant calls the appropriate tools. On the default discovery surface the AI calls `search_tools` first, then `execute_tool`; with `UNIFI_MCP_TOOL_SURFACE=direct` it calls tools by name.
+The MCP (Model Context Protocol) server exposes the toolkit's 83 tools to AI assistants (every one it runs is read-only against the controller). When connected to an MCP client such as kiro-cli, Claude Code or Claude Desktop, you can ask natural-language questions about your network and the assistant calls the appropriate tools. On the default discovery surface the AI calls `search_tools` first, then `execute_tool`; with `UNIFI_MCP_TOOL_SURFACE=direct` it calls tools by name.
 
 ### Prerequisites
 
@@ -1315,12 +1337,12 @@ execute_tool("detect_ip_conflicts", {})
 | `get_tool_info` | Get full parameter details for a specific tool |
 | `execute_tool` | Run a read-only tool by name (mutating tools are refused) |
 
-### Tool Categories Reference (81 registered tools)
+### Tool Categories Reference (83 registered tools)
 
 | Category | Count | Tools |
 |----------|-------|-------|
 | analysis | 46 | STP, VLAN, MTU, SFP, radio, traffic matrix, LAG, QoS, capacity, firmware, IP conflicts, storm detection, MAC table, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, change-plan, snapshot, drift, guard, preflight, and 10G validation tools |
-| diagnostics | 8 | `network_health_check`, `performance_analysis`, `security_audit`, `connectivity_analysis`, `inspect_switch_port`, `get_switch_ports`, `diff_port_profiles`, `diagnose_switch_port` |
+| diagnostics | 10 | `network_health_check`, `performance_analysis`, `security_audit`, `connectivity_analysis`, `inspect_switch_port`, `get_switch_ports`, `diff_port_profiles`, `diagnose_switch_port`, `get_wan_health`, `get_wan_speedtest_history` |
 | discovery | 5 | `find_device`, `find_ip`, `find_mac`, `client_trace`, `get_client_history` |
 | observability | 7 | `get_device_events`, `get_port_counter_rates`, `get_device_stats`, `get_ap_retry_rates`, `get_config_object`, `find_recent_config_changes`, `get_recent_events` |
 | connectivity | 4 | `firewall_check`, `path_analysis`, `check_inter_vlan_routing`, `traceroute` |
@@ -1834,7 +1856,7 @@ flowchart TB
 
     subgraph Analysis["Analysis Toolkit"]
         G[analysis - 46 tools]
-        H[diagnostics - 8 tools]
+        H[diagnostics - 10 tools]
         I[discovery - 5 tools]
         J[connectivity - 4 tools]
         K[network - 6 tools]
@@ -1881,7 +1903,7 @@ flowchart TB
 | `port_mapper.py` | Traditional port mapping (LLDP to port name) |
 | `smart_port_mapper.py` | SmartPortMapper with verification and cache-busting |
 | `mcp/server.py` | FastMCP server: the meta-tools, the direct surface, resources and prompts |
-| `mcp/manifests/` | YAML tool definitions for all 81 registered tools |
+| `mcp/manifests/` | YAML tool definitions for all 83 registered tools |
 | `analysis/stp_optimizer.py` | STP topology discovery, priority calculation, report generation |
 | `protect/client.py` | Async wrapper around uiprotect ProtectApiClient |
 | `protect/mqtt.py` | MQTT bridge with Home Assistant discovery |

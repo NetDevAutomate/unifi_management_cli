@@ -3,7 +3,7 @@
 ## Overview
 
 `unifi-mcp` is a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server over
-the same Python modules the `unifi-mapper` CLI uses. It registers **81 tools** in seven
+the same Python modules the `unifi-mapper` CLI uses. It registers **83 tools** in seven
 categories (see [Tool categories](#tool-categories) and the [tool index](#tool-index)). Every
 tool it will run is read-only against the controller. The three tools that would change it
 are refused over MCP (see [Control boundary](#mcp-control-boundary)); those changes go through
@@ -206,7 +206,7 @@ the private `_get_versions_from_api`. No tool uses either.
 | Surface | `tools/list` shows | Size (measured at this commit) |
 | --- | --- | --- |
 | `discovery` (default) | the four meta-tools: `search_tools`, `list_categories`, `get_tool_info`, `execute_tool` | 4 tools, about 6.4k characters |
-| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 71 tools (4 + 67), about 191k characters |
+| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 73 tools (4 + 69), about 193k characters |
 
 On either surface every catalog tool runs through the same `ToolRunner`, so arguments are
 validated, credentials gated, results masked and errors coded identically. The 11 pipeline
@@ -215,7 +215,7 @@ are reachable only through `execute_tool`; the 3 mutating tools are never listed
 `--check` prints `listed_tools` for both surfaces.
 
 Use `direct` with hosts that defer tool schemas (kiro-cli, Claude Code tool search): the
-host keeps the 71 schemas out of context until needed and the model calls tools by name. Use
+host keeps the 73 schemas out of context until needed and the model calls tools by name. Use
 `discovery` with hosts that load every schema up front (Codex): the model searches, reads one
 schema with `get_tool_info`, then calls `execute_tool`.
 
@@ -239,27 +239,28 @@ which previews unless `--no-dry-run` is given).
 
 **Annotations.** Catalog tools carry `readOnlyHint: true` (except `snapshot_radio_config`, which
 writes a local file), `destructiveHint: false`, `openWorldHint` (false for the six STP pipeline
-tools that compute from their input and never contact a controller), and
+tools that compute from their input and for `get_wan_speedtest_history`, which reads a local
+file; none of them contacts a controller), and
 `idempotentHint: false` for the sampling tools (`get_port_counter_rates`,
 `get_ap_retry_rates`, `diagnose_switch_port`, `check_device_freshness`). `execute_tool` is annotated non-read-only because it can reach
 `snapshot_radio_config`.
 
 ## Tool Categories
 
-Counted from `ToolRegistry()` at this commit (81 tools):
+Counted from `ToolRegistry()` at this commit (83 tools):
 
 | Category | Tools | Covers |
 | --- | ---: | --- |
 | analysis | 46 | IP conflicts, storms, MAC table, VLAN diagnostics and coverage, STP topology, guard, path costs, drift, preflight and snapshots, link quality and link-speed audit, port-profile usage and validation, MTU, QoS, SFP, LAG, PoE and power budgets, uplink redundancy and transparency, client density, DHCP pools, device freshness, capacity, firmware, Wi-Fi radio, traffic matrix, foreign bridges, 10G readiness |
 | connectivity | 4 | Firewall check, path analysis, traceroute, inter-VLAN routing |
-| diagnostics | 8 | Health, performance, security, connectivity, single-port inspection, all-ports view, port-profile diff, port evidence bundle |
+| diagnostics | 10 | Health, performance, security, connectivity, single-port inspection, all-ports view, port-profile diff, port evidence bundle, WAN health and the recorded speedtest history |
 | discovery | 5 | Find device, IP or MAC; client trace; client history |
 | network | 6 | Firewall zones and policies, ACLs, DNS policies, clients, networks (Network Integration API, `network_api` family) |
 | observability | 7 | Event, alarm, system-log and admin-audit history; port counter rates and history; site-wide recent events; one device's stats, AP retry rates, raw config objects and the config-change timeline |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells (`protect` family) |
 
-Of the 81: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
-`restore_radio_config`) and 11 are pipeline tools, leaving 67 on the direct surface.
+Of the 83: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
+`restore_radio_config`) and 11 are pipeline tools, leaving 69 on the direct surface.
 
 Some tools overlap on purpose, and their descriptions say which to use. `get_device_stats`
 repeats the CPU, memory, load and uptime that `find_device` reports, and one AP's share of
@@ -458,7 +459,7 @@ The design rationale and the decisions still open are in the
 
 ## Tool Index
 
-All 81 registered tools by category, generated from `ToolRegistry()`. **Family** is
+All 83 registered tools by category, generated from `ToolRegistry()`. **Family** is
 the credential family a tool needs (`none`: it computes from its input). **Marks**:
 *mutating* tools are never listed or run over MCP; *pipeline* tools are reachable only
 through `execute_tool`; *writes a local file* drops `readOnlyHint`. Every tool that is
@@ -525,7 +526,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `path_analysis` | `controller` |  | Network path analysis between two endpoints |
 | `traceroute` | `controller` |  | Layer 3 path tracing to destination |
 
-### diagnostics (8)
+### diagnostics (10)
 
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
@@ -533,6 +534,8 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `diagnose_switch_port` | `controller` |  | Read-only evidence bundle for one switch port, for vendor tickets. Switch identity and Network application version, the raw port_table entry with negotiation fields and raw speed_caps, the full port override with both profile ids side by side, an optional diff of two port profiles, where the controller places each client, events and system log, counter samples with the recorded counter history, every port on the switch and the Integration API port capability. Includes request_audit as proof that collection never wrote to the controller. counter_samples above 1 blocks for 100 s per extra sample. |
 | `diff_port_profiles` | `controller` |  | Key-by-key diff of two port profiles (rest/portconf) with identity and attr_* metadata kept separate, referenced networks resolved to names and VLANs, and every switch port that runs each profile with its live speed. Read-only. |
 | `get_switch_ports` | `controller` |  | Every port on one switch with the switch identity. Per port the name, media, speed, duplex, autoneg, up, STP state, effective profile and whether an override sets it, raw speed_caps, PoE, LLDP neighbour, clients and error, CRC and link-down counters. Device model, firmware, uptime, state, system stats and thermal and power fields. Read-only. |
+| `get_wan_health` | `controller` |  | WAN and internet status from stat/health (ISP, WAN IP, gateway version, latency, drops, throughput) and the result of the controller's last scheduled speedtest. Never starts a speedtest. get_wan_speedtest_history lists the recorded results. Read-only. |
+| `get_wan_speedtest_history` | `none` |  | WAN speedtest results recorded by `unifi-mapper diagnose wan --record` (hourly when scheduled), newest first, from the history file under the XDG state directory. Needs no credentials and sends no request; an empty history returns a note on how to record. Read-only. |
 | `inspect_switch_port` | `controller` |  | Deep inspection of a single switch port: link state, effective VLAN and port profile, the connected device (UniFi or third-party, with fingerprint model and confidence), DHCP lease vs static addressing verdict, LLDP neighbour resolved to an adopted device, error counters and PoE state |
 | `network_health_check` | `controller` |  | Overall infrastructure health monitoring and assessment |
 | `performance_analysis` | `controller` |  | Network performance analysis and bottleneck identification |
