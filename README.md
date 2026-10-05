@@ -685,7 +685,9 @@ uv run python scripts/controller_dump.py --output ~/tmp/controller-dump [--endpo
   `firewall-policies`, `firewall-zone`, `trafficrules`, `apgroups`) through the read-only
   guard, strips every secret field, and writes one `0o600` JSON file per endpoint plus
   `manifest.json` (counts, the removed paths and the request audit). `--output` inside the
-  repository is refused (exit 2), so a dump can't be committed. Events and alarms come from
+  repository is refused (exit 2), so a dump can't be committed, and so is an existing
+  directory that is not empty, not yours or writable by other users: each file is created
+  new, so nothing planted there can redirect a write. Events and alarms come from
   `unifi-mapper controller events --json`.
 
 ### MCP Server (AI-Assisted Troubleshooting)

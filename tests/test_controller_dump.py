@@ -126,6 +126,84 @@ def test_a_failed_login_is_one_redacted_line_and_exit_1(
     assert stat.S_IMODE((tmp_path / 'out').stat().st_mode) == 0o700
 
 
+# --- the output directory (review B5): nothing planted there can redirect a write ----------
+
+
+def _no_login(mod: Any, monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """Record any login attempt: a refused --output must stop before the controller."""
+    attempts: list[Path] = []
+
+    def _login(path: Path) -> Any:
+        attempts.append(path)
+        raise AssertionError('login attempted')
+
+    monkeypatch.setattr(mod, '_login', _login)
+    return attempts
+
+
+def test_a_symlink_in_the_output_directory_is_refused_and_its_target_unchanged(
+    mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    victim = tmp_path / 'victim.txt'
+    victim.write_text('keep me\n', encoding='utf-8')
+    victim.chmod(0o644)
+    output = tmp_path / 'out'
+    output.mkdir(mode=0o700)
+    (output / 'wlanconf.json').symlink_to(victim)
+    attempts = _no_login(mod, monkeypatch)
+    assert mod.main(['--output', str(output)]) == 2
+    assert 'new or empty directory' in capsys.readouterr().err
+    assert victim.read_text(encoding='utf-8') == 'keep me\n'
+    assert stat.S_IMODE(victim.stat().st_mode) == 0o644 and attempts == []
+
+
+def test_a_write_never_follows_or_truncates_an_existing_path(mod: Any, tmp_path: Path) -> None:
+    """Each file is opened O_EXCL | O_NOFOLLOW, so a link planted mid-run is refused too."""
+    victim = tmp_path / 'victim.txt'
+    victim.write_text('keep me\n', encoding='utf-8')
+    link, plain = tmp_path / 'link.json', tmp_path / 'plain.json'
+    link.symlink_to(victim)
+    plain.write_text('old\n', encoding='utf-8')
+    for path in (link, plain):
+        with pytest.raises(FileExistsError):
+            mod._write_private(path, {'a': 1})
+    assert victim.read_text(encoding='utf-8') == 'keep me\n'
+    assert plain.read_text(encoding='utf-8') == 'old\n'
+
+
+@pytest.mark.parametrize('mode', [0o770, 0o707, 0o777], ids=['group', 'other', 'everyone'])
+def test_an_output_directory_others_can_write_is_refused(
+    mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: int
+) -> None:
+    output = tmp_path / 'out'
+    output.mkdir()
+    output.chmod(mode)
+    attempts = _no_login(mod, monkeypatch)
+    assert mod.main(['--output', str(output)]) == 2 and attempts == []
+
+
+def test_an_output_directory_of_another_user_is_refused(
+    mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    output = tmp_path / 'out'
+    output.mkdir(mode=0o700)
+    monkeypatch.setattr(mod.os, 'getuid', lambda: output.stat().st_uid + 1)
+    attempts = _no_login(mod, monkeypatch)
+    assert mod.main(['--output', str(output)]) == 2 and attempts == []
+    assert 'not your directory' in capsys.readouterr().err
+
+
+def test_an_empty_private_output_directory_is_used(
+    mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    output = tmp_path / 'out'
+    output.mkdir(mode=0o700)
+    session = _session()
+    monkeypatch.setattr(mod, '_login', lambda _path: (fake_client(session), 'default'))
+    assert mod.main(['--output', str(output), '--endpoint', 'wlanconf']) == 0
+    assert {p.name for p in output.iterdir()} == {'wlanconf.json', 'manifest.json'}
+
+
 # --- scripts/network-audit.sh ---------------------------------------------------------------
 
 

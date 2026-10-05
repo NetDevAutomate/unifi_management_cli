@@ -6,12 +6,15 @@ One GET per endpoint of a fixed table (``ENDPOINTS``), through a logged-in
 can't leave the host. Every payload goes through ``strip_secrets`` before it is written as
 ``<name>.json``; ``manifest.json`` lists, per endpoint, the HTTP status and a record count
 (or the redacted error), every removed secret path, and the guard's request audit (method
-and path only). Files are ``0o600`` and a new output directory ``0o700``.
+and path only). Files are ``0o600``, each created new (``O_EXCL | O_NOFOLLOW``, so nothing
+already there is followed or overwritten), and a new output directory ``0o700``.
 
 ``--output`` is required and refused inside this repository (exit 2), so a dump can't be
 committed by accident: raw controller objects describe the whole site even with their
-secrets removed. Events and alarms are not in the table: ``unifi-mapper controller events
---json`` reads them through the allowlisted readers.
+secrets removed. It must be a new directory, or an empty one you own that no other user can
+write to (exit 2 otherwise), so a file or symlink planted there can't redirect a write.
+Events and alarms are not in the table: ``unifi-mapper controller events --json`` reads
+them through the allowlisted readers.
 
 Rebuilt from the July work's IoT diagnostic fetch (a local archive, not in the repo): no
 ``reports/`` default, no hard-coded config path, the guard installed, secrets stripped,
@@ -25,12 +28,14 @@ Usage:
     uv run python scripts/controller_dump.py --config PATH --output DIR
 
 The config is ``--config``, else ``UNIFI_CONFIG``, else ``unifi-mapper``'s default search.
-Exit codes: 0 every endpoint read, 1 a failed login or endpoint, 2 a bad argument.
+Exit codes: 0 every endpoint read, 1 a failed login or endpoint, 2 a bad argument or
+``--output``.
 """
 
 import argparse
 import json
 import os
+import stat
 import sys
 from datetime import UTC, datetime
 from loguru import logger
@@ -77,12 +82,43 @@ def config_path(given: str | None) -> Path:
 
 
 def _write_private(path: Path, data: Any) -> None:
-    """Write ``data`` as indented JSON to a file created ``0o600``."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    os.fchmod(fd, 0o600)  # an existing file, or a umask, keeps no wider mode
+    """Write ``data`` as indented JSON to a new file created ``0o600``.
+
+    The file is opened ``O_CREAT | O_EXCL | O_NOFOLLOW``: a file or symlink already at
+    ``path`` raises ``FileExistsError`` and is never followed, truncated or re-moded.
+    """
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    os.fchmod(fd, 0o600)  # a umask keeps no wider mode
     with os.fdopen(fd, 'w', encoding='utf-8') as file:
         json.dump(data, file, indent=1, default=str, sort_keys=True)
         file.write('\n')
+
+
+def output_refusal(output: Path) -> str | None:
+    """Why an existing ``--output`` can't take a dump, or None when it can.
+
+    The dump writes predictable names (``<endpoint>.json``), so an existing directory must be
+    the user's own, writable by no one else and empty: nothing planted there can redirect a
+    write. A path that does not exist yet is fine; it is created ``0o700``.
+
+    Args:
+        output: The ``--output`` path, ``~`` expanded.
+
+    Returns:
+        The reason to refuse it (exit 2), or None.
+    """
+    if not output.exists() and not output.is_symlink():
+        return None
+    if not output.is_dir():
+        return f'--output is not a directory: {output}'
+    info = output.stat()
+    if info.st_uid != os.getuid():
+        return f'--output is not your directory: {output}'
+    if stat.S_IMODE(info.st_mode) & 0o022:
+        return f'--output is writable by other users: {output}'
+    if any(output.iterdir()):
+        return f'--output must be a new or empty directory: {output}'
+    return None
 
 
 def dump(client: Any, site: str, output: Path, names: list[str]) -> dict[str, Any]:
@@ -91,7 +127,7 @@ def dump(client: Any, site: str, output: Path, names: list[str]) -> dict[str, An
     Args:
         client: A logged-in ``UnifiApiClient``; the guard is installed here.
         site: The controller site.
-        output: An existing directory to write into.
+        output: An empty directory to write into (``main`` checks it first).
         names: Keys of :data:`ENDPOINTS`, in order.
 
     Returns:
@@ -126,7 +162,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument('--config', help='env file (default: UNIFI_CONFIG, then the default)')
     parser.add_argument(
-        '--output', required=True, help='directory for the dump; refused inside the repository'
+        '--output',
+        required=True,
+        help='a new or empty directory for the dump; refused inside the repository',
     )
     parser.add_argument(
         '--endpoint',
@@ -168,8 +206,9 @@ def main(argv: list[str] | None = None) -> int:
     if inside_repo(output):
         print('controller_dump: --output must be outside the repository', file=sys.stderr)
         return 2
-    if output.exists() and not output.is_dir():
-        print(f'controller_dump: --output is not a directory: {output}', file=sys.stderr)
+    refusal = output_refusal(output)
+    if refusal is not None:
+        print(f'controller_dump: {refusal}', file=sys.stderr)
         return 2
     try:
         if not output.exists():
