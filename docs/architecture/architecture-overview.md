@@ -279,6 +279,8 @@ The lifespan resolves config once, installs one `SharedControllerClient` (from `
 | `diagnose wan-history` | `diagnostics/wan_history.py` | The recorded speedtest results (reads a local file only) |
 | `diagnose device-stats` | `diagnostics/observability.py` | One device's CPU, memory, load, uptime, radios and per-VAP counters |
 | `diagnose ap-retries` | `diagnostics/observability.py` | Every AP's per-VAP TX retry rate over an interval (two reads) |
+| `diagnose ap-health` | `analysis/ap_health.py` | One AP's 2.4 GHz counters sampled 1-60 times, 30-600 s apart, beside a reference AP; a markdown or JSON report (CLI only; `--ping-clients` pings each AP's clients over SSH; Ctrl-C ends with a partial report, exit 130) |
+| `diagnose client-connectivity` | `diagnostics/client_connectivity.py` | One client: lookup, AP counters, then gateway ping, DNS, HTTP from its VLAN and flows over SSH; each layer bounded, 120 s in all (CLI only) |
 
 **`controller` subcommand group** — the controller's raw config objects and site-wide event
 history, read-only: `config` and `config-changes` through the same guarded client as the MCP
@@ -595,13 +597,15 @@ Twelve of the later analysis modules fall into four functional groups. Only the 
 | `radio_config.py` | `snapshot_radio_config`, `apply_radio_config`, `restore_radio_config` | Reversible AP radio changes |
 | `channel_optimiser.py` | `analyze_channels`, `optimize_5ghz`, `optimize_24ghz`, `optimize_radio_channels_mcp` | Utilization-weighted channel assignment with DFS penalty scoring |
 
-**SSH-based tools** (CLI only: `diagnose latency-matrix`, `diagnose bandwidth` and the `gateway` probes) — require `asyncssh` and gateway SSH credentials (`UNIFI_SSH_PASSWORD`, see [section 10](#10-layer-8-ssh-integration)):
+**SSH-based tools** (CLI only: `diagnose latency-matrix`, `diagnose bandwidth`, the `gateway` probes, `diagnose client-connectivity` and `diagnose ap-health --ping-clients`) — require `asyncssh` and gateway SSH credentials (`UNIFI_SSH_PASSWORD`, see [section 10](#10-layer-8-ssh-integration)):
 
 | Module | Function | Purpose |
 | --- | --- | --- |
 | `latency_matrix.py` | `run_latency_matrix()` | SSH to UDM, ping all device/client IPs, build RTT/loss matrix |
 | `bandwidth_test.py` | `run_bandwidth_test()` | SSH to UDM, run iperf3 to target, report throughput |
 | `connectivity/gateway_probe.py` | `gateway_ping()`, `gateway_traceroute()`, `gateway_dns_check()`, `gateway_http_check()` and the conntrack flow reader | One probe per SSH session: ping, traceroute, nslookup, curl (`--globoff`) or conntrack, each an argv with its own bound |
+| `diagnostics/client_connectivity.py` | `diagnose_client_connectivity()`, `build_verdict()` | One client: lookup and AP counters, then the gateway probes in order (ping, DNS, HTTP from the client's VLAN, flows), each a bounded layer within a 120 s budget; a failed layer is a finding |
+| `analysis/ap_health.py` | `run_ap_health_capture()`, `build_report()`, `render_markdown()` | An AP's 2.4 GHz counters sampled over time (no SSH); with `--ping-clients`, one SSH session pings up to 4 clients per AP each sample |
 
 **Time-series analysis** (CLI only: the `analyze link-errors`, `roaming`, `config-drift` and `neighbours` commands) — snapshot/compare pattern with JSON baselines:
 
@@ -917,7 +921,7 @@ graph TD
 
 ## 10. Layer 8: SSH Integration
 
-The latency matrix, the bandwidth test and the gateway probes require direct SSH access to the UDM gateway to execute commands that cannot be performed via the REST API. All three go through `analysis/gateway_ssh.py`, the only module that opens an SSH session (`asyncssh`, non-blocking).
+The latency matrix, the bandwidth test, the gateway probes and the two composites built on them (`diagnose client-connectivity`, `diagnose ap-health --ping-clients`) require direct SSH access to the UDM gateway to execute commands that cannot be performed via the REST API. All of them go through `analysis/gateway_ssh.py`, the only module that opens an SSH session (`asyncssh`, non-blocking).
 
 ```mermaid
 graph TD
@@ -925,6 +929,8 @@ graph TD
         LM["latency_matrix.py\nrun_latency_matrix()"]
         BW["bandwidth_test.py\nrun_bandwidth_test()"]
         GP["connectivity/gateway_probe.py\nping / traceroute / dns / http / flows"]
+        CC["diagnostics/client_connectivity.py\nthe probes as bounded layers"]
+        AHS["analysis/ap_health.py\nclient pings (--ping-clients)"]
         GS["gateway_ssh.py\ngateway_session()\nrun_gateway_command()"]
         CREDS["Credentials.from_env()\n+ UNIFI_SSH_USERNAME\n+ UNIFI_SSH_PASSWORD"]
     end
@@ -938,6 +944,8 @@ graph TD
     LM --> GS
     BW --> GS
     GP --> GS
+    CC --> GP
+    AHS --> GS
     GS -->|"run_gateway_command(argv, timeout)"| PING
     GS -->|"run_gateway_command(argv, timeout)"| IPERF
     GS -->|"run_gateway_command(argv, timeout)"| PROBES
@@ -1368,6 +1376,8 @@ graph TD
         LM["analysis/latency_matrix"]
         BW["analysis/bandwidth_test"]
         GP["connectivity/gateway_probe"]
+        CCX["diagnostics/client_connectivity"]
+        AH["analysis/ap_health"]
     end
 
     subgraph network_cp["Network Control Plane"]
@@ -1448,6 +1458,12 @@ graph TD
     LM --> AUTH
     BW --> GS
     BW --> AUTH
+    GP --> UC
+    GP --> GS
+    CCX --> GP
+    CCX --> UC
+    AH --> UC
+    AH --> GS
     GS --> ASYNCSSH
     GS --> AUTH
 
@@ -1502,13 +1518,13 @@ Used by `protect/aiport.py` to communicate with third-party cameras paired to Un
 
 ### 15.3a SSH (Gateway Management Plane)
 
-Used by `analysis/latency_matrix.py`, `analysis/bandwidth_test.py` and `connectivity/gateway_probe.py` to execute commands on the UDM gateway. Every session and command goes through `analysis/gateway_ssh.py` (`gateway_session()`, `run_gateway_command()`), on `asyncssh`.
+Used by `analysis/latency_matrix.py`, `analysis/bandwidth_test.py`, `connectivity/gateway_probe.py`, `diagnostics/client_connectivity.py` (through the probes) and `analysis/ap_health.py` (with `--ping-clients`) to execute commands on the UDM gateway. Every session and command goes through `analysis/gateway_ssh.py` (`gateway_session()`, `run_gateway_command()`), on `asyncssh`.
 
 | Interface | Protocol | Auth | Notes |
 | --- | --- | --- | --- |
 | UDM SSH | SSH (port 22) | Password (`UNIFI_SSH_USERNAME` / `UNIFI_SSH_PASSWORD`) | `known_hosts=None`: the host key isn't verified ([issue 038](../issues/038-ssh-host-key-verification-disabled.md)) |
 
-Commands executed: `ping` (latency matrix, `gateway ping`), `iperf3` (bandwidth test), `traceroute`, `nslookup`, `curl`, `conntrack -L` and `ip -j addr show` (the `gateway` probes).
+Commands executed: `ping` (latency matrix, `gateway ping`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients`), `iperf3` (bandwidth test), `traceroute`, `nslookup`, `curl`, `conntrack -L` and `ip -j addr show` (the `gateway` probes, and `client-connectivity`'s DNS, HTTP and flow layers).
 
 ### 15.4 MQTT (Home Assistant Integration)
 

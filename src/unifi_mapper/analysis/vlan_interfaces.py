@@ -16,7 +16,7 @@ from typing import Any
 LAN_PURPOSES = ('corporate', 'guest')
 
 
-def _network_vlan_id(network: dict[str, Any]) -> int | None:
+def network_vlan_id(network: dict[str, Any]) -> int | None:
     """A network's VLAN ID; an untagged LAN (no ``vlan``, not ``vlan_enabled``) is VLAN 1."""
     vlan_id = network.get('vlan')
     if vlan_id is not None:
@@ -73,7 +73,7 @@ def resolve_vlan_interfaces(
         subnet = network.get('ip_subnet')
         if not subnet:
             continue
-        vlan_id = _network_vlan_id(network)
+        vlan_id = network_vlan_id(network)
         name = network.get('name') or (f'VLAN {vlan_id}' if vlan_id is not None else 'unknown')
         if vlan_id is None:
             unresolved.append({'vlan_id': None, 'network_name': name, 'subnet': str(subnet)})

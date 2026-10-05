@@ -220,9 +220,10 @@ Authentication issue with devices endpoint. Attempting to re-authenticate...
 
 #### Gateway SSH Commands Fail
 
-`diagnose latency-matrix`, `diagnose bandwidth` and the `gateway` probes (`ping`,
-`traceroute`, `dns`, `http`, `flows`) run commands on the gateway over SSH. They are the only
-commands that use SSH, and no MCP tool does.
+`diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose
+ap-health --ping-clients` and the `gateway` probes (`ping`, `traceroute`, `dns`, `http`,
+`flows`) run commands on the gateway over SSH. They are the only commands that use SSH, and no
+MCP tool does.
 
 **Symptom**: each exits 1 before connecting to anything, and prints this on stderr (the first
 line, once per command, comes before every SSH command runs; see
@@ -1380,7 +1381,7 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
 | `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
 | `UNIFI_CONFIG` | No | XDG search | File path | The env file to read, like `--config` (see section 1). |
-| `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix`, `diagnose bandwidth` and the `gateway` probes (see section 2). |
+| `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and the `gateway` probes (see section 2). |
 | `UNIFI_SSH_USERNAME` | No | `root` | String | Gateway SSH user. |
 | `UNIFI_STP_OVERRIDES` | No | `~/.config/unifi_management_cli/stp_overrides.yaml` | File path | Root-eligible and forced-access switch MACs for the STP optimiser. |
 | `XDG_CONFIG_HOME` | No | `~/.config` | Directory path | Overrides XDG config base directory. |

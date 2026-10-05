@@ -79,7 +79,7 @@ Generated: 2026-05-02; refreshed against the code on 2026-10-04
 The UniFi Management CLI is a Python package (`unifi_mapper`) that provides three distinct interface layers over UniFi Controller APIs:
 
 1. **CLI tools** - argparse and Typer-based command-line interfaces for network operators
-2. **Analysis and diagnostics tools** - 50 analysis modules plus the diagnostics, discovery and connectivity packages
+2. **Analysis and diagnostics tools** - 52 analysis modules plus the diagnostics, discovery and connectivity packages
 3. **MCP server** - A FastMCP server that exposes 85 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
 
 The codebase contains two generations of API client code. The legacy synchronous path (`api_client.py`, `port_mapper.py`, `run_methods.py`) handles the original port-mapping workflow. The modern async path (`core/utils/client.py`, `network/client.py`, `protect/client.py`) serves the analysis, network control, and Protect integration packages.
@@ -114,8 +114,8 @@ graph TB
     end
 
     subgraph "Domain Packages"
-        ANA["analysis/\n50 modules, 47 tools"]
-        DIA["diagnostics/\n9 modules, 11 tools"]
+        ANA["analysis/\n52 modules, 47 tools"]
+        DIA["diagnostics/\n10 modules, 11 tools"]
         DIS["discovery/\n4 modules, 5 tools"]
         CON["connectivity/\n5 modules, 4 tools"]
         NET["network/\n12 modules"]
@@ -942,8 +942,9 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 | `client_density.py` | `analyze_client_density` | Wireless client density analysis per AP |
 | `config_drift.py` | `snapshot_config`, `detect_drift` | Configuration drift detection with baseline snapshot and diff |
 | `dhcp_pool.py` | `check_dhcp_pool_utilization` | DHCP pool utilization and exhaustion analysis |
-| `gateway_ssh.py` | `gateway_session`, `run_gateway_command`, `require_ip`, `require_hostname`, `require_http_url`, `require_interface_name`, `require_bounded_int`, `require_bounded_float`, `ssh_login` | The only SSH door: opens every gateway session and runs every command as a shell-quoted argv under a timeout the caller states; checks every value before it goes on a command line, and reads the SSH login from `UNIFI_SSH_*` only (latency matrix, bandwidth test, gateway probes) |
+| `gateway_ssh.py` | `gateway_session`, `run_gateway_command`, `require_ip`, `require_hostname`, `require_http_url`, `require_interface_name`, `require_bounded_int`, `require_bounded_float`, `ssh_login` | The only SSH door: opens every gateway session and runs every command as a shell-quoted argv under a timeout the caller states; checks every value before it goes on a command line, and reads the SSH login from `UNIFI_SSH_*` only (latency matrix, bandwidth test, gateway probes, client connectivity, AP-health pings) |
 | `latency_matrix.py` | `run_latency_matrix` | Gateway-centric ping matrix via SSH across all device and client IPs |
+| `ap_health.py` | `run_ap_health_capture`, `build_report`, `render_markdown`, `summarize_samples` | `diagnose ap-health` (CLI only, no MCP tool): one AP's 2.4 GHz radio, VAP retry and load counters sampled 1-60 times 30-600 s apart beside a reference AP, each sample read bounded at 45 s (a timed-out one is missing); retry rates over real intervals only; with `--ping-clients`, one SSH session pings up to 4 clients per AP; fills an `ApHealthCapture` so Ctrl-C gives a partial report; no power-cycle step |
 | `vlan_interfaces.py` | `resolve_vlan_interfaces` | Pure: maps each VLAN network to the gateway interface whose address is in its subnet (never by name), the rest unresolved |
 | `link_error_tracking.py` | `snapshot_link_errors`, `compare_link_errors` | Link error rate tracking with baseline deltas for active degradation detection |
 | `neighbour_scan.py` | `scan_neighbours`, `get_our_ap_bssids`, `compute_channel_neighbour_score` | RF neighbour AP scanning for external network detection per channel |
@@ -984,6 +985,7 @@ Diagnostic tools. The first four use `UniFiClient`; `inspect_port.py` and `port_
 | `port_diagnostics_tools.py` | `diagnose_switch_port`, `get_switch_ports`, `diff_port_profiles` (diagnostics category), `get_client_history` (discovery) and `get_device_events`, `get_recent_events`, `get_port_counter_rates` (observability) |
 | `wan_health.py`, `wan_history.py` | `build_wan_health`, `get_wan_health`; `append_speedtest`, `read_speedtest_history`, `get_wan_speedtest_history` | WAN and internet status from `stat/health` with the controller's last scheduled speedtest (`diagnose wan`), and its history under the XDG state directory through the capped writer, deduplicated per run (`diagnose wan --record`, `diagnose wan-history`); `wan_history` imports no client, so its tool runs with `credentials: none`. No speedtest is ever started |
 | `observability.py` | `get_device_stats`, `get_ap_retry_rates`, `get_config_object`, `find_recent_config_changes` (observability category; `diagnose device-stats`, `diagnose ap-retries`, `controller config`, `controller config-changes`): pure `*_from_data` cores over controller records, async handlers on the borrowed read-only `UniFiClient()`, secrets stripped at the source |
+| `client_connectivity.py` | `diagnose client-connectivity` (CLI only, no MCP tool): `build_verdict` (pure, July's layers) and `diagnose_client_connectivity`, which looks the client up (45 s), reads its AP's VAP counters and runs the gateway probes in order (ping, DNS for the probe URL's host, HTTP from the client's VLAN, flows), each a bounded layer within a 120 s budget; a failed layer is a finding and a layer with no time left is `not_run: budget` |
 
 ---
 

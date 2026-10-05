@@ -82,7 +82,7 @@ UNIFI_TIMEOUT=10                         # API timeout in seconds
 
 | Family | Keys | Used by |
 | --- | --- | --- |
-| Gateway SSH | `UNIFI_SSH_PASSWORD` (required), `UNIFI_SSH_USERNAME` (default `root`) | `diagnose latency-matrix`, `diagnose bandwidth` and the `gateway` probes only (no MCP tool uses SSH) |
+| Gateway SSH | `UNIFI_SSH_PASSWORD` (required), `UNIFI_SSH_USERNAME` (default `root`) | `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and the `gateway` probes only (no MCP tool uses SSH) |
 | `network_api` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID`, all three | The six MCP network tools |
 | `protect` | `PROTECT_HOST`, `PROTECT_USERNAME`, `PROTECT_PASSWORD` | The five MCP Protect tools and the Protect monitor |
 
@@ -225,6 +225,14 @@ unifi-mapper diagnose wan-history --limit 24
 # Every AP's TX retry rate over 30 s (two device reads, reset-aware; at most 240 s)
 unifi-mapper diagnose ap-retries --radio na --interval 30 --threshold 10
 
+# One AP's 2.4 GHz counters every 60 s, 6 times, beside a known-good AP, as a ticket report
+# (CLI only; Ctrl-C writes the samples so far and exits 130; --ping-clients adds SSH pings)
+unifi-mapper diagnose ap-health "AP 1" --reference "AP 2" --essid "SSID A" --output ap-1.md
+
+# "My phone says No Internet": lookup, AP counters, then ping, DNS, HTTP from its VLAN and
+# its conntrack flows from the gateway over SSH, capped at 120 s (exit 1 on a fault)
+unifi-mapper diagnose client-connectivity "Phone A"
+
 # The controller's raw config objects of one kind, secrets removed (paths listed in --json)
 unifi-mapper controller config --json wlanconf --name "SSID A"
 
@@ -244,6 +252,14 @@ before it left the machine. Secret keys never reach their output: `controller co
 lists what it removed by key path in `sanitised_paths`, never by value. `controller
 config-changes` dates each object by the creation time its ID records, so an edit to an older
 object does not appear; `controller events` shows the edits, in the admin-activity system log.
+
+`diagnose ap-health` and `diagnose client-connectivity` are CLI only (no MCP tool: a run is
+too long for one MCP call, and the probes use SSH). `ap-health` takes 1-60 samples 30-600 s
+apart (up to 10 h; it prints the expected duration first), reports a retry rate only over a
+real interval, records a sample whose read times out as missing, and has no power-cycle step;
+without `--essid` it tracks the busiest 2.4 GHz SSID. `client-connectivity` bounds every layer
+and stops at 120 s, reporting the layers it had no time for; a layer that fails is a finding,
+and the others still run.
 `backup verify` contacts nothing: it decrypts the backup with the controller's fixed backup key
 and reports which collections it holds and how many documents each has, never their contents
 (a collection outside the known UniFi set is counted as `other`, and a version that is not a
@@ -256,7 +272,8 @@ consistency, SFP diagnostics, radio optimisation, firmware skew, DHCP pools, PoE
 client density, uplink redundancy, uplink VLAN transparency, device power budget, foreign
 bridges and telemetry freshness.
 
-The latency matrix, the bandwidth test and the `gateway` probes SSH to the gateway, so they
+The latency matrix, the bandwidth test, the `gateway` probes, `diagnose client-connectivity` and
+`diagnose ap-health --ping-clients` SSH to the gateway, so they
 need SSH enabled in UniFi OS (Settings > Control Plane > Console) and `UNIFI_SSH_PASSWORD` in
 your config, plus `UNIFI_SSH_USERNAME` if the SSH user isn't `root`. Without
 `UNIFI_SSH_PASSWORD` each exits 1 before connecting to anything, and prints this on stderr
@@ -539,6 +556,8 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `diagnose wan-history` | The recorded WAN speedtest results, newest first |
 | `diagnose device-stats` | One device's CPU, memory, load, uptime, radios and per-VAP TX counters |
 | `diagnose ap-retries` | Every AP's per-VAP TX retry rate over an interval (two device reads) |
+| `diagnose ap-health` | One AP's 2.4 GHz counters sampled over time beside a reference AP (CLI only; `--ping-clients` uses SSH) |
+| `diagnose client-connectivity` | One client's lookup, AP counters, gateway ping, DNS, HTTP and flows, capped at 120 s (SSH) |
 | `diagnose inter-vlan` | Inter-VLAN routing and firewall verdict between two endpoints |
 | `diagnose latency-matrix` | SSH to the gateway and ping every device |
 | `diagnose bandwidth` | iperf3 throughput test via the gateway |

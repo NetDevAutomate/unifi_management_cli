@@ -153,8 +153,9 @@ UNIFI_TIMEOUT=10                        # API timeout in seconds
 
 These five settings have no effect on `unifi-mapper`
 ([issue 042](../issues/042-settings-with-no-effect.md)); `UNIFI_TIMEOUT` does. The optional
-credential families (gateway SSH for `diagnose latency-matrix`, `diagnose bandwidth` and the
-`gateway` probes, `UNIFI_NETWORK_*` and `PROTECT_*` for the MCP network and Protect tools) are
+credential families (gateway SSH for `diagnose latency-matrix`, `diagnose bandwidth`, the
+`gateway` probes, `diagnose client-connectivity` and `diagnose ap-health --ping-clients`,
+`UNIFI_NETWORK_*` and `PROTECT_*` for the MCP network and Protect tools) are
 listed in `.env.example` and the README's Configuration section.
 
 **Step 4: Secure the configuration file**
@@ -845,6 +846,38 @@ Network; `diagnose wan` reads the last result, and the scheduled `wan-speedtest-
 task records it hourly once the schedule is installed. Installing or updating the schedule
 installs every task, `port-naming --apply` included
 ([issue 025](../issues/025-launchd-plists-are-invalid-xml.md)).
+
+**"My phone says No Internet": one client, layer by layer (CLI only, SSH)**
+
+```bash
+# Lookup and AP counters (read-only), then from the gateway over SSH: ping, DNS for the
+# probe URL's host, the URL fetched from the client's VLAN, and its conntrack flows
+uv run unifi-mapper diagnose client-connectivity "Phone A"
+uv run unifi-mapper diagnose client-connectivity "Phone A" --json
+```
+
+Each layer is bounded and the run stops at 120 s; a layer that fails is reported as that
+layer's finding and the others still run, and a layer left without time is listed as not
+run. The verdict names the first failing layer; the command exits 1 when a fault is found or
+a layer did not complete. When every layer passes and the phone still shows "No Internet",
+the banner is usually a stale captive-portal result from when it joined.
+
+**An AP that misbehaves: samples for a vendor ticket (CLI only)**
+
+```bash
+# 6 samples a minute apart beside a known-good AP; the report goes to stdout and a file
+uv run unifi-mapper diagnose ap-health "AP 1" --reference "AP 2" --essid "SSID A" \
+  --samples 6 --interval 60 --output ap-1-health.md
+
+# Also ping up to 4 of each AP's wireless clients from the gateway each sample (SSH)
+uv run unifi-mapper diagnose ap-health "AP 1" --ping-clients --samples 10 --interval 30
+```
+
+The command prints its expected duration first (up to 10 h at 60 samples 600 s apart) and
+reads the controller only; there is no power-cycle step. Without `--essid` it tracks the
+busiest 2.4 GHz SSID. A retry rate is computed only between two samples that both read, and
+a sample whose read times out is recorded as missing. Ctrl-C ends the run with a partial
+report of the samples taken (written to `--output` too) and exit code 130.
 
 **Connectivity tools (firewall and path analysis)**
 

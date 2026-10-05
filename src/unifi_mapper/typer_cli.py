@@ -5146,5 +5146,141 @@ def gateway_flows_command(
         console.print(f'[dim]Showing the first {limit}.[/dim]')
 
 
+# ─── Composites (CLI only: lookup, AP counters and gateway probes) ──────────
+
+
+def _duration_text(seconds: float) -> str:
+    """A rough duration: seconds under a minute, minutes under an hour, else hours."""
+    if seconds < 60:
+        return f'{seconds:g} s'
+    if seconds < 3600:
+        return f'{round(seconds / 60)} min'
+    hours, minutes = divmod(round(seconds / 60), 60)
+    return f'{hours} h' + (f' {minutes} min' if minutes else '')
+
+
+@diagnose_app.command('client-connectivity')
+def diagnose_client_connectivity_command(
+    client: str = typer.Argument(..., help="The client's name, hostname, MAC or IP"),
+    probe_url: Optional[str] = typer.Option(
+        None,
+        '--probe-url',
+        help="The http(s) URL to fetch from the client's VLAN (default a captive-portal check)",
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of text'),
+):
+    """🩺 Diagnose one client's connectivity, layer by layer, in one run (SSH).
+
+    Finds the client on the controller (read-only) and reads its AP's VAP counters, then,
+    from the gateway over SSH, pings it, resolves the probe URL's host, fetches the URL from
+    the client's VLAN and lists the client's conntrack flows. Each layer is bounded and the
+    whole run capped at 120 s; a failing layer is reported and the others still run. Exits 1
+    when a fault is found or a layer did not complete. Runs on the gateway as the SSH user;
+    the gateway's host key is not verified.
+    """
+    from .diagnostics.client_connectivity import (
+        CAPTIVE_PROBE_URL,
+        diagnose_client_connectivity,
+    )
+
+    url = probe_url or CAPTIVE_PROBE_URL
+    result = _probe(lambda: diagnose_client_connectivity(client, probe_url=url))
+    if as_json:
+        _emit_json(result)
+    else:
+        where = ', '.join(
+            part
+            for part in (
+                result.get('client_ip'),
+                f'VLAN {result["vlan"]}' if result.get('vlan') else None,
+                f'via {result["ap"]}' if result.get('ap') else None,
+            )
+            if part
+        )
+        console.print(
+            f'🩺 [bold]{escape(str(result.get("client")))}[/bold]'
+            + (f' ({escape(where)})' if where else ''),
+            soft_wrap=True,
+        )
+        for finding in result['findings']:
+            console.print(f'  • {escape(finding)}', soft_wrap=True)
+        style = 'green' if result['ok'] else 'red'
+        console.print(f'[{style}]{escape(result["verdict"])}[/{style}]', soft_wrap=True)
+    if not result['ok']:
+        raise typer.Exit(1)
+
+
+@diagnose_app.command('ap-health')
+def diagnose_ap_health(
+    target: str = typer.Argument(..., help='The AP to sample: its name, MAC or IP'),
+    reference: Optional[str] = typer.Option(
+        None, '--reference', help='A known-good AP to sample alongside it'
+    ),
+    essid: Optional[str] = typer.Option(
+        None, '--essid', help='The SSID whose 2.4 GHz VAP to track (default the busiest)'
+    ),
+    samples: int = typer.Option(6, '--samples', min=1, max=60, help='Samples to take (1-60)'),
+    interval: int = typer.Option(
+        60, '--interval', min=30, max=600, help='Seconds between samples (30-600)'
+    ),
+    ping_clients: bool = typer.Option(
+        False,
+        '--ping-clients',
+        help="Also ping up to 4 of each AP's wireless clients from the gateway over SSH",
+    ),
+    output: Optional[Path] = typer.Option(
+        None, '--output', help='Also write the markdown report to this file'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of markdown'),
+):
+    """📶 Sample an AP's 2.4 GHz radio, retry and load counters over time, for a ticket.
+
+    Takes --samples reads --interval seconds apart (at most 60 x 600 s, 10 h; the expected
+    duration is printed first) and reports each sample and the mean interval retry rate,
+    beside a --reference AP when given. A sample whose read times out is recorded as
+    missing. Read-only, with no power-cycle step. --ping-clients also pings each AP's clients
+    from the gateway over SSH, as the SSH user (the gateway's host key is not verified).
+    Ctrl-C prints the samples taken so far as a partial report (and writes it to --output)
+    and exits 130.
+    """
+    import asyncio
+    from .analysis.ap_health import (
+        ApHealthCapture,
+        build_report,
+        expected_duration_seconds,
+        render_markdown,
+        run_ap_health_capture,
+    )
+
+    expected = _duration_text(expected_duration_seconds(samples, interval))
+    err_console.print(f'Expected duration: about {expected}', style='dim')
+    capture = ApHealthCapture()
+
+    def progress(info: dict) -> None:
+        note = ' (missing)' if info['missing'] else ''
+        err_console.print(f'Sample {info["sample"]} of {info["of"]}{note}', style='dim')
+
+    def run() -> Coroutine[Any, Any, dict]:
+        return run_ap_health_capture(
+            target, reference, essid, samples, interval, ping_clients, progress, sink=capture
+        )
+
+    try:
+        report = _probe(run) if ping_clients else _run_analysis(run)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        report = build_report(capture, partial=True)
+    markdown = render_markdown(report)
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(markdown + '\n', encoding='utf-8')
+        err_console.print(f'💾 Report written to {output}', markup=False)
+    if as_json:
+        _emit_json(report)
+    else:
+        console.print(markdown, markup=False, soft_wrap=True)
+    if report['partial']:
+        raise typer.Exit(130)
+
+
 if __name__ == '__main__':
     app()
