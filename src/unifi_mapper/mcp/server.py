@@ -551,8 +551,9 @@ def plan_stp_change() -> str:
             '4. Review the plan, then `unifi-mapper stp apply --plan stp-plan.json` '
             '(a dry run by default; `--no-dry-run` applies it).',
             '',
-            'Read-only MCP tools can help explain the topology (discover_stp_topology) '
-            'before and after.',
+            'Read-only MCP tools can help explain the topology (discover_stp_topology) and '
+            "check every switch's current against its recommended priority "
+            '(audit_stp_priorities), before and after.',
         ]
     )
 

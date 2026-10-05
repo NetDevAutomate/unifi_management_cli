@@ -125,7 +125,7 @@ C4Container
         Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI. Commands: discover, diagram, verify, capabilities and the find, analyze, diagnose, ports, controller, backup, stp, radio and inventory groups. discover previews unless --apply.")
         Container(network_toolkit_cli, "unifi-network-toolkit", "Python / argparse", "Script-friendly CLI. Subcommands: discover, analyze, find, diagnose, install-completions. Its discover writes port names unless --dry-run.")
         Container(inventory_cli, "unifi-inventory", "Python / Typer", "The four inventory commands (list, check-updates, firmware-skew, update-firmware) as their own program.")
-        Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server. Runs over stdio. Backed by YAML manifests for 84 registered tools, run read-only through ToolRunner.")
+        Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server. Runs over stdio. Backed by YAML manifests for 85 registered tools, run read-only through ToolRunner.")
         Container(shared_lib, "unifi_mapper library", "Python 3.12 package", "Shared library providing API clients, domain models, analysis engines, diagnostic tools, discovery utilities, connectivity analysis, Protect integration, topology visualisation, and report generation.")
     }
 
@@ -159,7 +159,7 @@ System_Boundary(platform, "UniFi Management CLI") {
     Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI with Rich terminal UI")
     Container(network_toolkit_cli, "unifi-network-toolkit", "Python / argparse", "Script-friendly CLI for automation")
     Container(inventory_cli, "unifi-inventory", "Python / Typer", "The four inventory commands as their own program")
-    Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server backed by 84 YAML-registered tools, run read-only")
+    Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server backed by 85 YAML-registered tools, run read-only")
     Container(shared_lib, "unifi_mapper library", "Python 3.12 package", "Shared library: API clients, models, analysis, diagnostics, Protect, topology")
 }
 
@@ -330,7 +330,7 @@ Rel(network_client_c, readonly_c, "Guarded by")
 
 ### 3.3 Analysis and Diagnostic Components
 
-The intelligence layer contains the toolkit functions exposed to CLI workflows and the 84 YAML-registered MCP tools. Tools receive a client/config object, query the UniFi controller surface they belong to, and return structured results.
+The intelligence layer contains the toolkit functions exposed to CLI workflows and the 85 YAML-registered MCP tools. Tools receive a client/config object, query the UniFi controller surface they belong to, and return structured results.
 
 ```mermaid
 C4Component
@@ -346,7 +346,7 @@ C4Component
         Component(port_diag_c, "port_inspect.py / port_diagnostics.py / port_history.py", "Python", "Read-only port inspection, all-ports view, profile diff, client placement, event history, counter rates and the evidence bundle, behind the read-only guard.")
         Component(link_settings_c, "analysis/link_settings.py", "Python", "The one rule for a port's effective profile and link settings (override, then port table, then profile), shared by the port diagnostics and the profile analyses.")
 
-        Component(analysis_pkg, "analysis/ (46 registered MCP tools, 49 modules)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality and link speeds, MAC table, MTU, QoS, PoE and power budgets, port-profile usage, radio, SFP, STP, traffic matrix, uplinks, VLAN, freshness and 10G readiness analysis.")
+        Component(analysis_pkg, "analysis/ (47 registered MCP tools, 50 modules)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality and link speeds, MAC table, MTU, QoS, PoE and power budgets, port-profile usage, radio, SFP, STP, traffic matrix, uplinks, VLAN, freshness and 10G readiness analysis.")
         Component(diagnostics_pkg, "diagnostics/ (11 registered MCP tools, 9 modules)", "Python", "connectivity_analysis, network_health, performance_analysis, security_audit, inspect_port, port_diagnostics_tools, observability, wan_health, wan_history; backup/verify registers verify_config_backup here too. port_diagnostics_tools also provides get_client_history (discovery) and the observability tools get_device_events, get_recent_events and get_port_counter_rates; observability provides get_device_stats, get_ap_retry_rates, get_config_object and find_recent_config_changes.")
         Component(discovery_pkg, "discovery/ (5 registered MCP tools, 4 modules)", "Python", "client_trace, find_device, find_ip, find_mac; get_client_history lives in diagnostics/")
         Component(connectivity_pkg, "connectivity/ (4 registered MCP tools)", "Python", "firewall_check, path_analysis, traceroute, inter_vlan")
@@ -385,7 +385,7 @@ Container_Boundary(intelligence, "Shared Library - Intelligence Layer") {
     Component(topology_c, "NetworkTopology", "Python / graphviz", "Topology graph: PNG, SVG, HTML")
     Component(port_diag_c, "Port diagnostics", "Python", "Read-only port inspection and evidence bundles")
     Component(link_settings_c, "analysis/link_settings.py", "Python", "Effective profile and link settings rule")
-    Component(analysis_pkg, "analysis/ (46 registered MCP tools)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality and speeds, MAC, MTU, QoS, PoE, radio, SFP, STP, traffic, uplinks, VLAN, 10G readiness")
+    Component(analysis_pkg, "analysis/ (47 registered MCP tools)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality and speeds, MAC, MTU, QoS, PoE, radio, SFP, STP, traffic, uplinks, VLAN, 10G readiness")
     Component(diagnostics_pkg, "diagnostics/ (11 registered MCP tools)", "Python", "Health, performance, security, connectivity, port inspection and evidence, WAN health and speedtest history, offline backup verification; also client history and the observability tools")
     Component(discovery_pkg, "discovery/ (5 registered MCP tools)", "Python", "Find device, find IP, find MAC, client trace; client history comes from diagnostics/")
     Component(connectivity_pkg, "connectivity/ (4 registered MCP tools)", "Python", "Firewall check, path analysis, inter-VLAN routing, traceroute")
@@ -495,7 +495,7 @@ C4Component
         Component(runner_c, "runner.py / ToolRunner", "Python", "Runs every call: refuse mutating tools, rewrite aliases, validate, gate the credential family, run under the concurrency cap and optional deadline, mask secrets, package the envelope with isError on failure.")
         Component(tool_metadata_c, "registry.py / ToolMetadata", "Python dataclass", "Per-tool metadata: name, module, handler, title, description, category, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases.")
 
-        Component(manifests_c, "manifests/ (7 YAML files)", "YAML", "Tool manifests by category: analysis.yaml (46 tools), connectivity.yaml (4), diagnostics.yaml (11), discovery.yaml (5), network.yaml (6), observability.yaml (7), protect.yaml (5).")
+        Component(manifests_c, "manifests/ (7 YAML files)", "YAML", "Tool manifests by category: analysis.yaml (47 tools), connectivity.yaml (4), diagnostics.yaml (11), discovery.yaml (5), network.yaml (6), observability.yaml (7), protect.yaml (5).")
 
         Component(network_tools_c, "tools/network.py", "Python", "Network Integration API tools. Each call opens a UniFiNetworkClient behind the GET-only ReadOnlyAsyncTransport.")
         Component(protect_tools_c, "tools/protect.py", "Python", "Protect tools. Each call opens a UniFiProtectClient over ReadOnlyProtectApiClient.")
@@ -535,7 +535,7 @@ Container_Boundary(mcp_sub, "MCP Server") {
     Component(catalog_c, "ToolCatalog", "Python", "Builds SDK tools from handlers on first use")
     Component(runner_c, "ToolRunner", "Python", "Validate, gate, run, mask, package every call")
     Component(tool_metadata_c, "ToolMetadata", "Python dataclass", "Per-tool manifest fields")
-    Component(manifests_c, "manifests/ (7 YAML files)", "YAML", "Tool definitions for 84 analysis, connectivity, diagnostics, discovery, network, observability and protect tools")
+    Component(manifests_c, "manifests/ (7 YAML files)", "YAML", "Tool definitions for 85 analysis, connectivity, diagnostics, discovery, network, observability and protect tools")
     Component(network_tools_c, "tools/network.py", "Python", "Integration API tools, GET-only client per call")
     Component(protect_tools_c, "tools/protect.py", "Python", "Protect tools over ReadOnlyProtectApiClient")
 }
@@ -1284,7 +1284,7 @@ sequenceDiagram
     Assistant->>Server: search_tools(query="stp")
     Server->>Registry: search(query, category, tags)
     Registry->>Manifest: load manifests on first access
-    Manifest-->>Registry: 84 tool metadata records
+    Manifest-->>Registry: 85 tool metadata records
     Registry-->>Server: matching summaries
     Server-->>Assistant: tool names and descriptions
     Assistant->>Server: get_tool_info("discover_stp_topology")
@@ -1317,7 +1317,7 @@ The exception hierarchy divides all errors into `UniFiRetryableError` and `UniFi
 
 ### Code Mode Pattern in the MCP Server
 
-The MCP server exposes `search_tools`, `list_categories`, `get_tool_info` and `execute_tool` as first-class tools rather than relying on the MCP tool listing protocol alone. This is the Code Mode pattern: AI assistants are expected to call `search_tools(query="stp")` and `get_tool_info("discover_stp_topology")` before `execute_tool("discover_stp_topology", {})`. This reduces hallucination of tool names and allows the assistant to inspect the full catalogue of 84 registered tools without receiving all tool definitions upfront. Hosts that defer tool schemas can use the direct surface (`UNIFI_MCP_TOOL_SURFACE=direct`) instead.
+The MCP server exposes `search_tools`, `list_categories`, `get_tool_info` and `execute_tool` as first-class tools rather than relying on the MCP tool listing protocol alone. This is the Code Mode pattern: AI assistants are expected to call `search_tools(query="stp")` and `get_tool_info("discover_stp_topology")` before `execute_tool("discover_stp_topology", {})`. This reduces hallucination of tool names and allows the assistant to inspect the full catalogue of 85 registered tools without receiving all tool definitions upfront. Hosts that defer tool schemas can use the direct surface (`UNIFI_MCP_TOOL_SURFACE=direct`) instead.
 
 ### YAML Manifests as the Tool Contract
 

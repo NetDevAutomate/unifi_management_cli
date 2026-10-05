@@ -9,7 +9,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **84 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, device stats, AP retry rates and raw config objects with secrets removed, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
+- **85 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, device stats, AP retry rates and raw config objects with secrets removed, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
 - **MCP Server**: AI-assisted network troubleshooting via Model Context Protocol
 
@@ -144,6 +144,10 @@ unifi-network-toolkit find ip 192.0.2.100
 # Analyze current STP topology
 unifi-mapper stp analyze
 
+# One-shot audit: every switch's current vs recommended priority (read-only)
+unifi-mapper stp audit-priorities
+unifi-mapper stp audit-priorities --device "Switch A" --json
+
 # Preview optimal priority changes and write a reversible plan
 unifi-mapper stp optimize --dry-run
 unifi-mapper stp optimize --plan reports/stp-plan.json
@@ -168,7 +172,10 @@ unifi-mapper stp report -o stp-report.md
 The gateway (`udm`/`udmpro`) stays in the topology so the switches can be tiered by their
 distance to it, but its bridge runs with STP disabled: `stp optimize` and `stp report` never
 propose a priority for it or name it as the root, and print "Skipped <gateway>: gateway; its STP
-priority is not changed" instead.
+priority is not changed" instead. A bridge that takes no part in the election would ignore a
+priority written to it, so a plan built around it as the root would leave the real root to be
+decided by MAC address. `stp audit-priorities` lists it under "Skipped" for the same reason, and
+always tiers the whole fleet, so `--device` only narrows the rows it prints.
 
 ### Device Inventory
 
@@ -526,6 +533,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `inventory firmware-skew` | Report firmware version skew by model |
 | `inventory update-firmware` | Update device firmware (writes) |
 | `stp analyze` | Current STP topology and root eligibility |
+| `stp audit-priorities` | One-shot audit: each switch's current vs recommended priority, tie and gateway warnings (read-only) |
 | `stp optimize` | Preview or plan optimal priority changes |
 | `stp apply` | Apply an approved change plan (previews; writes with `--no-dry-run`) |
 | `stp rollback` | Revert a previously applied plan (previews; writes with `--no-dry-run`) |
@@ -632,7 +640,7 @@ Credentials come from an env file, not the client config: `--config PATH`, else 
 
 The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch mode, the Codex config, all environment variables, the error codes and the config discovery rules. The [MCP standards review](docs/mcp-server/MCP_STANDARDS_REVIEW.md) audits the server against the MCP specification and SDK guidance.
 
-**Available Tools (84 total):**
+**Available Tools (85 total):**
 
 | Category | Tools | Description |
 |----------|-------|-------------|
@@ -642,7 +650,7 @@ The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch 
 | connectivity | 4 | Firewall checks, path analysis, traceroute, inter-VLAN endpoint validation |
 | network | 6 | Firewall zones/policies, ACLs, DNS, clients, VLANs |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells |
-| analysis | 46 | Capacity, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, drift and change plans |
+| analysis | 47 | Capacity, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, drift and change plans |
 
 Three of the 76 change the controller and are never run over MCP.
 
@@ -686,10 +694,10 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (84 tools via the MCP SDK's FastMCP)
+└── MCP Server (85 tools via the MCP SDK's FastMCP)
 
 Analysis Toolkit
-├── Analysis Tools (46 tools)
+├── Analysis Tools (47 tools)
 ├── Diagnostics (11 tools)
 ├── Discovery (5 tools)
 ├── Observability (7 tools)

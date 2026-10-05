@@ -306,6 +306,25 @@ tools:
     priority: P2
     tags: [stp, spanning-tree, topology, discovery]
 
+  audit_stp_priorities:
+    module: unifi_mapper.analysis.stp_audit
+    handler: audit_stp_priorities
+    title: Audit STP Priorities
+    description: >-
+      One-shot STP priority audit for the whole fleet, or narrowed to one switch: each
+      switch's current, recommended and delta bridge priority and tier, a warning when two
+      non-core switches tie at the lowest priority (the root would be decided by MAC), and
+      the gateway under skipped (its bridge runs with STP disabled). Tiers always come from
+      the whole fleet. Remediation names the CLI commands (stp optimize --plan, then stp
+      apply --plan, which previews unless --no-dry-run); STP writes never run over MCP.
+      Read-only.
+    priority: P1
+    tags: [stp, spanning-tree, priority, audit, root, read-only]
+    parameters:
+      device:
+        type: string
+        description: Only this switch, by name, MAC or ID (default the whole fleet)
+
   calculate_optimal_priorities:
     module: unifi_mapper.analysis.stp_optimizer
     handler: calculate_optimal_priorities

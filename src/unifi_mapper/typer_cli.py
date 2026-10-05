@@ -2169,6 +2169,55 @@ def stp_analyze(
         raise typer.Exit(1)
 
 
+@stp_app.command('audit-priorities')
+def stp_audit_priorities(
+    device: Optional[str] = typer.Option(
+        None, '--device', help='Only this switch: its name, MAC or ID'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """📋 One-shot STP priority audit: each switch's current vs recommended priority.
+
+    Discovers the whole fleet (tiers need every switch), computes the recommended
+    priorities and reports the delta per switch, a warning when two non-core switches tie
+    at the lowest priority, and the gateway, which is skipped. --device narrows the rows to
+    one switch, by name, MAC or ID. Writes no plan: stp optimize --plan does. Read-only.
+    """
+    from .analysis.stp_audit import audit_stp_priorities
+
+    report = _run_analysis(lambda: audit_stp_priorities(device))
+    if as_json:
+        _emit_json(report)
+        return
+    root = escape(str(report['current_root'] or '—'))
+    console.print(f'Current root: {root} (priority {report["current_root_priority"]})')
+    table = Table(title='📋 STP priorities', show_header=True)
+    for column in ('Switch', 'Tier', 'Current', 'Recommended', 'Δ', 'Root'):
+        table.add_column(column)
+    for row in report['switches']:
+        delta = row['delta']
+        table.add_row(
+            escape(row['name']),
+            escape(row['tier_label']),
+            str(row['current_priority']),
+            str(row['optimal_priority']),
+            f'[yellow]{delta:+d}[/yellow]' if delta else '0',
+            'yes' if row['is_root'] else '',
+        )
+    console.print(table)
+    for skipped in report['skipped']:
+        console.print(f'[dim]Skipped {escape(skipped["name"])}: {escape(skipped["reason"])}[/dim]')
+    if report['root_tie_break_warning']:
+        console.print(f'[yellow]⚠ {escape(report["root_tie_break_warning"])}[/yellow]')
+    console.print(escape(report['summary']))
+    if report['remediation']['changes']:
+        console.print('To plan and apply the changes:')
+        for command in report['remediation']['commands']:
+            console.print(f'  {escape(command)}')
+    for note in report.get('notes', []):
+        console.print(f'[dim]{escape(note)}[/dim]')
+
+
 @stp_app.command('optimize')
 def stp_optimize(
     dry_run: Annotated[

@@ -79,8 +79,8 @@ Generated: 2026-05-02; refreshed against the code on 2026-10-04
 The UniFi Management CLI is a Python package (`unifi_mapper`) that provides three distinct interface layers over UniFi Controller APIs:
 
 1. **CLI tools** - argparse and Typer-based command-line interfaces for network operators
-2. **Analysis and diagnostics tools** - 49 analysis modules plus the diagnostics, discovery and connectivity packages
-3. **MCP server** - A FastMCP server that exposes 84 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
+2. **Analysis and diagnostics tools** - 50 analysis modules plus the diagnostics, discovery and connectivity packages
+3. **MCP server** - A FastMCP server that exposes 85 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
 
 The codebase contains two generations of API client code. The legacy synchronous path (`api_client.py`, `port_mapper.py`, `run_methods.py`) handles the original port-mapping workflow. The modern async path (`core/utils/client.py`, `network/client.py`, `protect/client.py`) serves the analysis, network control, and Protect integration packages.
 
@@ -114,7 +114,7 @@ graph TB
     end
 
     subgraph "Domain Packages"
-        ANA["analysis/\n49 modules, 46 tools"]
+        ANA["analysis/\n50 modules, 47 tools"]
         DIA["diagnostics/\n9 modules, 11 tools"]
         DIS["discovery/\n4 modules, 5 tools"]
         CON["connectivity/\n4 modules, 4 tools"]
@@ -928,6 +928,7 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 | `sfp_diagnostics.py` | `audit_sfp_diagnostics` | Pulls transceiver identity and DOM diagnostics |
 | `storm_detection.py` | `detect_storms` | Identifies broadcast/multicast storm conditions |
 | `stp_optimizer.py` | `discover_stp_topology`, `calculate_optimal_priorities`, `is_gateway_switch`, `apply_stp_changes`, `validate_10g_expansion_readiness` | STP topology discovery, priority optimisation (the gateway is tiered from but never planned or named root), path-cost auditing, remediation, and 10G preflight |
+| `stp_audit.py` | `audit_stp_priorities`, `build_stp_audit`, `scope_stp_audit` | One-shot priority audit: current vs recommended per switch, a tie warning and the gateway under `skipped`; tiers always come from the whole fleet |
 | `stp_change_plan.py` | `create_stp_change_plan` | Creates ordered STP changes with rollback bundle and checks |
 | `stp_drift.py` | `detect_stp_config_drift`, `load_stp_intent` | Compares live STP state with desired intent |
 | `stp_guard.py` | `audit_stp_guard_recommendations` | Finds Root Guard candidates and high topology-change counters |
@@ -1249,7 +1250,7 @@ classDiagram
 
 **Lazy loading.** `ToolProxy._load_implementation()` calls `importlib.import_module` and `getattr` on first `execute()` call, not at startup. `ToolRegistry.execute(name, params)` is the registry's own refuse-mutation choke point over the proxies; the MCP server runs tools through `ToolCatalog` and `ToolRunner` instead (§17.4), which import each handler the same lazy way.
 
-**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (46 tools), `connectivity.yaml` (4), `diagnostics.yaml` (11), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (7), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
+**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (47 tools), `connectivity.yaml` (4), `diagnostics.yaml` (11), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (7), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
 
 ---
 
@@ -1392,6 +1393,7 @@ flowchart TB
     Eligibility --> Analyze{"Diagnostic path"}
 
     Analyze --> Priorities["calculate_optimal_priorities()\nproposed STPChange list"]
+    Priorities --> Audit["stp_audit.py\naudit_stp_priorities()\ncurrent vs recommended"]
     Analyze --> PathCost["audit_stp_path_costs()\nlong path-cost validation"]
     Analyze --> Guard["stp_guard.py\naudit Root Guard + TCNs"]
     Analyze --> Drift["stp_drift.py\ncompare live topology to intent"]
@@ -1414,6 +1416,7 @@ flowchart TB
 |---|---|---|---|
 | Discovery | `stp_optimizer.discover_stp_topology` | Optional `device_id` | `STPTopology` |
 | Optimisation | `stp_optimizer.calculate_optimal_priorities` | `STPTopology` | `list[STPChange]` |
+| Priority audit | `stp_audit.audit_stp_priorities` | Optional `device` (name, MAC or ID; narrows the rows only) | Audit dict: `switches`, `skipped`, `remediation` (CLI commands) |
 | Guard audit | `stp_guard.audit_stp_guard_recommendations` | `STPTopology` | `STPGuardAuditReport` |
 | Drift detection | `stp_drift.detect_stp_config_drift` | `STPTopology`, intent mapping | `STPDriftReport` |
 | Snapshots | `stp_snapshot.snapshot_stp_topology` / `diff_stp_snapshots` | `STPTopology` or two snapshots | `STPSnapshot`, `STPSnapshotDiff` |

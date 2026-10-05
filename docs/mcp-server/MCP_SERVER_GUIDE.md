@@ -3,7 +3,7 @@
 ## Overview
 
 `unifi-mcp` is a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server over
-the same Python modules the `unifi-mapper` CLI uses. It registers **84 tools** in seven
+the same Python modules the `unifi-mapper` CLI uses. It registers **85 tools** in seven
 categories (see [Tool categories](#tool-categories) and the [tool index](#tool-index)). Every
 tool it will run is read-only against the controller. The three tools that would change it
 are refused over MCP (see [Control boundary](#mcp-control-boundary)); those changes go through
@@ -206,7 +206,7 @@ the private `_get_versions_from_api`. No tool uses either.
 | Surface | `tools/list` shows | Size (measured at this commit) |
 | --- | --- | --- |
 | `discovery` (default) | the four meta-tools: `search_tools`, `list_categories`, `get_tool_info`, `execute_tool` | 4 tools, about 6.4k characters |
-| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 74 tools (4 + 70), about 194k characters |
+| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 75 tools (4 + 71), about 195k characters |
 
 On either surface every catalog tool runs through the same `ToolRunner`, so arguments are
 validated, credentials gated, results masked and errors coded identically. The 11 pipeline
@@ -215,7 +215,7 @@ are reachable only through `execute_tool`; the 3 mutating tools are never listed
 `--check` prints `listed_tools` for both surfaces.
 
 Use `direct` with hosts that defer tool schemas (kiro-cli, Claude Code tool search): the
-host keeps the 74 schemas out of context until needed and the model calls tools by name. Use
+host keeps the 75 schemas out of context until needed and the model calls tools by name. Use
 `discovery` with hosts that load every schema up front (Codex): the model searches, reads one
 schema with `get_tool_info`, then calls `execute_tool`.
 
@@ -235,7 +235,8 @@ readiness, key names only).
 **Prompts.** `troubleshoot_port_link(switch, port)`, a read-only investigation of a port
 linking at the wrong speed, flapping or staying down; `plan_stp_change()`, which steers an STP
 change to the CLI (`stp analyze` → `stp report` → `stp optimize --plan` → `stp apply --plan`,
-which previews unless `--no-dry-run` is given).
+which previews unless `--no-dry-run` is given) and names the read-only `audit_stp_priorities`
+for a before-and-after check.
 
 **Annotations.** Catalog tools carry `readOnlyHint: true` (except `snapshot_radio_config`, which
 writes a local file), `destructiveHint: false`, `openWorldHint` (false for the six STP pipeline
@@ -247,11 +248,11 @@ tools that compute from their input, and for `get_wan_speedtest_history` and
 
 ## Tool Categories
 
-Counted from `ToolRegistry()` at this commit (84 tools):
+Counted from `ToolRegistry()` at this commit (85 tools):
 
 | Category | Tools | Covers |
 | --- | ---: | --- |
-| analysis | 46 | IP conflicts, storms, MAC table, VLAN diagnostics and coverage, STP topology, guard, path costs, drift, preflight and snapshots, link quality and link-speed audit, port-profile usage and validation, MTU, QoS, SFP, LAG, PoE and power budgets, uplink redundancy and transparency, client density, DHCP pools, device freshness, capacity, firmware, Wi-Fi radio, traffic matrix, foreign bridges, 10G readiness |
+| analysis | 47 | IP conflicts, storms, MAC table, VLAN diagnostics and coverage, STP topology, priority audit, guard, path costs, drift, preflight and snapshots, link quality and link-speed audit, port-profile usage and validation, MTU, QoS, SFP, LAG, PoE and power budgets, uplink redundancy and transparency, client density, DHCP pools, device freshness, capacity, firmware, Wi-Fi radio, traffic matrix, foreign bridges, 10G readiness |
 | connectivity | 4 | Firewall check, path analysis, traceroute, inter-VLAN routing |
 | diagnostics | 11 | Health, performance, security, connectivity, single-port inspection, all-ports view, port-profile diff, port evidence bundle, WAN health, the recorded speedtest history and offline backup verification |
 | discovery | 5 | Find device, IP or MAC; client trace; client history |
@@ -259,8 +260,8 @@ Counted from `ToolRegistry()` at this commit (84 tools):
 | observability | 7 | Event, alarm, system-log and admin-audit history; port counter rates and history; site-wide recent events; one device's stats, AP retry rates, raw config objects and the config-change timeline |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells (`protect` family) |
 
-Of the 84: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
-`restore_radio_config`) and 11 are pipeline tools, leaving 70 on the direct surface.
+Of the 85: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
+`restore_radio_config`) and 11 are pipeline tools, leaving 71 on the direct surface.
 
 Some tools overlap on purpose, and their descriptions say which to use. `get_device_stats`
 repeats the CPU, memory, load and uptime that `find_device` reports, and one AP's share of
@@ -459,14 +460,14 @@ The design rationale and the decisions still open are in the
 
 ## Tool Index
 
-All 84 registered tools by category, generated from `ToolRegistry()`. **Family** is
+All 85 registered tools by category, generated from `ToolRegistry()`. **Family** is
 the credential family a tool needs (`none`: it computes from its input). **Marks**:
 *mutating* tools are never listed or run over MCP; *pipeline* tools are reachable only
 through `execute_tool`; *writes a local file* drops `readOnlyHint`. Every tool that is
 neither mutating nor a pipeline tool is listed on the direct surface,
 `snapshot_radio_config` (which writes a local file) included.
 
-### analysis (46)
+### analysis (47)
 
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
@@ -484,6 +485,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `audit_sfp_diagnostics` | `controller` |  | Pull SFP/SFP+ module identity and DOM diagnostics from UniFi port tables |
 | `audit_stp_guard_recommendations` | `none` | pipeline | Audit Root Guard candidates and STP topology-change counters |
 | `audit_stp_path_costs` | `controller` | pipeline | Audit STP path costs for IEEE long-path-cost consistency |
+| `audit_stp_priorities` | `controller` |  | One-shot STP priority audit for the whole fleet, or narrowed to one switch: each switch's current, recommended and delta bridge priority and tier, a warning when two non-core switches tie at the lowest priority (the root would be decided by MAC), and the gateway under skipped (its bridge runs with STP disabled). Tiers always come from the whole fleet. Remediation names the CLI commands (stp optimize --plan, then stp apply --plan, which previews unless --no-dry-run); STP writes never run over MCP. Read-only. |
 | `audit_uplink_transparency` | `controller` |  | Detect switches whose elected uplink port cannot carry tagged VLANs (for example a switch that re-homed onto an access port with tagged_vlan_mgmt=block_all), which silently severs every tagged VLAN behind it while untagged traffic keeps working |
 | `audit_vlan_coverage` | `controller` |  | Check required VLAN coverage on trunk and planned uplink ports |
 | `calculate_optimal_priorities` | `controller` | pipeline | Calculate optimal bridge priorities based on network hierarchy |
