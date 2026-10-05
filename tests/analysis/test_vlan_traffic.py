@@ -69,16 +69,33 @@ def test_bridge_counters_parse_and_skip_malformed_lines() -> None:
             'br0 1 2\n===ADDR===\n[{"ifname": "br0", "addr_info": []}]',
             [{'ifname': 'br0', 'addr_info': []}],
         ),
-        ('br0 1 2\n', []),
-        ('br0 1 2\n===ADDR===\nnot json', []),
-        ('===ADDR===\n{"not": "a list"}', []),
+        ('br0 1 2\n===ADDR===\n[]', []),
+        ('br0 1 2\n===ADDR===\n[{"ifname": "br0"}, "not an entry"]', [{'ifname': 'br0'}]),
     ],
-    ids=['split', 'no marker', 'not json', 'not a list'],
+    ids=['split', 'no addresses', 'a stray entry'],
 )
 def test_the_output_splits_at_the_marker(stdout: str, addresses: list[Any]) -> None:
     counters, parsed = split_sample_output(stdout)
     assert parsed == addresses
-    assert counters.startswith('br0 1 2') or counters == ''
+    assert counters.startswith('br0 1 2')
+
+
+@pytest.mark.parametrize(
+    'stdout',
+    [
+        'br0 1 2\n',
+        'br0 1 2\n===ADDR===\nnot json',
+        '===ADDR===\n{"not": "a list"}',
+        'br0 1 2\n===ADDR===\n',
+    ],
+    ids=['no marker', 'not json', 'not a list', 'nothing after the marker'],
+)
+def test_output_without_a_parseable_address_list_is_an_error(stdout: str) -> None:
+    """Review B4: read as "no addresses", a broken output looked like an empty sample."""
+    with pytest.raises(ToolError) as caught:
+        split_sample_output(stdout)
+    assert caught.value.error_code == ErrorCodes.API_ERROR
+    assert 'address list' in caught.value.message
 
 
 def test_the_script_is_a_constant_with_one_marker() -> None:
@@ -147,6 +164,39 @@ async def test_a_resolved_interface_with_no_counters_is_skipped(
     assert {s['iface'] for s in result['skipped']} == {'br0', 'br9'}
 
 
+@pytest.mark.parametrize(
+    'reply',
+    [
+        ('', 'sh: ip: not found', 127),
+        ('br0 1000 2000\n===ADDR===\n', 'Error: unknown option -j', 255),
+    ],
+    ids=['ip missing', 'ip refused -j'],
+)
+async def test_a_script_that_fails_is_an_error_and_stores_nothing(
+    ssh: FakeSSH, tmp_path: Path, reply: tuple[str, str, int]
+) -> None:
+    """Review B4: a failed script read as "Sampled 0 VLAN(s)", exit 0; the probes check it."""
+    ssh.replies = {'sh': reply}
+    path = tmp_path / 'store.sqlite3'
+    async with serving(_controller()):
+        with pytest.raises(ToolError) as caught:
+            await sample_vlan_traffic(path)
+    assert caught.value.error_code == ErrorCodes.API_ERROR
+    assert f'exit status {reply[2]}' in caught.value.message
+    assert reply[1] in caught.value.message  # the last stderr line, redacted
+    assert not path.exists()
+
+
+async def test_a_script_without_the_address_list_is_an_error(ssh: FakeSSH, tmp_path: Path) -> None:
+    ssh.replies = {'sh': 'br0 1000 2000\nbr7 500 700\n'}
+    path = tmp_path / 'store.sqlite3'
+    async with serving(_controller()):
+        with pytest.raises(ToolError) as caught:
+            await sample_vlan_traffic(path)
+    assert caught.value.error_code == ErrorCodes.API_ERROR
+    assert not path.exists()
+
+
 async def test_an_unwritable_store_is_a_tool_error(ssh: FakeSSH, tmp_path: Path) -> None:
     path = tmp_path / 'store.sqlite3'
     open_store(path, writable=True).close()
@@ -200,6 +250,31 @@ def test_sample_prints_one_line_and_the_notice_once(cli: FakeController, tmp_pat
     assert 'Sampled 3 VLAN(s)' in result.stdout and '1 unresolved' in result.stdout
     assert result.stderr.count('host key') == 1
     assert set(_rows(path)) == {1, 30, 40}
+
+
+def test_sample_exits_1_when_the_script_fails(
+    cli: FakeController, ssh: FakeSSH, tmp_path: Path
+) -> None:
+    ssh.replies = {'sh': ('', 'sh: ip: not found', 127)}
+    path = tmp_path / 'store.sqlite3'
+    result = runner.invoke(app, ['vlan-traffic', 'sample', '--db', str(path)])
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ''
+    assert 'could not run on the gateway' in ' '.join(result.stderr.split())
+    assert not path.exists()
+
+
+def test_sample_exits_1_when_nothing_was_sampled(
+    cli: FakeController, ssh: FakeSSH, tmp_path: Path
+) -> None:
+    """A schedule must notice a sample that stored nothing (review B4)."""
+    ssh.replies = {'sh': 'br0 1000 2000\n===ADDR===\n[]'}
+    path = tmp_path / 'store.sqlite3'
+    result = runner.invoke(app, ['vlan-traffic', 'sample', '--db', str(path)])
+    assert result.exit_code == 1, result.output
+    assert 'Sampled 0 VLAN(s)' in result.stdout and '4 unresolved' in result.stdout
+    assert 'Nothing was stored' in ' '.join(result.stderr.split())
+    assert not path.exists()
 
 
 def test_sample_without_db_writes_under_xdg_state_not_the_cwd(

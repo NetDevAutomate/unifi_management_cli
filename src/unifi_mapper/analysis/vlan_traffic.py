@@ -25,10 +25,16 @@ import json
 import time
 from pathlib import Path
 from typing import Any
-from unifi_mapper.analysis.gateway_ssh import gateway_session, run_gateway_command, ssh_login
+from unifi_mapper.analysis.gateway_ssh import (
+    check_exit_status,
+    gateway_session,
+    run_gateway_command,
+    ssh_login,
+)
 from unifi_mapper.analysis.vlan_interfaces import resolve_vlan_interfaces
 from unifi_mapper.analysis.vlan_traffic_store import default_db_path, insert_samples
 from unifi_mapper.core.utils.client import UniFiClient
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
 # For each br* interface print "iface rx_bytes tx_bytes", then a marker line, then the
@@ -41,6 +47,12 @@ SAMPLE_SCRIPT = (
 )
 SAMPLE_TIMEOUT = 30
 ADDR_MARKER = '===ADDR==='
+# The script's exit status is its last command's, ``ip -4 -j addr show``.
+SAMPLE_PROGRAM = 'the VLAN sample script'
+SAMPLE_SUGGESTION = (
+    "Check that the SSH user may run 'ip -4 -j addr show' and read /sys/class/net on the "
+    'gateway (UNIFI_SSH_USERNAME)'
+)
 
 
 def parse_bridge_counters(output: str) -> dict[str, dict[str, int]]:
@@ -69,20 +81,39 @@ def parse_bridge_counters(output: str) -> dict[str, dict[str, int]]:
 def split_sample_output(stdout: str) -> tuple[str, list[dict[str, Any]]]:
     """Split the script's stdout into the counter text and the parsed address list. Pure.
 
+    The address list is what matches a VLAN to its interface, so output without it is a
+    failed sample, never an empty one: read as "no addresses", it would put every VLAN under
+    ``unresolved`` and store nothing, silently.
+
+    Args:
+        stdout: The sample script's standard output.
+
     Returns:
-        ``(counter text, addresses)``; the addresses are ``[]`` when the marker is missing or
-        what follows it is not a JSON list.
+        ``(counter text, addresses)``: the text before :data:`ADDR_MARKER`, and the address
+        entries (dicts; any other entry is dropped) after it. An empty list is a gateway
+        with no IPv4 address.
+
+    Raises:
+        ToolError: ``API_ERROR`` when the marker is missing, or what follows it is not a JSON
+            list.
     """
-    if ADDR_MARKER in stdout:
-        counters_block, _, json_block = stdout.partition(ADDR_MARKER)
-    else:
-        counters_block, json_block = stdout, ''
+    if ADDR_MARKER not in stdout:
+        raise ToolError(
+            message='the VLAN sample script printed no address list',
+            error_code=ErrorCodes.API_ERROR,
+            suggestion=SAMPLE_SUGGESTION,
+        )
+    counters_block, _, json_block = stdout.partition(ADDR_MARKER)
     try:
-        parsed = json.loads(json_block.strip()) if json_block.strip() else []
+        parsed = json.loads(json_block)
     except json.JSONDecodeError:
-        parsed = []
+        parsed = None
     if not isinstance(parsed, list):
-        parsed = []
+        raise ToolError(
+            message='the VLAN sample script printed an address list that is not a JSON list',
+            error_code=ErrorCodes.API_ERROR,
+            suggestion=SAMPLE_SUGGESTION,
+        )
     return counters_block, [entry for entry in parsed if isinstance(entry, dict)]
 
 
@@ -91,7 +122,10 @@ async def sample_vlan_traffic(db_path: Path | None = None) -> dict[str, Any]:
 
     The SSH login is checked first, then the network list is read (one controller call),
     the script run (one SSH command), each VLAN matched to its interface by subnet, and the
-    rows written in one transaction.
+    rows written in one transaction. A script that exits with a failure status, or prints
+    no parseable address list, is an error and stores nothing. A run that resolves no VLAN
+    to an interface with counters returns an empty ``sampled`` and writes nothing; the CLI
+    exits 1 for it, so a schedule notices.
 
     Args:
         db_path: The store (default ``vlan_traffic_store.default_db_path()``).
@@ -102,9 +136,11 @@ async def sample_vlan_traffic(db_path: Path | None = None) -> dict[str, Any]:
         ``skipped`` (resolved VLANs whose interface printed no counters this time).
 
     Raises:
-        ToolError: ``CONFIG_MISSING`` without the SSH password, the controller's and the SSH
-            connection's errors, ``TIMEOUT`` past 30 s, and ``API_ERROR`` when the store
-            can't be written.
+        ToolError: ``CONFIG_MISSING`` without the SSH password; the controller's and the SSH
+            connection's errors; ``TIMEOUT`` past 30 s; ``API_ERROR`` when the script fails
+            or prints no address list, with its last stderr line redacted (for example
+            ``the VLAN sample script could not run on the gateway (exit status 127): sh: ip:
+            not found``), and when the store can't be written.
     """
     ssh_login()  # a missing SSH password fails before the controller is asked
     async with UniFiClient() as client:
@@ -113,6 +149,7 @@ async def sample_vlan_traffic(db_path: Path | None = None) -> dict[str, Any]:
         result = await run_gateway_command(
             conn, ['sh', '-c', SAMPLE_SCRIPT], timeout=SAMPLE_TIMEOUT
         )
+    check_exit_status(result, SAMPLE_PROGRAM)
     counters_text, addresses = split_sample_output(result.stdout)
     counters = parse_bridge_counters(counters_text)
     resolution = resolve_vlan_interfaces([n for n in networks if isinstance(n, dict)], addresses)

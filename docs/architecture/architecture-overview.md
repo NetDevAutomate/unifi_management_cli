@@ -319,6 +319,7 @@ clients first, then a unique partial name; the rule `diagnose client-connectivit
 — per-VLAN throughput history. `sample` (SSH, CLI only) reads the controller's network list and
 runs one fixed script on the gateway, then stores a row per VLAN in a SQLite store under the XDG
 state directory (`vlan-traffic.sqlite3`, never the working directory; `--db` names another);
+a script that fails on the gateway, or a run that stores nothing, exits 1;
 `rollup`, `report PERIOD` and `coverage` work on the store alone. The MCP tools
 `get_vlan_traffic_report` and `list_vlan_traffic_periods` read the default store read-only in a
 worker thread, with no credentials; nothing over MCP starts a sample (decision D1 in issue 060),

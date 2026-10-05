@@ -5380,8 +5380,9 @@ def vlan_traffic_sample(
     (each br* interface's byte counters and addresses, 30 s bound), matches each VLAN to the
     interface whose address is in its subnet and stores a row per VLAN. Run it by hand (or
     from your own schedule) every minute or so; no schedule is published until the gateway's
-    host key can be verified. Runs on the gateway as the SSH user; the gateway's host key is
-    not verified.
+    host key can be verified. Exits 1 when the script fails or nothing was stored, so a
+    schedule notices. Runs on the gateway as the SSH user; the gateway's host key is not
+    verified.
     """
     from .analysis.vlan_traffic import sample_vlan_traffic
     from datetime import UTC, datetime
@@ -5396,6 +5397,8 @@ def vlan_traffic_sample(
         markup=False,
         soft_wrap=True,
     )
+    if not result['sampled']:
+        _fail('Nothing was stored: no VLAN matched a gateway interface with byte counters')
 
 
 @vlan_traffic_app.command('rollup')

@@ -276,7 +276,9 @@ network for the HTTP probe) is not run, so the verdict is inconclusive rather th
 `vlan-traffic sample` is the only `vlan-traffic` command that reaches anything: it reads the
 controller's network list (read-only) and runs one fixed script on the gateway over SSH, then
 stores a row per VLAN in `$XDG_STATE_HOME/unifi_mapper/vlan-traffic.sqlite3` (never the working
-directory; `--db` names another store). `rollup`, `report` and `coverage` work on the store
+directory; `--db` names another store). A script that fails, and a run that stores nothing
+because no VLAN matched a gateway interface with byte counters, exit 1, so a schedule of your
+own notices. `rollup`, `report` and `coverage` work on the store
 alone. The MCP tools `get_vlan_traffic_report` and `list_vlan_traffic_periods` read the same
 store and need no credentials; nothing over MCP starts a sample. A report of a store a crashed
 sample left unfinished asks for `vlan-traffic rollup`, which repairs it.

@@ -916,7 +916,9 @@ uv run unifi-mapper vlan-traffic coverage
 ```
 
 Rates come from the difference between two samples, so take them regularly (every minute or
-so) for honest averages and peaks. Run `vlan-traffic sample` yourself, or from a schedule of
+so) for honest averages and peaks. A sample whose script fails on the gateway, or that stores
+nothing because no VLAN matched an interface with byte counters, exits 1. Run
+`vlan-traffic sample` yourself, or from a schedule of
 your own: none is published, and the scheduled task waits for
 [issue 038](../issues/038-ssh-host-key-verification-disabled.md), because an unattended sampler
 would log in to the gateway as root without verifying its host key. Until then a report covers

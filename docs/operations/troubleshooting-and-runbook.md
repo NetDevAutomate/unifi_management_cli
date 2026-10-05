@@ -265,7 +265,7 @@ network you trust.
 `vlan-traffic report`, `vlan-traffic coverage` and the MCP tools `get_vlan_traffic_report`
 and `list_vlan_traffic_periods` read the local store
 (`$XDG_STATE_HOME/unifi_mapper/vlan-traffic.sqlite3`, or `--db`) read-only, and report its
-problems as one line:
+problems as one line; `vlan-traffic sample` reports a failed gateway script the same way:
 
 | Message | Cause | Resolution |
 | --- | --- | --- |
@@ -274,6 +274,9 @@ problems as one line:
 | `store busy: locked for more than 5 s` | A sample or a rollup holds the store | Try again in a moment |
 | `store unreadable: <SQLite error name>` | The file is not a store, or is damaged | Move it aside; the next sample starts a new one |
 | `cannot write the VLAN traffic store …` (`sample`, `rollup`) | The store or its directory is not writable | Fix the permissions, or name another store with `--db` |
+| `the VLAN sample script could not run on the gateway (exit status N): …` (`sample`, exit 1) | The SSH user may not run `ip -4 -j addr show` or read `/sys/class/net` on the gateway | Check `UNIFI_SSH_USERNAME`; nothing was stored |
+| `the VLAN sample script printed no address list` (or one that is not a JSON list) (`sample`, exit 1) | The script's output was cut short, or the gateway's `ip` does not support `-j` | Run it again; nothing was stored |
+| `Nothing was stored: no VLAN matched a gateway interface with byte counters` (`sample`, exit 1) | No VLAN's subnet holds the address of a gateway interface, or the interfaces that matched are not `br*` bridges, whose counters are the only ones read (the line before it counts both) | Check the networks' subnets against the gateway's interfaces; nothing was stored |
 
 ---
 
