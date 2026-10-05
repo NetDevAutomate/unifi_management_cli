@@ -63,10 +63,84 @@ def test_shipped_manifests_flag_exactly_the_controller_writers() -> None:
     shipped = ToolRegistry()  # real manifests
     mutating = {n for n in shipped.get_categories()['analysis'] if shipped.get_metadata(n).mutates}
     assert mutating == {'apply_stp_changes', 'apply_radio_optimization', 'restore_radio_config'}
-    for tools in shipped.get_categories().values():
-        for name in tools:
-            if name.startswith(('apply_', 'restore_')):
-                assert shipped.get_metadata(name).mutates, f'{name} must declare mutates: true'
+    assert _unflagged_writers(shipped) == []
+
+
+# A tool whose name says it changes the controller must declare ``mutates: true`` (issue 019's
+# rule: CLI only, dry run first, never over MCP). ``trigger_*`` is left out: an on-demand
+# probe is decision D1 in issue 060 (an active_probe flag), not a write.
+WRITER_PREFIXES = ('apply_', 'restore_', 'set_', 'power_cycle_')
+
+
+def _names_a_write(name: str) -> bool:
+    return name.startswith(WRITER_PREFIXES) or (name.startswith('run_') and 'speedtest' in name)
+
+
+def _unflagged_writers(registry: ToolRegistry) -> list[str]:
+    names = [n for tools in registry.get_categories().values() for n in tools]
+    return sorted(n for n in names if _names_a_write(n) and not registry.get_metadata(n).mutates)
+
+
+def test_the_writer_naming_rule_catches_set_power_cycle_and_speedtest_names(
+    tmp_path: Path,
+) -> None:
+    lines = ['category: test', 'tools:']
+    for name in (
+        'set_wlan_option',
+        'power_cycle_poe_port',
+        'run_wan_speedtest',
+        'trigger_vlan_traffic_sample',
+        'get_wan_health',
+    ):
+        lines += [
+            f'  {name}:',
+            '    module: fake.mod',
+            f'    handler: {name}',
+            '    description: fake',
+        ]
+    (tmp_path / 'test.yaml').write_text('\n'.join(lines) + '\n')
+    found = _unflagged_writers(ToolRegistry(tmp_path))
+    assert found == ['power_cycle_poe_port', 'run_wan_speedtest', 'set_wlan_option']
+
+
+# The July work's MCP tools that the port did not put on MCP (issue 059 says why; issue 060
+# holds the open choices). None may be registered without that decision.
+JULY_TOOLS_NOT_ON_MCP = (
+    'decode_object_timestamps',
+    'run_latency_matrix',
+    'run_port_mapping',
+    'run_spectrum_scan',
+    'power_cycle_poe_port',
+    'set_wlan_option',
+    'set_wlan_ap_group',
+    'list_jobs',
+    'get_job_status',
+    'get_job_result',
+    'cancel_job',
+    'run_ap_health_test',
+    'diagnose_client_connectivity',
+    'gateway_ping',
+    'gateway_traceroute',
+    'gateway_dns_check',
+    'gateway_http_check',
+    'get_active_flows',
+    'get_backup_status',
+    'run_wan_speedtest',
+    'trigger_vlan_traffic_sample',
+    'mcp_health_check',
+)
+
+
+def test_no_july_tool_left_off_mcp_is_registered() -> None:
+    assert len(set(JULY_TOOLS_NOT_ON_MCP)) == 22
+    shipped = ToolRegistry()
+    names = {n for tools in shipped.get_categories().values() for n in tools}
+    registered = sorted(names & set(JULY_TOOLS_NOT_ON_MCP))
+    assert not registered, (
+        f'{registered} were left off MCP by the July port: read '
+        'docs/issues/059-july-work-not-ported.md and docs/issues/060-decisions-from-the-'
+        'july-port.md (decisions D1-D4, W6-W10) before registering them'
+    )
 
 
 # ---------------------------------------------------------------------------
