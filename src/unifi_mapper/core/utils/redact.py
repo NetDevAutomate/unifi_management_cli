@@ -12,10 +12,12 @@ Rules:
       ``preshared``, ``passphrase``, ``api_key`` or ``private_key``
       (case-insensitive). This applies at every depth, including dicts nested
       inside lists.
-    * So is a key that is exactly ``community`` (the SNMP community string),
-      ``syslog_key`` or ``lcm_tracker_seed``, in any case. These match the whole
-      key only: ``community_id`` and ``snmp_community`` stay. Free text is not
-      matched on them, because ``community`` is an ordinary word.
+    * So is a key that is, or ends in ``_`` followed by, ``community`` (the SNMP
+      community string), ``syslog_key`` or ``lcm_tracker_seed``, in any case:
+      ``snmp_community`` and ``my_syslog_key`` go, while ``community_id`` and
+      ``syslog_key_id`` stay. Free text is matched on ``syslog_key`` and
+      ``lcm_tracker_seed`` by the same rule, but not on ``community``, an
+      ordinary word.
     * Bare ``key``, ``name`` and ``id`` keys are never removed. Event records
       use ``key`` for the event type.
     * Values are not scanned. Free text that may quote a secret (exception
@@ -35,19 +37,25 @@ SECRET_KEY_RE = re.compile(
     r'password|secret|token|authkey|psk|preshared|passphrase|api[_-]?key|private[_-]?key',
     re.IGNORECASE,
 )
-# Whole keys that hold a credential although no keyword matches them (compared lower-cased).
-_EXACT_SECRET_KEYS = frozenset({'community', 'syslog_key', 'lcm_tracker_seed'})
+# Names that hold a credential although no keyword matches them: the whole key, or its end
+# after an '_' (so snmp_community goes and community_id stays), in any case.
+SUFFIX_SECRET_KEYS = ('community', 'syslog_key', 'lcm_tracker_seed')
+_SUFFIX_SECRET_KEY_RE = re.compile(
+    r'(?:^|_)(?:' + '|'.join(SUFFIX_SECRET_KEYS) + r')$', re.IGNORECASE
+)
 REDACTED = '***redacted***'
 DEFAULT_TEXT_LIMIT = 300
 
-# A secret-looking name in free text: either x_<anything> or <anything><keyword><anything>,
+# A secret-looking name in free text: x_<anything>, <anything><keyword><anything>, or a name
+# ending in syslog_key or lcm_tracker_seed (the suffix rule; community is an ordinary word),
 # anchored so it starts at a key boundary rather than in the middle of a word like 'max_rate'.
 _SECRET_NAME = (
     r'(?<![A-Za-z0-9_.\-])'
     r'(?:x_[A-Za-z0-9_.\-]*'
     r'|[A-Za-z0-9_.\-]*'
     r'(?:password|secret|token|authkey|psk|preshared|passphrase|api[_-]?key|private[_-]?key)'
-    r'[A-Za-z0-9_.\-]*)'
+    r'[A-Za-z0-9_.\-]*'
+    r'|(?:[A-Za-z0-9_.\-]*_)?(?:syslog_key|lcm_tracker_seed)(?![A-Za-z0-9_.\-]))'
 )
 _SECRET_ASSIGNMENT_RE = re.compile(
     r'(?P<prefix>["\']?' + _SECRET_NAME + r'["\']?\s*[=:]\s*)'
@@ -64,14 +72,14 @@ def is_secret_key(key: object) -> bool:
         key: The mapping key. Non-string keys are compared by their ``str()``.
 
     Returns:
-        True for keys starting with ``x_``, containing a secret keyword, or equal to one of
-        the exact secret keys (``community``, ``syslog_key``, ``lcm_tracker_seed``).
+        True for keys starting with ``x_``, containing a secret keyword, or ending in one of
+        the suffix names (``community``, ``syslog_key``, ``lcm_tracker_seed``) as the whole
+        key or after an ``_``.
     """
     name = str(key)
-    lowered = name.lower()
     return (
-        lowered.startswith('x_')
-        or lowered in _EXACT_SECRET_KEYS
+        name.lower().startswith('x_')
+        or bool(_SUFFIX_SECRET_KEY_RE.search(name))
         or bool(SECRET_KEY_RE.search(name))
     )
 

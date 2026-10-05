@@ -220,18 +220,22 @@ def test_unrelated_true_survives_masking():
 
 # --- exact keys and pre-shared keys (the July port's config objects) ---------------------
 
-EXACT_KEYS = [
+SUFFIX_KEYS = [
     'community',
     'COMMUNITY',
     'Community',
+    'snmp_community',
+    'SNMP_Community',
     'syslog_key',
     'SYSLOG_KEY',
+    'my_syslog_key',
     'lcm_tracker_seed',
+    'device_lcm_tracker_seed',
 ]
 
 
-@pytest.mark.parametrize('key', EXACT_KEYS)
-def test_exact_secret_keys_are_stripped_and_masked_in_any_case(key):
+@pytest.mark.parametrize('key', SUFFIX_KEYS)
+def test_suffix_secret_keys_are_stripped_and_masked_in_any_case(key):
     clean, removed = strip_secrets({'snmp': {key: FAKE, 'enabled': True}}, 'setting[0]')
     assert clean == {'snmp': {'enabled': True}}
     assert removed == [f'setting[0].snmp.{key}']
@@ -239,12 +243,30 @@ def test_exact_secret_keys_are_stripped_and_masked_in_any_case(key):
     assert mask_secrets({key: FAKE}, frozenset())[key] == REDACTED
 
 
-@pytest.mark.parametrize(
-    'key', ['community_id', 'snmp_community', 'communityname', 'syslog_key_id', 'my_syslog_key']
-)
-def test_exact_keys_match_the_whole_key_only(key):
+@pytest.mark.parametrize('key', ['community_id', 'syslog_key_id', 'lcm_tracker_seed_version'])
+def test_suffix_keys_must_end_the_key(key):
     assert is_secret_key(key) is False
     assert strip_secrets({key: 'value'}) == ({key: 'value'}, [])
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        f"device {{'name': 'AP 1', 'syslog_key': '{FAKE}'}}",  # pragma: allowlist secret
+        f'syslog_key={FAKE} name=AP-1',
+        f'my_syslog_key: {FAKE}',
+        f'LCM_TRACKER_SEED={FAKE}',
+        f'{{\'lcm_tracker_seed\': "{FAKE}"}}',
+    ],
+)
+def test_syslog_keys_and_the_lcm_seed_are_masked_in_free_text(text):
+    assert FAKE not in redact_text(text)
+    assert REDACTED in redact_text(text)
+
+
+def test_a_key_that_only_starts_with_a_suffix_name_is_not_masked_in_free_text():
+    text = 'syslog_key_id=5 lcm_tracker_seed_version=2'
+    assert redact_text(text) == text
 
 
 @pytest.mark.parametrize(

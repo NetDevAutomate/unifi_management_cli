@@ -335,9 +335,10 @@ session is wrapped by a transport guard that allows `GET` (except `cmd/` and `up
 paths) and `POST` only to the `stat/event`, `list/alarm` and v2 `system-log` query
 endpoints. Anything else, including every `PUT`/`DELETE`, is refused before it leaves
 the machine. If the client has to log in again mid-run, the new session is wrapped too.
-Secret fields (`x_*`, passwords, tokens, PSKs and pre-shared keys, passphrases, and the
-whole keys `community` (SNMP), `syslog_key` and `lcm_tracker_seed`) are removed from every
-output, and only their key paths are listed in `sanitised_paths`. These commands read
+Secret fields (`x_*`, passwords, tokens, PSKs and pre-shared keys, passphrases, and keys
+named `community` (SNMP), `syslog_key` or `lcm_tracker_seed` or ending in `_` and one of
+them, such as `snmp_community`) are removed from every output, and only their key paths
+are listed in `sanitised_paths`. These commands read
 configuration only from `--config` (or the default config path), never from a stray
 `./.env` in the working directory; `ports inspect` follows the same rule.
 

@@ -14,11 +14,12 @@ from pathlib import Path
 
 TESTS = Path(__file__).resolve().parent
 PRAGMA = 'pragma: allowlist secret'
-# A credential-named key: a keyword anywhere in the key, or one of redact.py's exact keys as
-# the whole key (so the deliberate survivor community_id is not matched).
+# A credential-named key: a keyword anywhere in the key, or a key ending in one of redact.py's
+# suffix names (so the deliberate survivors community_id and syslog_key_id are not matched).
 CREDENTIAL_ENTRY = re.compile(
     r"""['"](?:[A-Z_]*(?:TOKEN|API_KEY|PASSWORD|SECRET|PRESHARED)[A-Z_]*"""
-    r"""|COMMUNITY|SYSLOG_KEY|LCM_TRACKER_SEED)['"]\s*:\s*['"]([^'"]{4,})['"]""",
+    r"""|(?:[A-Z0-9_]*_)?(?:COMMUNITY|SYSLOG_KEY|LCM_TRACKER_SEED))"""
+    r"""['"]\s*:\s*['"]([^'"]{4,})['"]""",
     re.IGNORECASE,
 )
 NOT_SECRETS = frozenset({'true', 'false'})
@@ -51,16 +52,18 @@ def test_scan_finds_an_unmarked_fake_credential() -> None:
         "    device = {'lcm_tracker_seed': 'fake-seed'}",  # pragma: allowlist secret
         "    peer = {'wireguard_preshared_key': 'fake-psk'}",  # pragma: allowlist secret
         "    peer = {'PRESHARED_KEY': 'fake-psk'}",  # pragma: allowlist secret
+        "    snmp = {'snmp_community': 'fake-community'}",  # pragma: allowlist secret
+        "    device = {'my_syslog_key': 'fake-syslog-key'}",  # pragma: allowlist secret
     ],
 )
-def test_scan_knows_the_exact_secret_keys_and_preshared(line: str) -> None:
+def test_scan_knows_the_suffix_secret_keys_and_preshared(line: str) -> None:
     assert len(CREDENTIAL_ENTRY.findall(line)) == 1
 
 
 @pytest.mark.parametrize(
-    'line', ["{'community_id': 'abcd'}", "{'snmp_community': 'abcd'}", "{'my_syslog_key': 'abcd'}"]
+    'line', ["{'community_id': 'abcd'}", "{'syslog_key_id': 'abcd'}", "{'communityname': 'ab'}"]
 )
-def test_scan_matches_exact_keys_as_whole_keys_only(line: str) -> None:
+def test_scan_matches_suffix_keys_only_at_the_end_of_the_key(line: str) -> None:
     assert not CREDENTIAL_ENTRY.search(line)
 
 
