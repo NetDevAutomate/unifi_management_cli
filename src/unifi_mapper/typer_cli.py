@@ -4792,11 +4792,11 @@ def backup_verify(
     """💾 Check a downloaded config backup (.unf) offline: structure only.
 
     Decrypts the backup with the controller's fixed backup key, extracts and decompresses
-    the database (each capped at 1 GiB) and counts the documents in each collection; a
-    truncated or corrupt database is not valid. Prints no document contents and contacts
-    no controller. The file must end in .unf, be a
-    regular file and be at most 512 MiB. Exits 0 when the backup is valid, 1 when it is
-    not. Read-only.
+    the database (each capped at 1 GiB, the database at 64 gzip members) and counts the
+    documents in each collection; a truncated or corrupt database is not valid. Prints no
+    document contents and contacts no controller. The file must end in .unf, be a regular
+    file and be at most 512 MiB. Exits 0 when the backup is valid, 1 when it is not.
+    Read-only.
     """
     from .backup.verify import BACKUP_SUFFIX, check_backup_path, verify_backup_file
     from .core.utils.errors import ErrorCodes, ToolError

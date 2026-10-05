@@ -19,8 +19,10 @@ Expected failures (a foreign or corrupt file) are a result with ``valid: false``
 
 The backup is read from a local path only: no controller is contacted and this module
 imports no client (``credentials: none``). The path is checked before the file is opened:
-the ``.unf`` suffix first, so no other file can be probed, then that it is absolute, a
-regular file and at most 512 MiB.
+the ``.unf`` suffix first, so no other file can be probed, then that it is absolute; it is
+then resolved (a symlink's target must end in ``.unf`` too) and must be a regular file of at
+most 512 MiB. The file is opened once, without following a link or blocking, checked again
+on the open descriptor, and never read past the size it reports (:func:`read_backup`).
 """
 
 import asyncio
@@ -208,11 +210,12 @@ def _invalid(message: str) -> ToolError:
 
 
 def check_backup_path(path: str | os.PathLike[str], *, require_absolute: bool = True) -> Path:
-    """Check a backup path in the safe order and return it.
+    """Check a backup path in the safe order and return it, resolved.
 
     The suffix is checked on the argument before any filesystem call, so the check can't be
-    used to probe other paths; then the path must be absolute (when required), exist, be a
-    regular file (no FIFO or device) and be at most :data:`MAX_BACKUP_BYTES`.
+    used to probe other paths; then the path must be absolute (when required). It is then
+    resolved, and the resolved path (a symlink's target) must end in ``.unf`` too, exist, be
+    a regular file (no FIFO or device) and be at most :data:`MAX_BACKUP_BYTES`.
 
     Args:
         path: The backup's path.
@@ -220,7 +223,7 @@ def check_backup_path(path: str | os.PathLike[str], *, require_absolute: bool = 
             argument first.
 
     Returns:
-        The path.
+        The resolved path.
 
     Raises:
         ToolError: ``CONFIG_INVALID`` for the suffix, a relative path, a non-regular file or
@@ -231,29 +234,75 @@ def check_backup_path(path: str | os.PathLike[str], *, require_absolute: bool = 
         raise _invalid('the backup must be a .unf file')
     if require_absolute and not candidate.is_absolute():
         raise _invalid('the backup path must be absolute')
+    candidate = candidate.resolve()  # a symlink names its target, which must be a .unf too
+    if candidate.suffix.lower() != BACKUP_SUFFIX:
+        raise _invalid('the backup must be a .unf file')
     try:
         info = candidate.stat()
     except FileNotFoundError:
-        raise ToolError(
-            message=f'backup not found: {candidate}',
-            error_code=ErrorCodes.BACKUP_NOT_FOUND,
-            suggestion='Check the path of the downloaded .unf backup.',
-        ) from None
+        raise _not_found(candidate) from None
     except OSError as e:
         raise _invalid(f'cannot read {candidate}: {e.strerror or type(e).__name__}') from None
-    if not stat.S_ISREG(info.st_mode):
-        raise _invalid(f'{candidate} is not a regular file')
-    if info.st_size > MAX_BACKUP_BYTES:
-        raise _invalid(f'{candidate} is larger than {MAX_BACKUP_BYTES // (1024 * 1024)} MiB')
+    _check_info(candidate, info)
     return candidate
 
 
-def verify_backup_file(path: Path) -> dict[str, Any]:
-    """Read a checked backup path and verify it; adds ``path`` and ``size_bytes``.
+def _not_found(path: Path) -> ToolError:
+    return ToolError(
+        message=f'backup not found: {path}',
+        error_code=ErrorCodes.BACKUP_NOT_FOUND,
+        suggestion='Check the path of the downloaded .unf backup.',
+    )
 
-    The file's bytes are handed over, not kept, so they are freed once decrypted.
+
+def _check_info(path: Path, info: os.stat_result) -> None:
+    """Refuse anything but a regular file of at most :data:`MAX_BACKUP_BYTES`."""
+    if not stat.S_ISREG(info.st_mode):
+        raise _invalid(f'{path} is not a regular file')
+    if info.st_size > MAX_BACKUP_BYTES:
+        raise _too_large(path)
+
+
+def _too_large(path: Path) -> ToolError:
+    return _invalid(f'{path} is larger than {MAX_BACKUP_BYTES // (1024 * 1024)} MiB')
+
+
+def read_backup(path: Path) -> bytes:
+    """Read a checked backup path through one descriptor, never past the size cap.
+
+    The path is opened once, without following a symlink and without blocking (so a FIFO
+    swapped in after :func:`check_backup_path` can't hang the read); the open file is
+    checked again with ``fstat`` (a regular file of at most :data:`MAX_BACKUP_BYTES`), and
+    at most one byte more than that size is read, so a file that grew after the check (a
+    download still running) is refused rather than read past the cap.
+
+    Raises:
+        ToolError: ``CONFIG_INVALID`` for a link, a non-regular file, a file past the cap or
+            one that changed while it was read; ``BACKUP_NOT_FOUND`` when the file is gone.
     """
-    buffer = [path.read_bytes()]
+    flags = os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_NOFOLLOW', 0)
+    try:
+        fd = os.open(path, flags)
+    except FileNotFoundError:
+        raise _not_found(path) from None
+    except OSError as e:
+        raise _invalid(f'cannot read {path}: {e.strerror or type(e).__name__}') from None
+    with os.fdopen(fd, 'rb') as handle:
+        info = os.fstat(handle.fileno())
+        _check_info(path, info)
+        data = handle.read(info.st_size + 1)
+    if len(data) > info.st_size:
+        raise _invalid(f'{path} changed while it was read')
+    return data
+
+
+def verify_backup_file(path: Path) -> dict[str, Any]:
+    """Read a checked backup path (:func:`read_backup`) and verify it.
+
+    Adds ``path`` and ``size_bytes``. The file's bytes are handed over, not kept, so they are
+    freed once decrypted.
+    """
+    buffer = [read_backup(path)]
     size = len(buffer[0])
     result = _verify(buffer, MAX_DB_BYTES)
     result.update(path=str(path), size_bytes=size)

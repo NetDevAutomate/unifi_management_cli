@@ -15,6 +15,7 @@ import os
 import pytest
 import subprocess
 import sys
+import threading
 import zipfile
 import zlib
 from collections.abc import Iterator
@@ -515,6 +516,101 @@ def test_a_file_over_the_size_cap_is_refused(
     with pytest.raises(ToolError) as exc:
         check_backup_path(backup)
     assert exc.value.error_code == ErrorCodes.CONFIG_INVALID
+
+
+def test_a_symlink_is_resolved_and_its_target_s_suffix_checked(
+    tmp_path: Path, backup: Path
+) -> None:
+    other = tmp_path / 'notes.txt'
+    other.write_bytes(b'not a backup')
+    to_other = tmp_path / 'to-notes.unf'
+    to_other.symlink_to(other)
+    with pytest.raises(ToolError) as exc:
+        check_backup_path(to_other)
+    assert exc.value.error_code == ErrorCodes.CONFIG_INVALID
+    to_backup = tmp_path / 'to-backup.unf'
+    to_backup.symlink_to(backup)
+    assert check_backup_path(to_backup) == backup.resolve()
+
+
+def _verify_or_error(path: Path) -> object:
+    try:
+        return verify.verify_backup_file(path)
+    except ToolError as e:
+        return e
+
+
+def test_the_size_is_checked_again_on_the_open_file(
+    monkeypatch: pytest.MonkeyPatch, backup: Path
+) -> None:
+    checked = check_backup_path(backup)
+    monkeypatch.setattr(verify, 'MAX_BACKUP_BYTES', 10)  # the file grew after the check
+    outcome = _verify_or_error(checked)
+    assert isinstance(outcome, ToolError) and outcome.error_code == ErrorCodes.CONFIG_INVALID
+
+
+def test_a_file_that_grows_after_fstat_is_refused(
+    monkeypatch: pytest.MonkeyPatch, backup: Path
+) -> None:
+    checked = check_backup_path(backup)
+    real_fstat = os.fstat
+    sizes: list[int] = []
+
+    class _Small:  # what fstat saw, before the download grew the file
+        def __init__(self, info: os.stat_result) -> None:
+            self.st_mode, self.st_size = info.st_mode, 0
+
+    monkeypatch.setattr(verify.os, 'fstat', lambda fd: _Small(real_fstat(fd)))
+    real_fdopen = os.fdopen
+
+    class _SpyHandle:  # records how much each read asks for
+        def __init__(self, real: Any) -> None:
+            self._real = real
+
+        def __enter__(self) -> '_SpyHandle':
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            self._real.close()
+
+        def fileno(self) -> int:
+            return self._real.fileno()
+
+        def read(self, size: int = -1) -> bytes:
+            sizes.append(size)
+            return self._real.read(size)
+
+    monkeypatch.setattr(verify.os, 'fdopen', lambda fd, mode: _SpyHandle(real_fdopen(fd, mode)))
+    outcome = _verify_or_error(checked)
+    assert isinstance(outcome, ToolError) and outcome.error_code == ErrorCodes.CONFIG_INVALID
+    assert sizes == [1]  # one byte past what fstat saw, never the whole file
+
+
+def test_a_link_swapped_in_after_the_check_is_not_followed(tmp_path: Path, backup: Path) -> None:
+    checked = check_backup_path(backup)
+    elsewhere = tmp_path / 'elsewhere.bin'
+    elsewhere.write_bytes(backup.read_bytes())
+    backup.unlink()
+    backup.symlink_to(elsewhere)
+    outcome = _verify_or_error(checked)
+    assert isinstance(outcome, ToolError) and outcome.error_code == ErrorCodes.CONFIG_INVALID
+
+
+def test_a_fifo_swapped_in_after_the_check_is_refused_without_blocking(backup: Path) -> None:
+    checked = check_backup_path(backup)
+    backup.unlink()
+    os.mkfifo(backup)
+    outcome: list[object] = []
+    worker = threading.Thread(target=lambda: outcome.append(_verify_or_error(checked)))
+    worker.daemon = True
+    worker.start()
+    worker.join(5)
+    if worker.is_alive():  # the read blocked on the FIFO: give it EOF, then fail
+        os.close(os.open(backup, os.O_WRONLY | os.O_NONBLOCK))
+        worker.join(5)
+        pytest.fail('reading the backup blocked on a FIFO')
+    assert isinstance(outcome[0], ToolError)
+    assert outcome[0].error_code == ErrorCodes.CONFIG_INVALID
 
 
 # --- the MCP tool -------------------------------------------------------------------------
