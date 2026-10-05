@@ -49,7 +49,7 @@ def test_the_fixture_holds_only_documentation_values() -> None:
     fleet = _fleet()
     text = FIXTURE.read_text(encoding='utf-8')
     assert set(fleet) == {'devices', 'generated', 'source'}
-    assert fleet['source'].startswith('synthetic')
+    assert fleet['source'].startswith("anonymised: a real fleet's shape")
     assert IPV4.findall(text) == []
     assert all(LOCAL_MAC.fullmatch(mac) for mac in ANY_MAC.findall(text))
     devices = fleet['devices']

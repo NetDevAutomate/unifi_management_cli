@@ -86,7 +86,7 @@ FAKE_SECRET = 'x_passphrase=FAKE-PASSPHRASE-MUST-NOT-APPEAR'  # pragma: allowlis
     ('value', 'reported'),
     [
         ('9.10.0', '9.10.0'),
-        ('8.6.9.1', '8.6.9.1'),
+        ('9.10.0.1234', '9.10.0.1234'),  # four parts, and not an IPv4 address
         (FAKE_SECRET, '<unrecognised>'),
         ('9.10.0 ' + FAKE_SECRET, '<unrecognised>'),
         ('123456.0', '<unrecognised>'),
