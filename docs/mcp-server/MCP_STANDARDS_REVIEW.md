@@ -3,7 +3,9 @@
 As of `cb356b0` (2026-10-04). This is the committed summary of the standards review behind the
 uvx rebuild of `unifi-mcp`: what the MCP specification, the official Python SDK and the main
 hosts expect, where the server stands at that commit, and how each decision the review raised
-ended. Use the [MCP server guide](MCP_SERVER_GUIDE.md) to run and configure the server.
+ended. Later changes are folded in where they settle a row (the July port: A14, A18, D4 and
+D5), and the [Verification](#verification) section dates each re-check. Use the
+[MCP server guide](MCP_SERVER_GUIDE.md) to run and configure the server.
 
 **Scope.** The stdio server in `src/unifi_mapper/mcp/` and the parts of the package it runs:
 the tool handlers, the read-only guards and the redaction module. The CLI's write paths are
@@ -107,6 +109,11 @@ C4Container
   unchanged, and the suite has 2996 passed, 3 skipped (the same three).
   `tests/test_docs_consistency.py` now fails when a documented MCP count stops matching the
   registry.
+- Re-checked offline at `2e84aa8` (2026-10-05), after the July port (A14, A18, D4 and D5 above
+  describe it): 87 tools in 7 categories; `unifi-mcp --check` lists 4 on `discovery` and 77 on
+  `direct`, and reports the call log (`call_audit`); the suite has 4084 passed, 5 skipped (the
+  three `slow` packaging tests and two privacy guards that need captures, none in
+  `tests/network`).
 
 ## Sources
 
