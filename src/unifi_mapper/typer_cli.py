@@ -4995,11 +4995,13 @@ def gateway_ping_command(
 ):
     """📡 Ping one target from the gateway over SSH: loss and round trips.
 
-    A name is resolved to its address through the read-only controller client. Runs ping
-    on the gateway as the SSH user; the gateway's host key is not verified.
+    A name is resolved to its address through the read-only controller client. Prints the
+    expected duration first (count x interval: up to 500 s). Runs ping on the gateway as
+    the SSH user; the gateway's host key is not verified.
     """
     from .connectivity.gateway_probe import gateway_ping
 
+    err_console.print(f'Expected duration: about {_duration_text(count * interval)}', style='dim')
     result = _probe(lambda: gateway_ping(target, count=count, interval=interval))
     if as_json:
         _emit_json(result)

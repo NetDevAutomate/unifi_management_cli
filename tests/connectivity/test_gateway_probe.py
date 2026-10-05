@@ -410,6 +410,14 @@ def test_every_command_prints_json_and_the_notice_once(cli: FakeSSH, args: list[
     assert len(cli.connects) == 1
 
 
+def test_ping_prints_its_expected_duration_first(cli: FakeSSH) -> None:
+    args = ['gateway', 'ping', '192.0.2.50', '--count', '100', '--interval', '5', '--json']
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    assert 'Expected duration: about 8 min' in result.stderr  # 100 x 5 s
+    json.loads(result.stdout)  # stdout stays parseable
+
+
 @pytest.mark.parametrize(
     'args',
     [
