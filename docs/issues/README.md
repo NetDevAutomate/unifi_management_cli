@@ -31,7 +31,7 @@ the reasoning stays next to the code it explains.
 | [018](018-read-only-tool-proposals.md) | Read-only tool proposals for the CLI and MCP | open |
 | [019](019-write-capable-cli-ideas.md) | Write-capable CLI ideas (plan, review, apply; never over MCP) | open, decision needed |
 | [020](020-mcp-protocol-follow-ups.md) | MCP protocol and runtime follow-ups | open |
-| [021](021-sync-diagnostic-path-logs-in-per-call.md) | The sync port-diagnostics MCP tools log in to the controller on every call | open |
+| [021](021-sync-diagnostic-path-logs-in-per-call.md) | The sync port-diagnostics MCP tools log in to the controller on every call | open, decision needed |
 | [022](022-search-tools-quality.md) | `search_tools` misses multi-word queries, tags and differently-cased categories | open |
 | [023](023-related-tools-hints-name-missing-tools.md) | Error hints send the model to `get_network_topology` and `vlan_info`, which don't exist | resolved (`d487314`) |
 | [024](024-network-protect-tools-unguarded.md) | Network Integration API and Protect MCP tools run without a read-only guard or request audit | resolved (`5d21cdc`) |
@@ -76,3 +76,4 @@ the reasoning stays next to the code it explains.
 | [063](063-execute-tool-result-cap.md) | No cap on `execute_tool` result size | open, decision needed |
 | [064](064-cli-reads-outside-the-read-only-transport.md) | CLI read commands that reach the controller outside the read-only transport | open |
 | [065](065-pre-push-coverage-floor.md) | The pre-push pytest hook fails the 90% coverage floor | open, decision needed |
+| [066](066-backup-collections-unverified-on-a-real-backup.md) | `backup verify` names collections by `_type`, unverified on a real backup | open |

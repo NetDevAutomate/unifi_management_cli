@@ -48,12 +48,12 @@ No such leak has been observed. This is about the defaults.
 
 Fixed as recommended, in the July port, before any tool that returns config objects:
 
-- Every `typer.Typer(...)` in `src/` (the 7 in `typer_cli.py` and `inventory_app`) passes
+- Every `typer.Typer(...)` in `src/` (those in `typer_cli.py` and `inventory_app`) passes
   `pretty_exceptions_show_locals=False`; the 24 `print_exception(show_locals=True)` debug paths
   pass `False`.
 - `_diagnostic_errors()` ends any other exception as one redacted `Error:` line on stderr
-  (exit 1), after re-raising `typer.Exit` and `typer.Abort`, so the nine sync diagnostic
-  commands never reach Typer's traceback.
+  (exit 1), after re-raising `typer.Exit` and `typer.Abort`, so the sync diagnostic commands
+  that use it never reach Typer's traceback.
 - `UnifiConfig.password` and `api_token` are `field(repr=False)`.
 - `diagnose=False` on `server._configure_logging`'s handler and on both `logger.add` calls in
   `core/utils/logging.py`. Both CLIs replace loguru's default handler with a `diagnose=False`
@@ -75,7 +75,7 @@ password typed with a space instead of `=` has no `name=value` shape to mask.
 `redact_text`, and their `--debug` traceback through `redact.redact_traceback`. The AST test
 covers all five CLI modules and every logging level, and fails on `print_exc` as well.
 
-Tests: `tests/test_error_output.py` asserts the flag on all 8 apps and, by AST, that every
+Tests: `tests/test_error_output.py` asserts the flag on every app it lists and, by AST, that every
 `typer.Typer(` and `logger.add(` in `src/` sets it off and no `show_locals=True` remains; that
 the config's repr holds no password; and that a `logger.exception` from a frame holding a
 sentinel credential writes no sentinel, after the server's setup and after the CLI's swap.

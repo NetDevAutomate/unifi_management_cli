@@ -1,7 +1,7 @@
 ---
 title: "The sync port-diagnostics MCP tools log in to the controller on every call"
 date: 2026-10-02
-status: open
+status: open, decision needed
 severity: medium
 components: [diagnostics/port_diagnostics_tools, diagnostics/inspect_port, api_client, core/utils/readonly]
 found_by: MCP uvx standards work
@@ -59,3 +59,16 @@ client rather than `_readonly_sync_client()`/`_mapped`, so its login failure mes
 `tests/mcp/test_inspect_port_guard.py` covers the guard, the audit sink, a refused write and
 the kept error codes. Step 2 (one shared sync session) is still open, so this issue stays
 open.
+
+## `get_recent_events` reads every page before it keeps the newest (July port review)
+
+`collect_recent_events` pages each source to its page cap (`stat/event` 20 pages of 1000,
+`list/alarm` once, the four system-log classes 20 pages of 100 each) and only then sorts and
+keeps the newest `max_events`. With no filter, a one-year window on a busy site is up to 101
+sequential requests behind one login per call. `stat/event` is requested newest first
+(`_sort: -time`), so with no `category`, `severity` or `contains` filter it could stop once it
+holds `max_events` records. Not done, because it changes what the result reports:
+`matched_total` would count only the records read, not every match in the window, and the
+source's `truncated` would turn true. Decision needed: accept that change, or keep the full
+read. The system log's page order has to be checked, read-only, before it could stop early
+too.

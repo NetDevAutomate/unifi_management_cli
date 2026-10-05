@@ -26,8 +26,8 @@ matrix, XDG state with STP snapshots and diffs, preflight simulation, PoE budget
 the STP MCP tools, counter-reset detection, neighbour-aware channel scoring, the Phase D RF
 strategy work, and MCP tools for link errors, roaming, config drift and neighbours (issues
 [010](010-cwd-relative-state-files.md) and [018](018-read-only-tool-proposals.md)). The July
-port plans two more: a one-shot STP priority audit (`stp audit-priorities`, planned in item
-14) and the VLAN traffic collector (planned in item 17). The 2026-07-22 handoff's other items
+port adds two more: a one-shot STP priority audit (`stp audit-priorities`, landed in
+`c593154`) and the VLAN traffic collector (planned in item 17). The 2026-07-22 handoff's other items
 were site operations, not repository work; its code item was the July port itself. An
 unattended weekly `radio auto-channel --apply` is decision W10 in issue
 [060](060-decisions-from-the-july-port.md).
@@ -78,8 +78,8 @@ From the 2026-07-24 handoff:
 - **Per-period Mermaid diagrams** for the VLAN traffic report.
 - **Per-client retry and loss trend** over time.
 - **An incident-window composite** correlating recent config changes and events with a
-  given time window (`find_recent_config_changes` and `get_recent_events`, planned in items 9
-  and 10, are the raw material once they land).
+  given time window (`find_recent_config_changes` and `get_recent_events`, landed in
+  `3bc3969` and `9d21d0e`, are the raw material).
 
 ## Recommendation
 

@@ -40,3 +40,16 @@ measure the slowest tools
 live (B14): time `network_health_check`, `security_audit`, `audit_link_speeds`,
 `analyze_traffic_matrix` and `diagnose_switch_port` once each, read-only, and record the
 figures here. Until then the variable works opt-in.
+
+## A deadline ends the call, not a worker thread (found in the July port's review)
+
+Three tools run their blocking work in `asyncio.to_thread`: `get_device_events`,
+`get_recent_events` and `verify_config_backup`. When `UNIFI_MCP_TOOL_TIMEOUT` expires or the
+client cancels, the call ends (`[TIMEOUT]`, or cancelled) and `ToolRunner` frees its
+concurrency slot, but the thread cannot be cancelled and runs on to the end: up to 101
+sequential controller reads for `get_recent_events` (one login per call, issue 021), and for
+`verify_config_backup` the decrypt, the extract and the decompress (each capped at 1 GiB)
+and a strict BSON walk that stops at the first failure. A client that retries after a
+timeout starts another worker while the first still runs; only the default executor's
+thread limit bounds them. Recommended fix: a stop flag the handler sets when its task is
+cancelled, checked between the backup's stages and between event pages.

@@ -40,7 +40,7 @@ plan, kept outside the repo), and the port's last update records the commit for 
   (`diagnose wan --speedtest`, with a confirmation), a body-aware guard policy admitting
   exactly `{cmd: speedtest}` and `{cmd: speedtest-status}` on `cmd/devmgr`, and a test pinning
   both bodies; never MCP. The controller's scheduled result needs no command: reading it is
-  `get_wan_health` and `diagnose wan`, planned in item 11.
+  `get_wan_health` and `diagnose wan` (landed in `82e9b4d`).
 - **D3: read the controller's backup list?** The only known call is
   `POST cmd/backup {cmd: list-backups}`. Recommendation: **not now**. If wanted: D2's
   body-aware policy admitting exactly that body on `cmd/backup` (no other `cmd/backup` body,
