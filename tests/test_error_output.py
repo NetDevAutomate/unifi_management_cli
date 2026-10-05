@@ -66,21 +66,65 @@ def _keyword(call: ast.Call, name: str) -> object:
     return None
 
 
+def _typer_apps(path: Path, base: Path = PACKAGE) -> list[tuple[str, bool]]:
+    """(path:line, hides frame locals) for every Typer app a module builds, any import form.
+
+    ``typer.Typer(...)``, an ``import typer as t`` alias's ``t.Typer(...)``, and a name from
+    ``from typer import Typer`` (``as`` an alias, or ``*``) called bare.
+    """
+    tree = ast.parse(path.read_text(encoding='utf-8'))
+    modules, names = {'typer'}, set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules |= {a.asname for a in node.names if a.name == 'typer' and a.asname}
+        elif isinstance(node, ast.ImportFrom) and node.module == 'typer':
+            names |= {a.asname or 'Typer' for a in node.names if a.name in ('Typer', '*')}
+    apps = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr == 'Typer'
+            and isinstance(func.value, ast.Name)
+            and func.value.id in modules
+        ) or (isinstance(func, ast.Name) and func.id in names):
+            hides = _keyword(node, 'pretty_exceptions_show_locals') is False
+            apps.append((node.lineno, f'{path.relative_to(base)}:{node.lineno}', hides))
+    return [(where, hides) for _, where, hides in sorted(apps)]
+
+
 @pytest.mark.parametrize('name', sorted(APPS))
 def test_every_typer_app_hides_frame_locals(name: str) -> None:
     assert APPS[name].pretty_exceptions_show_locals is False
 
 
 def test_every_typer_app_in_src_is_checked_above() -> None:
-    typer_calls = [
-        (path, call)
-        for path, call in _calls('Typer')
-        if isinstance(call.func, ast.Attribute)
-        and isinstance(call.func.value, ast.Name)
-        and call.func.value.id == 'typer'
+    apps = [app for path in sorted(PACKAGE.rglob('*.py')) for app in _typer_apps(path)]
+    assert len(apps) == len(APPS)
+    assert [where for where, hides in apps if not hides] == []
+
+
+def test_the_typer_scan_sees_an_alias_and_a_from_import(tmp_path: Path) -> None:
+    sample = tmp_path / 'sample.py'
+    sample.write_text(
+        'import typer\n'
+        'import typer as t\n'
+        'from typer import Typer\n'
+        'from typer import Typer as T\n'
+        'a = typer.Typer(pretty_exceptions_show_locals=False)\n'
+        'b = t.Typer()\n'
+        'c = Typer(help=1)\n'
+        'd = T(pretty_exceptions_show_locals=True)\n'
+        'e = other.Typer()\n'
+    )
+    assert _typer_apps(sample, tmp_path) == [
+        ('sample.py:5', True),
+        ('sample.py:6', False),
+        ('sample.py:7', False),
+        ('sample.py:8', False),
     ]
-    assert len(typer_calls) == len(APPS)
-    assert all(_keyword(call, 'pretty_exceptions_show_locals') is False for _, call in typer_calls)
 
 
 def test_no_debug_path_prints_frame_locals() -> None:
@@ -192,8 +236,12 @@ PRINTING_CALLS = frozenset(
 )
 
 
-def _raw_exception_uses(path: Path) -> list[str]:
-    """Return path:line of every print that shows a caught exception without redacting it."""
+def _raw_exception_uses(path: Path, base: Path = PACKAGE) -> list[str]:
+    """Return path:line of every print that shows a caught exception without redacting it.
+
+    The path is relative to ``base`` (the package), since ``src/`` repeats basenames.
+    """
+    where = path.relative_to(base)
     hits = []
     for handler in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
         if not isinstance(handler, ast.ExceptHandler) or handler.name is None:
@@ -215,7 +263,7 @@ def _raw_exception_uses(path: Path) -> list[str]:
                     for inner in ast.walk(node)
                 }
                 hits += [
-                    f'{path.name}:{node.lineno}'
+                    f'{where}:{node.lineno}'
                     for node in ast.walk(arg)
                     if isinstance(node, ast.Name)
                     and node.id == caught
@@ -251,12 +299,14 @@ TRACEBACK_RENDERERS = (
 )
 
 
-def _traceback_renderer_uses(path: Path) -> list[str]:
+def _traceback_renderer_uses(path: Path, base: Path = PACKAGE) -> list[str]:
     """path:line of every traceback renderer a module uses, under any import form.
 
     ``import traceback`` (or ``as`` an alias) then ``<name>.print_exc()``, and ``from
-    traceback import print_exc`` (or ``*``), which needs no attribute call to use it.
+    traceback import print_exc`` (or ``*``), which needs no attribute call to use it. The
+    path is relative to ``base`` (the package), since ``src/`` repeats basenames.
     """
+    where = path.relative_to(base)
     tree = ast.parse(path.read_text(encoding='utf-8'))
     aliases = {'traceback'} | {
         alias.asname
@@ -269,7 +319,7 @@ def _traceback_renderer_uses(path: Path) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == 'traceback':
             hits += [
-                f'{path.name}:{node.lineno}'
+                f'{where}:{node.lineno}'
                 for alias in node.names
                 if alias.name in TRACEBACK_RENDERERS or alias.name == '*'
             ]
@@ -280,7 +330,7 @@ def _traceback_renderer_uses(path: Path) -> list[str]:
             and isinstance(node.func.value, ast.Name)
             and node.func.value.id in aliases
         ):
-            hits.append(f'{path.name}:{node.lineno}')
+            hits.append(f'{where}:{node.lineno}')
     return hits
 
 
@@ -309,7 +359,7 @@ def test_the_traceback_scan_sees_an_alias_and_a_from_import(tmp_path: Path) -> N
         'tb.print_exception(None)\n'
         'other.print_exc()\n'
     )
-    assert _traceback_renderer_uses(sample) == [
+    assert _traceback_renderer_uses(sample, tmp_path) == [
         'sample.py:3',
         'sample.py:4',
         'sample.py:5',
@@ -327,7 +377,18 @@ def test_the_raw_exception_scan_finds_an_unredacted_print(tmp_path: Path) -> Non
         "    log.error(f'Configuration error: {e}')\n"
         "    log.error(f'Configuration error: {redact_text(e)}')\n"
     )
-    assert _raw_exception_uses(sample) == ['sample.py:4', 'sample.py:6', 'sample.py:7']
+    assert _raw_exception_uses(sample, tmp_path) == [
+        'sample.py:4',
+        'sample.py:6',
+        'sample.py:7',
+    ]
+
+
+def test_the_scans_name_a_module_by_its_path_in_the_package() -> None:
+    clients = sorted(PACKAGE.rglob('client.py'))
+    assert len(clients) > 1  # why a basename would be ambiguous
+    nested = PACKAGE / 'core' / 'utils' / 'redact.py'
+    assert _traceback_renderer_uses(nested)[0].startswith('core/utils/redact.py:')
 
 
 @pytest.fixture
