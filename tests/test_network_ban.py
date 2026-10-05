@@ -10,6 +10,8 @@ import requests
 import socket
 
 
+pytestmark = pytest.mark.usefixtures('isolated_credentials')
+
 CONTROLLER = 'https://192.0.2.1/proxy/network/api/s/default/stat/device'
 
 

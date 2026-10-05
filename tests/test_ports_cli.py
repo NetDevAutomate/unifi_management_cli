@@ -1,6 +1,7 @@
 """CLI tests for the read-only `ports` diagnostic commands (no live controller)."""
 
 import json
+import os
 import pytest
 from contextlib import contextmanager
 from pathlib import Path
@@ -408,13 +409,22 @@ def test_readonly_client_exits_1_when_login_fails(real_wrapper):
 
 
 @pytest.fixture
-def password_wrapper(real_wrapper):
+def password_wrapper(real_wrapper, monkeypatch):
     """The real _readonly_client on a username-and-password config holding FAKE_PW."""
+    # UnifiConfig.from_env exports every key it reads; setting both login keys first makes
+    # monkeypatch remove them when the test ends, so no fake login outlives the test.
+    for key in ('UNIFI_USERNAME', 'UNIFI_PASSWORD'):
+        monkeypatch.setenv(key, 'placeholder')
     real_wrapper.write_text(
         'UNIFI_URL=https://192.0.2.1\nUNIFI_USERNAME=admin\n'
         f'UNIFI_PASSWORD={FAKE_PW}\nUNIFI_SITE=default\n'
     )
     return real_wrapper
+
+
+def test_the_password_config_exports_no_login_past_the_test(password_wrapper):
+    # The keys monkeypatch set before the CLI runs are the ones it removes afterwards.
+    assert os.environ['UNIFI_USERNAME'] == os.environ['UNIFI_PASSWORD'] == 'placeholder'
 
 
 def test_an_unexpected_read_error_is_one_redacted_line(monkeypatch, password_wrapper):
