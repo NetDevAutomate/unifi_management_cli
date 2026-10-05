@@ -20,10 +20,16 @@ unreadable". The journal mode is SQLite's default (``DELETE``), so a read-only o
 existing one keeps its mode).
 
 Ported from the July work (a local archive, not in the repo): the schema, ``compute_rates``,
-the rollups (a high-water mark per tier, complete buckets only, the per-VLAN boundary carry)
-and the report and coverage queries are July's, unchanged in logic. Adapted: WAL dropped, the
-``UNIFI_VLAN_TRAFFIC_DB`` override replaced by an explicit path, ``run_rollups`` made
-synchronous (it never awaited), and the reads split from the MCP handlers.
+the rollup arithmetic (a high-water mark per tier, the per-VLAN boundary carry) and the
+report and coverage queries are July's. July's tier timing was broken and is replaced
+(issue 069): it rolled an hour only once it was 8 days old and a
+day once about 61 days old, and read ``1w`` from the hourly tier, so ``1w`` was always empty
+and ``1m`` and ``1y`` left out the newest 8 and about 61 days. Now ``1w`` reads raw samples,
+:func:`run_rollups` rolls every complete hour and day (after a grace) and recomputes a
+trailing window, and a row is pruned only once its bucket has been rolled. Adapted besides:
+WAL dropped, the ``UNIFI_VLAN_TRAFFIC_DB`` override replaced by an explicit path,
+``run_rollups`` made synchronous (it never awaited), and the reads split from the MCP
+handlers.
 """
 
 import asyncio
@@ -41,19 +47,28 @@ from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 DB_FILENAME = 'vlan-traffic.sqlite3'
 BUSY_TIMEOUT_SECONDS = 5.0
-# Raw samples older than this are rolled into hourly_rollup and pruned.
+# Raw samples are kept this long (the 1w report reads them), then pruned once rolled.
 RAW_RETENTION_SECONDS = 8 * 24 * 3600
-# Hourly rollups older than this are rolled into daily_rollup and pruned.
+# Hourly rows are kept this long (the 1m report reads them), then pruned once rolled.
 HOURLY_RETENTION_SECONDS = 60 * 24 * 3600
+# A bucket is complete, and rolled, once it ended at least twice the sampling interval ago,
+# and never less than this, so a sample written just after the bucket's end is counted.
+MIN_GRACE_SECONDS = 300
+# Every run recomputes the newest complete hours and day, so a sample written late counts.
+TRAILING_HOURS = 2
+TRAILING_DAYS = 1
+# The newest raw timestamps the sampling interval (their median gap) is measured over.
+INTERVAL_STAMPS = 101
 # A gap between consecutive rows wider than the tier's spacing plus this is a coverage gap.
 GAP_THRESHOLD_SECONDS = 300
-# The spacing the coverage report expects between raw samples (sizes the gap check only).
+# The spacing the coverage report expects between raw samples (sizes the gap check), and the
+# sampling interval assumed until the store holds two samples.
 DEFAULT_SAMPLE_INTERVAL_SECONDS = 60
 SAMPLE_HINT = 'Run `unifi-mapper vlan-traffic sample` to take a sample'
 RECOVERY_MESSAGE = 'store needs recovery: run unifi-mapper vlan-traffic rollup'
 
 Period = Literal['now', '1d', '1w', '1m', '1y']
-_PERIOD_TIERS = {'now': 'raw', '1d': 'raw', '1w': 'hourly', '1m': 'hourly', '1y': 'daily'}
+_PERIOD_TIERS = {'now': 'raw', '1d': 'raw', '1w': 'raw', '1m': 'hourly', '1y': 'daily'}
 _PERIOD_SECONDS = {
     'now': 300,
     '1d': 24 * 3600,
@@ -65,7 +80,8 @@ _TIER_METHODOLOGY: dict[str, dict[str, Any]] = {
     'raw': {
         'interval_s': None,
         'caveats': [
-            'Raw sampling-interval data; averages and peaks are exact within the sampled window.'
+            'Raw samples (the store keeps 8 days of them); averages and peaks are exact within '
+            'the sampled window.'
         ],
     },
     'hourly': {
@@ -73,14 +89,17 @@ _TIER_METHODOLOGY: dict[str, dict[str, Any]] = {
         'caveats': [
             'Hourly-rollup data: averages are the mean of per-sample rates within each hour, '
             'and peaks are the max sample rate seen in that hour; bursts shorter than the '
-            'sampling interval may be under-represented.'
+            'sampling interval may be under-represented.',
+            'Only complete hours that `vlan-traffic rollup` has rolled are included: run it '
+            '(hourly, say) to keep this view current.',
         ],
     },
     'daily': {
         'interval_s': 86400,
         'caveats': [
             'Daily-rollup data: a rollup of a rollup. A 1y peak is the max of hourly peaks, so '
-            'it smooths out short bursts more than a raw or hourly view would.'
+            'it smooths out short bursts more than a raw or hourly view would.',
+            'Only complete days that `vlan-traffic rollup` has rolled are included.',
         ],
     },
 }
@@ -314,7 +333,7 @@ def floor_to_day(ts_utc: int) -> int:
     return (ts_utc // 86400) * 86400
 
 
-# --- run_rollups (July's cadence-safe logic) -----------------------------------------------
+# --- run_rollups: every complete bucket, recomputed, pruned only once rolled ---------------
 
 
 def _get_high_water_mark(conn: sqlite3.Connection, tier: str) -> int | None:
@@ -331,37 +350,79 @@ def _set_high_water_mark(conn: sqlite3.Connection, tier: str, bucket: int) -> No
     )
 
 
-def _roll_raw(conn: sqlite3.Connection, now: int) -> tuple[int, int]:
-    """Roll complete aged hours of raw samples into hourly rows; return (read, written)."""
-    max_rollable_hour = floor_to_hour(now - RAW_RETENTION_SECONDS - 3600)
-    hwm = _get_high_water_mark(conn, 'hourly')
-    if hwm is not None and max_rollable_hour <= hwm:
-        return 0, 0
-    rollable_end = max_rollable_hour + 3600
+def sampling_grace(stamps: Iterable[int]) -> int:
+    """How long after its end a bucket counts as complete: twice the sampling interval. Pure.
+
+    Args:
+        stamps: Raw sample times (the newest :data:`INTERVAL_STAMPS` are enough); the
+            sampling interval is the median gap between them, or
+            :data:`DEFAULT_SAMPLE_INTERVAL_SECONDS` without two distinct times.
+
+    Returns:
+        Twice the interval, and never less than :data:`MIN_GRACE_SECONDS`, in seconds.
+    """
+    ordered = sorted(set(stamps))
+    gaps = sorted(b - a for a, b in zip(ordered, ordered[1:], strict=False))
+    interval = gaps[len(gaps) // 2] if gaps else DEFAULT_SAMPLE_INTERVAL_SECONDS
+    return max(2 * interval, MIN_GRACE_SECONDS)
+
+
+def _first_bucket(
+    mark: int | None, earliest: int | None, last: int, size: int, trailing: int
+) -> int | None:
+    """The first bucket a run (re)computes, or None when no bucket is complete.
+
+    The bucket after the tier's high-water mark, or the first of the trailing window if
+    that is older (a late sample there is then counted); for a tier never rolled, the
+    bucket of its earliest data.
+    """
+    if mark is None:
+        first = earliest
+    else:
+        first = min(mark + size, last - (trailing - 1) * size)
+    return first if first is not None and first <= last else None
+
+
+def _roll_hours(conn: sqlite3.Connection, start: int, last: int) -> tuple[int, int]:
+    """(Re)compute the hourly row of every hour from ``start`` to ``last``, each in full.
+
+    Each VLAN's samples in the range are paired in time order, the first with that VLAN's
+    newest earlier sample, so a recomputed hour equals its first computation plus any late
+    sample. Rows are written with ``INSERT OR REPLACE``: recomputed, never accumulated.
+
+    Returns:
+        ``(raw rows read in the range, hourly rows written)``.
+    """
     raw = conn.execute(
-        'SELECT ts_utc, vlan_id, network_name, rx_bytes, tx_bytes '
-        'FROM raw_samples WHERE ts_utc < ? ORDER BY vlan_id, ts_utc',
-        (rollable_end,),
+        'SELECT ts_utc, vlan_id, network_name, rx_bytes, tx_bytes FROM raw_samples '
+        'WHERE ts_utc >= ? AND ts_utc < ? '
+        'UNION ALL '
+        'SELECT r.ts_utc, r.vlan_id, r.network_name, r.rx_bytes, r.tx_bytes '
+        'FROM raw_samples AS r JOIN (SELECT vlan_id, MAX(ts_utc) AS ts FROM raw_samples '
+        'WHERE ts_utc < ? GROUP BY vlan_id) AS p ON r.vlan_id = p.vlan_id AND r.ts_utc = p.ts '
+        'ORDER BY 2, 1',
+        (start, last + 3600, start),
     ).fetchall()
     rate_rows: list[dict[str, Any]] = []
     prev_by_vlan: dict[int, dict[str, Any]] = {}
+    read = 0
     for row in raw:
         cur = {'ts_utc': row['ts_utc'], 'rx_bytes': row['rx_bytes'], 'tx_bytes': row['tx_bytes']}
         rates = compute_rates(prev_by_vlan.get(row['vlan_id']), cur)
         prev_by_vlan[row['vlan_id']] = cur
-        if rates is None:
-            continue
         bucket = floor_to_hour(row['ts_utc'])
-        if hwm is not None and bucket <= hwm:  # rolled already: only a boundary carry
-            continue
-        rate_rows.append(
-            {
-                'bucket': bucket,
-                'vlan_id': row['vlan_id'],
-                'network_name': row['network_name'],
-                **rates,
-            }
-        )
+        if bucket < start:
+            continue  # the earlier sample a range's first interval starts from
+        read += 1
+        if rates is not None:
+            rate_rows.append(
+                {
+                    'bucket': bucket,
+                    'vlan_id': row['vlan_id'],
+                    'network_name': row['network_name'],
+                    **rates,
+                }
+            )
     hourly = rollup_hour(rate_rows)
     conn.executemany(
         'INSERT OR REPLACE INTO hourly_rollup (hour_utc, vlan_id, network_name, avg_rx_bps, '
@@ -369,27 +430,20 @@ def _roll_raw(conn: sqlite3.Connection, now: int) -> tuple[int, int]:
         ':network_name, :avg_rx_bps, :avg_tx_bps, :peak_rx_bps, :peak_tx_bps, :sample_count)',
         hourly,
     )
-    # Keep the newest rolled row per VLAN, to pair with the next hour's first sample.
-    conn.execute(
-        'DELETE FROM raw_samples WHERE ts_utc < ? AND ts_utc NOT IN '
-        '(SELECT MAX(ts_utc) FROM raw_samples WHERE ts_utc < ? GROUP BY vlan_id)',
-        (rollable_end, rollable_end),
-    )
-    _set_high_water_mark(conn, 'hourly', max_rollable_hour)
-    return len(raw), len(hourly)
+    return read, len(hourly)
 
 
-def _roll_hourly(conn: sqlite3.Connection, now: int) -> tuple[int, int]:
-    """Roll complete aged days of hourly rows into daily rows; return (read, written)."""
-    max_rollable_day = floor_to_day(now - HOURLY_RETENTION_SECONDS - 86400)
-    hwm = _get_high_water_mark(conn, 'daily')
-    if hwm is not None and max_rollable_day <= hwm:
-        return 0, 0
+def _roll_days(conn: sqlite3.Connection, start: int, last: int) -> tuple[int, int]:
+    """(Re)compute the daily row of every day from ``start`` to ``last`` from all its hours.
+
+    Returns:
+        ``(hourly rows read, daily rows written)``.
+    """
     source = conn.execute(
         'SELECT hour_utc, vlan_id, network_name, avg_rx_bps, avg_tx_bps, peak_rx_bps, '
-        'peak_tx_bps FROM hourly_rollup WHERE (hour_utc / 86400) * 86400 > ? AND hour_utc < ? '
+        'peak_tx_bps FROM hourly_rollup WHERE hour_utc >= ? AND hour_utc < ? '
         'ORDER BY vlan_id, hour_utc',
-        (-1 if hwm is None else hwm, max_rollable_day + 86400),
+        (start, last + 86400),
     ).fetchall()
     daily = rollup_day(
         [
@@ -419,50 +473,128 @@ def _roll_hourly(conn: sqlite3.Connection, now: int) -> tuple[int, int]:
         ':network_name, :avg_rx_bps, :avg_tx_bps, :peak_rx_bps, :peak_tx_bps, :sample_count)',
         daily,
     )
-    conn.execute(
-        'DELETE FROM hourly_rollup WHERE (hour_utc / 86400) * 86400 <= ?', (max_rollable_day,)
-    )
-    _set_high_water_mark(conn, 'daily', max_rollable_day)
     return len(source), len(daily)
 
 
-def run_rollups(path: Path | None = None) -> dict[str, int]:
-    """Roll aged raw samples into hourly rows, and aged hourly rows into daily rows.
+def _prune_raw(conn: sqlite3.Connection, cutoff: int) -> int:
+    """Delete raw samples before ``cutoff`` but each VLAN's newest one; return the count.
 
-    Correct under any cadence (hourly, every five minutes, two runs at once): each tier keeps
-    a high-water mark in ``rollup_state`` and rolls only complete buckets, each exactly once,
-    and the newest rolled raw row per VLAN is kept so the next run pairs it with the next
-    hour's first sample. Opening the store writable also rolls back a hot journal a crashed
-    sampler left, so this recovers a store a read reported as needing recovery.
+    The kept sample is the one the next interval starts from, so no interval is lost.
+    """
+    cursor = conn.execute(
+        'DELETE FROM raw_samples WHERE ts_utc < ? AND ts_utc NOT IN '
+        '(SELECT MAX(ts_utc) FROM raw_samples WHERE ts_utc < ? GROUP BY vlan_id)',
+        (cutoff, cutoff),
+    )
+    return max(cursor.rowcount, 0)
+
+
+def _prune_hourly(conn: sqlite3.Connection, cutoff: int) -> int:
+    """Delete the hourly rows of hours before ``cutoff``; return the count."""
+    cursor = conn.execute('DELETE FROM hourly_rollup WHERE hour_utc < ?', (cutoff,))
+    return max(cursor.rowcount, 0)
+
+
+def _run_rollups(conn: sqlite3.Connection, now: int) -> dict[str, int]:
+    """One rollup run at ``now`` on an open, writable store; see :func:`run_rollups`."""
+    newest = conn.execute(
+        'SELECT DISTINCT ts_utc FROM raw_samples ORDER BY ts_utc DESC LIMIT ?',
+        (INTERVAL_STAMPS,),
+    ).fetchall()
+    grace = sampling_grace(row[0] for row in newest)
+    last_hour = floor_to_hour(now - grace) - 3600  # the newest complete hour
+    last_day = floor_to_day(now - grace) - 86400  # the newest complete day
+    counts: dict[str, int] = dict.fromkeys(
+        (
+            'raw_rows_rolled',
+            'hourly_rows_written',
+            'hourly_rows_rolled',
+            'daily_rows_written',
+            'raw_rows_pruned',
+            'hourly_rows_pruned',
+        ),
+        0,
+    )
+
+    hour_mark = _get_high_water_mark(conn, 'hourly')
+    earliest = conn.execute('SELECT MIN(ts_utc) FROM raw_samples').fetchone()[0]
+    first_hour = _first_bucket(
+        hour_mark,
+        None if earliest is None else floor_to_hour(earliest),
+        last_hour,
+        3600,
+        TRAILING_HOURS,
+    )
+    if first_hour is not None:
+        counts['raw_rows_rolled'], counts['hourly_rows_written'] = _roll_hours(
+            conn, first_hour, last_hour
+        )
+        hour_mark = last_hour if hour_mark is None else max(hour_mark, last_hour)
+        _set_high_water_mark(conn, 'hourly', hour_mark)
+
+    day_mark = _get_high_water_mark(conn, 'daily')
+    earliest_hour = conn.execute('SELECT MIN(hour_utc) FROM hourly_rollup').fetchone()[0]
+    first_day = _first_bucket(
+        day_mark,
+        None if earliest_hour is None else floor_to_day(earliest_hour),
+        last_day,
+        86400,
+        TRAILING_DAYS,
+    )
+    if first_day is not None:
+        counts['hourly_rows_rolled'], counts['daily_rows_written'] = _roll_days(
+            conn, first_day, last_day
+        )
+        day_mark = last_day if day_mark is None else max(day_mark, last_day)
+        _set_high_water_mark(conn, 'daily', day_mark)
+
+    # Retention, but never a row whose hour (or day) has not been rolled yet.
+    if hour_mark is not None:
+        cutoff = min(now - RAW_RETENTION_SECONDS, hour_mark + 3600)
+        counts['raw_rows_pruned'] = _prune_raw(conn, cutoff)
+    if day_mark is not None:
+        cutoff = min(now - HOURLY_RETENTION_SECONDS, day_mark + 86400)
+        counts['hourly_rows_pruned'] = _prune_hourly(conn, cutoff)
+    return counts
+
+
+def run_rollups(path: Path | None = None, *, now: int | None = None) -> dict[str, int]:
+    """Roll every complete hour and day of samples up, then prune what is past retention.
+
+    Every complete hour of raw samples becomes an hourly row and every complete day of hourly
+    rows a daily row; raw samples are pruned after 8 days and hourly rows after 60, once
+    rolled. A bucket is complete once it ended at least the grace ago (:func:`sampling_grace`:
+    twice the sampling interval, at least 5 minutes). Each run computes every complete bucket
+    after a tier's high-water mark (``rollup_state``) and recomputes the newest
+    :data:`TRAILING_HOURS` hours and :data:`TRAILING_DAYS` day as well, each row in full from
+    the tier below and written with ``INSERT OR REPLACE``, so a late sample is counted, two
+    runs give identical rows and any cadence gives the same result. A store the July code
+    left (hours rolled only once 8 days old) upgrades in place on its first run: no schema
+    change, every hour after its mark is rolled from raw, so none is skipped. Opening the
+    store writable also rolls back a hot journal a crashed sampler left, so this recovers a
+    store a read reported as needing recovery.
 
     Args:
         path: The store (default :func:`default_db_path`).
+        now: The time to roll at (default the clock), for tests.
 
     Returns:
-        ``raw_rows_rolled``, ``hourly_rows_written``, ``hourly_rows_rolled`` and
-        ``daily_rows_written``.
+        ``raw_rows_rolled``, ``hourly_rows_written``, ``hourly_rows_rolled``,
+        ``daily_rows_written``, ``raw_rows_pruned`` and ``hourly_rows_pruned``.
     """
     store = default_db_path() if path is None else Path(path)
     conn = open_store(store, writable=True)
     conn.row_factory = sqlite3.Row
     try:
         with conn:
-            now = int(time.time())
-            raw_read, hourly_written = _roll_raw(conn, now)
-            hourly_read, daily_written = _roll_hourly(conn, now)
+            return _run_rollups(conn, int(time.time()) if now is None else now)
     except sqlite3.Error as e:
         raise _store_error(e, store, writing=True) from None
     finally:
         conn.close()
-    return {
-        'raw_rows_rolled': raw_read,
-        'hourly_rows_written': hourly_written,
-        'hourly_rows_rolled': hourly_read,
-        'daily_rows_written': daily_written,
-    }
 
 
-# --- the report and the coverage (July's queries) ------------------------------------------
+# --- the report and the coverage (July's queries, each period on its own tier) -------------
 
 
 def _tier_for_period(period: str) -> str:
@@ -488,14 +620,14 @@ def _empty_aggregate(name: str) -> dict[str, Any]:
     }
 
 
-def _raw_rates(conn: sqlite3.Connection, since: int) -> dict[int, dict[str, Any]]:
-    """Aggregate raw samples in ``[since, now]`` into per-VLAN averages and peaks."""
+def _raw_rates(conn: sqlite3.Connection, since: int, until: int) -> dict[int, dict[str, Any]]:
+    """Aggregate raw samples in ``[since, until]`` into per-VLAN averages and peaks."""
     prev_by_vlan: dict[int, dict[str, Any]] = {}
     result: dict[int, dict[str, Any]] = {}
     for row in conn.execute(
-        'SELECT ts_utc, vlan_id, network_name, rx_bytes, tx_bytes '
-        'FROM raw_samples WHERE ts_utc >= ? ORDER BY vlan_id, ts_utc',
-        (since,),
+        'SELECT ts_utc, vlan_id, network_name, rx_bytes, tx_bytes FROM raw_samples '
+        'WHERE ts_utc >= ? AND ts_utc <= ? ORDER BY vlan_id, ts_utc',
+        (since, until),
     ):
         cur = {'ts_utc': row['ts_utc'], 'rx_bytes': row['rx_bytes'], 'tx_bytes': row['tx_bytes']}
         rates = compute_rates(prev_by_vlan.get(row['vlan_id']), cur)
@@ -511,16 +643,18 @@ def _raw_rates(conn: sqlite3.Connection, since: int) -> dict[int, dict[str, Any]
     return result
 
 
-def _rollup_rates(conn: sqlite3.Connection, tier: str, since: int) -> dict[int, dict[str, Any]]:
-    """Aggregate the hourly or daily rows since ``since`` per VLAN."""
+def _rollup_rates(
+    conn: sqlite3.Connection, tier: str, since: int, until: int
+) -> dict[int, dict[str, Any]]:
+    """Aggregate the hourly or daily rows of buckets in ``[since, until]`` per VLAN."""
     table, column = (
         ('hourly_rollup', 'hour_utc') if tier == 'hourly' else ('daily_rollup', 'day_utc')
     )
     result: dict[int, dict[str, Any]] = {}
     for row in conn.execute(
         f'SELECT vlan_id, network_name, avg_rx_bps, avg_tx_bps, peak_rx_bps, peak_tx_bps '
-        f'FROM {table} WHERE {column} >= ? ORDER BY vlan_id, {column}',
-        (since,),
+        f'FROM {table} WHERE {column} >= ? AND {column} <= ? ORDER BY vlan_id, {column}',
+        (since, until),
     ):
         agg = result.setdefault(row['vlan_id'], _empty_aggregate(row['network_name']))
         agg['samples'] += 1
@@ -545,15 +679,19 @@ def _read(path: Path | None, query: Any) -> Any:
         conn.close()
 
 
-def read_vlan_traffic_report(period: str, path: Path | None = None) -> dict[str, Any]:
+def read_vlan_traffic_report(
+    period: str, path: Path | None = None, *, now: int | None = None
+) -> dict[str, Any]:
     """Per-VLAN average and peak throughput over a period, from the store's matching tier.
 
-    ``now`` and ``1d`` read raw samples, ``1w`` and ``1m`` hourly rollups, ``1y`` daily
-    rollups; ``methodology`` names the tier and its smoothing caveats.
+    ``now``, ``1d`` and ``1w`` read raw samples (kept 8 days), ``1m`` hourly rollups and
+    ``1y`` daily rollups, each up to the newest complete hour or day that
+    :func:`run_rollups` has rolled; ``methodology`` names the tier and its caveats.
 
     Args:
         period: ``now``, ``1d``, ``1w``, ``1m`` or ``1y``.
         path: The store (default :func:`default_db_path`).
+        now: The end of the period (default the clock), for tests.
 
     Returns:
         ``period``, ``vlans`` (``network_name``, ``vlan_id``, the averages and peaks in bits
@@ -564,12 +702,13 @@ def read_vlan_traffic_report(period: str, path: Path | None = None) -> dict[str,
             store, ``API_ERROR`` for a store that can't be read.
     """
     tier = _tier_for_period(period)
-    since = int(time.time()) - _PERIOD_SECONDS[period]
+    until = int(time.time()) if now is None else now
+    since = until - _PERIOD_SECONDS[period]
     aggregates = _read(
         path,
-        lambda conn: _raw_rates(conn, since)
+        lambda conn: _raw_rates(conn, since, until)
         if tier == 'raw'
-        else _rollup_rates(conn, tier, since),
+        else _rollup_rates(conn, tier, since, until),
     )
     vlans = []
     for vlan_id, agg in sorted(aggregates.items()):
@@ -653,10 +792,11 @@ async def get_vlan_traffic_report(
 
     The store is filled by `unifi-mapper vlan-traffic sample` (the gateway's bridge byte
     counters, read over SSH by a person or a schedule; none is published until issue 038 is
-    decided). now and 1d read raw samples, 1w and 1m hourly rollups and 1y daily rollups;
-    methodology names the tier and how much it smooths peaks. Needs no credentials and
-    sends no request. Run list_vlan_traffic_periods first to tell an idle VLAN (0 bps) from
-    a window with no samples.
+    decided). now, 1d and 1w read raw samples (the store keeps 8 days), 1m hourly rollups
+    and 1y daily rollups, each up to the newest complete hour or day that `unifi-mapper
+    vlan-traffic rollup` has rolled; methodology names the tier and how much it smooths
+    peaks. Needs no credentials and sends no request. Run list_vlan_traffic_periods first to
+    tell an idle VLAN (0 bps) from a window with no samples.
 
     Args:
         period: now, 1d, 1w, 1m or 1y.

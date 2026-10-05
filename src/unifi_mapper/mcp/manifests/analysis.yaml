@@ -277,11 +277,12 @@ tools:
     description: >-
       Per-VLAN average and peak receive and transmit bits per second over a period, from the
       local store that `unifi-mapper vlan-traffic sample` fills by reading the gateway's
-      bridge byte counters (a CLI command, run by a person; nothing here starts a sample). now
-      and 1d read raw samples, 1w and 1m hourly rollups and 1y daily rollups, whose peaks are
-      smoothed; methodology names the tier. Needs no credentials and sends no request; a
-      missing store is NO_DATA. analyze_traffic_matrix reads the controller's own traffic
-      statistics instead. Read-only.
+      bridge byte counters (a CLI command, run by a person; nothing here starts a sample). now,
+      1d and 1w read raw samples (kept 8 days), 1m hourly rollups and 1y daily rollups (whose
+      peaks are smoothed), each up to the newest complete hour or day that `unifi-mapper
+      vlan-traffic rollup` has rolled; methodology names the tier. Needs no credentials and
+      sends no request; a missing store is NO_DATA. analyze_traffic_matrix reads the
+      controller's own traffic statistics instead. Read-only.
     priority: P2
     tags: [vlan, traffic, throughput, bandwidth, history, trend, read-only]
     parameters:

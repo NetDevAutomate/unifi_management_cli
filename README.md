@@ -236,7 +236,7 @@ unifi-mapper diagnose client-connectivity "Phone A"
 
 # Per-VLAN traffic: sample the gateway's bridge counters over SSH into a local store (run it
 # every minute or so yourself; no schedule is published until issue 038 is decided), then
-# roll up and report offline
+# roll up (hourly, say) and report offline
 unifi-mapper vlan-traffic sample
 unifi-mapper vlan-traffic rollup
 unifi-mapper vlan-traffic report "1w"
@@ -280,7 +280,13 @@ stores a row per VLAN in `$XDG_STATE_HOME/unifi_mapper/vlan-traffic.sqlite3` (ne
 directory; `--db` names another store). A script that fails, and a run that stores nothing
 because no VLAN matched a gateway interface with byte counters, exit 1, so a schedule of your
 own notices. `rollup`, `report` and `coverage` work on the store
-alone. The MCP tools `get_vlan_traffic_report` and `list_vlan_traffic_periods` read the same
+alone. `report now`, `1d` and `1w` read the raw samples (kept 8 days); `1m` reads hourly rows
+and `1y` daily rows, which `rollup` writes for every complete hour and day (run it hourly, say;
+each run also recomputes the newest two hours and the newest day, so a late sample counts).
+As ported from July, `1w` was always empty and `1m` and `1y` left out the newest 8 and about
+61 days, because July rolled an hour only once it was 8 days old ([issue
+069](docs/issues/069-vlan-reports-read-tiers-without-recent-data.md)). The MCP tools
+`get_vlan_traffic_report` and `list_vlan_traffic_periods` read the same
 store and need no credentials; nothing over MCP starts a sample. A report of a store a crashed
 sample left unfinished asks for `vlan-traffic rollup`, which repairs it.
 `backup verify` contacts nothing: it decrypts the backup with the controller's fixed backup key
@@ -591,8 +597,8 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `gateway http` | Fetch a URL from the gateway over SSH, from a VLAN's interface if asked |
 | `gateway flows` | The gateway's conntrack flows over SSH, filtered by address or state |
 | `vlan-traffic sample` | Sample every VLAN's bridge byte counters from the gateway over SSH into the local store |
-| `vlan-traffic rollup` | Roll aged samples into hourly and daily rows; repairs a store a crashed sample left (offline) |
-| `vlan-traffic report` | Per-VLAN average and peak throughput over now, 1d, 1w, 1m or 1y, from the store (offline) |
+| `vlan-traffic rollup` | Roll every complete hour and day of samples into hourly and daily rows, prune past 8 and 60 days; repairs a store a crashed sample left (offline) |
+| `vlan-traffic report` | Per-VLAN average and peak throughput over now, 1d, 1w (raw samples), 1m (hourly) or 1y (daily), from the store (offline) |
 | `vlan-traffic coverage` | What each tier of the store holds, and its gaps (offline) |
 | `inventory list` | List devices with upgrade information |
 | `inventory check-updates` | Check for firmware updates |

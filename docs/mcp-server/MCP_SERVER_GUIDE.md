@@ -329,6 +329,13 @@ repeats the CPU, memory, load and uptime that `find_device` reports, and one AP'
 `get_config_object` with `kind` `networkconf` returns the full legacy network object, where
 `get_networks` reads the Network Integration API.
 
+`get_vlan_traffic_report` reads a local store that only the CLI fills (`vlan-traffic sample`
+over SSH, `vlan-traffic rollup` offline). `now`, `1d` and `1w` read its raw samples (kept 8
+days); `1m` and `1y` read the hourly and daily rows `rollup` writes for every complete hour and
+day, so they are as current as its last run. As ported from the July work the tool's `1w` was
+always empty and `1m` and `1y` left out the newest 8 and about 61 days ([issue
+069](../issues/069-vlan-reports-read-tiers-without-recent-data.md)).
+
 ## Errors
 
 `execute_tool` returns the same JSON envelope as both the text block and `structuredContent`:
@@ -568,7 +575,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `get_capacity_report` | `controller` |  | Network capacity planning and utilization report |
 | `get_firmware_report` | `controller` |  | Firmware security assessment and update recommendations |
 | `get_radio_channel_report` | `controller` |  | Generate a channel utilization report showing current state and recommended changes for all APs. For one device's radio and VAP counters, use get_device_stats. |
-| `get_vlan_traffic_report` | `none` |  | Per-VLAN average and peak receive and transmit bits per second over a period, from the local store that `unifi-mapper vlan-traffic sample` fills by reading the gateway's bridge byte counters (a CLI command, run by a person; nothing here starts a sample). now and 1d read raw samples, 1w and 1m hourly rollups and 1y daily rollups, whose peaks are smoothed; methodology names the tier. Needs no credentials and sends no request; a missing store is NO_DATA. analyze_traffic_matrix reads the controller's own traffic statistics instead. Read-only. |
+| `get_vlan_traffic_report` | `none` |  | Per-VLAN average and peak receive and transmit bits per second over a period, from the local store that `unifi-mapper vlan-traffic sample` fills by reading the gateway's bridge byte counters (a CLI command, run by a person; nothing here starts a sample). now, 1d and 1w read raw samples (kept 8 days), 1m hourly rollups and 1y daily rollups (whose peaks are smoothed), each up to the newest complete hour or day that `unifi-mapper vlan-traffic rollup` has rolled; methodology names the tier. Needs no credentials and sends no request; a missing store is NO_DATA. analyze_traffic_matrix reads the controller's own traffic statistics instead. Read-only. |
 | `list_vlan_traffic_periods` | `none` |  | What the local VLAN traffic store holds per tier (raw, hourly, daily): earliest and latest time, row count and gaps over 5 minutes, so an idle VLAN (0 bps) can be told from a window with no samples. Needs no credentials and sends no request; a missing store is NO_DATA. Read-only. |
 | `monitor_lags` | `controller` |  | LAG (Link Aggregation Group) health monitoring |
 | `optimize_radio_channels` | `controller` |  | Auto-optimise Wi-Fi channel assignments based on utilization data. Returns recommendations for both 5GHz and 2.4GHz bands with before/after comparison. |

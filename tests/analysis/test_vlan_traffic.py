@@ -298,6 +298,18 @@ def test_rollup_prints_one_line(tmp_path: Path) -> None:
     assert len(result.stdout.strip().splitlines()) == 1 and 'Rolled' in result.stdout
 
 
+def test_a_weekly_report_reads_the_newest_samples(cli: FakeController, tmp_path: Path) -> None:
+    """Issue 069: the documented `vlan-traffic report 1w` read a tier that held no recent
+    data, so it always came back empty; it reads the raw samples now."""
+    path = tmp_path / 'store.sqlite3'
+    assert runner.invoke(app, ['vlan-traffic', 'sample', '--db', str(path)]).exit_code == 0
+    report = runner.invoke(app, ['vlan-traffic', 'report', '1w', '--db', str(path), '--json'])
+    assert report.exit_code == 0, report.output
+    data = json.loads(report.stdout)
+    assert data['methodology']['tier_used'] == 'raw'
+    assert {v['vlan_id'] for v in data['vlans']} == {1, 30, 40}
+
+
 @pytest.mark.parametrize('command', [['report', 'now'], ['coverage']])
 def test_a_missing_store_exits_1_with_the_sample_hint(tmp_path: Path, command: list[str]) -> None:
     path = tmp_path / 'absent.sqlite3'

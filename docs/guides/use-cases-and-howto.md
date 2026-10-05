@@ -910,17 +910,25 @@ run with a partial report of the samples taken (written to `--output` too) and e
 # One sample: the gateway's bridge byte counters over SSH, a row per VLAN in the local store
 uv run unifi-mapper vlan-traffic sample
 
-# Roll samples older than 8 days into hourly rows (older than 60 days into daily rows)
+# Roll every complete hour into an hourly row and every complete day into a daily row
+# (run it hourly, say); raw samples are kept 8 days and hourly rows 60
 uv run unifi-mapper vlan-traffic rollup
 
-# Average and peak per VLAN over now, 1d, 1w, 1m or 1y, and what the store holds
+# Average and peak per VLAN over now, 1d or 1w (raw samples), 1m (hourly) or 1y (daily),
+# and what the store holds
 uv run unifi-mapper vlan-traffic report 1w
 uv run unifi-mapper vlan-traffic coverage
 ```
 
 Rates come from the difference between two samples, so take them regularly (every minute or
 so) for honest averages and peaks. A sample whose script fails on the gateway, or that stores
-nothing because no VLAN matched an interface with byte counters, exits 1. Run
+nothing because no VLAN matched an interface with byte counters, exits 1. `1m` and `1y` show
+what `rollup` has rolled: an hour or a day counts once it ended twice the sampling interval
+ago (at least 5 minutes), and each run recomputes the newest two hours and the newest day, so
+a late sample is counted. As ported from the July work these reports were broken: July rolled
+an hour only once it was 8 days old, so `1w` was always empty and `1m` and `1y` left out the
+newest 8 and about 61 days ([issue 069](../issues/069-vlan-reports-read-tiers-without-recent-data.md)).
+Run
 `vlan-traffic sample` yourself, or from a schedule of
 your own: none is published, and the scheduled task waits for
 [issue 038](../issues/038-ssh-host-key-verification-disabled.md), because an unattended sampler

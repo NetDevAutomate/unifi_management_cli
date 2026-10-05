@@ -231,9 +231,10 @@ def test_a_file_that_is_not_a_store_is_unreadable(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ('period', 'tier'),
-    [('now', 'raw'), ('1d', 'raw'), ('1w', 'hourly'), ('1m', 'hourly'), ('1y', 'daily')],
+    [('now', 'raw'), ('1d', 'raw'), ('1w', 'raw'), ('1m', 'hourly'), ('1y', 'daily')],
 )
 def test_each_period_reads_its_tier(tmp_path: Path, period: str, tier: str) -> None:
+    """Orchestrator §8 (review B1): 1w reads raw samples, which are kept 8 days."""
     path = tmp_path / 'store.sqlite3'
     _writable(path).close()
     report = read_vlan_traffic_report(period, path)
@@ -242,6 +243,10 @@ def test_each_period_reads_its_tier(tmp_path: Path, period: str, tier: str) -> N
         tier,
         [],
     )
+    caption = ' '.join(report['methodology']['caveats']).lower()
+    assert {'raw': 'raw samples', 'hourly': 'hourly-rollup', 'daily': 'daily-rollup'}[
+        tier
+    ] in caption  # each caption names its tier
 
 
 def test_an_unknown_period_is_refused(tmp_path: Path) -> None:
@@ -275,7 +280,7 @@ def test_the_hourly_and_daily_tiers_fold_rollups(
         _insert_rollup(conn, 'hourly_rollup', hour, 20, 100.0, 10.0, 400.0, 40.0, 60)
         _insert_rollup(conn, 'hourly_rollup', hour - 3600, 20, 300.0, 30.0, 600.0, 60.0, 60)
         _insert_rollup(conn, 'daily_rollup', day, 10, 100.0, 10.0, 500.0, 50.0, 24)
-    (hourly,) = read_vlan_traffic_report('1w', path)['vlans']
+    (hourly,) = read_vlan_traffic_report('1m', path)['vlans']
     assert (hourly['avg_rx_bps'], hourly['peak_rx_bps'], hourly['samples']) == (200.0, 600.0, 2)
     yearly = read_vlan_traffic_report('1y', path)
     assert yearly['vlans'][0]['peak_rx_bps'] == 500.0
@@ -301,9 +306,13 @@ def test_coverage_counts_rows_and_gaps_by_tier(tmp_path: Path) -> None:
     assert periods['daily'] == {'earliest': None, 'latest': None, 'count': 0, 'gaps_over_5min': 0}
 
 
-# --- run_rollups: correct under any cadence (July's sweep tests) ---------------------------
+# --- run_rollups: every complete bucket, recomputed, pruned only once rolled ---------------
+# Orchestrator §8 (review B1). July's rollup rolled an hour only once it was 8 days old and a
+# day once about 61 days old, so 1w read nothing and 1m and 1y missed the newest 8 and 61
+# days. Every run below passes ``now``, so nothing depends on the clock.
 
 START_HOUR = 1_700_000_000 // 3600 * 3600
+GRACE = store.MIN_GRACE_SECONDS  # twice a 60 s interval is below the 300 s floor
 
 
 def _seed_hours(path: Path, hours: int, interval: int = 60, bps: int = 1_000_000) -> int:
@@ -326,76 +335,265 @@ def _hourly(path: Path) -> list[tuple[int, int, float]]:
         )
 
 
-def _freeze(monkeypatch: pytest.MonkeyPatch, now: int) -> None:
-    monkeypatch.setattr(store.time, 'time', lambda: float(now))
+def _tables(path: Path) -> dict[str, list[tuple[Any, ...]]]:
+    """Every row of every table, for comparing two runs."""
+    with sqlite3.connect(path) as conn:
+        return {
+            table: sorted(conn.execute(f'SELECT * FROM {table}'))  # fixed table names
+            for table in ('raw_samples', 'hourly_rollup', 'daily_rollup', 'rollup_state')
+        }
+
+
+def _marks(path: Path) -> dict[str, int]:
+    with sqlite3.connect(path) as conn:
+        return dict(conn.execute('SELECT tier, last_rolled_bucket FROM rollup_state'))
 
 
 def test_rollups_on_an_empty_store_are_all_zero(tmp_path: Path) -> None:
     path = tmp_path / 'store.sqlite3'
-    assert run_rollups(path) == {
+    assert run_rollups(path, now=START_HOUR) == {
         'raw_rows_rolled': 0,
         'hourly_rows_written': 0,
         'hourly_rows_rolled': 0,
         'daily_rows_written': 0,
+        'raw_rows_pruned': 0,
+        'hourly_rows_pruned': 0,
     }
 
 
-def test_one_run_over_the_whole_history(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ('stamps', 'grace'),
+    [([], 300), ([0], 300), ([0, 60, 120, 180], 300), ([0, 600, 1200, 1900], 1200)],
+    ids=['no samples', 'one sample', 'every minute', 'every ten minutes'],
+)
+def test_the_grace_is_twice_the_sampling_interval_and_at_least_5_minutes(
+    stamps: list[int], grace: int
+) -> None:
+    assert store.sampling_grace(stamps) == grace
+
+
+def test_one_run_rolls_every_complete_hour(tmp_path: Path) -> None:
     path = tmp_path / 'store.sqlite3'
     end = _seed_hours(path, hours=4)
-    _freeze(monkeypatch, end + RAW_RETENTION_SECONDS + 7200)
-    run_rollups(path)
+    run_rollups(path, now=end + GRACE)
     rows = _hourly(path)
     assert [r[0] for r in rows] == [START_HOUR + i * 3600 for i in range(4)]
     assert [r[1] for r in rows] == [59, 60, 60, 60]  # the first hour has no earlier sample
+    assert _marks(path)['hourly'] == end - 3600
 
 
-def test_the_cutoff_sweeping_hour_by_hour_loses_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.parametrize(('interval', 'grace'), [(60, 300), (600, 1200)])
+def test_an_hour_waits_for_its_grace_then_rolls(tmp_path: Path, interval: int, grace: int) -> None:
+    path = tmp_path / 'store.sqlite3'
+    end = _seed_hours(path, hours=3, interval=interval)
+    run_rollups(path, now=end + grace - 1)
+    assert [r[0] for r in _hourly(path)] == [START_HOUR, START_HOUR + 3600]
+    run_rollups(path, now=end + grace)
+    assert [r[0] for r in _hourly(path)] == [START_HOUR + i * 3600 for i in range(3)]
+
+
+def test_the_cutoff_sweeping_hour_by_hour_loses_nothing(tmp_path: Path) -> None:
     path = tmp_path / 'store.sqlite3'
     _seed_hours(path, hours=4)
     for i in range(1, 5):
-        _freeze(monkeypatch, START_HOUR + RAW_RETENTION_SECONDS + i * 3600)
-        run_rollups(path)
+        run_rollups(path, now=START_HOUR + i * 3600 + GRACE)
     assert [r[1] for r in _hourly(path)] == [59, 60, 60, 60]
 
 
-def test_a_five_minute_cadence_equals_one_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_five_minute_cadence_equals_one_run(tmp_path: Path) -> None:
     one, many = tmp_path / 'one.sqlite3', tmp_path / 'many.sqlite3'
     assert _seed_hours(one, hours=3) == _seed_hours(many, hours=3)
-    final = START_HOUR + RAW_RETENTION_SECONDS + 4 * 3600
-    _freeze(monkeypatch, final)
-    run_rollups(one)
-    for now in range(START_HOUR + RAW_RETENTION_SECONDS, final + 1, 300):
-        _freeze(monkeypatch, now)
-        run_rollups(many)
-    assert _hourly(one) == _hourly(many)
+    final = START_HOUR + 4 * 3600
+    run_rollups(one, now=final)
+    for now in range(START_HOUR, final + 1, 300):
+        run_rollups(many, now=now)
+    assert _tables(one) == _tables(many)
     assert [r[1] for r in _hourly(many)] == [59, 60, 60]
 
 
-def test_a_second_run_at_the_same_instant_changes_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_two_runs_give_identical_rows(tmp_path: Path) -> None:
+    """Recompute, never accumulate: the second run rewrites its window to the same rows."""
     path = tmp_path / 'store.sqlite3'
-    end = _seed_hours(path, hours=2)
-    _freeze(monkeypatch, end + RAW_RETENTION_SECONDS + 7200)
-    first = run_rollups(path)
-    snapshot = _hourly(path)
-    second = run_rollups(path)
-    assert _hourly(path) == snapshot and first['hourly_rows_written'] == 2
-    assert (second['raw_rows_rolled'], second['hourly_rows_written']) == (0, 0)
+    end = _seed_hours(path, hours=30)
+    first = run_rollups(path, now=end + GRACE)
+    snapshot = _tables(path)
+    second = run_rollups(path, now=end + GRACE)
+    assert _tables(path) == snapshot
+    assert first['hourly_rows_written'] == 30 and first['daily_rows_written'] >= 1
+    assert second['hourly_rows_written'] == store.TRAILING_HOURS  # recomputed, not added
+
+
+def test_a_late_sample_is_counted_on_the_next_run(tmp_path: Path) -> None:
+    """A sample written after its hour was rolled changes that hour, and its day, next run."""
+    path = tmp_path / 'store.sqlite3'
+    day = floor_to_day(START_HOUR) + 86400
+    with _writable(path) as conn:  # two days of samples a minute apart, 1 Mbit/s
+        for i, ts in enumerate(range(day - 86400, day + 86400, 60)):
+            _insert_raw(conn, ts, 20, 'IoT', i * 7_500_000, 0)
+    now = day + 86400 + GRACE  # the day [day, day + 1 d) and its last hour are complete
+    run_rollups(path, now=now)
+    last_hour = day + 86400 - 3600
+    with sqlite3.connect(path) as conn:
+        before = conn.execute(
+            'SELECT sample_count, peak_rx_bps FROM hourly_rollup WHERE hour_utc = ?', (last_hour,)
+        ).fetchone()
+        day_peak = conn.execute(
+            'SELECT peak_rx_bps FROM daily_rollup WHERE day_utc = ?', (day,)
+        ).fetchone()[0]
+    assert before == (60, 1_000_000.0) and day_peak == 1_000_000.0
+    i = (last_hour + 600 - (day - 86400)) // 60  # the sample at last_hour + 600
+    with _writable(path) as conn:  # late: 30 s after it, 90% of the next minute's bytes
+        _insert_raw(conn, last_hour + 630, 20, 'IoT', i * 7_500_000 + 6_750_000, 0)
+    run_rollups(path, now=now)
+    with sqlite3.connect(path) as conn:
+        after = conn.execute(
+            'SELECT sample_count, peak_rx_bps FROM hourly_rollup WHERE hour_utc = ?', (last_hour,)
+        ).fetchone()
+        day_after = conn.execute(
+            'SELECT peak_rx_bps FROM daily_rollup WHERE day_utc = ?', (day,)
+        ).fetchone()[0]
+    assert after == (61, 1_800_000.0)  # the split interval: 1.8 and 0.2 Mbit/s
+    assert day_after == 1_800_000.0
+
+
+def test_raw_keeps_8_days_and_hourly_60_once_rolled(tmp_path: Path) -> None:
+    path = tmp_path / 'store.sqlite3'
+    now = START_HOUR + 70 * 86400
+    with _writable(path) as conn:  # 70 days, one sample an hour
+        for i, ts in enumerate(range(START_HOUR, now + 1, 3600)):
+            _insert_raw(conn, ts, 20, 'IoT', i * 450_000_000, 0)
+    result = run_rollups(path, now=now)
+    with sqlite3.connect(path) as conn:
+        raw = [r[0] for r in conn.execute('SELECT ts_utc FROM raw_samples ORDER BY ts_utc')]
+        hours = [r[0] for r in conn.execute('SELECT hour_utc FROM hourly_rollup')]
+        days = [r[0] for r in conn.execute('SELECT day_utc FROM daily_rollup ORDER BY day_utc')]
+    cutoff = now - RAW_RETENTION_SECONDS
+    assert [ts for ts in raw if ts < cutoff] == [cutoff - 3600]  # the one kept to pair from
+    assert min(ts for ts in raw if ts >= cutoff) == cutoff
+    assert min(hours) == now - store.HOURLY_RETENTION_SECONDS
+    assert days[0] == floor_to_day(START_HOUR) and days[-1] == floor_to_day(now) - 86400
+    assert result['raw_rows_pruned'] > 0 and result['hourly_rows_pruned'] > 0
+
+
+def test_a_row_is_never_pruned_before_its_bucket_is_rolled(tmp_path: Path) -> None:
+    """Samples five days apart make the grace ten days, so a sample 9 days old, past raw's
+    8-day retention, is in an hour that is not complete yet: it must stay in raw."""
+    path = tmp_path / 'store.sqlite3'
+    with _writable(path) as conn:
+        for i in range(9):
+            _insert_raw(conn, START_HOUR + i * 5 * 86400, 20, 'IoT', i * 1000, 0)
+    now = START_HOUR + 8 * 5 * 86400 + 4 * 86400  # the last two samples are 9 and 4 days old
+    run_rollups(path, now=now)
+    mark = _marks(path)['hourly']
+    assert mark == floor_to_hour(now - 10 * 86400) - 3600
+    with sqlite3.connect(path) as conn:
+        kept = [r[0] for r in conn.execute('SELECT ts_utc FROM raw_samples ORDER BY ts_utc')]
+    nine_days_old = START_HOUR + 7 * 5 * 86400
+    assert nine_days_old < now - RAW_RETENTION_SECONDS and nine_days_old in kept
+    assert kept == [START_HOUR + 6 * 5 * 86400, nine_days_old, START_HOUR + 8 * 5 * 86400]
+
+
+# --- end to end: sample, rollup, report, at a fixed now -----------------------------------
+
+
+DAY = floor_to_day(1_790_000_000)
+NOW = DAY + 12 * 3600 + 600  # 12:10 UTC: with 5-minute samples the grace is 10 minutes
+BASE = 375_000  # bytes per 5-minute interval: 10 kbit/s
+
+
+def _fill(path: Path, bursts: dict[int, int]) -> None:
+    """70 days of 5-minute samples up to NOW through insert_samples (the sampler's write);
+    ``bursts`` maps an interval's end time to a multiple of the base rate."""
+    rows, counter = [], 0
+    for ts in range(NOW - 70 * 86400, NOW + 1, 300):
+        counter += BASE * bursts.get(ts, 1)
+        rows.append(
+            {
+                'ts_utc': ts,
+                'vlan_id': 30,
+                'network_name': 'IoT',
+                'iface': 'br7',
+                'rx_bytes': counter,
+                'tx_bytes': counter // 2,
+            }
+        )
+    store.insert_samples(path, rows)
+
+
+def test_each_period_includes_its_newest_complete_bucket(tmp_path: Path) -> None:
+    """1d and 1w (raw) reach NOW; 1m (hourly) the newest complete hour; 1y (daily) the
+    newest complete day; a bucket that is still open never shows in a rollup tier."""
+    path = tmp_path / 'store.sqlite3'
+    newest_hour = DAY + 11 * 3600  # 11:00-12:00, complete since 12:10
+    newest_day = DAY - 86400  # yesterday; today is open
+    _fill(path, {NOW: 9, newest_hour + 1500: 5, newest_day + 10 * 3600: 3})
+    run_rollups(path, now=NOW)
+    peaks = {
+        period: read_vlan_traffic_report(period, path, now=NOW)['vlans'][0]['peak_rx_bps']
+        for period in ('1d', '1w', '1m', '1y')
+    }
+    assert peaks == {'1d': 90_000.0, '1w': 90_000.0, '1m': 50_000.0, '1y': 30_000.0}
+    coverage = read_vlan_traffic_periods(path)
+    assert coverage['hourly']['latest'] == newest_hour
+    assert coverage['daily']['latest'] == newest_day
+    assert coverage['daily']['earliest'] == floor_to_day(NOW - 70 * 86400)  # past 60 days
+    assert coverage['raw']['latest'] == NOW
+    year = read_vlan_traffic_report('1y', path, now=NOW)
+    assert year['methodology']['tier_used'] == 'daily' and year['vlans'][0]['samples'] == 70
+
+
+def _as_the_old_code_left_it(path: Path, old_now: int) -> None:
+    """A store as July's rollup left it at ``old_now``: an hour rolled only once 8 days old,
+    a day once about 61 days old, and each tier pruned as soon as it was rolled."""
+    old_hour = floor_to_hour(old_now - RAW_RETENTION_SECONDS - 3600)
+    old_day = floor_to_day(old_now - store.HOURLY_RETENTION_SECONDS - 86400)
+    conn = open_store(path, writable=True)
+    conn.row_factory = sqlite3.Row
+    with conn:
+        earliest = conn.execute('SELECT MIN(ts_utc) FROM raw_samples').fetchone()[0]
+        store._roll_hours(conn, floor_to_hour(earliest), old_hour)
+        store._prune_raw(conn, old_hour + 3600)
+        store._set_high_water_mark(conn, 'hourly', old_hour)
+        first_hour = conn.execute('SELECT MIN(hour_utc) FROM hourly_rollup').fetchone()[0]
+        store._roll_days(conn, floor_to_day(first_hour), old_day)
+        store._prune_hourly(conn, old_day + 86400)
+        store._set_high_water_mark(conn, 'daily', old_day)
+    conn.close()
+
+
+def test_an_old_code_store_upgrades_in_place(tmp_path: Path) -> None:
+    path = tmp_path / 'store.sqlite3'
+    _fill(path, {})
+    old_now = NOW - 5 * 3600
+    _as_the_old_code_left_it(path, old_now)
+    old_hour = _marks(path)['hourly']
+    with sqlite3.connect(path) as conn:
+        schema = list(conn.execute('SELECT sql FROM sqlite_master ORDER BY name'))
+        assert conn.execute('SELECT MAX(hour_utc) FROM hourly_rollup').fetchone()[0] == old_hour
+    assert read_vlan_traffic_report('1m', path, now=NOW)['vlans'][0]['samples'] > 0
+    run_rollups(path, now=NOW)
+    marks = _marks(path)
+    assert marks == {'hourly': DAY + 11 * 3600, 'daily': DAY - 86400}
+    with sqlite3.connect(path) as conn:
+        assert list(conn.execute('SELECT sql FROM sqlite_master ORDER BY name')) == schema
+        hours = {r[0] for r in conn.execute('SELECT hour_utc FROM hourly_rollup')}
+        days = {r[0] for r in conn.execute('SELECT day_utc FROM daily_rollup')}
+    first_kept = floor_to_hour(NOW - store.HOURLY_RETENTION_SECONDS) + 3600  # first at cutoff
+    assert set(range(first_kept, marks['hourly'] + 1, 3600)) <= hours  # no hour skipped
+    newer = set(range(old_hour + 3600, marks['hourly'] + 1, 3600))
+    assert {h for h in hours if h > old_hour} == newer
+    assert set(range(floor_to_day(NOW - 70 * 86400), marks['daily'] + 1, 86400)) == days
+    for period in ('1w', '1m', '1y'):
+        assert read_vlan_traffic_report(period, path, now=NOW)['vlans'], period
 
 
 def test_an_unwritable_store_is_one_error(tmp_path: Path) -> None:
     path = tmp_path / 'store.sqlite3'
-    _writable(path).close()
+    end = _seed_hours(path, hours=2)  # a complete hour to roll, so the run must write
     path.chmod(0o444)
     try:
         with pytest.raises(ToolError) as caught:
-            run_rollups(path)
+            run_rollups(path, now=end + GRACE)
     finally:
         path.chmod(0o600)
     assert caught.value.error_code == ErrorCodes.API_ERROR

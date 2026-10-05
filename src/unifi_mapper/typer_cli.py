@@ -5414,12 +5414,16 @@ def vlan_traffic_sample(
 def vlan_traffic_rollup(
     db: Optional[Path] = typer.Option(None, '--db', help=_DB_HELP),
 ):
-    """🧮 Roll aged samples into hourly and daily rows (offline; also recovers the store).
+    """🧮 Roll complete hours and days of samples into rollup rows (offline; also recovers).
 
-    Raw samples older than 8 days become hourly rows and hourly rows older than 60 days
-    daily rows; only complete buckets are rolled, each once, so any cadence gives the same
-    result. Opening the store to write also rolls back what a crashed sample left, so this
-    is the fix a report's "store needs recovery" asks for. Contacts nothing.
+    Every complete hour of raw samples becomes an hourly row and every complete day a daily
+    row; a bucket is complete once it ended twice the sampling interval ago, and at least 5
+    minutes. Each run also recomputes the newest two hours and the newest day, so a late
+    sample is counted, and two runs give the same rows. Raw samples are kept 8 days and
+    hourly rows 60 days, and none is pruned before its hour or day is rolled. Run it hourly,
+    say, to keep the 1m and 1y reports current. Opening the store to write also rolls back
+    what a crashed sample left, so this is the fix a report's "store needs recovery" asks
+    for. Contacts nothing.
     """
     from .analysis.vlan_traffic_store import run_rollups
 
@@ -5429,7 +5433,8 @@ def vlan_traffic_rollup(
     console.print(
         f'Rolled {result["raw_rows_rolled"]} raw row(s) into {result["hourly_rows_written"]} '
         f'hourly and {result["hourly_rows_rolled"]} hourly into {result["daily_rows_written"]} '
-        'daily.',
+        f'daily; pruned {result["raw_rows_pruned"]} raw and {result["hourly_rows_pruned"]} '
+        'hourly.',
         markup=False,
         soft_wrap=True,
     )
@@ -5443,8 +5448,10 @@ def vlan_traffic_report(
 ):
     """📊 Per-VLAN average and peak throughput over a period, from the store (offline).
 
-    now and 1d read raw samples, 1w and 1m hourly rollups and 1y daily rollups (smoothed
-    peaks). A missing store exits 1 with a hint to sample first. Contacts nothing.
+    now, 1d and 1w read raw samples (kept 8 days); 1m reads hourly rollups and 1y daily
+    rollups (smoothed peaks), each up to the newest complete hour or day `vlan-traffic
+    rollup` has rolled. A missing store exits 1 with a hint to sample first. Contacts
+    nothing.
     """
     from .analysis.vlan_traffic_store import read_vlan_traffic_report
 
