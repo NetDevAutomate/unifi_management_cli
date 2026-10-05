@@ -15,8 +15,24 @@ from functools import lru_cache
 from loguru import logger
 from typing import Any
 from unifi_mapper.core.utils.readonly import ReadOnlyViolation
+from unifi_mapper.core.utils.redact import redact_text
 from unifi_mapper.protect.client import UniFiProtectClient
 from unifi_mapper.protect.config import ProtectConfig
+
+
+# Long enough that a real message is never cut (the runner caps errors at 2,000).
+FAILURE_TEXT_LIMIT = 2000
+
+
+def _failure(action: str, error: Exception) -> str:
+    """Log a tool's failure and return its error text, both redacted.
+
+    A lower layer's message can carry a credential, and the server's stderr ends up in the
+    MCP client's own logs, so neither the log line nor the returned ``error`` shows it raw.
+    """
+    text = redact_text(error, limit=FAILURE_TEXT_LIMIT)
+    logger.error('Failed to {}: {}', action, text)
+    return text
 
 
 @lru_cache(maxsize=1)
@@ -49,8 +65,7 @@ async def get_cameras() -> list[dict[str, Any]]:
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get cameras: {e}')
-        return [{'error': str(e)}]
+        return [{'error': _failure('get cameras', e)}]
 
 
 async def get_nvr_info() -> dict[str, Any]:
@@ -76,8 +91,7 @@ async def get_nvr_info() -> dict[str, Any]:
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get NVR info: {e}')
-        return {'error': str(e)}
+        return {'error': _failure('get NVR info', e)}
 
 
 async def get_sensors() -> list[dict[str, Any]]:
@@ -104,8 +118,7 @@ async def get_sensors() -> list[dict[str, Any]]:
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get sensors: {e}')
-        return [{'error': str(e)}]
+        return [{'error': _failure('get sensors', e)}]
 
 
 async def get_lights() -> list[dict[str, Any]]:
@@ -131,8 +144,7 @@ async def get_lights() -> list[dict[str, Any]]:
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get lights: {e}')
-        return [{'error': str(e)}]
+        return [{'error': _failure('get lights', e)}]
 
 
 async def get_doorbells() -> list[dict[str, Any]]:
@@ -163,5 +175,4 @@ async def get_doorbells() -> list[dict[str, Any]]:
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get doorbells: {e}')
-        return [{'error': str(e)}]
+        return [{'error': _failure('get doorbells', e)}]

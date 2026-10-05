@@ -188,6 +188,66 @@ async def test_each_network_tool_sends_only_audited_gets(
     assert FAKE_TOKEN not in text and NETWORK_HOST not in text and '?' not in text
 
 
+# A lower layer's message that carries a credential (M3 council M3-BLOCK-001).
+LEAKY = (
+    'request failed: password=' + 'FAKE-TOOL-ERROR-PASSWORD-MUST-NOT-APPEAR'
+)  # pragma: allowlist secret
+
+
+def _error_texts(result: Any) -> list[str]:
+    items = result if isinstance(result, list) else [result]
+    return [str(item['error']) for item in items if isinstance(item, dict) and 'error' in item]
+
+
+@pytest.fixture
+def logged() -> Iterator[list[str]]:
+    from loguru import logger
+
+    lines: list[str] = []
+    handler = logger.add(lambda message: lines.append(str(message)), level='ERROR', diagnose=False)
+    yield lines
+    logger.remove(handler)
+
+
+@pytest.mark.parametrize('tool', NETWORK_TOOLS)
+async def test_a_network_tool_s_error_and_log_line_are_redacted(
+    tool: str, monkeypatch: pytest.MonkeyPatch, network_env: None, logged: list[str]
+) -> None:
+    def _fail(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(LEAKY, request=request)
+
+    transport = httpx.MockTransport(_fail)
+    monkeypatch.setattr(network_tools, '_inner_transport', lambda _config: transport)
+    result = await getattr(network_tools, tool)()
+    errors = _error_texts(result)
+    assert errors, result
+    assert all('FAKE-TOOL-ERROR-PASSWORD' not in e for e in errors)
+    assert logged and all('FAKE-TOOL-ERROR-PASSWORD' not in line for line in logged)
+
+
+@pytest.mark.parametrize('tool', PROTECT_TOOLS)
+async def test_a_protect_tool_s_error_and_log_line_are_redacted(
+    tool: str, monkeypatch: pytest.MonkeyPatch, logged: list[str]
+) -> None:
+    class _Failing:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        async def __aenter__(self) -> None:
+            raise RuntimeError(LEAKY)
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+    monkeypatch.setattr(protect_tools, '_get_config', lambda: object())
+    monkeypatch.setattr(protect_tools, 'UniFiProtectClient', _Failing)
+    result = await getattr(protect_tools, tool)()
+    errors = _error_texts(result)
+    assert errors, result
+    assert all('FAKE-TOOL-ERROR-PASSWORD' not in e for e in errors)
+    assert logged and all('FAKE-TOOL-ERROR-PASSWORD' not in line for line in logged)
+
+
 NETWORK_WRITES: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = [
     ('delete_network', ('net-1',), {}),
     ('delete_acl_rule', ('acl-1',), {}),

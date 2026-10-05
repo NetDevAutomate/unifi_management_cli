@@ -21,6 +21,7 @@ from unifi_mapper.core.utils.readonly import (
     ReadOnlyViolation,
     get_only_request_allowed,
 )
+from unifi_mapper.core.utils.redact import redact_text
 from unifi_mapper.network.acl import ACLManager
 from unifi_mapper.network.client import UniFiNetworkClient
 from unifi_mapper.network.clients import ClientManager
@@ -28,6 +29,21 @@ from unifi_mapper.network.config import NetworkConfig
 from unifi_mapper.network.dns import DNSPolicyManager
 from unifi_mapper.network.firewall import FirewallManager
 from unifi_mapper.network.networks import NetworkManager
+
+
+# Long enough that a real message is never cut (the runner caps errors at 2,000).
+FAILURE_TEXT_LIMIT = 2000
+
+
+def _failure(action: str, error: Exception) -> str:
+    """Log a tool's failure and return its error text, both redacted.
+
+    A lower layer's message can carry a credential, and the server's stderr ends up in the
+    MCP client's own logs, so neither the log line nor the returned ``error`` shows it raw.
+    """
+    text = redact_text(error, limit=FAILURE_TEXT_LIMIT)
+    logger.error('Failed to {}: {}', action, text)
+    return text
 
 
 def _network_config() -> NetworkConfig:
@@ -77,8 +93,7 @@ async def get_firewall_zones(refresh: bool = False) -> list[dict[str, Any]]:
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get firewall zones: {e}')
-        return [{'error': str(e)}]
+        return [{'error': _failure('get firewall zones', e)}]
 
 
 async def get_firewall_policies(refresh: bool = False) -> list[dict[str, Any]]:
@@ -98,8 +113,7 @@ async def get_firewall_policies(refresh: bool = False) -> list[dict[str, Any]]:
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get firewall policies: {e}')
-        return [{'error': str(e)}]
+        return [{'error': _failure('get firewall policies', e)}]
 
 
 async def get_acl_rules(refresh: bool = False) -> list[dict[str, Any]]:
@@ -119,8 +133,7 @@ async def get_acl_rules(refresh: bool = False) -> list[dict[str, Any]]:
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get ACL rules: {e}')
-        return [{'error': str(e)}]
+        return [{'error': _failure('get ACL rules', e)}]
 
 
 async def get_dns_policies() -> list[dict[str, Any]]:
@@ -137,8 +150,7 @@ async def get_dns_policies() -> list[dict[str, Any]]:
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get DNS policies: {e}')
-        return [{'error': str(e)}]
+        return [{'error': _failure('get DNS policies', e)}]
 
 
 async def get_clients(
@@ -173,8 +185,7 @@ async def get_clients(
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get clients: {e}')
-        return {'error': str(e)}
+        return {'error': _failure('get clients', e)}
     if active_only:
         clients = [c for c in clients if c.connected_at is not None]
     ordered = sorted(clients, key=lambda c: str(c.id))
@@ -206,5 +217,4 @@ async def get_networks() -> list[dict[str, Any]]:
     except ReadOnlyViolation:
         raise
     except Exception as e:
-        logger.error(f'Failed to get networks: {e}')
-        return [{'error': str(e)}]
+        return [{'error': _failure('get networks', e)}]
