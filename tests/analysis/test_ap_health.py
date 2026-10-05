@@ -116,6 +116,18 @@ def test_clients_on_an_ap_are_its_wireless_ones_up_to_four() -> None:
     assert len(clients_on_ap(many, AP_MAC)) == 4
 
 
+def test_only_2_4_ghz_clients_are_pinged() -> None:
+    """Review F9: the report measures the 2.4 GHz radio, so (as July did) only clients on
+    it, or whose radio isn't reported, are pinged; 5 and 6 GHz clients are left out."""
+    clients = [
+        {'ip': '192.0.2.41', 'ap_mac': AP_MAC, 'radio': 'ng'},
+        {'ip': '192.0.2.42', 'ap_mac': AP_MAC, 'radio': 'na'},
+        {'ip': '192.0.2.43', 'ap_mac': AP_MAC, 'radio': '6e'},
+        {'ip': '192.0.2.44', 'ap_mac': AP_MAC},
+    ]
+    assert clients_on_ap(clients, AP_MAC) == ['192.0.2.41', '192.0.2.44']
+
+
 def test_retry_rates_come_from_real_intervals_only() -> None:
     samples = [
         _sample(1, 1000, 100, pings={'192.0.2.31': {'loss_pct': 0}}),

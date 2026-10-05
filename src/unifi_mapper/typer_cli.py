@@ -5275,7 +5275,7 @@ def diagnose_ap_health(
     ping_clients: bool = typer.Option(
         False,
         '--ping-clients',
-        help="Also ping up to 4 of each AP's wireless clients from the gateway over SSH",
+        help="Also ping up to 4 of each AP's 2.4 GHz clients from the gateway over SSH",
     ),
     output: Optional[Path] = typer.Option(
         None, '--output', help='Also write the markdown report to this file (checked first)'
@@ -5288,7 +5288,7 @@ def diagnose_ap_health(
     duration is printed first) and reports each sample and the mean interval retry rate,
     beside a --reference AP when given. A sample whose read times out or fails is recorded
     as missing. Read-only, with no power-cycle step. --ping-clients also pings each AP's
-    clients from the gateway over SSH, as the SSH user (the gateway's host key is not
+    2.4 GHz clients from the gateway over SSH, as the SSH user (the gateway's host key is not
     verified). --output is checked before the first sample and written after the report is
     printed. Ctrl-C prints the samples taken so far as a partial report (and writes it to
     --output) and exits 130; a failure that ends the run does the same and exits 1.

@@ -2,7 +2,7 @@
 
 An AP's 2.4 GHz radio, VAP retry and load counters (and a known-good reference AP's, when
 given) are read every ``interval`` seconds, ``samples`` times, and reported per sample and as
-mean interval retry rates, in markdown and JSON. CLI only: a run lasts up to 60 x 600 s (10 h),
+mean interval retry rates, in markdown and JSON. CLI only: a run lasts at most 60 x 600 s (10 h),
 far beyond one MCP call; an MCP form waits for decision D4 (issue 060), and the MCP read side
 is ``get_device_stats`` with ``get_ap_retry_rates``. The controller reads borrow the read-only
 holder the CLI installs. Client pings (class B) run only with ``ping_clients=True``, in one
@@ -84,8 +84,8 @@ SSID_CONFIG_KEYS = (
 RETRY_NOTE = (
     'Retry % = delta tx_retries / delta tx_packets on the 2.4 GHz tracked VAP between two '
     'samples (cumulative counters, reset-aware); an interval with fewer than '
-    f'{MIN_INTERVAL_PACKETS} packets has none. Pings run from the gateway to clients on '
-    'each AP at sample time.'
+    f'{MIN_INTERVAL_PACKETS} packets has none. Pings run from the gateway to 2.4 GHz '
+    'clients on each AP at sample time.'
 )
 
 # The wait between samples: cancellable, so Ctrl-C stops it. Tests replace it.
@@ -129,16 +129,19 @@ class ApHealthCapture:
     ping_clients: bool = False
 
 
-def _dicts(value: Any) -> list[dict[str, Any]]:
+def _dict_rows(value: Any) -> list[dict[str, Any]]:
+    """The dict items of a list from a record (none when it is not a list)."""
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
 
-def _dict(value: Any) -> dict[str, Any]:
+def _as_dict(value: Any) -> dict[str, Any]:
+    """A record's sub-object, or ``{}`` when it is not one."""
     return value if isinstance(value, dict) else {}
 
 
-def _ng(rows: Any) -> dict[str, Any]:
-    return next((r for r in _dicts(rows) if r.get('radio') == RADIO), {})
+def _radio_ng_row(rows: Any) -> dict[str, Any]:
+    """The 2.4 GHz row of a ``radio_table`` or ``radio_table_stats`` (``{}`` without one)."""
+    return next((r for r in _dict_rows(rows) if r.get('radio') == RADIO), {})
 
 
 def sample_device(dev: dict[str, Any], role: str, ts: float) -> ApSample:
@@ -149,8 +152,8 @@ def sample_device(dev: dict[str, Any], role: str, ts: float) -> ApSample:
         role: ``target`` or ``reference``.
         ts: The sample's Unix time.
     """
-    system_stats, sys_stats = _dict(dev.get('system-stats')), _dict(dev.get('sys_stats'))
-    radio = _ng(dev.get('radio_table_stats'))
+    system_stats, sys_stats = _as_dict(dev.get('system-stats')), _as_dict(dev.get('sys_stats'))
+    radio = _radio_ng_row(dev.get('radio_table_stats'))
     return ApSample(
         role=role,
         ts=ts,
@@ -166,7 +169,7 @@ def sample_device(dev: dict[str, Any], role: str, ts: float) -> ApSample:
         num_sta=int_or_none(radio.get('num_sta')),
         vaps=[
             vap_counters_from_dict(v)
-            for v in _dicts(dev.get('vap_table'))
+            for v in _dict_rows(dev.get('vap_table'))
             if v.get('radio') == RADIO
         ],
     )
@@ -174,8 +177,8 @@ def sample_device(dev: dict[str, Any], role: str, ts: float) -> ApSample:
 
 def device_block(dev: dict[str, Any]) -> dict[str, Any]:
     """The identity and settings a ticket needs from one device record. Pure."""
-    uplink = _dict(dev.get('uplink'))
-    radio = _ng(dev.get('radio_table'))
+    uplink = _as_dict(dev.get('uplink'))
+    radio = _radio_ng_row(dev.get('radio_table'))
     return {
         'name': dev.get('name'),
         'model': dev.get('model'),
@@ -191,13 +194,18 @@ def device_block(dev: dict[str, Any]) -> dict[str, Any]:
 
 
 def clients_on_ap(clients: list[Any], ap_mac: str) -> list[str]:
-    """The addresses of up to :data:`MAX_PINGED_CLIENTS` wireless clients on an AP. Pure."""
+    """The addresses of up to :data:`MAX_PINGED_CLIENTS` 2.4 GHz wireless clients on an AP.
+
+    Pure. Only clients on the radio the report measures are pinged, as in July: ``radio``
+    ``ng``, or not reported; a 5 or 6 GHz client is left out.
+    """
     wanted = normalise_mac(ap_mac)
     found = [
         str(c['ip'])
-        for c in _dicts(clients)
+        for c in _dict_rows(clients)
         if c.get('ip')
         and not c.get('is_wired')
+        and c.get('radio') in (RADIO, None)
         and wanted is not None
         and normalise_mac(c.get('ap_mac')) == wanted
     ]
@@ -308,6 +316,22 @@ def build_report(capture: ApHealthCapture, *, partial: bool) -> dict[str, Any]:
     }
 
 
+# The sample table's columns before the retry % and the pings, in order.
+_SAMPLE_COLUMNS = (
+    'index',
+    'utc',
+    'uptime',
+    'cpu',
+    'loadavg_1',
+    'channel',
+    'cu_total',
+    'cu_self_tx',
+    'num_sta',
+    'delta_tx_packets',
+    'delta_tx_retries',
+)
+
+
 def _cell(value: Any) -> str:
     return '-' if value is None or value == '' else str(value).replace('|', '/')
 
@@ -373,11 +397,7 @@ def render_markdown(report: dict[str, Any]) -> str:
                 lines.append(f'| {r["index"]} | {r["utc"]} | missing: {_cell(r["reason"])} |')
                 continue
             pct = f'{r["retry_pct"]}%' if r['retry_pct'] is not None else '-'
-            cells = (
-                r['index'], r['utc'], r['uptime'], r['cpu'], r['loadavg_1'], r['channel'],
-                r['cu_total'], r['cu_self_tx'], r['num_sta'], r['delta_tx_packets'],
-                r['delta_tx_retries'],
-            )  # fmt: skip
+            cells = [r[key] for key in _SAMPLE_COLUMNS]
             lines.append(
                 '| '
                 + ' | '.join(_cell(c) for c in cells)
@@ -433,7 +453,7 @@ async def _discover() -> tuple[list[Any], list[Any]]:
         wlans = await client.get(client.build_path('rest/wlanconf'))
     if isinstance(wlans, dict):
         wlans = wlans.get('data', [])
-    return devices, _dicts(wlans)
+    return devices, _dict_rows(wlans)
 
 
 async def _read_sample(ping_clients: bool) -> tuple[list[Any], list[Any]]:
@@ -562,7 +582,7 @@ async def _take_sample(
     if reason is not None:
         sink.samples += [ApSample(role=role, ts=ts, missing=True, reason=reason) for role in macs]
         return
-    by_mac = {normalise_mac(d.get('mac')): d for d in _dicts(devices)}
+    by_mac = {normalise_mac(d.get('mac')): d for d in _dict_rows(devices)}
     for role, mac in macs.items():
         dev = by_mac.get(mac)
         if dev is None:

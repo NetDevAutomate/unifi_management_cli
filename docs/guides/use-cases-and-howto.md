@@ -869,7 +869,7 @@ the banner is usually a stale captive-portal result from when it joined.
 uv run unifi-mapper diagnose ap-health "AP 1" --reference "AP 2" --essid "SSID A" \
   --samples 6 --interval 60 --output ap-1-health.md
 
-# Also ping up to 4 of each AP's wireless clients from the gateway each sample (SSH)
+# Also ping up to 4 of each AP's 2.4 GHz clients from the gateway each sample (SSH)
 uv run unifi-mapper diagnose ap-health "AP 1" --ping-clients --samples 10 --interval 30
 ```
 
