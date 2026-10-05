@@ -69,3 +69,10 @@ the reasoning stays next to the code it explains.
 | [056](056-mcp-name-guard-knows-every-assigned-name.md) | The MCP-name guard counts any name assigned in `src/` as known, local variables included | open |
 | [057](057-onvif-test-rtsp-puts-the-password-on-argv.md) | `onvif_stream.py test-rtsp` passes the ONVIF password to ffprobe on its command line | open, decision needed |
 | [058](058-tracebacks-print-frame-values.md) | Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on | open |
+| [059](059-july-work-not-ported.md) | July work that was not ported, and why | open |
+| [060](060-decisions-from-the-july-port.md) | Decisions from the July port | open, decision needed |
+| [061](061-monitor-lags-misses-current-firmware-lags.md) | `monitor_lags` misses LAGs on current switch firmware | open |
+| [062](062-open-items-from-the-archived-plans.md) | Open items from the archived improvement and STP plans | open |
+| [063](063-execute-tool-result-cap.md) | No cap on `execute_tool` result size | open, decision needed |
+| [064](064-cli-reads-outside-the-read-only-transport.md) | CLI read commands that reach the controller outside the read-only transport | open |
+| [065](065-pre-push-coverage-floor.md) | The pre-push pytest hook fails the 90% coverage floor | open, decision needed |

@@ -35,4 +35,5 @@ today.
 - D4: a global result cap on `execute_tool` (for example 200k characters, then
   `truncated: true`)? Design recommendation: **not now**: hosts already persist oversized
   results, and the new tools paginate (`limit`/`offset`). Revisit if a tool is seen to exceed
-  it.
+  it. D4 moved to issue [063](063-execute-tool-result-cap.md) (2026-10-05), so this issue can
+  close when D5 lands.
