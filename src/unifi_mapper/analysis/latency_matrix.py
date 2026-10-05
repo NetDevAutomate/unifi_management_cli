@@ -12,7 +12,13 @@ import asyncssh
 import re
 import shlex
 from datetime import datetime
-from unifi_mapper.analysis.gateway_ssh import require_bounded_int, require_ip, ssh_login
+from unifi_mapper.analysis.gateway_ssh import (
+    gateway_session,
+    require_bounded_int,
+    require_ip,
+    run_gateway_command,
+    ssh_login,
+)
 from unifi_mapper.core.models import LatencyMatrixReport, LatencyResult, LatencySkippedTarget
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.client import UniFiClient
@@ -22,17 +28,6 @@ from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 # Each target waits up to count * timeout + 5 s, and targets are pinged ten at a time.
 PING_COUNT_RANGE = (1, 100)
 PING_TIMEOUT_RANGE = (1, 60)  # seconds
-
-
-def _as_text(value: object) -> str:
-    """Coerce asyncssh process output to str.
-
-    `SSHCompletedProcess.stdout/stderr` are typed `BytesOrStr` because the channel
-    encoding is configurable, so string operations on them fail type checking.
-    """
-    if isinstance(value, bytes):
-        return value.decode('utf-8', errors='replace')
-    return '' if value is None else str(value)
 
 
 async def run_latency_matrix(
@@ -60,7 +55,7 @@ async def run_latency_matrix(
     ping_count = require_bounded_int('ping count', ping_count, *PING_COUNT_RANGE)
     timeout = require_bounded_int('ping timeout (seconds)', timeout, *PING_TIMEOUT_RANGE)
     creds = Credentials.from_env()
-    login = ssh_login()  # before any request: without UNIFI_SSH_PASSWORD nothing connects
+    ssh_login()  # before any request: without UNIFI_SSH_PASSWORD nothing connects
 
     # Gather target IPs from API
     async with UniFiClient() as client:
@@ -87,7 +82,7 @@ async def run_latency_matrix(
         )
 
     # SSH to UDM and ping all targets
-    results = await _ping_targets_via_ssh(creds, login, targets, ping_count, timeout)
+    results = await _ping_targets_via_ssh(creds.host, targets, ping_count, timeout)
 
     reachable = [r for r in results if r.reachable]
     unreachable = [r for r in results if not r.reachable]
@@ -166,37 +161,15 @@ def _split_targets(targets: list[dict]) -> tuple[list[dict], list[LatencySkipped
 
 
 async def _ping_targets_via_ssh(
-    creds: Credentials,
-    login: tuple[str, str],
+    host: str,
     targets: list[dict],
     ping_count: int,
     timeout: int,
 ) -> list[LatencyResult]:
-    """SSH to UDM as ``login`` (from ``ssh_login``) and run ping commands for all targets."""
-    ssh_user, ssh_pass = login
-
-    try:
-        conn = await asyncssh.connect(
-            creds.host,
-            username=ssh_user,
-            password=ssh_pass,
-            known_hosts=None,
-            client_keys=[],  # Don't try local SSH keys
-            preferred_auth='keyboard-interactive,password',
-        )
-    except Exception as e:
-        raise ToolError(
-            message=f'SSH connection to {creds.host} failed: {e}',
-            error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
-            suggestion=(
-                'Set UNIFI_SSH_USERNAME (default: root) and UNIFI_SSH_PASSWORD in config. '
-                'Ensure SSH is enabled in UniFi OS (Settings > Control Plane > Console).'
-            ),
-        )
-
+    """Open one SSH session to the gateway at ``host`` and ping every target from it."""
     results: list[LatencyResult] = []
 
-    async with conn:
+    async with gateway_session(host) as conn:
         # Run pings in batches of 10 to avoid overwhelming the UDM
         batch_size = 10
         for i in range(0, len(targets), batch_size):
@@ -214,34 +187,34 @@ async def _ping_single(
     count: int,
     timeout: int,
 ) -> LatencyResult:
-    """Run a single ping command and parse results."""
-    ip = target['ip']
-    cmd = _ping_command(ip, count, timeout)
+    """Run a single ping command and parse results.
 
+    The command may take ``count * timeout + 5`` seconds. A ``TIMEOUT`` past that bound, like
+    any other failure, makes the target unreachable rather than failing the matrix.
+    """
     try:
-        result = await asyncio.wait_for(conn.run(cmd, check=False), timeout=count * timeout + 5)
-        return _parse_ping_output(target, _as_text(result.stdout))
-    except asyncio.TimeoutError:
+        result = await run_gateway_command(
+            conn, _ping_argv(target['ip'], count, timeout), timeout=count * timeout + 5
+        )
+        return _parse_ping_output(target, result.stdout)
+    except Exception:  # a TIMEOUT ToolError, a dropped channel, anything: unreachable
         return LatencyResult(
-            ip=ip,
+            ip=target['ip'],
             name=target['name'],
             target_type=target['type'],
             reachable=False,
             packet_loss=100.0,
         )
-    except Exception:
-        return LatencyResult(
-            ip=ip,
-            name=target['name'],
-            target_type=target['type'],
-            reachable=False,
-            packet_loss=100.0,
-        )
+
+
+def _ping_argv(ip: str, count: int, timeout: int) -> list[str]:
+    """Return the ping argv for one checked target."""
+    return ['ping', '-c', str(count), '-W', str(timeout), ip]
 
 
 def _ping_command(ip: str, count: int, timeout: int) -> str:
-    """Return the ping command line for one checked target, every argument shell-quoted."""
-    return shlex.join(['ping', '-c', str(count), '-W', str(timeout), ip])
+    """Return the ping command line the gateway runs for one target, shell-quoted."""
+    return shlex.join(_ping_argv(ip, count, timeout))
 
 
 def _parse_ping_output(target: dict, output: str) -> LatencyResult:

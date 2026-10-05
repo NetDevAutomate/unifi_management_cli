@@ -608,7 +608,7 @@ async def check_dhcp_pool_utilization() -> DHCPPoolReport:
     return DHCPPoolReport(pools=pools, warnings=warnings, ...)
 ```
 
-**SSH-based tools** extend this pattern by adding an `asyncssh` connection phase between data fetch and analysis:
+**SSH-based tools** extend this pattern by adding an SSH phase, through `gateway_ssh.gateway_session()` and `run_gateway_command()`, between data fetch and analysis:
 
 ```python
 async def run_latency_matrix(...) -> LatencyMatrixReport:
@@ -616,7 +616,7 @@ async def run_latency_matrix(...) -> LatencyMatrixReport:
     async with UniFiClient() as client:
         devices = await client.get_devices()       # Phase 2: API fetch
     targets = _build_target_list(devices, ...)      # Phase 3: pure analysis
-    results = await _ping_targets_via_ssh(creds, targets, ...)  # SSH phase
+    results = await _ping_targets_via_ssh(creds.host, targets, ...)  # SSH phase
     return LatencyMatrixReport(results=results, ...)  # Phase 4: Pydantic model
 ```
 
@@ -865,13 +865,14 @@ graph TD
 
 ## 10. Layer 8: SSH Integration
 
-Two analysis tools require direct SSH access to the UDM gateway to execute commands that cannot be performed via the REST API. Both use `asyncssh` for non-blocking SSH sessions.
+Two analysis tools require direct SSH access to the UDM gateway to execute commands that cannot be performed via the REST API. Both go through `analysis/gateway_ssh.py`, the only module that opens an SSH session (`asyncssh`, non-blocking).
 
 ```mermaid
 graph TD
     subgraph ssh_layer["SSH Integration Layer"]
         LM["latency_matrix.py\nrun_latency_matrix()"]
         BW["bandwidth_test.py\nrun_bandwidth_test()"]
+        GS["gateway_ssh.py\ngateway_session()\nrun_gateway_command()"]
         CREDS["Credentials.from_env()\n+ UNIFI_SSH_USERNAME\n+ UNIFI_SSH_PASSWORD"]
     end
 
@@ -880,17 +881,18 @@ graph TD
         IPERF["iperf3 -c <ip> -t D -P P -J"]
     end
 
-    LM -->|"asyncssh.connect()"| PING
-    BW -->|"asyncssh.connect()"| IPERF
-    CREDS --> LM
-    CREDS --> BW
+    LM --> GS
+    BW --> GS
+    GS -->|"run_gateway_command(argv, timeout)"| PING
+    GS -->|"run_gateway_command(argv, timeout)"| IPERF
+    CREDS --> GS
 ```
 
 **Why SSH?** The UniFi REST API provides no endpoint for active probing (ping, traceroute, iperf3). SSH to the gateway is the only way to measure real latency and throughput from the network's vantage point — analogous to running `show ip route` or `ping` from a router's CLI in traditional networking.
 
-**Connection pattern**: Both tools use `asyncssh.connect()` with `known_hosts=None`, which turns off SSH host-key verification (see [issue 038](../issues/038-ssh-host-key-verification-disabled.md); TLS certificates are a separate setting), and `preferred_auth='keyboard-interactive,password'`. The login comes from `gateway_ssh.ssh_login()`: the username from `UNIFI_SSH_USERNAME` (default `root`) and the password only from `UNIFI_SSH_PASSWORD`. Without it both tools stop with `CONFIG_MISSING` before any request; `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH, because it isn't the console's SSH password and a wrong password leaves failed root logins on the gateway.
+**Connection pattern**: Both tools open one session with `gateway_ssh.gateway_session()`, the only caller of `asyncssh.connect()` in `src/` (a test scans for any other). It connects with `known_hosts=None` (the `GATEWAY_KNOWN_HOSTS` constant), which turns off SSH host-key verification (see [issue 038](../issues/038-ssh-host-key-verification-disabled.md); TLS certificates are a separate setting), and `preferred_auth='keyboard-interactive,password'`. The login comes from `gateway_ssh.ssh_login()`: the username from `UNIFI_SSH_USERNAME` (default `root`) and the password only from `UNIFI_SSH_PASSWORD`. Without it both tools stop with `CONFIG_MISSING` before any request; `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH, because it isn't the console's SSH password and a wrong password leaves failed root logins on the gateway. A failed connect is `CONTROLLER_UNREACHABLE`, "SSH connection to {host} failed: …", with the exception text redacted.
 
-**Command lines**: every value is checked before it goes on a command line run on the gateway, normally as root (`analysis/gateway_ssh.py`). Each address must parse with `ipaddress` and carry no IPv6 zone id (`ipaddress` accepts any text after `%`); `--count` must be 1–100, `--timeout` 1–60 s, `--duration` 1–86400 s and `--parallel` 1–128 (iperf3's own limits). The line itself is built with `shlex.join`.
+**Command lines**: every value is checked before it goes on a command line run on the gateway, normally as root (`analysis/gateway_ssh.py`). Each address must parse with `ipaddress` and carry no IPv6 zone id (`ipaddress` accepts any text after `%`); `--count` must be 1–100, `--timeout` 1–60 s, `--duration` 1–86400 s and `--parallel` 1–128 (iperf3's own limits). Each command is an argv list that `run_gateway_command()` joins with `shlex.join`, under a timeout the caller must state (`count × timeout + 5` s per ping, `duration + 15` s for iperf3); a timeout is `TIMEOUT`, naming the program and the bound only.
 
 **Latency matrix** SSHs once, then runs `ping -c {count} -W {timeout} {ip}` for each target IP, ten at a time, parsing RTT stats from stdout. A target whose IP fails the check is not pinged and is listed in `skipped_targets`. Returns a `LatencyMatrixReport` with per-target `LatencyResult` entries.
 
@@ -1300,6 +1302,7 @@ graph TD
 
     subgraph ssh_layer["SSH Integration"]
         ASYNCSSH["asyncssh"]
+        GS["analysis/gateway_ssh"]
         LM["analysis/latency_matrix"]
         BW["analysis/bandwidth_test"]
     end
@@ -1378,10 +1381,12 @@ graph TD
     MT --> RO
 
     LM --> UC
-    LM --> ASYNCSSH
+    LM --> GS
     LM --> AUTH
-    BW --> ASYNCSSH
+    BW --> GS
     BW --> AUTH
+    GS --> ASYNCSSH
+    GS --> AUTH
 
     PE --> PC
     PQ --> PE
@@ -1434,7 +1439,7 @@ Used by `protect/aiport.py` to communicate with third-party cameras paired to Un
 
 ### 15.3a SSH (Gateway Management Plane)
 
-Used by `analysis/latency_matrix.py` and `analysis/bandwidth_test.py` to execute commands on the UDM gateway. Handled via `asyncssh`.
+Used by `analysis/latency_matrix.py` and `analysis/bandwidth_test.py` to execute commands on the UDM gateway. Every session and command goes through `analysis/gateway_ssh.py` (`gateway_session()`, `run_gateway_command()`), on `asyncssh`.
 
 | Interface | Protocol | Auth | Notes |
 | --- | --- | --- | --- |

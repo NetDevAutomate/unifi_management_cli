@@ -10,24 +10,41 @@ skipped and reported while the others are pinged.
 The SSH password comes only from ``UNIFI_SSH_PASSWORD``: without it neither command makes
 any request, and ``UNIFI_PASSWORD`` (the UniFi OS login) is never sent to root SSH.
 
-Everything here is offline: ``asyncssh.connect`` and the controller client are fakes, and
-the autouse fixture in ``tests/analysis/conftest.py`` isolates the environment.
+Every session and command goes through ``gateway_ssh.gateway_session`` and
+``run_gateway_command``: an argv list, shell-quoted, with a timeout each caller states.
+
+Everything here is offline: ``asyncssh.connect`` and the controller client are fakes
+(``tests/fake_ssh.py``; the root conftest bans a real connect), and the autouse fixture in
+``tests/analysis/conftest.py`` isolates the environment.
 """
 
+import ast
+import asyncio
 import asyncssh
-import json
 import pytest
 from collections.abc import Callable
+from pathlib import Path
+from tests.fake_ssh import FakeConnection, FakeSSH
 from tests.fixtures_unifi import FAKE_PW, FAKE_TOKEN
 from typer.testing import CliRunner
 from typing import Any
 from unifi_mapper import typer_cli
 from unifi_mapper.analysis import bandwidth_test, latency_matrix
 from unifi_mapper.analysis.gateway_ssh import (
+    GATEWAY_KNOWN_HOSTS,
+    SSH_CONNECT_SUGGESTION,
     SSH_PASSWORD_MISSING,
     SSH_PASSWORD_SUGGESTION,
+    GatewayResult,
+    as_text,
+    gateway_session,
+    require_bounded_float,
     require_bounded_int,
+    require_hostname,
+    require_http_url,
+    require_interface_name,
     require_ip,
+    run_gateway_command,
     ssh_login,
 )
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
@@ -39,62 +56,6 @@ pytestmark = pytest.mark.usefixtures('block_network')
 runner = CliRunner()
 FAKE_SSH_PW = 'FAKE-SSH-PW-MUST-NOT-APPEAR'  # pragma: allowlist secret
 INJECTED = '192.0.2.1; reboot'
-PING_OK = (
-    '3 packets transmitted, 3 received, 0% packet loss\n'
-    'rtt min/avg/max/mdev = 0.100/0.200/0.300/0.050 ms\n'
-)
-IPERF3_OK = json.dumps(
-    {
-        'start': {'test_start': {'num_streams': 1}},
-        'end': {
-            'sum_sent': {'retransmits': 0},
-            'sum_received': {'bits_per_second': 9.4e9, 'bytes': 11_750_000_000},
-        },
-    }
-)
-
-
-class FakeProcess:
-    """What ``SSHClientConnection.run`` returns."""
-
-    def __init__(self, stdout: str, exit_status: int = 0) -> None:
-        self.stdout = stdout
-        self.stderr = ''
-        self.exit_status = exit_status
-
-
-class FakeConnection:
-    """What ``asyncssh.connect`` returns: records every command it is asked to run."""
-
-    def __init__(self) -> None:
-        self.commands: list[str] = []
-
-    async def run(self, command: str, check: bool = False) -> FakeProcess:
-        self.commands.append(command)
-        return FakeProcess(IPERF3_OK if command.startswith('iperf3 ') else PING_OK)
-
-    async def __aenter__(self) -> 'FakeConnection':
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-
-class FakeSSH:
-    """Stands in for ``asyncssh.connect``; one connection per call."""
-
-    def __init__(self) -> None:
-        self.connects: list[tuple[str, dict[str, Any]]] = []
-        self.connections: list[FakeConnection] = []
-
-    async def __call__(self, host: str, **kwargs: Any) -> FakeConnection:
-        self.connects.append((host, kwargs))
-        self.connections.append(FakeConnection())
-        return self.connections[-1]
-
-    @property
-    def commands(self) -> list[str]:
-        return [cmd for conn in self.connections for cmd in conn.commands]
 
 
 class FakeUniFiClient:
@@ -430,3 +391,362 @@ def test_cli_without_ssh_password_says_what_to_set(
     assert f'[CONFIG_MISSING] {SSH_PASSWORD_MISSING}' in output
     assert SSH_PASSWORD_SUGGESTION in output
     assert FAKE_PW not in result.output
+
+
+# --- the session and command helpers -----------------------------------------------------
+
+SRC = Path(__file__).resolve().parents[2] / 'src' / 'unifi_mapper'
+
+
+class _Completed:
+    """An ``SSHCompletedProcess`` with chosen output and exit status."""
+
+    def __init__(self, stdout: object = '', stderr: object = '', exit_status: int | None = 0):
+        self.stdout, self.stderr, self.exit_status = stdout, stderr, exit_status
+
+
+class _ScriptedConnection:
+    """Records each command and answers with one canned result, after ``delay`` seconds."""
+
+    def __init__(self, result: _Completed | None = None, delay: float = 0.0) -> None:
+        self.result = result or _Completed()
+        self.delay = delay
+        self.commands: list[str] = []
+
+    async def run(self, command: str, check: bool = False) -> _Completed:
+        self.commands.append(command)
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        return self.result
+
+
+@pytest.mark.parametrize(
+    ('value', 'expected'),
+    [(None, ''), (b'hello', 'hello'), (b'\xff\xfe', '\ufffd\ufffd'), ('text', 'text')],
+)
+def test_as_text_coerces_process_output(value: object, expected: str) -> None:
+    assert as_text(value) == expected
+
+
+def test_the_two_callers_share_as_text_instead_of_copies() -> None:
+    assert not hasattr(latency_matrix, '_as_text')
+    assert not hasattr(bandwidth_test, '_as_text')
+
+
+def test_asyncssh_connect_is_called_only_in_gateway_ssh() -> None:
+    callers = []
+    for path in sorted(SRC.rglob('*.py')):
+        for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr == 'connect'
+                and isinstance(node.value, ast.Name)
+                and node.value.id == 'asyncssh'
+            ):
+                callers.append(f'{path.relative_to(SRC)}:{node.lineno}')
+    assert [c.split(':')[0] for c in callers] == ['analysis/gateway_ssh.py'], callers
+
+
+async def test_a_real_connect_fails_in_every_test() -> None:
+    with pytest.raises(AssertionError, match='live SSH in a test'):
+        await asyncssh.connect('192.0.2.1')
+
+
+async def test_gateway_session_logs_in_with_the_ssh_login_and_closes(ssh: FakeSSH) -> None:
+    async with gateway_session() as conn:
+        assert conn is ssh.connections[0]
+    [(host, kwargs)] = ssh.connects
+    assert host == '192.0.2.1'  # Credentials.from_env().host, from UNIFI_URL
+    assert kwargs == {
+        'username': 'root',
+        'password': FAKE_SSH_PW,
+        'known_hosts': GATEWAY_KNOWN_HOSTS,
+        'client_keys': [],
+        'preferred_auth': 'keyboard-interactive,password',
+    }
+    assert GATEWAY_KNOWN_HOSTS is None  # issue 038: the one line that turns on checking
+
+
+async def test_gateway_session_takes_an_explicit_host(ssh: FakeSSH) -> None:
+    async with gateway_session('198.51.100.7'):
+        pass
+    assert [host for host, _ in ssh.connects] == ['198.51.100.7']
+
+
+@pytest.mark.usefixtures('ui_login_only', 'no_ssh')
+async def test_gateway_session_without_ssh_password_never_connects() -> None:
+    with pytest.raises(ToolError) as exc:
+        async with gateway_session('192.0.2.1'):
+            pass
+    _assert_ssh_password_missing(exc.value)
+
+
+async def test_gateway_session_connect_failure_is_redacted_with_the_given_suggestion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _refused(host: str, **kwargs: Any) -> FakeConnection:
+        raise OSError(f'auth failed for password={FAKE_SSH_PW}')
+
+    monkeypatch.setattr(asyncssh, 'connect', _refused)
+    with pytest.raises(ToolError) as exc:
+        async with gateway_session('192.0.2.1', suggestion='check the thing'):
+            pass
+    assert exc.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    assert exc.value.message.startswith('SSH connection to 192.0.2.1 failed: auth failed for')
+    assert FAKE_SSH_PW not in str(exc.value)
+    assert exc.value.suggestion == 'check the thing'
+
+
+async def test_gateway_session_suggests_the_ssh_settings_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _refused(host: str, **kwargs: Any) -> FakeConnection:
+        raise OSError('Connection refused')
+
+    monkeypatch.setattr(asyncssh, 'connect', _refused)
+    with pytest.raises(ToolError) as exc:
+        async with gateway_session('192.0.2.1'):
+            pass
+    assert exc.value.suggestion == SSH_CONNECT_SUGGESTION
+
+
+async def test_run_gateway_command_quotes_every_argument() -> None:
+    conn = _ScriptedConnection(_Completed(stdout='ok'))
+    result = await run_gateway_command(conn, ['echo', 'a b', '; reboot', '$(id)'], timeout=5)
+    assert conn.commands == ["echo 'a b' '; reboot' '$(id)'"]
+    assert result == GatewayResult(stdout='ok', stderr='', exit_status=0)
+
+
+async def test_run_gateway_command_normalises_output_and_a_missing_exit_status() -> None:
+    conn = _ScriptedConnection(_Completed(stdout=b'out', stderr=b'err', exit_status=None))
+    result = await run_gateway_command(conn, ['true'], timeout=5)
+    assert result == GatewayResult(stdout='out', stderr='err', exit_status=-1)
+
+
+async def test_run_gateway_command_times_out_naming_only_the_program_and_bound() -> None:
+    conn = _ScriptedConnection(delay=1.0)
+    with pytest.raises(ToolError) as exc:
+        await run_gateway_command(conn, ['sleep', 'secret-arg-10'], timeout=0.05)
+    assert exc.value.error_code == ErrorCodes.TIMEOUT
+    assert exc.value.message == 'sleep timed out after 0.05s on the gateway'
+    assert 'secret-arg-10' not in str(exc.value)
+
+
+async def test_run_gateway_command_requires_a_timeout_and_a_program() -> None:
+    conn = _ScriptedConnection()
+    with pytest.raises(TypeError):
+        await run_gateway_command(conn, ['true'])  # type: ignore[call-arg]
+    with pytest.raises(ValueError):
+        await run_gateway_command(conn, [], timeout=1)
+    assert conn.commands == []
+
+
+# --- each caller's bound and error mapping -----------------------------------------------
+
+
+def _recording_runner(calls: list[tuple[list[str], float]], error: ToolError | None = None):
+    async def _run(conn: object, argv: list[str], *, timeout: float) -> GatewayResult:
+        calls.append((list(argv), timeout))
+        if error is not None:
+            raise error
+        return GatewayResult(stdout=PING_LINES, stderr='', exit_status=0)
+
+    return _run
+
+
+PING_LINES = '3 packets transmitted, 3 received, 0% packet loss\n'
+TIMED_OUT = ToolError(message='x timed out', error_code=ErrorCodes.TIMEOUT)
+
+
+@pytest.mark.parametrize(('count', 'timeout', 'bound'), [(3, 2, 11), (1, 1, 6), (100, 60, 6005)])
+async def test_latency_bounds_each_ping_by_count_times_timeout_plus_five(
+    monkeypatch: pytest.MonkeyPatch, count: int, timeout: int, bound: int
+) -> None:
+    calls: list[tuple[list[str], float]] = []
+    monkeypatch.setattr(latency_matrix, 'run_gateway_command', _recording_runner(calls))
+    target = {'ip': '192.0.2.10', 'name': 'Switch', 'type': 'device'}
+    await latency_matrix._ping_single(object(), target, count, timeout)  # type: ignore[arg-type]
+    assert calls == [(['ping', '-c', str(count), '-W', str(timeout), '192.0.2.10'], bound)]
+
+
+async def test_latency_turns_a_ping_timeout_into_an_unreachable_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], float]] = []
+    monkeypatch.setattr(latency_matrix, 'run_gateway_command', _recording_runner(calls, TIMED_OUT))
+    target = {'ip': '192.0.2.10', 'name': 'Switch', 'type': 'device'}
+    result = await latency_matrix._ping_single(object(), target, 3, 2)  # type: ignore[arg-type]
+    assert (result.reachable, result.packet_loss, result.ip) == (False, 100.0, '192.0.2.10')
+
+
+async def test_latency_connect_failure_names_the_host_with_its_suggestion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _refused(host: str, **kwargs: Any) -> FakeConnection:
+        raise OSError('Connection refused')
+
+    monkeypatch.setattr(asyncssh, 'connect', _refused)
+    _controller(monkeypatch, [{'ip': '192.0.2.10', 'name': 'Switch'}], [])
+    with pytest.raises(ToolError) as exc:
+        await latency_matrix.run_latency_matrix(include_clients=False)
+    assert exc.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    assert exc.value.message == 'SSH connection to 192.0.2.1 failed: Connection refused'
+    assert exc.value.suggestion == SSH_CONNECT_SUGGESTION
+
+
+@pytest.mark.parametrize(('duration', 'bound'), [(10, 25), (1, 16)])
+async def test_bandwidth_bounds_iperf3_by_duration_plus_fifteen(
+    monkeypatch: pytest.MonkeyPatch, ssh: FakeSSH, duration: int, bound: int
+) -> None:
+    calls: list[tuple[list[str], float]] = []
+    monkeypatch.setattr(bandwidth_test, 'run_gateway_command', _recording_runner(calls))
+    await bandwidth_test.run_bandwidth_test('192.0.2.10', duration)
+    [(argv, timeout)] = calls
+    assert argv[0] == 'iperf3' and timeout == bound
+
+
+async def test_bandwidth_maps_a_timeout_to_todays_iperf3_error(
+    monkeypatch: pytest.MonkeyPatch, ssh: FakeSSH
+) -> None:
+    calls: list[tuple[list[str], float]] = []
+    monkeypatch.setattr(bandwidth_test, 'run_gateway_command', _recording_runner(calls, TIMED_OUT))
+    with pytest.raises(ToolError) as exc:
+        await bandwidth_test.run_bandwidth_test('192.0.2.10', 10)
+    assert exc.value.error_code == ErrorCodes.API_ERROR
+    assert exc.value.message == 'iperf3 timed out after 25s'
+    assert exc.value.suggestion == 'Ensure iperf3 server is running on 192.0.2.10 (iperf3 -s)'
+
+
+async def test_bandwidth_connect_failure_names_the_host_with_its_suggestion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _refused(host: str, **kwargs: Any) -> FakeConnection:
+        raise OSError('Connection refused')
+
+    monkeypatch.setattr(asyncssh, 'connect', _refused)
+    with pytest.raises(ToolError) as exc:
+        await bandwidth_test.run_bandwidth_test('192.0.2.10')
+    assert exc.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    assert exc.value.message == 'SSH connection to 192.0.2.1 failed: Connection refused'
+    assert exc.value.suggestion == 'Check UNIFI_SSH_USERNAME/UNIFI_SSH_PASSWORD in config'
+
+
+# --- the new value checks ----------------------------------------------------------------
+
+LEADING_DASH = ['-f', '--help', '-oProxyCommand=x']
+# Built in parts so no scanner reads a credential URL in this file.
+FAKE_URL_PW = 'hunter2-not-real'  # pragma: allowlist secret
+LOGIN_URL = 'https://user:' + FAKE_URL_PW + '@example.com/'
+
+
+@pytest.mark.parametrize(
+    'value', ['gateway', 'host-name.example.com', 'a' * 63 + '.example', '192.0.2.1', 'x1']
+)
+def test_require_hostname_returns_a_hostname_unchanged(value: str) -> None:
+    assert require_hostname(value) == value
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        *LEADING_DASH,
+        'host-',
+        'a..b',
+        '',
+        'a' * 64,
+        'my_host',
+        'a b',
+        'x;reboot',
+        '$(reboot)',
+        'example.com.',
+        None,
+        7,
+    ],
+)
+def test_require_hostname_refuses_anything_else(value: object) -> None:
+    with pytest.raises(ToolError) as exc:
+        require_hostname(value)
+    assert exc.value.error_code == ErrorCodes.CONFIG_INVALID
+
+
+def test_require_hostname_refuses_a_name_over_253_characters() -> None:
+    name = '.'.join(['a' * 63] * 4)  # 255 characters, every label valid
+    with pytest.raises(ToolError):
+        require_hostname(name)
+    assert require_hostname(name[:253].rstrip('.')) == name[:253].rstrip('.')
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        'https://www.example.com/',
+        'http://192.0.2.1:8080/status?x=1',
+        'https://[2001:db8::1]:8443/',
+        'http://gateway/',
+    ],
+)
+def test_require_http_url_returns_a_url_unchanged(value: str) -> None:
+    assert require_http_url(value) == value
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        LOGIN_URL,
+        'https://user@example.com/',
+        'ftp://example.com/',
+        'file:///etc/passwd',
+        '-K/etc/passwd',
+        'https://-f/',
+        'https://example.com/a b',
+        'https://example.com/\x00',
+        'https://',
+        'https://example.com:0/',
+        'https://example.com:99999/',
+        'https://[fe80::1%25br0]/',
+        'https://[not-an-ip]/',
+        'https://' + 'a' * 2050,
+        '',
+        None,
+    ],
+)
+def test_require_http_url_refuses_anything_else_without_echoing_it(value: object) -> None:
+    with pytest.raises(ToolError) as exc:
+        require_http_url(value)
+    assert exc.value.error_code == ErrorCodes.CONFIG_INVALID
+    assert FAKE_URL_PW not in str(exc.value)
+    if isinstance(value, str) and value:
+        assert value not in exc.value.message
+
+
+def test_require_http_url_says_why_a_url_with_a_login_is_refused() -> None:
+    with pytest.raises(ToolError) as exc:
+        require_http_url(LOGIN_URL)
+    assert 'user name or password' in exc.value.message
+
+
+@pytest.mark.parametrize('value', ['br0', 'eth8', 'br30', 'eth8.30', 'wg-site', 'a' * 15])
+def test_require_interface_name_returns_a_name_unchanged(value: str) -> None:
+    assert require_interface_name(value) == value
+
+
+@pytest.mark.parametrize(
+    'value', [*LEADING_DASH, 'Br0', '0eth', 'eth 0', 'br0;id', 'a' * 16, '', None]
+)
+def test_require_interface_name_refuses_anything_else(value: object) -> None:
+    with pytest.raises(ToolError) as exc:
+        require_interface_name(value)
+    assert exc.value.error_code == ErrorCodes.CONFIG_INVALID
+
+
+@pytest.mark.parametrize(('value', 'expected'), [(1, 1.0), (0.5, 0.5), (10, 10.0)])
+def test_require_bounded_float_accepts_the_range(value: float, expected: float) -> None:
+    assert require_bounded_float('interval', value, 0.5, 10) == expected
+
+
+@pytest.mark.parametrize('value', [0.49, 10.01, float('nan'), float('inf'), True, '1', None])
+def test_require_bounded_float_refuses_anything_else(value: object) -> None:
+    with pytest.raises(ToolError) as exc:
+        require_bounded_float('interval', value, 0.5, 10)
+    assert exc.value.error_code == ErrorCodes.CONFIG_INVALID
+    assert 'interval must be a number from 0.5 to 10' in exc.value.message

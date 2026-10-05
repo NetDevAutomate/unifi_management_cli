@@ -1,11 +1,13 @@
 """Simplified pytest configuration for foundation testing."""
 
+import asyncssh
 import httpx
 import os
 import pytest
 import requests
 import socket
 from pathlib import Path
+from typing import NoReturn
 
 
 pytest_plugins = ['pytester']  # T13. Only this top-level conftest may define pytest_plugins.
@@ -30,6 +32,21 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 def _isolate_xdg_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Point XDG_STATE_HOME at a per-test directory so no test touches ~/.local/state."""
     monkeypatch.setenv('XDG_STATE_HOME', str(tmp_path / 'xdg-state'))
+
+
+@pytest.fixture(autouse=True)
+def _no_live_ssh(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail any real SSH connect; tests that need SSH install a fake connection.
+
+    This host can hold the gateway's root SSH password, so a missed stub must fail rather
+    than connect. ``tests/fake_ssh.py`` holds the shared fake; a test's own
+    ``monkeypatch.setattr(asyncssh, 'connect', ...)`` runs later and wins.
+    """
+
+    async def _refused(*_args: object, **_kwargs: object) -> NoReturn:
+        raise AssertionError('live SSH in a test: install the ssh fake')
+
+    monkeypatch.setattr(asyncssh, 'connect', _refused)
 
 
 @pytest.fixture

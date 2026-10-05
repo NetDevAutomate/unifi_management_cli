@@ -6,13 +6,15 @@ are checked (``gateway_ssh``) before the iperf3 command line is built, so an
 invalid target is refused before anything connects.
 """
 
-import asyncio
-import asyncssh
 import json
 import re
-import shlex
 from datetime import datetime
-from unifi_mapper.analysis.gateway_ssh import require_bounded_int, require_ip, ssh_login
+from unifi_mapper.analysis.gateway_ssh import (
+    gateway_session,
+    require_bounded_int,
+    require_ip,
+    run_gateway_command,
+)
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
@@ -20,17 +22,7 @@ from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 # iperf3's own limits: -t up to 86400 seconds, -P up to 128 streams.
 DURATION_RANGE = (1, 86400)
 PARALLEL_RANGE = (1, 128)
-
-
-def _as_text(value: object) -> str:
-    """Coerce asyncssh process output to str.
-
-    `SSHCompletedProcess.stdout/stderr` are typed `BytesOrStr` because the channel
-    encoding is configurable, so string operations on them fail type checking.
-    """
-    if isinstance(value, bytes):
-        return value.decode('utf-8', errors='replace')
-    return '' if value is None else str(value)
+SSH_CONNECT_SUGGESTION = 'Check UNIFI_SSH_USERNAME/UNIFI_SSH_PASSWORD in config'
 
 
 def check_bandwidth_args(
@@ -57,12 +49,12 @@ def check_bandwidth_args(
     )
 
 
-def _iperf3_command(target_ip: str, duration: int, parallel: int, reverse: bool) -> str:
-    """Return the iperf3 command line for checked arguments, every argument shell-quoted."""
+def _iperf3_argv(target_ip: str, duration: int, parallel: int, reverse: bool) -> list[str]:
+    """Return the iperf3 argv for checked arguments."""
     args = ['iperf3', '-c', target_ip, '-t', str(duration), '-P', str(parallel), '-J']
     if reverse:
         args.append('-R')
-    return shlex.join(args)
+    return args
 
 
 async def run_bandwidth_test(
@@ -92,41 +84,24 @@ async def run_bandwidth_test(
     """
     target_ip, duration, parallel = check_bandwidth_args(target_ip, duration, parallel)
     creds = Credentials.from_env()
-    ssh_user, ssh_pass = ssh_login()  # before connecting: UNIFI_PASSWORD is never tried
+    argv = _iperf3_argv(target_ip, duration, parallel, reverse)
+    bound = duration + 15
 
-    cmd = _iperf3_command(target_ip, duration, parallel, reverse)
-
-    try:
-        conn = await asyncssh.connect(
-            creds.host,
-            username=ssh_user,
-            password=ssh_pass,
-            known_hosts=None,
-            client_keys=[],
-            preferred_auth='keyboard-interactive,password',
-        )
-    except Exception as e:
-        raise ToolError(
-            message=f'SSH connection failed: {e}',
-            error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
-            suggestion='Check UNIFI_SSH_USERNAME/UNIFI_SSH_PASSWORD in config',
-        )
-
-    async with conn:
+    # gateway_session checks the SSH login before connecting: UNIFI_PASSWORD is never tried.
+    async with gateway_session(creds.host, suggestion=SSH_CONNECT_SUGGESTION) as conn:
         try:
-            result = await asyncio.wait_for(
-                conn.run(cmd, check=False),
-                timeout=duration + 15,
-            )
-        except asyncio.TimeoutError:
+            result = await run_gateway_command(conn, argv, timeout=bound)
+        except ToolError as e:
+            if e.error_code != ErrorCodes.TIMEOUT:
+                raise
             raise ToolError(
-                message=f'iperf3 timed out after {duration + 15}s',
+                message=f'iperf3 timed out after {bound}s',
                 error_code=ErrorCodes.API_ERROR,
                 suggestion=f'Ensure iperf3 server is running on {target_ip} (iperf3 -s)',
-            )
+            ) from None
 
-    stdout = _as_text(result.stdout)
-    stderr = _as_text(result.stderr)
+    stdout = result.stdout
+    stderr = result.stderr
 
     if result.exit_status != 0:
         # Try to parse common errors
