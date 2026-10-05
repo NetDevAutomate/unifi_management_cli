@@ -74,6 +74,8 @@ reports/*.pdf
 reports/*.jpg
 reports/*.jpeg
 reports/*.png
+# Every subdirectory too: raw controller dumps and live-run captures carry device secrets.
+reports/*/
 !reports/.gitkeep
 diagrams/*.png
 diagrams/*.svg
