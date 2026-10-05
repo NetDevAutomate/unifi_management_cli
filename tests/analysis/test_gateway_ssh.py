@@ -840,3 +840,11 @@ async def test_a_stalled_connect_ends_as_unreachable_after_the_bound(
 
 def test_the_default_connect_bound_is_stated() -> None:
     assert SSH_CONNECT_TIMEOUT == 30
+
+
+@pytest.mark.parametrize('check', [require_hostname, require_interface_name])
+def test_a_refused_value_is_echoed_redacted(check: Callable[[object], str]) -> None:
+    with pytest.raises(ToolError) as exc:
+        check(f'token={FAKE_URL_PW}')
+    assert FAKE_URL_PW not in exc.value.message
+    assert 'token=' in exc.value.message

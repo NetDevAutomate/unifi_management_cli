@@ -250,7 +250,8 @@ def require_hostname(value: object) -> str:
         ``value``, exactly as given.
 
     Raises:
-        ToolError: ``CONFIG_INVALID`` for anything else.
+        ToolError: ``CONFIG_INVALID`` for anything else; the refused value is echoed
+            redacted (``redact_text``), so a pasted secret is masked.
     """
     if (
         isinstance(value, str)
@@ -259,7 +260,7 @@ def require_hostname(value: object) -> str:
     ):
         return value
     raise ToolError(
-        message=f'{value!r} is not a valid hostname',
+        message=f'{redact_text(repr(value))} is not a valid hostname',
         error_code=ErrorCodes.CONFIG_INVALID,
         suggestion='Give a hostname such as gateway.example.com',
     )
@@ -345,12 +346,13 @@ def require_interface_name(value: object) -> str:
         ``value``, exactly as given.
 
     Raises:
-        ToolError: ``CONFIG_INVALID`` for anything else.
+        ToolError: ``CONFIG_INVALID`` for anything else; the refused value is echoed
+            redacted (``redact_text``), so a pasted secret is masked.
     """
     if isinstance(value, str) and _INTERFACE_RE.fullmatch(value):
         return value
     raise ToolError(
-        message=f'{value!r} is not a valid interface name',
+        message=f'{redact_text(repr(value))} is not a valid interface name',
         error_code=ErrorCodes.CONFIG_INVALID,
         suggestion='Give an interface name such as br0 or eth8',
     )
