@@ -155,9 +155,8 @@ def _analyze_network_health(
             if load_avg is not None and load_avg > 2.0:
                 high_load_devices.append(f'{device_name} ({load_avg:g})')
 
-        # Uplink status
-        uplink = device.get('uplink', {})
-        if uplink and not uplink.get('up', False):
+        # Uplink status: wired uplink records can omit 'up' while the link is active
+        if _is_uplink_down(device.get('uplink')):
             uplink_issues.append(f'{device_name} has uplink problems')
             critical_issues.append(f'Device {device_name} uplink is down')
 
@@ -223,6 +222,26 @@ def _analyze_network_health(
     )
 
 
+def _is_uplink_down(uplink: object) -> bool:
+    """Return True only when an uplink record says explicitly that the link is down.
+
+    The controller's wired uplink records can omit ``up`` while the link is active, so a
+    missing or unknown state is not a down uplink.
+
+    Args:
+        uplink: A device's ``uplink`` record (a dict), or anything else.
+
+    Returns:
+        True for ``up`` set to ``False``/``0`` or to the text ``false``, ``down`` or ``0``.
+    """
+    if not isinstance(uplink, dict):
+        return False
+    up = uplink.get('up')
+    if isinstance(up, str):
+        return up.strip().lower() in ('false', 'down', '0')
+    return up is False or (isinstance(up, int) and not isinstance(up, bool) and up == 0)
+
+
 def _calculate_health_score(
     total_devices: int,
     online: int,
@@ -233,12 +252,16 @@ def _calculate_health_score(
     high_memory: int,
     uplink_issues: int,
 ) -> int:
-    """Calculate overall network health score (0-100)."""
+    """Calculate overall network health score (0-100).
+
+    A network with every device online and no issue scores 100; offline devices cost up to
+    30 points in proportion, and each issue costs its own penalty.
+    """
     if total_devices == 0:
         return 0
 
-    # Base score from device connectivity
-    connectivity_score = (online / total_devices) * 70
+    # Base score from device connectivity: 100 when all are online, 70 when none is
+    connectivity_score = 100 - (offline / total_devices) * 30
 
     # Deduct points for issues
     critical_penalty = critical_issues * 15  # 15 points per critical issue
