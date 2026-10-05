@@ -30,9 +30,13 @@ legitimately block for about 100 s, so any default must stay well above that.
 
 Design decision D11: default `UNIFI_MCP_TOOL_TIMEOUT` to 300 s?
 
-Design recommendation: **approve 300 s**: above any plausible fleet read and the 100 s sampling
-window, below typical host limits (the guide's Codex snippet sets `tool_timeout_sec = 300`), and
-it turns a wedged controller into `[TIMEOUT]`. Before approving, measure the slowest tools
+Design recommendation: **approve 300 s**. It is above any plausible fleet read and the 100 s
+sampling window, and it turns a wedged controller into `[TIMEOUT]`. Correction (2026-10-05): it
+is not below the host limits. The guide's client snippets stop at exactly 300 s (kiro-cli
+`"timeout": 300000`, Codex `tool_timeout_sec = 300`), so at 300 s the client can give up first
+and `[TIMEOUT]` never arrives. Either set the server default below the client limit (for
+example 270 s) or raise the client timeouts above it (for example 330 s). Before approving,
+measure the slowest tools
 live (B14): time `network_health_check`, `security_audit`, `audit_link_speeds`,
 `analyze_traffic_matrix` and `diagnose_switch_port` once each, read-only, and record the
 figures here. Until then the variable works opt-in.

@@ -55,5 +55,6 @@ encoding.
 
 Fixing this makes macOS schedules start running for the first time, including the
 `port-naming` task, which writes port names to the controller every 30 minutes
-(`--verify-updates --connected-devices --apply`). Decide whether that task should stay in
-the default schedule before the fix lands, or whether it should be opt-in.
+(`--verify-updates --connected-devices --apply`). `scripts/unifi-cron.sh run-all` runs the same
+command with `--apply` as its last step. Decide whether that task should stay in the default
+schedule before the fix lands, or whether it should be opt-in (in `run-all` too).

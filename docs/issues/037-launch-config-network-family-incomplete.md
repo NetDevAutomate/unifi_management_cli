@@ -27,9 +27,12 @@ rules 0, DNS policies 0, clients 98, networks 9): 11 audited GETs, 0 violations,
 Integration API accepts either key.
 
 There is no fallback: with `UNIFI_NETWORK_API_KEY` removed, the family wouldn't use the
-console token, it would just be missing a key. No MCP client config on this machine
-registers `unifi-mcp` (checked by server name, read-only), so the launch config itself is
-taken from the orchestrator's report.
+console token, it would just be missing a key. Correction (2026-10-05): two MCP clients on this
+machine do register `unifi-mcp` (kiro-cli and Codex, both as server `unifi` with
+`UNIFI_CONFIG` pointing at the XDG `prod.env`). That file sets the console token,
+`UNIFI_URL` and `UNIFI_SITE` but no `UNIFI_NETWORK_*` key (key names checked, read-only).
+So deriving the host and site id alone wouldn't unblock the six tools; they also need the
+console-token fallback, or the keys added to that file.
 
 ## Evidence
 
