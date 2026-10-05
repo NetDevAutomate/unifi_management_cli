@@ -82,7 +82,7 @@ graph TB
     end
 
     subgraph AT["Layer 4 - Analysis Toolkit"]
-        AN["analysis/ (47 registered tools)"]
+        AN["analysis/ (49 registered tools)"]
         DG["diagnostics (11 registered tools)"]
         DS["discovery (5 registered tools)"]
         OB["observability (7 registered tools)"]
@@ -150,6 +150,7 @@ graph LR
         CMD_CTRL["controller\nconfig / config-changes / events"]
         CMD_BACKUP["backup\nverify (offline)"]
         CMD_GATEWAY["gateway\nping / traceroute / dns\nhttp / flows (SSH)"]
+        CMD_VLAN["vlan-traffic\nsample (SSH) / rollup\nreport / coverage"]
         CMD_STP["stp\nSTP topology and optimization"]
         CMD_RADIO["radio\nsnapshot / optimize / restore\nauto-channel / report"]
         CMD_INV["inventory\nDevice management"]
@@ -188,6 +189,7 @@ graph LR
     APP --> CMD_CTRL
     APP --> CMD_BACKUP
     APP --> CMD_GATEWAY
+    APP --> CMD_VLAN
     APP --> CMD_STP
     APP --> CMD_RADIO
     APP --> CMD_INV
@@ -244,7 +246,7 @@ The `unifi-mcp` server is built on the FastMCP bundled with the official MCP Pyt
 | `get_tool_info` | Fetch the parameters, JSON input/output schemas and annotations for a named tool |
 | `execute_tool` | Run a read-only catalog tool by name; mutating tools are refused with `MUTATION_REFUSED` |
 
-With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) the server also lists the 71 non-mutating, non-pipeline catalog tools directly. The server holds no domain logic. Its modules:
+With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) the server also lists the 73 non-mutating, non-pipeline catalog tools directly. The server holds no domain logic. Its modules:
 
 | Module | Responsibility |
 | --- | --- |
@@ -309,6 +311,15 @@ gateway over SSH, CLI only (no MCP tool, decision D1 in issue 060): `gateway pin
 bound through `analysis/gateway_ssh.py`; a device or client name resolves to its address
 through the read-only controller client, and `http --vlan` to the interface whose address is in
 that VLAN's subnet (`analysis/vlan_interfaces.py`).
+
+**New `vlan-traffic` command group** (`analysis/vlan_traffic.py`, `analysis/vlan_traffic_store.py`)
+— per-VLAN throughput history. `sample` (SSH, CLI only) reads the controller's network list and
+runs one fixed script on the gateway, then stores a row per VLAN in a SQLite store under the XDG
+state directory (`vlan-traffic.sqlite3`, never the working directory; `--db` names another);
+`rollup`, `report PERIOD` and `coverage` work on the store alone. The MCP tools
+`get_vlan_traffic_report` and `list_vlan_traffic_periods` read the default store read-only in a
+worker thread, with no credentials; nothing over MCP starts a sample (decision D1 in issue 060),
+and no schedule is published until issue 038 is decided.
 
 **New `analyze` commands** — time-series analysis with snapshot/compare pattern:
 
@@ -523,15 +534,16 @@ The adapter gives `unifi-network-toolkit` synchronous versions of three tools (`
 
 ## 6. Layer 4: Analysis Toolkit
 
-The toolkit is 85 registered tools in seven categories, implemented in the `analysis/`, `diagnostics/`, `discovery/` and `connectivity/` packages, the read-only port diagnostics (`port_inspect.py`, `port_diagnostics.py`, `port_history.py`, behind `core/utils/readonly.py`'s guard, with secrets stripped by `core/utils/redact.py` and each port's effective profile resolved by `analysis/link_settings.py`) and the `mcp/tools/` wrappers for the Integration API and Protect. All of them are registered via YAML manifests and exposed through the MCP server. Several analysis modules are CLI-only and not registered: the SSH tools (latency matrix, bandwidth test, the `gateway` probes) and the snapshot-and-compare commands (`analyze link-errors`, `roaming`, `config-drift`, `neighbours`).
+The toolkit is 87 registered tools in seven categories, implemented in the `analysis/`, `diagnostics/`, `discovery/` and `connectivity/` packages, the read-only port diagnostics (`port_inspect.py`, `port_diagnostics.py`, `port_history.py`, behind `core/utils/readonly.py`'s guard, with secrets stripped by `core/utils/redact.py` and each port's effective profile resolved by `analysis/link_settings.py`) and the `mcp/tools/` wrappers for the Integration API and Protect. All of them are registered via YAML manifests and exposed through the MCP server. Several analysis modules are CLI-only and not registered: the SSH tools (latency matrix, bandwidth test, the `gateway` probes) and the snapshot-and-compare commands (`analyze link-errors`, `roaming`, `config-drift`, `neighbours`).
 
 ### Tool inventory
 
 ```mermaid
 graph TD
-    subgraph analysis["analysis (47 registered tools)"]
+    subgraph analysis["analysis (49 registered tools)"]
         direction LR
         H["Network health (14)\ndetect_ip_conflicts, detect_storms, diagnose_vlans,\naudit_vlan_coverage, analyze_link_quality, get_capacity_report,\nmonitor_lags, find_lag_candidates, validate_qos, analyze_mac_table,\nget_firmware_report, analyze_traffic_matrix,\naudit_mtu_consistency, audit_sfp_diagnostics"]
+        V["VLAN traffic (2)\nget_vlan_traffic_report, list_vlan_traffic_periods\n(local store, no request)"]
         P["Ports, power and freshness (12)\naudit_link_speeds, audit_port_profile_usage, validate_port_profiles,\ncheck_poe_budget, audit_power_budget, check_uplink_redundancy,\naudit_uplink_transparency, detect_foreign_bridges,\ncheck_dhcp_pool_utilization, analyze_client_density,\ncheck_device_freshness, summarise_freshness"]
         R["Radio (6)\nanalyze_radio_optimization, optimize_radio_channels,\nget_radio_channel_report, snapshot_radio_config (local file),\napply_radio_optimization and restore_radio_config (mutating, refused)"]
         S["STP and 10G (15)\ndiscover_stp_topology, calculate_optimal_priorities, audit_stp_priorities, generate_stp_report,\nformat_stp_report_markdown, audit_stp_path_costs, audit_stp_guard_recommendations,\ncreate_stp_change_plan, detect_stp_config_drift, snapshot_stp_topology,\ndiff_stp_snapshots, stp_preflight_simulate_add, validate_10g_expansion_readiness,\nformat_10g_validation_report_markdown, apply_stp_changes (mutating, refused)"]
@@ -597,7 +609,7 @@ Twelve of the later analysis modules fall into four functional groups. Only the 
 | `radio_config.py` | `snapshot_radio_config`, `apply_radio_config`, `restore_radio_config` | Reversible AP radio changes |
 | `channel_optimiser.py` | `analyze_channels`, `optimize_5ghz`, `optimize_24ghz`, `optimize_radio_channels_mcp` | Utilization-weighted channel assignment with DFS penalty scoring |
 
-**SSH-based tools** (CLI only: `diagnose latency-matrix`, `diagnose bandwidth`, the `gateway` probes, `diagnose client-connectivity` and `diagnose ap-health --ping-clients`) — require `asyncssh` and gateway SSH credentials (`UNIFI_SSH_PASSWORD`, see [section 10](#10-layer-8-ssh-integration)):
+**SSH-based tools** (CLI only: `diagnose latency-matrix`, `diagnose bandwidth`, the `gateway` probes, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and `vlan-traffic sample`) — require `asyncssh` and gateway SSH credentials (`UNIFI_SSH_PASSWORD`, see [section 10](#10-layer-8-ssh-integration)):
 
 | Module | Function | Purpose |
 | --- | --- | --- |
@@ -605,6 +617,7 @@ Twelve of the later analysis modules fall into four functional groups. Only the 
 | `bandwidth_test.py` | `run_bandwidth_test()` | SSH to UDM, run iperf3 to target, report throughput |
 | `connectivity/gateway_probe.py` | `gateway_ping()`, `gateway_traceroute()`, `gateway_dns_check()`, `gateway_http_check()` and the conntrack flow reader | One probe per SSH session: ping, traceroute, nslookup, curl (`--globoff`) or conntrack, each an argv with its own bound |
 | `diagnostics/client_connectivity.py` | `diagnose_client_connectivity()`, `build_verdict()` | One client: lookup and AP counters, then the gateway probes in order (ping, DNS, HTTP from the client's VLAN, flows), each a bounded layer within a 120 s budget; a failed layer is a finding |
+| `analysis/vlan_traffic.py` | `sample_vlan_traffic()` | One fixed `sh -c` script per sample (each `br*` interface's byte counters and addresses, 30 s bound), each VLAN matched to its interface by subnet, rows stored in `analysis/vlan_traffic_store.py` (no MCP tool samples) |
 | `analysis/ap_health.py` | `run_ap_health_capture()`, `build_report()`, `render_markdown()` | An AP's 2.4 GHz counters sampled over time (no SSH); with `--ping-clients`, one SSH session pings up to 4 clients per AP each sample |
 
 **Time-series analysis** (CLI only: the `analyze link-errors`, `roaming`, `config-drift` and `neighbours` commands) — snapshot/compare pattern with JSON baselines:
@@ -921,7 +934,7 @@ graph TD
 
 ## 10. Layer 8: SSH Integration
 
-The latency matrix, the bandwidth test, the gateway probes and the two composites built on them (`diagnose client-connectivity`, `diagnose ap-health --ping-clients`) require direct SSH access to the UDM gateway to execute commands that cannot be performed via the REST API. All of them go through `analysis/gateway_ssh.py`, the only module that opens an SSH session (`asyncssh`, non-blocking).
+The latency matrix, the bandwidth test, the gateway probes, the two composites built on them (`diagnose client-connectivity`, `diagnose ap-health --ping-clients`) and the VLAN traffic sampler (`vlan-traffic sample`) require direct SSH access to the UDM gateway to execute commands that cannot be performed via the REST API. All of them go through `analysis/gateway_ssh.py`, the only module that opens an SSH session (`asyncssh`, non-blocking).
 
 ```mermaid
 graph TD
@@ -931,6 +944,7 @@ graph TD
         GP["connectivity/gateway_probe.py\nping / traceroute / dns / http / flows"]
         CC["diagnostics/client_connectivity.py\nthe probes as bounded layers"]
         AHS["analysis/ap_health.py\nclient pings (--ping-clients)"]
+        VT["analysis/vlan_traffic.py\nvlan-traffic sample (sh -c script)"]
         GS["gateway_ssh.py\ngateway_session()\nrun_gateway_command()"]
         CREDS["Credentials.from_env()\n+ UNIFI_SSH_USERNAME\n+ UNIFI_SSH_PASSWORD"]
     end
@@ -946,6 +960,7 @@ graph TD
     GP --> GS
     CC --> GP
     AHS --> GS
+    VT --> GS
     GS -->|"run_gateway_command(argv, timeout)"| PING
     GS -->|"run_gateway_command(argv, timeout)"| IPERF
     GS -->|"run_gateway_command(argv, timeout)"| PROBES
@@ -1082,7 +1097,7 @@ class DeviceRepository(Generic[T]):
 
 ### Lazy Loading / Proxy Pattern (mcp/registry.py)
 
-`ToolProxy` defers importing a tool's implementation module until the first `execute()` call, and `ToolCatalog` (`mcp/catalog.py`) likewise builds a tool's SDK definition (schemas, annotations) only when it is first looked up or listed. This keeps MCP server startup fast even though 85 tools are registered -- only the YAML manifests are parsed at startup on the default discovery surface:
+`ToolProxy` defers importing a tool's implementation module until the first `execute()` call, and `ToolCatalog` (`mcp/catalog.py`) likewise builds a tool's SDK definition (schemas, annotations) only when it is first looked up or listed. This keeps MCP server startup fast even though 87 tools are registered -- only the YAML manifests are parsed at startup on the default discovery surface:
 
 ```python
 class ToolProxy:
@@ -1115,7 +1130,7 @@ async with UniFiProtectClient(config) as client:
 
 ### Code Mode Pattern (mcp/server.py + mcp/registry.py)
 
-The MCP server implements a progressive-disclosure pattern designed for AI agents. On the default discovery surface, rather than exposing 85 individual tool definitions to the AI's context window, it exposes four public meta-tools, and the agent runs the tool it chose through `execute_tool`:
+The MCP server implements a progressive-disclosure pattern designed for AI agents. On the default discovery surface, rather than exposing 87 individual tool definitions to the AI's context window, it exposes four public meta-tools, and the agent runs the tool it chose through `execute_tool`:
 
 ```text
 1. search_tools(category="analysis") -> list of matching tools
@@ -1123,7 +1138,7 @@ The MCP server implements a progressive-disclosure pattern designed for AI agent
 3. execute_tool("detect_ip_conflicts", {}) -> {"ok": true, "result": ...}
 ```
 
-This keeps the AI's tool list short (4 tools, about 6.4k characters of `tools/list`) and avoids overwhelming the model with schema for all 85 tools at once. The agent requests detail only for tools it intends to use. Hosts that defer tool schemas themselves can use the direct surface instead (75 tools listed).
+This keeps the AI's tool list short (4 tools, about 6.4k characters of `tools/list`) and avoids overwhelming the model with schema for all 87 tools at once. The agent requests detail only for tools it intends to use. Hosts that defer tool schemas themselves can use the direct surface instead (77 tools listed).
 
 ---
 
@@ -1378,6 +1393,7 @@ graph TD
         GP["connectivity/gateway_probe"]
         CCX["diagnostics/client_connectivity"]
         AH["analysis/ap_health"]
+        VTS["analysis/vlan_traffic"]
     end
 
     subgraph network_cp["Network Control Plane"]
@@ -1464,6 +1480,8 @@ graph TD
     CCX --> UC
     AH --> UC
     AH --> GS
+    VTS --> UC
+    VTS --> GS
     GS --> ASYNCSSH
     GS --> AUTH
 
@@ -1518,13 +1536,13 @@ Used by `protect/aiport.py` to communicate with third-party cameras paired to Un
 
 ### 15.3a SSH (Gateway Management Plane)
 
-Used by `analysis/latency_matrix.py`, `analysis/bandwidth_test.py`, `connectivity/gateway_probe.py`, `diagnostics/client_connectivity.py` (through the probes) and `analysis/ap_health.py` (with `--ping-clients`) to execute commands on the UDM gateway. Every session and command goes through `analysis/gateway_ssh.py` (`gateway_session()`, `run_gateway_command()`), on `asyncssh`.
+Used by `analysis/latency_matrix.py`, `analysis/bandwidth_test.py`, `connectivity/gateway_probe.py`, `diagnostics/client_connectivity.py` (through the probes), `analysis/ap_health.py` (with `--ping-clients`) and `analysis/vlan_traffic.py` (`vlan-traffic sample`) to execute commands on the UDM gateway. Every session and command goes through `analysis/gateway_ssh.py` (`gateway_session()`, `run_gateway_command()`), on `asyncssh`.
 
 | Interface | Protocol | Auth | Notes |
 | --- | --- | --- | --- |
 | UDM SSH | SSH (port 22) | Password (`UNIFI_SSH_USERNAME` / `UNIFI_SSH_PASSWORD`) | `known_hosts=None`: the host key isn't verified ([issue 038](../issues/038-ssh-host-key-verification-disabled.md)) |
 
-Commands executed: `ping` (latency matrix, `gateway ping`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients`), `iperf3` (bandwidth test), `traceroute`, `nslookup`, `curl`, `conntrack -L` and `ip -j addr show` (the `gateway` probes, and `client-connectivity`'s DNS, HTTP and flow layers).
+Commands executed: `ping` (latency matrix, `gateway ping`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients`), `iperf3` (bandwidth test), `traceroute`, `nslookup`, `curl`, `conntrack -L` and `ip -j addr show` (the `gateway` probes, and `client-connectivity`'s DNS, HTTP and flow layers), and one fixed `sh -c` script reading `/sys/class/net/br*/statistics` and `ip -4 -j addr show` (`vlan-traffic sample`).
 
 ### 15.4 MQTT (Home Assistant Integration)
 
@@ -1540,8 +1558,8 @@ Commands executed: `ping` (latency matrix, `gateway ping`, `diagnose client-conn
 
 The MCP server implements the Model Context Protocol with the FastMCP bundled in the official MCP Python SDK (`mcp>=1.30,<1.31`). AI clients connect over stdio; no network transport is served. The server exports:
 
-- 4 public meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`); with `--surface direct`, also the 71 non-mutating, non-pipeline catalog tools
-- 85 registered tools in YAML manifests, of which 82 run through `execute_tool` (the 3 mutating tools are refused)
+- 4 public meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`); with `--surface direct`, also the 73 non-mutating, non-pipeline catalog tools
+- 87 registered tools in YAML manifests, of which 84 run through `execute_tool` (the 3 mutating tools are refused)
 - 2 resources (`unifi://catalog`, `unifi://config/status`) and 2 prompts (`troubleshoot_port_link`, `plan_stp_change`)
 - Server `instructions`, per-tool annotations, and `serverInfo.version` set to the package version
 

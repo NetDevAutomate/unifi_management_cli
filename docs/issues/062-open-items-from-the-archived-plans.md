@@ -27,10 +27,11 @@ the STP MCP tools, counter-reset detection, neighbour-aware channel scoring, the
 strategy work, and MCP tools for link errors, roaming, config drift and neighbours (issues
 [010](010-cwd-relative-state-files.md) and [018](018-read-only-tool-proposals.md)). The July
 port adds two more: a one-shot STP priority audit (`stp audit-priorities`, landed in
-`c593154`) and the VLAN traffic collector (planned in item 17). The 2026-07-22 handoff's other items
-were site operations, not repository work; its code item was the July port itself. An
-unattended weekly `radio auto-channel --apply` is decision W10 in issue
-[060](060-decisions-from-the-july-port.md).
+`c593154`) and the VLAN traffic collector (`vlan-traffic sample`, `rollup`, `report` and
+`coverage`, with the MCP readers `get_vlan_traffic_report` and `list_vlan_traffic_periods`).
+The 2026-07-22 handoff's other items were site operations, not repository work; its code
+item was the July port itself. An unattended weekly `radio auto-channel --apply` is decision
+W10 in issue [060](060-decisions-from-the-july-port.md).
 
 ## Still open
 

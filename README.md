@@ -9,7 +9,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **85 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, device stats, AP retry rates and raw config objects with secrets removed, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
+- **87 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, device stats, AP retry rates and raw config objects with secrets removed, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
 - **MCP Server**: AI-assisted network troubleshooting via Model Context Protocol
 
@@ -82,7 +82,7 @@ UNIFI_TIMEOUT=10                         # API timeout in seconds
 
 | Family | Keys | Used by |
 | --- | --- | --- |
-| Gateway SSH | `UNIFI_SSH_PASSWORD` (required), `UNIFI_SSH_USERNAME` (default `root`) | `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and the `gateway` probes only (no MCP tool uses SSH) |
+| Gateway SSH | `UNIFI_SSH_PASSWORD` (required), `UNIFI_SSH_USERNAME` (default `root`) | `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients`, `vlan-traffic sample` and the `gateway` probes only (no MCP tool uses SSH) |
 | `network_api` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID`, all three | The six MCP network tools |
 | `protect` | `PROTECT_HOST`, `PROTECT_USERNAME`, `PROTECT_PASSWORD` | The five MCP Protect tools and the Protect monitor |
 
@@ -233,6 +233,14 @@ unifi-mapper diagnose ap-health "AP 1" --reference "AP 2" --essid "SSID A" --out
 # its conntrack flows from the gateway over SSH, capped at 120 s (exit 1 on a fault)
 unifi-mapper diagnose client-connectivity "Phone A"
 
+# Per-VLAN traffic: sample the gateway's bridge counters over SSH into a local store (run it
+# every minute or so yourself; no schedule is published until issue 038 is decided), then
+# roll up and report offline
+unifi-mapper vlan-traffic sample
+unifi-mapper vlan-traffic rollup
+unifi-mapper vlan-traffic report "1w"
+unifi-mapper vlan-traffic coverage --json
+
 # The controller's raw config objects of one kind, secrets removed (paths listed in --json)
 unifi-mapper controller config --json wlanconf --name "SSID A"
 
@@ -260,6 +268,14 @@ real interval, records a sample whose read times out as missing, and has no powe
 without `--essid` it tracks the busiest 2.4 GHz SSID. `client-connectivity` bounds every layer
 and stops at 120 s, reporting the layers it had no time for; a layer that fails is a finding,
 and the others still run.
+
+`vlan-traffic sample` is the only `vlan-traffic` command that reaches anything: it reads the
+controller's network list (read-only) and runs one fixed script on the gateway over SSH, then
+stores a row per VLAN in `$XDG_STATE_HOME/unifi_mapper/vlan-traffic.sqlite3` (never the working
+directory; `--db` names another store). `rollup`, `report` and `coverage` work on the store
+alone. The MCP tools `get_vlan_traffic_report` and `list_vlan_traffic_periods` read the same
+store and need no credentials; nothing over MCP starts a sample. A report of a store a crashed
+sample left unfinished asks for `vlan-traffic rollup`, which repairs it.
 `backup verify` contacts nothing: it decrypts the backup with the controller's fixed backup key
 and reports which collections it holds and how many documents each has, never their contents
 (a collection outside the known UniFi set is counted as `other`, and a version that is not a
@@ -272,7 +288,8 @@ consistency, SFP diagnostics, radio optimisation, firmware skew, DHCP pools, PoE
 client density, uplink redundancy, uplink VLAN transparency, device power budget, foreign
 bridges and telemetry freshness.
 
-The latency matrix, the bandwidth test, the `gateway` probes, `diagnose client-connectivity` and
+The latency matrix, the bandwidth test, the `gateway` probes, `diagnose client-connectivity`,
+`vlan-traffic sample` and
 `diagnose ap-health --ping-clients` SSH to the gateway, so they
 need SSH enabled in UniFi OS (Settings > Control Plane > Console) and `UNIFI_SSH_PASSWORD` in
 your config, plus `UNIFI_SSH_USERNAME` if the SSH user isn't `root`. Without
@@ -566,6 +583,10 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `gateway dns` | Resolve a hostname on the gateway over SSH (nslookup) |
 | `gateway http` | Fetch a URL from the gateway over SSH, from a VLAN's interface if asked |
 | `gateway flows` | The gateway's conntrack flows over SSH, filtered by address or state |
+| `vlan-traffic sample` | Sample every VLAN's bridge byte counters from the gateway over SSH into the local store |
+| `vlan-traffic rollup` | Roll aged samples into hourly and daily rows; repairs a store a crashed sample left (offline) |
+| `vlan-traffic report` | Per-VLAN average and peak throughput over now, 1d, 1w, 1m or 1y, from the store (offline) |
+| `vlan-traffic coverage` | What each tier of the store holds, and its gaps (offline) |
 | `inventory list` | List devices with upgrade information |
 | `inventory check-updates` | Check for firmware updates |
 | `inventory firmware-skew` | Report firmware version skew by model |
@@ -678,7 +699,7 @@ Credentials come from an env file, not the client config: `--config PATH`, else 
 
 The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch mode, the Codex config, all environment variables, the error codes and the config discovery rules. The [MCP standards review](docs/mcp-server/MCP_STANDARDS_REVIEW.md) audits the server against the MCP specification and SDK guidance.
 
-**Available Tools (85 total):**
+**Available Tools (87 total):**
 
 | Category | Tools | Description |
 |----------|-------|-------------|
@@ -688,9 +709,9 @@ The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch 
 | connectivity | 4 | Firewall checks, path analysis, traceroute, inter-VLAN endpoint validation |
 | network | 6 | Firewall zones/policies, ACLs, DNS, clients, VLANs |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells |
-| analysis | 47 | Capacity, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, drift and change plans |
+| analysis | 49 | Capacity, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, per-VLAN traffic history, drift and change plans |
 
-Three of the 85 change the controller and are never run over MCP.
+Three of the 87 change the controller and are never run over MCP.
 
 **Usage Example:**
 
@@ -737,10 +758,10 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (85 tools via the MCP SDK's FastMCP)
+└── MCP Server (87 tools via the MCP SDK's FastMCP)
 
 Analysis Toolkit
-├── Analysis Tools (47 tools)
+├── Analysis Tools (49 tools)
 ├── Diagnostics (11 tools)
 ├── Discovery (5 tools)
 ├── Observability (7 tools)

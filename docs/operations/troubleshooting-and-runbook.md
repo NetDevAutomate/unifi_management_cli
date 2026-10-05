@@ -221,9 +221,9 @@ Authentication issue with devices endpoint. Attempting to re-authenticate...
 #### Gateway SSH Commands Fail
 
 `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose
-ap-health --ping-clients` and the `gateway` probes (`ping`, `traceroute`, `dns`, `http`,
-`flows`) run commands on the gateway over SSH. They are the only commands that use SSH, and no
-MCP tool does.
+ap-health --ping-clients`, `vlan-traffic sample` and the `gateway` probes (`ping`,
+`traceroute`, `dns`, `http`, `flows`) run commands on the gateway over SSH. They are the only
+commands that use SSH, and no MCP tool does.
 
 **Symptom**: each exits 1 before connecting to anything, and prints this on stderr (the first
 line, once per command, comes before every SSH command runs; see
@@ -255,6 +255,21 @@ local variables).
 The SSH session doesn't verify the gateway's host key yet (`known_hosts=None`,
 [issue 038](../issues/038-ssh-host-key-verification-disabled.md)), so run these only on a
 network you trust.
+
+#### VLAN Traffic Store Errors
+
+`vlan-traffic report`, `vlan-traffic coverage` and the MCP tools `get_vlan_traffic_report`
+and `list_vlan_traffic_periods` read the local store
+(`$XDG_STATE_HOME/unifi_mapper/vlan-traffic.sqlite3`, or `--db`) read-only, and report its
+problems as one line:
+
+| Message | Cause | Resolution |
+| --- | --- | --- |
+| `[NO_DATA] No VLAN traffic store at …` | No sample has been taken yet (a read never creates the store) | `unifi-mapper vlan-traffic sample` |
+| `store needs recovery: run unifi-mapper vlan-traffic rollup` | A sample crashed mid-write and left a hot journal, which a read-only handle can't roll back | `unifi-mapper vlan-traffic rollup` (its writable open rolls the journal back) |
+| `store busy: locked for more than 5 s` | A sample or a rollup holds the store | Try again in a moment |
+| `store unreadable: <SQLite error name>` | The file is not a store, or is damaged | Move it aside; the next sample starts a new one |
+| `cannot write the VLAN traffic store …` (`sample`, `rollup`) | The store or its directory is not writable | Fix the permissions, or name another store with `--db` |
 
 ---
 
@@ -1381,7 +1396,7 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
 | `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
 | `UNIFI_CONFIG` | No | XDG search | File path | The env file to read, like `--config` (see section 1). |
-| `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and the `gateway` probes (see section 2). |
+| `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients`, `vlan-traffic sample` and the `gateway` probes (see section 2). |
 | `UNIFI_SSH_USERNAME` | No | `root` | String | Gateway SSH user. |
 | `UNIFI_STP_OVERRIDES` | No | `~/.config/unifi_management_cli/stp_overrides.yaml` | File path | Root-eligible and forced-access switch MACs for the STP optimiser. |
 | `XDG_CONFIG_HOME` | No | `~/.config` | Directory path | Overrides XDG config base directory. |

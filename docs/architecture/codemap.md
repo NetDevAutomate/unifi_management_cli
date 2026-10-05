@@ -79,8 +79,8 @@ Generated: 2026-05-02; refreshed against the code on 2026-10-04
 The UniFi Management CLI is a Python package (`unifi_mapper`) that provides three distinct interface layers over UniFi Controller APIs:
 
 1. **CLI tools** - argparse and Typer-based command-line interfaces for network operators
-2. **Analysis and diagnostics tools** - 52 analysis modules plus the diagnostics, discovery and connectivity packages
-3. **MCP server** - A FastMCP server that exposes 85 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
+2. **Analysis and diagnostics tools** - 54 analysis modules plus the diagnostics, discovery and connectivity packages
+3. **MCP server** - A FastMCP server that exposes 87 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
 
 The codebase contains two generations of API client code. The legacy synchronous path (`api_client.py`, `port_mapper.py`, `run_methods.py`) handles the original port-mapping workflow. The modern async path (`core/utils/client.py`, `network/client.py`, `protect/client.py`) serves the analysis, network control, and Protect integration packages.
 
@@ -114,7 +114,7 @@ graph TB
     end
 
     subgraph "Domain Packages"
-        ANA["analysis/\n52 modules, 47 tools"]
+        ANA["analysis/\n54 modules, 49 tools"]
         DIA["diagnostics/\n10 modules, 11 tools"]
         DIS["discovery/\n4 modules, 5 tools"]
         CON["connectivity/\n5 modules, 4 tools"]
@@ -942,8 +942,10 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 | `client_density.py` | `analyze_client_density` | Wireless client density analysis per AP |
 | `config_drift.py` | `snapshot_config`, `detect_drift` | Configuration drift detection with baseline snapshot and diff |
 | `dhcp_pool.py` | `check_dhcp_pool_utilization` | DHCP pool utilization and exhaustion analysis |
-| `gateway_ssh.py` | `gateway_session`, `run_gateway_command`, `require_ip`, `require_hostname`, `require_http_url`, `require_interface_name`, `require_bounded_int`, `require_bounded_float`, `ssh_login` | The only SSH door: opens every gateway session and runs every command as a shell-quoted argv under a timeout the caller states; checks every value before it goes on a command line, and reads the SSH login from `UNIFI_SSH_*` only (latency matrix, bandwidth test, gateway probes, client connectivity, AP-health pings) |
+| `gateway_ssh.py` | `gateway_session`, `run_gateway_command`, `require_ip`, `require_hostname`, `require_http_url`, `require_interface_name`, `require_bounded_int`, `require_bounded_float`, `ssh_login` | The only SSH door: opens every gateway session and runs every command as a shell-quoted argv under a timeout the caller states; checks every value before it goes on a command line, and reads the SSH login from `UNIFI_SSH_*` only (latency matrix, bandwidth test, gateway probes, client connectivity, AP-health pings, VLAN traffic sampler) |
 | `latency_matrix.py` | `run_latency_matrix` | Gateway-centric ping matrix via SSH across all device and client IPs |
+| `vlan_traffic.py` | `sample_vlan_traffic`, `parse_bridge_counters`, `split_sample_output` | `vlan-traffic sample` (CLI only, SSH): the network list through the borrowed read-only `UniFiClient()`, one fixed `sh -c` script on the gateway (30 s bound), each VLAN matched to its interface by subnet (`vlan_interfaces.py`), one insert into the store |
+| `vlan_traffic_store.py` | `open_store`, `run_rollups`, `read_vlan_traffic_report`, `read_vlan_traffic_periods`, `get_vlan_traffic_report`, `list_vlan_traffic_periods` | The SQLite store at `state_dir() / 'vlan-traffic.sqlite3'` (`credentials: none`, no client import): reads open it `mode=ro` through `as_uri()` and never create it; errors mapped by name (missing `NO_DATA`, hot journal "needs recovery", busy, unreadable); July's cadence-safe rollups and report and coverage queries; the two MCP tools read the default store in a thread |
 | `ap_health.py` | `run_ap_health_capture`, `build_report`, `render_markdown`, `summarize_samples` | `diagnose ap-health` (CLI only, no MCP tool): one AP's 2.4 GHz radio, VAP retry and load counters sampled 1-60 times 30-600 s apart beside a reference AP, each sample read bounded at 45 s (a timed-out one is missing); retry rates over real intervals only; with `--ping-clients`, one SSH session pings up to 4 clients per AP; fills an `ApHealthCapture` so Ctrl-C gives a partial report; no power-cycle step |
 | `vlan_interfaces.py` | `resolve_vlan_interfaces` | Pure: maps each VLAN network to the gateway interface whose address is in its subnet (never by name), the rest unresolved |
 | `link_error_tracking.py` | `snapshot_link_errors`, `compare_link_errors` | Link error rate tracking with baseline deltas for active degradation detection |
@@ -1254,7 +1256,7 @@ classDiagram
 
 **Lazy loading.** `ToolProxy._load_implementation()` calls `importlib.import_module` and `getattr` on first `execute()` call, not at startup. `ToolRegistry.execute(name, params)` is the registry's own refuse-mutation choke point over the proxies; the MCP server runs tools through `ToolCatalog` and `ToolRunner` instead (§17.4), which import each handler the same lazy way.
 
-**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (47 tools), `connectivity.yaml` (4), `diagnostics.yaml` (11), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (7), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
+**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (49 tools), `connectivity.yaml` (4), `diagnostics.yaml` (11), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (7), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
 
 ---
 

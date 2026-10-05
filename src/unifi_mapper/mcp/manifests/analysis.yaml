@@ -262,9 +262,47 @@ tools:
     module: unifi_mapper.analysis.traffic_matrix
     handler: analyze_traffic_matrix
     title: Analyze Traffic Matrix
-    description: Analyze available UniFi traffic statistics for top flows and 10G placement hints
+    description: >-
+      Analyze available UniFi traffic statistics for top flows and 10G placement hints. For
+      per-VLAN throughput history, get_vlan_traffic_report reads the local VLAN traffic store.
     priority: P2
     tags: [traffic, matrix, top-talkers, capacity, 10g]
+
+  get_vlan_traffic_report:
+    module: unifi_mapper.analysis.vlan_traffic_store
+    handler: get_vlan_traffic_report
+    title: Get VLAN Traffic Report
+    credentials: none
+    open_world: false
+    description: >-
+      Per-VLAN average and peak receive and transmit bits per second over a period, from the
+      local store that `unifi-mapper vlan-traffic sample` fills by reading the gateway's
+      bridge byte counters (a CLI command, run by a person; nothing here starts a sample). now
+      and 1d read raw samples, 1w and 1m hourly rollups and 1y daily rollups, whose peaks are
+      smoothed; methodology names the tier. Needs no credentials and sends no request; a
+      missing store is NO_DATA. analyze_traffic_matrix reads the controller's own traffic
+      statistics instead. Read-only.
+    priority: P2
+    tags: [vlan, traffic, throughput, bandwidth, history, trend, read-only]
+    parameters:
+      period:
+        type: string
+        required: true
+        description: now, 1d, 1w, 1m or 1y
+
+  list_vlan_traffic_periods:
+    module: unifi_mapper.analysis.vlan_traffic_store
+    handler: list_vlan_traffic_periods
+    title: List VLAN Traffic Periods
+    credentials: none
+    open_world: false
+    description: >-
+      What the local VLAN traffic store holds per tier (raw, hourly, daily): earliest and
+      latest time, row count and gaps over 5 minutes, so an idle VLAN (0 bps) can be told
+      from a window with no samples. Needs no credentials and sends no request; a missing
+      store is NO_DATA. Read-only.
+    priority: P2
+    tags: [vlan, traffic, coverage, history, read-only]
 
   validate_port_profiles:
     module: unifi_mapper.analysis.port_profile_validation

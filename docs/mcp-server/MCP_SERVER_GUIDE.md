@@ -3,7 +3,7 @@
 ## Overview
 
 `unifi-mcp` is a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server over
-the same Python modules the `unifi-mapper` CLI uses. It registers **85 tools** in seven
+the same Python modules the `unifi-mapper` CLI uses. It registers **87 tools** in seven
 categories (see [Tool categories](#tool-categories) and the [tool index](#tool-index)). Every
 tool it will run is read-only against the controller. The three tools that would change it
 are refused over MCP (see [Control boundary](#mcp-control-boundary)); those changes go through
@@ -234,7 +234,7 @@ the private `_get_versions_from_api`. No tool uses either.
 | Surface | `tools/list` shows | Size (measured at this commit) |
 | --- | --- | --- |
 | `discovery` (default) | the four meta-tools: `search_tools`, `list_categories`, `get_tool_info`, `execute_tool` | 4 tools, about 6.4k characters |
-| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 75 tools (4 + 71), about 196k characters |
+| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 77 tools (4 + 73), about 198k characters |
 
 On either surface every catalog tool runs through the same `ToolRunner`, so arguments are
 validated, credentials gated, results masked and errors coded identically. The 11 pipeline
@@ -243,7 +243,7 @@ are reachable only through `execute_tool`; the 3 mutating tools are never listed
 `--check` prints `listed_tools` for both surfaces.
 
 Use `direct` with hosts that defer tool schemas (kiro-cli, Claude Code tool search): the
-host keeps the 75 schemas out of context until needed and the model calls tools by name. Use
+host keeps the 77 schemas out of context until needed and the model calls tools by name. Use
 `discovery` with hosts that load every schema up front (Codex): the model searches, reads one
 schema with `get_tool_info`, then calls `execute_tool`.
 
@@ -276,11 +276,11 @@ tools that compute from their input, and for `get_wan_speedtest_history` and
 
 ## Tool Categories
 
-Counted from `ToolRegistry()` at this commit (85 tools):
+Counted from `ToolRegistry()` at this commit (87 tools):
 
 | Category | Tools | Covers |
 | --- | ---: | --- |
-| analysis | 47 | IP conflicts, storms, MAC table, VLAN diagnostics and coverage, STP topology, priority audit, guard, path costs, drift, preflight and snapshots, link quality and link-speed audit, port-profile usage and validation, MTU, QoS, SFP, LAG, PoE and power budgets, uplink redundancy and transparency, client density, DHCP pools, device freshness, capacity, firmware, Wi-Fi radio, traffic matrix, foreign bridges, 10G readiness |
+| analysis | 49 | IP conflicts, storms, MAC table, VLAN diagnostics and coverage, STP topology, priority audit, guard, path costs, drift, preflight and snapshots, link quality and link-speed audit, port-profile usage and validation, MTU, QoS, SFP, LAG, PoE and power budgets, uplink redundancy and transparency, client density, DHCP pools, device freshness, capacity, firmware, Wi-Fi radio, traffic matrix, per-VLAN traffic reports and store coverage, foreign bridges, 10G readiness |
 | connectivity | 4 | Firewall check, path analysis, traceroute, inter-VLAN routing |
 | diagnostics | 11 | Health, performance, security, connectivity, single-port inspection, all-ports view, port-profile diff, port evidence bundle, WAN health, the recorded speedtest history and offline backup verification |
 | discovery | 5 | Find device, IP or MAC; client trace; client history |
@@ -288,8 +288,8 @@ Counted from `ToolRegistry()` at this commit (85 tools):
 | observability | 7 | Event, alarm, system-log and admin-audit history; port counter rates and history; site-wide recent events; one device's stats, AP retry rates, raw config objects and the config-change timeline |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells (`protect` family) |
 
-Of the 85: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
-`restore_radio_config`) and 11 are pipeline tools, leaving 71 on the direct surface.
+Of the 87: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
+`restore_radio_config`) and 11 are pipeline tools, leaving 73 on the direct surface.
 
 Some tools overlap on purpose, and their descriptions say which to use. `get_device_stats`
 repeats the CPU, memory, load and uptime that `find_device` reports, and one AP's share of
@@ -488,14 +488,14 @@ The design rationale and the decisions still open are in the
 
 ## Tool Index
 
-All 85 registered tools by category, generated from `ToolRegistry()`. **Family** is
+All 87 registered tools by category, generated from `ToolRegistry()`. **Family** is
 the credential family a tool needs (`none`: it computes from its input). **Marks**:
 *mutating* tools are never listed or run over MCP; *pipeline* tools are reachable only
 through `execute_tool`; *writes a local file* drops `readOnlyHint`. Every tool that is
 neither mutating nor a pipeline tool is listed on the direct surface,
 `snapshot_radio_config` (which writes a local file) included.
 
-### analysis (47)
+### analysis (49)
 
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
@@ -503,7 +503,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `analyze_link_quality` | `controller` |  | Port health and error analysis for link quality assessment |
 | `analyze_mac_table` | `controller` |  | MAC address table analysis and flapping detection |
 | `analyze_radio_optimization` | `controller` |  | Analyze Wi-Fi radio channel reuse and transmit power settings |
-| `analyze_traffic_matrix` | `controller` |  | Analyze available UniFi traffic statistics for top flows and 10G placement hints |
+| `analyze_traffic_matrix` | `controller` |  | Analyze available UniFi traffic statistics for top flows and 10G placement hints. For per-VLAN throughput history, get_vlan_traffic_report reads the local VLAN traffic store. |
 | `apply_radio_optimization` | `controller` | mutating | Apply recommended radio optimisations (80MHz 5GHz, reduced 2.4GHz power, min RSSI). Auto-snapshots before applying. |
 | `apply_stp_changes` | `controller` | mutating | Apply STP priority changes via API (supports dry-run mode) |
 | `audit_link_speeds` | `controller` |  | Fleet-wide audit of negotiated switch-port speeds. Flags half duplex, ports forced to a speed that are down or linked at another rate, and autonegotiated ports below their Integration API maxSpeedMbps (the 10G-at-5G downgrade). Raw speed_caps is never decoded, only compared for equality between ports when the Integration API has no capability. Stale devices are excluded. Paged findings. Read-only. |
@@ -536,6 +536,8 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `get_capacity_report` | `controller` |  | Network capacity planning and utilization report |
 | `get_firmware_report` | `controller` |  | Firmware security assessment and update recommendations |
 | `get_radio_channel_report` | `controller` |  | Generate a channel utilization report showing current state and recommended changes for all APs. For one device's radio and VAP counters, use get_device_stats. |
+| `get_vlan_traffic_report` | `none` |  | Per-VLAN average and peak receive and transmit bits per second over a period, from the local store that `unifi-mapper vlan-traffic sample` fills by reading the gateway's bridge byte counters (a CLI command, run by a person; nothing here starts a sample). now and 1d read raw samples, 1w and 1m hourly rollups and 1y daily rollups, whose peaks are smoothed; methodology names the tier. Needs no credentials and sends no request; a missing store is NO_DATA. analyze_traffic_matrix reads the controller's own traffic statistics instead. Read-only. |
+| `list_vlan_traffic_periods` | `none` |  | What the local VLAN traffic store holds per tier (raw, hourly, daily): earliest and latest time, row count and gaps over 5 minutes, so an idle VLAN (0 bps) can be told from a window with no samples. Needs no credentials and sends no request; a missing store is NO_DATA. Read-only. |
 | `monitor_lags` | `controller` |  | LAG (Link Aggregation Group) health monitoring |
 | `optimize_radio_channels` | `controller` |  | Auto-optimise Wi-Fi channel assignments based on utilization data. Returns recommendations for both 5GHz and 2.4GHz bands with before/after comparison. |
 | `restore_radio_config` | `controller` | mutating | Restore radio configuration from a previously saved snapshot file. |

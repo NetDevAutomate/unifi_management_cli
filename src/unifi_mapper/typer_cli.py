@@ -249,6 +249,10 @@ gateway_app = typer.Typer(
     help="🛰️ Live probes run on the gateway over SSH (the gateway's host key is not verified)",
     pretty_exceptions_show_locals=False,
 )
+vlan_traffic_app = typer.Typer(
+    help='📊 Per-VLAN traffic: sample the gateway over SSH into a local store, then report',
+    pretty_exceptions_show_locals=False,
+)
 
 app.add_typer(find_app, name='find')
 app.add_typer(analyze_app, name='analyze')
@@ -260,6 +264,7 @@ app.add_typer(ports_app, name='ports')
 app.add_typer(controller_app, name='controller')
 app.add_typer(backup_app, name='backup')
 app.add_typer(gateway_app, name='gateway')
+app.add_typer(vlan_traffic_app, name='vlan-traffic')
 
 
 @app.command()
@@ -5282,6 +5287,151 @@ def diagnose_ap_health(
         console.print(markdown, markup=False, soft_wrap=True)
     if report['partial']:
         raise typer.Exit(130)
+
+
+# ─── VLAN traffic (sample over SSH; rollup, report and coverage offline) ────
+
+
+class _VlanPeriod(StrEnum):
+    """A VLAN traffic report period."""
+
+    NOW = 'now'
+    DAY = '1d'
+    WEEK = '1w'
+    MONTH = '1m'
+    YEAR = '1y'
+
+
+_DB_HELP = 'The VLAN traffic store (default vlan-traffic.sqlite3 under the XDG state directory)'
+
+
+def _bps(value: float) -> str:
+    """A bit rate for a table: bps, kbps, Mbps or Gbps."""
+    for unit, scale in (('Gbps', 1e9), ('Mbps', 1e6), ('kbps', 1e3)):
+        if value >= scale:
+            return f'{value / scale:.1f} {unit}'
+    return f'{value:.0f} bps'
+
+
+@vlan_traffic_app.command('sample')
+def vlan_traffic_sample(
+    db: Optional[Path] = typer.Option(None, '--db', help=_DB_HELP),
+):
+    """📥 Sample every VLAN's bridge byte counters from the gateway over SSH into the store.
+
+    Reads the controller's network list (read-only), runs one fixed script on the gateway
+    (each br* interface's byte counters and addresses, 30 s bound), matches each VLAN to the
+    interface whose address is in its subnet and stores a row per VLAN. Run it by hand (or
+    from your own schedule) every minute or so; no schedule is published until the gateway's
+    host key can be verified. Runs on the gateway as the SSH user; the gateway's host key is
+    not verified.
+    """
+    from .analysis.vlan_traffic import sample_vlan_traffic
+    from datetime import UTC, datetime
+
+    result = _probe(lambda: sample_vlan_traffic(db))
+    when = datetime.fromtimestamp(result['ts'], tz=UTC).isoformat(timespec='seconds')
+    extra = f', {len(result["skipped"])} without counters' if result['skipped'] else ''
+    console.print(
+        f'Sampled {len(result["sampled"])} VLAN(s) at {when}, '
+        f'{len(result["unresolved"])} unresolved{extra}.',
+        markup=False,
+        soft_wrap=True,
+    )
+
+
+@vlan_traffic_app.command('rollup')
+def vlan_traffic_rollup(
+    db: Optional[Path] = typer.Option(None, '--db', help=_DB_HELP),
+):
+    """🧮 Roll aged samples into hourly and daily rows (offline; also recovers the store).
+
+    Raw samples older than 8 days become hourly rows and hourly rows older than 60 days
+    daily rows; only complete buckets are rolled, each once, so any cadence gives the same
+    result. Opening the store to write also rolls back what a crashed sample left, so this
+    is the fix a report's "store needs recovery" asks for. Contacts nothing.
+    """
+    from .analysis.vlan_traffic_store import run_rollups
+
+    with _offline_errors():
+        result = run_rollups(db)
+    console.print(
+        f'Rolled {result["raw_rows_rolled"]} raw row(s) into {result["hourly_rows_written"]} '
+        f'hourly and {result["hourly_rows_rolled"]} hourly into {result["daily_rows_written"]} '
+        'daily.',
+        markup=False,
+        soft_wrap=True,
+    )
+
+
+@vlan_traffic_app.command('report')
+def vlan_traffic_report(
+    period: _VlanPeriod = typer.Argument(..., help='now, 1d, 1w, 1m or 1y'),
+    db: Optional[Path] = typer.Option(None, '--db', help=_DB_HELP),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """📊 Per-VLAN average and peak throughput over a period, from the store (offline).
+
+    now and 1d read raw samples, 1w and 1m hourly rollups and 1y daily rollups (smoothed
+    peaks). A missing store exits 1 with a hint to sample first. Contacts nothing.
+    """
+    from .analysis.vlan_traffic_store import read_vlan_traffic_report
+
+    with _offline_errors():
+        report = read_vlan_traffic_report(period.value, db)
+    if as_json:
+        _emit_json(report)
+        return
+    table = Table(title=f'📊 VLAN traffic, {period.value} ({report["methodology"]["tier_used"]})')
+    for column in ('VLAN', 'Network', 'Avg rx', 'Avg tx', 'Peak rx', 'Peak tx', 'Coverage'):
+        table.add_column(column)
+    for vlan in report['vlans']:
+        table.add_row(
+            str(vlan['vlan_id']),
+            escape(vlan['network_name']),
+            _bps(vlan['avg_rx_bps']),
+            _bps(vlan['avg_tx_bps']),
+            _bps(vlan['peak_rx_bps']),
+            _bps(vlan['peak_tx_bps']),
+            f'{vlan["coverage_pct"]}%',
+        )
+    console.print(table)
+    _print_dim_notes(report['methodology']['caveats'])
+
+
+@vlan_traffic_app.command('coverage')
+def vlan_traffic_coverage(
+    db: Optional[Path] = typer.Option(None, '--db', help=_DB_HELP),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """🗓️ What each tier of the store holds, and its gaps (offline).
+
+    Tells an idle VLAN (0 bps) from a window with no samples. Contacts nothing.
+    """
+    from .analysis.vlan_traffic_store import read_vlan_traffic_periods
+    from datetime import UTC, datetime
+
+    with _offline_errors():
+        periods = read_vlan_traffic_periods(db)
+    if as_json:
+        _emit_json(periods)
+        return
+
+    def when(ts: int | None) -> str:
+        return '—' if ts is None else datetime.fromtimestamp(ts, tz=UTC).isoformat()
+
+    table = Table(title='🗓️ VLAN traffic store coverage')
+    for column in ('Tier', 'Rows', 'Earliest', 'Latest', 'Gaps > 5 min'):
+        table.add_column(column)
+    for tier, info in periods.items():
+        table.add_row(
+            tier,
+            str(info['count']),
+            when(info['earliest']),
+            when(info['latest']),
+            str(info['gaps_over_5min']),
+        )
+    console.print(table)
 
 
 if __name__ == '__main__':

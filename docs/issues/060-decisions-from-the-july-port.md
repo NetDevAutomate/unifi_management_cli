@@ -27,14 +27,14 @@ plan, kept outside the repo), and the port's last update records the commit for 
   the gateway probes (`gateway ping`, `traceroute`, `dns`, `http`, `flows`; they exist, CLI
   only), `diagnose client-connectivity` and AP-health sampling with client pings (`diagnose
   ap-health --ping-clients`; they exist, CLI only), and an on-demand `vlan-traffic sample`
-  (planned in item 17). Recommendation: **not by default, and not before issue
-  [038](038-ssh-host-key-verification-disabled.md) is fixed**: an MCP-triggered probe would
-  send the gateway's root SSH password to a host whose key is not verified. If wanted after
-  038, add an `active_probe: true` manifest key that keeps a tool off both surfaces unless
-  `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1`, annotate it `openWorldHint: true` and
-  `readOnlyHint: false`, require `UNIFI_MCP_TOOL_TIMEOUT`, and give the catalog its own rule
-  for `active_probe` tools (the `mutates` naming rule in `tests/mcp/test_execute.py` leaves
-  `trigger_*` out for this reason).
+  (it exists, CLI only; the MCP tools read stored results only). Recommendation: **not by
+  default, and not before issue [038](038-ssh-host-key-verification-disabled.md) is
+  fixed**: an MCP-triggered probe would send the gateway's root SSH password to a host whose
+  key is not verified. If wanted after 038, add an `active_probe: true` manifest key that
+  keeps a tool off both surfaces unless `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1`, annotate it
+  `openWorldHint: true` and `readOnlyHint: false`, require `UNIFI_MCP_TOOL_TIMEOUT`, and give
+  the catalog its own rule for `active_probe` tools (the `mutates` naming rule in
+  `tests/mcp/test_execute.py` leaves `trigger_*` out for this reason).
 - **D2: an on-demand WAN speedtest?** It is a controller command (`POST cmd/devmgr`) and
   saturates the WAN for 10 to 30 s. Recommendation: **not now**. If wanted: CLI only
   (`diagnose wan --speedtest`, with a confirmation), a body-aware guard policy admitting

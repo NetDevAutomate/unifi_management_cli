@@ -154,8 +154,8 @@ UNIFI_TIMEOUT=10                        # API timeout in seconds
 These five settings have no effect on `unifi-mapper`
 ([issue 042](../issues/042-settings-with-no-effect.md)); `UNIFI_TIMEOUT` does. The optional
 credential families (gateway SSH for `diagnose latency-matrix`, `diagnose bandwidth`, the
-`gateway` probes, `diagnose client-connectivity` and `diagnose ap-health --ping-clients`,
-`UNIFI_NETWORK_*` and `PROTECT_*` for the MCP network and Protect tools) are
+`gateway` probes, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and
+`vlan-traffic sample`, `UNIFI_NETWORK_*` and `PROTECT_*` for the MCP network and Protect tools) are
 listed in `.env.example` and the README's Configuration section.
 
 **Step 4: Secure the configuration file**
@@ -879,6 +879,31 @@ busiest 2.4 GHz SSID. A retry rate is computed only between two samples that bot
 a sample whose read times out is recorded as missing. Ctrl-C ends the run with a partial
 report of the samples taken (written to `--output` too) and exit code 130.
 
+**Per-VLAN traffic history (sample by hand; reports offline)**
+
+```bash
+# One sample: the gateway's bridge byte counters over SSH, a row per VLAN in the local store
+uv run unifi-mapper vlan-traffic sample
+
+# Roll samples older than 8 days into hourly rows (older than 60 days into daily rows)
+uv run unifi-mapper vlan-traffic rollup
+
+# Average and peak per VLAN over now, 1d, 1w, 1m or 1y, and what the store holds
+uv run unifi-mapper vlan-traffic report 1w
+uv run unifi-mapper vlan-traffic coverage
+```
+
+Rates come from the difference between two samples, so take them regularly (every minute or
+so) for honest averages and peaks. Run `vlan-traffic sample` yourself, or from a schedule of
+your own: none is published, and the scheduled task waits for
+[issue 038](../issues/038-ssh-host-key-verification-disabled.md), because an unattended sampler
+would log in to the gateway as root without verifying its host key. Until then a report covers
+the samples someone took; `coverage` shows the gaps. The store is
+`$XDG_STATE_HOME/unifi_mapper/vlan-traffic.sqlite3` (`--db` names another), and the MCP tools
+`get_vlan_traffic_report` and `list_vlan_traffic_periods` read it without credentials. A report
+that says the store "needs recovery" (a sample that crashed mid-write) is fixed by
+`vlan-traffic rollup`.
+
 **Connectivity tools (firewall and path analysis)**
 
 Via the MCP server:
@@ -1293,7 +1318,7 @@ sensor.back_door_sensor_battery
 
 ### Description
 
-The MCP (Model Context Protocol) server exposes the toolkit's 85 tools to AI assistants (every one it runs is read-only against the controller). When connected to an MCP client such as kiro-cli, Claude Code or Claude Desktop, you can ask natural-language questions about your network and the assistant calls the appropriate tools. On the default discovery surface the AI calls `search_tools` first, then `execute_tool`; with `UNIFI_MCP_TOOL_SURFACE=direct` it calls tools by name.
+The MCP (Model Context Protocol) server exposes the toolkit's 87 tools to AI assistants (every one it runs is read-only against the controller). When connected to an MCP client such as kiro-cli, Claude Code or Claude Desktop, you can ask natural-language questions about your network and the assistant calls the appropriate tools. On the default discovery surface the AI calls `search_tools` first, then `execute_tool`; with `UNIFI_MCP_TOOL_SURFACE=direct` it calls tools by name.
 
 ### Prerequisites
 
@@ -1371,11 +1396,11 @@ execute_tool("detect_ip_conflicts", {})
 | `get_tool_info` | Get full parameter details for a specific tool |
 | `execute_tool` | Run a read-only tool by name (mutating tools are refused) |
 
-### Tool Categories Reference (85 registered tools)
+### Tool Categories Reference (87 registered tools)
 
 | Category | Count | Tools |
 |----------|-------|-------|
-| analysis | 47 | STP (including a one-shot priority audit), VLAN, MTU, SFP, radio, traffic matrix, LAG, QoS, capacity, firmware, IP conflicts, storm detection, MAC table, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, change-plan, snapshot, drift, guard, preflight, and 10G validation tools |
+| analysis | 49 | STP (including a one-shot priority audit), VLAN, MTU, SFP, radio, traffic matrix, per-VLAN traffic history, LAG, QoS, capacity, firmware, IP conflicts, storm detection, MAC table, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, change-plan, snapshot, drift, guard, preflight, and 10G validation tools |
 | diagnostics | 11 | `network_health_check`, `performance_analysis`, `security_audit`, `connectivity_analysis`, `inspect_switch_port`, `get_switch_ports`, `diff_port_profiles`, `diagnose_switch_port`, `get_wan_health`, `get_wan_speedtest_history`, `verify_config_backup` |
 | discovery | 5 | `find_device`, `find_ip`, `find_mac`, `client_trace`, `get_client_history` |
 | observability | 7 | `get_device_events`, `get_port_counter_rates`, `get_device_stats`, `get_ap_retry_rates`, `get_config_object`, `find_recent_config_changes`, `get_recent_events` |
@@ -1889,7 +1914,7 @@ flowchart TB
     end
 
     subgraph Analysis["Analysis Toolkit"]
-        G[analysis - 47 tools]
+        G[analysis - 49 tools]
         H[diagnostics - 11 tools]
         I[discovery - 5 tools]
         J[connectivity - 4 tools]
@@ -1937,7 +1962,7 @@ flowchart TB
 | `port_mapper.py` | Traditional port mapping (LLDP to port name) |
 | `smart_port_mapper.py` | SmartPortMapper with verification and cache-busting |
 | `mcp/server.py` | FastMCP server: the meta-tools, the direct surface, resources and prompts |
-| `mcp/manifests/` | YAML tool definitions for all 85 registered tools |
+| `mcp/manifests/` | YAML tool definitions for all 87 registered tools |
 | `analysis/stp_optimizer.py` | STP topology discovery, priority calculation, report generation |
 | `protect/client.py` | Async wrapper around uiprotect ProtectApiClient |
 | `protect/mqtt.py` | MQTT bridge with Home Assistant discovery |

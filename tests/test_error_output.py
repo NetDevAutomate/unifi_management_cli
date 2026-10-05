@@ -42,6 +42,7 @@ APPS = {
     'controller_app': typer_cli.controller_app,
     'backup_app': typer_cli.backup_app,
     'gateway_app': typer_cli.gateway_app,
+    'vlan_traffic_app': typer_cli.vlan_traffic_app,
     'inventory_app': inventory_cli.inventory_app,
 }
 
