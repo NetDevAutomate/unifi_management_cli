@@ -1596,7 +1596,6 @@ def diagnose_latency_matrix(
     ),
 ):
     """📡 SSH to gateway and ping all devices to build a latency matrix."""
-    import asyncio
     from rich.table import Table
     from unifi_mapper.analysis.latency_matrix import run_latency_matrix
 
@@ -1606,17 +1605,11 @@ def diagnose_latency_matrix(
     load_env_from_config(str(state.config_path))
     console.print('📡 [bold]Gateway Latency Matrix[/bold]\n')
 
-    try:
-        report = asyncio.run(
-            run_latency_matrix(
-                ping_count=ping_count,
-                timeout=timeout,
-                include_clients=not devices_only,
-            )
+    report = _run_gateway_ssh(
+        lambda: run_latency_matrix(
+            ping_count=ping_count, timeout=timeout, include_clients=not devices_only
         )
-    except Exception as e:
-        console.print(f'[red]Error:[/red] {e}')
-        raise typer.Exit(1)
+    )
 
     # Summary
     console.print(f'Gateway: [cyan]{report.gateway_host}[/cyan]')

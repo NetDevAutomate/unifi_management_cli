@@ -750,3 +750,45 @@ def test_require_bounded_float_refuses_anything_else(value: object) -> None:
         require_bounded_float('interval', value, 0.5, 10)
     assert exc.value.error_code == ErrorCodes.CONFIG_INVALID
     assert 'interval must be a number from 0.5 to 10' in exc.value.message
+
+
+# --- both SSH commands report a failure the same way (issue 050) -------------------------
+
+SSH_COMMANDS = [['diagnose', 'bandwidth', '192.0.2.10'], ['diagnose', 'latency-matrix']]
+
+
+@pytest.mark.parametrize('args', SSH_COMMANDS)
+def test_cli_ssh_connect_failure_goes_to_stderr(
+    monkeypatch: pytest.MonkeyPatch, args: list[str]
+) -> None:
+    async def _refused(host: str, **kwargs: Any) -> FakeConnection:
+        raise OSError('Connection refused')
+
+    monkeypatch.setattr(typer_cli, 'load_env_from_config', lambda path: None)
+    monkeypatch.setattr(asyncssh, 'connect', _refused)
+    _controller(monkeypatch, [{'ip': '192.0.2.10', 'name': 'Switch'}], [])
+    result = runner.invoke(app, args)
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit)
+    stderr = _flat(result.stderr)
+    assert '❌ [CONTROLLER_UNREACHABLE] SSH connection to 192.0.2.1 failed' in stderr
+    assert 'SSH connection' not in result.stdout
+    assert 'Error:' not in result.stdout
+
+
+@pytest.mark.parametrize('args', SSH_COMMANDS)
+def test_cli_ssh_unexpected_error_is_redacted_on_stderr(
+    monkeypatch: pytest.MonkeyPatch, args: list[str]
+) -> None:
+    async def _boom(*_args: object, **_kwargs: object) -> Any:
+        raise RuntimeError(f'agent died, password={FAKE_SSH_PW}')
+
+    monkeypatch.setattr(typer_cli, 'load_env_from_config', lambda path: None)
+    monkeypatch.setattr(bandwidth_test, 'run_bandwidth_test', _boom)
+    monkeypatch.setattr(latency_matrix, 'run_latency_matrix', _boom)
+    result = runner.invoke(app, args)
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert '❌ Error: agent died' in _flat(result.stderr)
+    assert 'agent died' not in result.stdout
+    assert FAKE_SSH_PW not in result.output

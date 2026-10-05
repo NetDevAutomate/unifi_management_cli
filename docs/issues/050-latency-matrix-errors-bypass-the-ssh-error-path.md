@@ -1,7 +1,7 @@
 ---
 title: "`diagnose latency-matrix` reports errors on stdout and unredacted, unlike `diagnose bandwidth`"
 date: 2026-10-04
-status: open
+status: resolved
 severity: low
 components: [typer_cli, latency_matrix]
 found_by: docs and repo hygiene review (SSH error documentation)
@@ -49,3 +49,15 @@ report = _run_gateway_ssh(
 Then extend the CLI test to assert, for both commands, that the error goes to stderr with
 the `❌` prefix, and add a case for an unexpected exception whose text holds a secret
 assignment. After the fix, change the README and runbook to describe one behaviour again.
+
+## Resolution
+
+Fixed as recommended, in the July port: `diagnose latency-matrix` now runs through
+`_run_gateway_ssh`, as `diagnose bandwidth` does, so both report a failure on stderr with the
+`❌` prefix, unwrapped, and an unexpected error's text redacted (a traceback only with
+`--debug`, without local variables). Since the July port's SSH refactor, both connect
+messages read "SSH connection to {host} failed: …", redacted.
+
+Tests: `tests/analysis/test_gateway_ssh.py` runs both commands through a refused connect and
+through an unexpected exception whose text holds a password assignment, and checks stderr,
+stdout and the redaction for each. The two latency-matrix cases failed before the fix.
