@@ -250,20 +250,70 @@ TRACEBACK_RENDERERS = (
 )
 
 
+def _traceback_renderer_uses(path: Path) -> list[str]:
+    """path:line of every traceback renderer a module uses, under any import form.
+
+    ``import traceback`` (or ``as`` an alias) then ``<name>.print_exc()``, and ``from
+    traceback import print_exc`` (or ``*``), which needs no attribute call to use it.
+    """
+    tree = ast.parse(path.read_text(encoding='utf-8'))
+    aliases = {'traceback'} | {
+        alias.asname
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == 'traceback' and alias.asname
+    }
+    hits = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == 'traceback':
+            hits += [
+                f'{path.name}:{node.lineno}'
+                for alias in node.names
+                if alias.name in TRACEBACK_RENDERERS or alias.name == '*'
+            ]
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in TRACEBACK_RENDERERS
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in aliases
+        ):
+            hits.append(f'{path.name}:{node.lineno}')
+    return hits
+
+
 def test_every_traceback_in_src_goes_through_redact_traceback() -> None:
     allowed = {PACKAGE / 'core' / 'utils' / 'redact.py'}  # redact_traceback itself
     offenders = [
-        f'{path.relative_to(PACKAGE)}:{call.lineno}'
-        for name in TRACEBACK_RENDERERS
-        for path, call in _calls(name)
+        hit
+        for path in sorted(PACKAGE.rglob('*.py'))
         if path not in allowed
-        and isinstance(call.func, ast.Attribute)
-        and isinstance(call.func.value, ast.Name)
-        and call.func.value.id == 'traceback'
+        for hit in _traceback_renderer_uses(path)
     ]
     assert offenders == []
-    renderers = [call for name in TRACEBACK_RENDERERS for path, call in _calls(name)]
-    assert renderers, 'the scan found no call at all: it is not looking where it should'
+    assert _traceback_renderer_uses(PACKAGE / 'core' / 'utils' / 'redact.py'), (
+        'the scan found no renderer at all: it is not looking where it should'
+    )
+
+
+def test_the_traceback_scan_sees_an_alias_and_a_from_import(tmp_path: Path) -> None:
+    sample = tmp_path / 'sample.py'
+    sample.write_text(
+        'import traceback\n'
+        'import traceback as tb\n'
+        'from traceback import format_exc, extract_stack\n'
+        'from traceback import *\n'
+        'traceback.print_exc()\n'
+        'tb.print_exception(None)\n'
+        'other.print_exc()\n'
+    )
+    assert _traceback_renderer_uses(sample) == [
+        'sample.py:3',
+        'sample.py:4',
+        'sample.py:5',
+        'sample.py:6',
+    ]
 
 
 def test_the_raw_exception_scan_finds_an_unredacted_print(tmp_path: Path) -> None:
