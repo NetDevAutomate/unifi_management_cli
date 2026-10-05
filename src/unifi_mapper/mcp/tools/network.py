@@ -164,9 +164,10 @@ async def get_clients(
 ) -> dict[str, Any]:
     """Get connected clients with fingerprinting data, one page at a time.
 
-    The controller's list is read in full (every Integration API page), filtered, sorted by
-    client ID and then sliced, so ``total`` counts every client and a page is stable between
-    calls while the set of clients is unchanged.
+    The controller's list is read in full (every Integration API page), filtered by
+    ``active_only``, sorted by client ID and then sliced, so ``total`` counts every client
+    that passed the filter (only connected clients while ``active_only`` is true) and a page
+    is stable between calls while that set is unchanged.
 
     Args:
         active_only: Return only currently connected clients.

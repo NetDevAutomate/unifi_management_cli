@@ -168,9 +168,31 @@ read-only guard. The `network_api` and `protect` tools open their own guarded cl
 
 `get_clients` returns one page, `{total, returned, offset, limit, next_offset, truncated,
 clients}`: `limit` 1-1000 (default 200), sorted by client ID. It reads the controller's whole
-list on every call, so `total` counts every client; pass a page's `next_offset` as the next
-`offset` until it is null. A failure is `{error}`. (It returned a bare list before the July
-port.)
+list on every call and filters it first, so `total` counts every client that matches (only
+connected clients while `active_only` is true, the default; every client when it is false);
+pass a page's `next_offset` as the next `offset` until it is null. A failure is `{error}`.
+
+> [!IMPORTANT]
+> **Breaking change in the July port: `get_clients` returns a page object, not a list.**
+> Before, it returned a bare list of client objects, and `[{error}]` on failure. A caller
+> that iterates the result, or reads `result[0]['error']`, must read `result['clients']`
+> and `result['error']` instead, and follow `next_offset` to get more than one page
+> (200 clients by default).
+
+```json
+{
+  "total": 230,
+  "returned": 200,
+  "offset": 0,
+  "limit": 200,
+  "next_offset": 200,
+  "truncated": true,
+  "clients": [{"id": "…", "name": "Phone A", "mac_address": "02:00:00:00:02:01", "...": "…"}]
+}
+```
+
+Call it again with `offset: 200` for the last 30 clients (`next_offset` is then null and
+`truncated` false).
 
 ### Environment variables
 
@@ -565,7 +587,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
 | `get_acl_rules` | `network_api` |  | List ACL rules and their configurations |
-| `get_clients` | `network_api` |  | List connected clients with fingerprinting data, one page at a time, sorted by client ID. The controller's list is read in full, so total counts every client; pass a page's next_offset as the next offset until it is null. Read-only. |
+| `get_clients` | `network_api` |  | List connected clients with fingerprinting data, one page at a time, sorted by client ID. The controller's list is read in full and filtered first, so total counts every client that matches (only connected ones while active_only is true, the default); pass a page's next_offset as the next offset until it is null. Returns a page object, not a list. Read-only. |
 | `get_dns_policies` | `network_api` |  | List DNS policies and configurations |
 | `get_firewall_policies` | `network_api` |  | List firewall policies between zones |
 | `get_firewall_zones` | `network_api` |  | List all firewall zones and their configurations |

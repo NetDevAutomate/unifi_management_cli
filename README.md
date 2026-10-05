@@ -684,6 +684,11 @@ Ask Claude: "Find all cameras and their status" → Claude uses `get_cameras` to
 
 Ask Claude: "What devices are connected to my network?" → Claude uses `get_clients` tool
 
+`get_clients` returns one page of clients as an object (`total`, `next_offset`, `clients`, …),
+not a bare list as before the July port: a script that iterated its result must read
+`clients` and follow `next_offset` (see the
+[MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md)).
+
 ### Advanced Verification
 
 ```bash
