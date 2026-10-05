@@ -1418,7 +1418,7 @@ flowchart TB
 |---|---|---|---|
 | Discovery | `stp_optimizer.discover_stp_topology` | Optional `device_id` | `STPTopology` |
 | Optimisation | `stp_optimizer.calculate_optimal_priorities` | `STPTopology` | `list[STPChange]` |
-| Priority audit | `stp_audit.audit_stp_priorities` | Optional `device` (name, MAC or ID; narrows the rows only) | Audit dict: `switches`, `skipped`, `remediation` (CLI commands) |
+| Priority audit | `stp_audit.audit_stp_priorities` | Optional `device` (name, MAC or ID; narrows the rows and the verdict, the fleet's kept as `fleet_compliant`/`fleet_summary`) | Audit dict: `switches`, `skipped`, `remediation` (CLI commands) |
 | Guard audit | `stp_guard.audit_stp_guard_recommendations` | `STPTopology` | `STPGuardAuditReport` |
 | Drift detection | `stp_drift.detect_stp_config_drift` | `STPTopology`, intent mapping | `STPDriftReport` |
 | Snapshots | `stp_snapshot.snapshot_stp_topology` / `diff_stp_snapshots` | `STPTopology` or two snapshots | `STPSnapshot`, `STPSnapshotDiff` |

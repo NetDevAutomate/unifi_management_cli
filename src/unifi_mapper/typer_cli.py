@@ -2200,8 +2200,9 @@ def stp_audit_priorities(
 
     Discovers the whole fleet (tiers need every switch), computes the recommended
     priorities and reports the delta per switch, a warning when two non-core switches tie
-    at the lowest priority, and the gateway, which is skipped. --device narrows the rows to
-    one switch, by name, MAC or ID. Writes no plan: stp optimize --plan does. Read-only.
+    at the lowest priority, and the gateway, which is skipped. --device narrows the rows and
+    the verdict to one switch, by name, MAC or ID, and prints the fleet's verdict after it.
+    Writes no plan: stp optimize --plan does. Read-only.
     """
     from .analysis.stp_audit import audit_stp_priorities
 
@@ -2230,6 +2231,8 @@ def stp_audit_priorities(
     if report['root_tie_break_warning']:
         console.print(f'[yellow]⚠ {escape(report["root_tie_break_warning"])}[/yellow]')
     console.print(escape(report['summary']))
+    if 'fleet_summary' in report:
+        console.print(f'[dim]Fleet: {escape(report["fleet_summary"])}[/dim]')
     if report['remediation']['changes']:
         console.print('To plan and apply the changes:')
         for command in report['remediation']['commands']:

@@ -104,6 +104,10 @@ def _tie_warning(rows: list[dict[str, Any]]) -> str | None:
     )
 
 
+def _skipped_lines(skipped: list[dict[str, Any]]) -> list[str]:
+    return [f'Skipped {row["name"]}: {row["reason"]}.' for row in skipped]
+
+
 def _summary(rows: list[dict[str, Any]], skipped: list[dict[str, Any]]) -> str:
     drift = sum(1 for row in rows if row['delta'] != 0)
     lines = (
@@ -111,8 +115,7 @@ def _summary(rows: list[dict[str, Any]], skipped: list[dict[str, Any]]) -> str:
         if drift == 0
         else [f'{drift} of {len(rows)} switch(es) differ from the recommended priority.']
     )
-    lines += [f'Skipped {row["name"]}: {row["reason"]}.' for row in skipped]
-    return ' '.join(lines)
+    return ' '.join(lines + _skipped_lines(skipped))
 
 
 def build_stp_audit(topology: STPTopology, changes: list[STPChange]) -> dict[str, Any]:
@@ -194,12 +197,16 @@ def _resolve(topology: STPTopology, device: str) -> tuple[SwitchSTPConfig, str]:
 
 
 def scope_stp_audit(report: dict[str, Any], topology: STPTopology, device: str) -> dict[str, Any]:
-    """Narrow a fleet-wide audit to one switch, keeping the fleet's root and warnings.
+    """Narrow a fleet-wide audit to one switch, keeping the fleet's root, warning and verdict.
 
     Pure. ``device`` is resolved against ``topology.switches`` by exact ``device_id``, then
     by MAC in any notation (only when both the query and the switch's MAC normalise, so a
     name never matches a switch with no MAC), then by exact name, case-insensitive; the first
     tier with a match wins. A gateway resolves to its ``skipped`` entry.
+
+    ``compliant`` and ``summary`` describe the scoped switch (a gateway has nothing of its own
+    to change, so it is compliant and its summary names the skip); the fleet's verdict is
+    kept as ``fleet_compliant`` and ``fleet_summary``.
 
     Args:
         report: The fleet-wide result of :func:`build_stp_audit`.
@@ -208,6 +215,7 @@ def scope_stp_audit(report: dict[str, Any], topology: STPTopology, device: str) 
 
     Returns:
         The report with ``switches`` and ``remediation.changes`` filtered to that switch,
+        ``compliant`` and ``summary`` for it, ``fleet_compliant`` and ``fleet_summary``,
         ``scope`` (``device``, ``device_id``, ``matched_by``) and a note that priorities are
         computed for the whole fleet.
 
@@ -220,9 +228,15 @@ def scope_stp_audit(report: dict[str, Any], topology: STPTopology, device: str) 
     remediation['changes'] = [
         c for c in remediation['changes'] if c['device_id'] == switch.device_id
     ]
+    rows = [row for row in report['switches'] if row['device_id'] == switch.device_id]
+    skipped = [row for row in report['skipped'] if row['device_id'] == switch.device_id]
     return {
         **report,
-        'switches': [row for row in report['switches'] if row['device_id'] == switch.device_id],
+        'switches': rows,
+        'compliant': all(row['delta'] == 0 for row in rows),
+        'summary': _summary(rows, skipped) if rows else ' '.join(_skipped_lines(skipped)),
+        'fleet_compliant': report['compliant'],
+        'fleet_summary': report['summary'],
         'remediation': remediation,
         'scope': {'device': device, 'device_id': switch.device_id, 'matched_by': matched_by},
         'notes': [SCOPE_NOTE],
@@ -252,7 +266,8 @@ async def audit_stp_priorities(
     switch), then reports each switch's current, recommended and delta priority, a warning
     when two non-core switches tie at the lowest priority (the root would be decided by MAC
     address), and the gateway under skipped (its bridge runs with STP disabled). With device,
-    the same rows are narrowed to that switch.
+    the same rows are narrowed to that switch: compliant and summary then describe it, and
+    fleet_compliant and fleet_summary the fleet.
 
     Remediation is advice: write and apply the plan with the CLI (``unifi-mapper stp optimize
     --plan PLAN.json``, then ``unifi-mapper stp apply --plan PLAN.json``, which previews unless
@@ -263,7 +278,8 @@ async def audit_stp_priorities(
 
     Returns:
         switches, skipped, current_root, current_root_priority, compliant,
-        root_tie_break_warning, summary, remediation and, when scoped, scope and notes.
+        root_tie_break_warning, summary, remediation and, when scoped, fleet_compliant,
+        fleet_summary, scope and notes.
 
     Raises:
         ToolError: DEVICE_NOT_FOUND when device matches nothing or more than one switch;

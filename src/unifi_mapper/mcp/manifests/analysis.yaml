@@ -315,9 +315,10 @@ tools:
       switch's current, recommended and delta bridge priority and tier, a warning when two
       non-core switches tie at the lowest priority (the root would be decided by MAC), and
       the gateway under skipped (its bridge runs with STP disabled). Tiers always come from
-      the whole fleet. Remediation names the CLI commands (stp optimize --plan, then stp
-      apply --plan, which previews unless --no-dry-run); STP writes never run over MCP.
-      Read-only.
+      the whole fleet; narrowed to one switch, compliant and summary describe that switch and
+      fleet_compliant and fleet_summary the fleet. Remediation names the CLI commands (stp
+      optimize --plan, then stp apply --plan, which previews unless --no-dry-run); STP writes
+      never run over MCP. Read-only.
     priority: P1
     tags: [stp, spanning-tree, priority, audit, root, read-only]
     parameters:

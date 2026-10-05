@@ -16,6 +16,7 @@ from typing import Any
 from unifi_mapper.analysis.stp_audit import (
     REMEDIATION_COMMANDS,
     SCOPE_NOTE,
+    SKIPPED_REASON,
     audit_stp_priorities,
     build_stp_audit,
     scope_stp_audit,
@@ -142,6 +143,23 @@ async def test_the_gateway_resolves_to_its_skipped_entry() -> None:
     assert report['switches'] == [] and report['remediation']['changes'] == []
     assert [s['device_id'] for s in report['skipped']] == [GATEWAY_ID]
     assert report['scope']['device_id'] == GATEWAY_ID
+    assert report['compliant'] is True  # nothing of its own to change
+    assert report['summary'] == f'Skipped Gateway: {SKIPPED_REASON}.'
+
+
+async def test_a_scoped_verdict_describes_the_switch_and_keeps_the_fleet_s() -> None:
+    fleet = await _audit(_controller())
+    in_line = await _audit(_controller(), 'Switch A')  # compliant, in a fleet that drifts
+    assert fleet['compliant'] is False and 'fleet_compliant' not in fleet
+    assert in_line['compliant'] is True
+    assert in_line['summary'] == 'STP priorities are compliant across 1 switch(es).'
+    assert (in_line['fleet_compliant'], in_line['fleet_summary']) == (
+        fleet['compliant'],
+        fleet['summary'],
+    )
+    drifting = await _audit(_controller(), 'Switch B')
+    assert drifting['compliant'] is False
+    assert drifting['summary'] == '1 of 1 switch(es) differ from the recommended priority.'
 
 
 async def test_an_unknown_name_lists_every_switch_as_a_candidate() -> None:
@@ -304,6 +322,16 @@ def test_the_command_prints_the_scoped_row_as_json(controller: FakeController) -
         ('Switch D', 1, 12288)
     ]
     assert data['notes'] == [SCOPE_NOTE]
+
+
+def test_a_scoped_table_prints_the_switch_s_verdict_then_the_fleet_s(
+    controller: FakeController,
+) -> None:
+    result = runner.invoke(app, ['stp', 'audit-priorities', '--device', 'Switch A'])
+    assert result.exit_code == 0, result.output
+    flat = ' '.join(result.stdout.split())
+    assert 'STP priorities are compliant across 1 switch(es).' in flat
+    assert 'Fleet: 3 of 4 switch(es) differ from the recommended priority.' in flat
 
 
 def test_an_unknown_device_is_one_error_line_on_stderr(controller: FakeController) -> None:

@@ -175,7 +175,8 @@ propose a priority for it or name it as the root, and print "Skipped <gateway>: 
 priority is not changed" instead. A bridge that takes no part in the election would ignore a
 priority written to it, so a plan built around it as the root would leave the real root to be
 decided by MAC address. `stp audit-priorities` lists it under "Skipped" for the same reason, and
-always tiers the whole fleet, so `--device` only narrows the rows it prints.
+always tiers the whole fleet: `--device` narrows the rows and the verdict to that switch, and
+prints the fleet's verdict after it (`fleet_compliant` and `fleet_summary` in `--json`).
 
 ### Device Inventory
 
