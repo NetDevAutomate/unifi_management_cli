@@ -80,7 +80,7 @@ The UniFi Management CLI is a Python package (`unifi_mapper`) that provides thre
 
 1. **CLI tools** - argparse and Typer-based command-line interfaces for network operators
 2. **Analysis and diagnostics tools** - 49 analysis modules plus the diagnostics, discovery and connectivity packages
-3. **MCP server** - A FastMCP server that exposes 83 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
+3. **MCP server** - A FastMCP server that exposes 84 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
 
 The codebase contains two generations of API client code. The legacy synchronous path (`api_client.py`, `port_mapper.py`, `run_methods.py`) handles the original port-mapping workflow. The modern async path (`core/utils/client.py`, `network/client.py`, `protect/client.py`) serves the analysis, network control, and Protect integration packages.
 
@@ -115,7 +115,7 @@ graph TB
 
     subgraph "Domain Packages"
         ANA["analysis/\n49 modules, 46 tools"]
-        DIA["diagnostics/\n9 modules, 10 tools"]
+        DIA["diagnostics/\n9 modules, 11 tools"]
         DIS["discovery/\n4 modules, 5 tools"]
         CON["connectivity/\n4 modules, 4 tools"]
         NET["network/\n12 modules"]
@@ -411,7 +411,7 @@ AsyncClient --> Errors
 
 ### 5.2 `typer_cli.py`
 
-**Purpose.** The `unifi-mapper` console script: a Typer + Rich CLI over the port-mapping logic and the analysis packages. Registers the top-level commands (`discover`, `diagram`, `verify`, `capabilities`, `version`, `install-completions`) and the `find`, `analyze`, `diagnose`, `inventory`, `stp`, `radio`, `ports` and `controller` groups, 67 commands in all.
+**Purpose.** The `unifi-mapper` console script: a Typer + Rich CLI over the port-mapping logic and the analysis packages. Registers the top-level commands (`discover`, `diagram`, `verify`, `capabilities`, `version`, `install-completions`) and the `find`, `analyze`, `diagnose`, `inventory`, `stp`, `radio`, `ports`, `controller` and `backup` groups, 68 commands in all.
 
 **Key objects.**
 
@@ -1249,7 +1249,7 @@ classDiagram
 
 **Lazy loading.** `ToolProxy._load_implementation()` calls `importlib.import_module` and `getattr` on first `execute()` call, not at startup. `ToolRegistry.execute(name, params)` is the registry's own refuse-mutation choke point over the proxies; the MCP server runs tools through `ToolCatalog` and `ToolRunner` instead (§17.4), which import each handler the same lazy way.
 
-**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (46 tools), `connectivity.yaml` (4), `diagnostics.yaml` (10), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (7), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
+**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (46 tools), `connectivity.yaml` (4), `diagnostics.yaml` (11), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (7), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
 
 ---
 
@@ -1286,9 +1286,11 @@ Each call opens its own guarded client: the network wrappers build `UniFiNetwork
 
 Uses `requests` (synchronous) rather than `uiprotect`, making it independent of the async Protect client stack. Credentials come from `PROTECT_HOST`, `PROTECT_USERNAME` and `PROTECT_PASSWORD` unless given on the command line.
 
-### `backup/poc_decrypt.py`
+### `backup/poc_decrypt.py` and `backup/verify.py`
 
-**Purpose.** A proof of concept that decrypts a UniFi controller backup (`.unf`) with the controller's fixed AES key and IV (module constants, not settings), extracts the database and parses its BSON collections (`decrypt_backup`, `extract_db_gz`, `parse_bson_documents`). Run it as `python -m unifi_mapper.backup.poc_decrypt BACKUP.unf`; only `backup/__init__.py` re-exports it.
+**Purpose.** `poc_decrypt.py` is a proof of concept that decrypts a UniFi controller backup (`.unf`) with the controller's fixed AES key and IV (module constants, not settings), extracts the database and parses its BSON collections (`decrypt_backup`, `extract_db_gz`, `decompress_db`, `iter_bson_documents`, `parse_bson_documents`). Run it as `python -m unifi_mapper.backup.poc_decrypt BACKUP.unf`. Its stages never print (a debug log line instead), `decompress_db` follows `gzip.decompress`' member rules with an optional output cap, and a missing dependency raises `ImportError` instead of printing and exiting.
+
+`verify.py` (`verify_backup_bytes`, `check_backup_path`, `verify_config_backup`; `backup verify`, MCP `verify_config_backup`, `credentials: none`) runs those stages offline with a 1 GiB database cap and counts each collection's documents without keeping any, so the result holds structure only. The path is checked before the file is opened: the `.unf` suffix first, then absolute (MCP), a regular file and at most 512 MiB.
 
 ---
 

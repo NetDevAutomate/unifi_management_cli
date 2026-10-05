@@ -242,6 +242,9 @@ controller_app = typer.Typer(
     help='🗂️ Read-only controller config objects and change history',
     pretty_exceptions_show_locals=False,
 )
+backup_app = typer.Typer(
+    help='💾 Offline checks of downloaded config backups', pretty_exceptions_show_locals=False
+)
 
 app.add_typer(find_app, name='find')
 app.add_typer(analyze_app, name='analyze')
@@ -251,6 +254,7 @@ app.add_typer(stp_app, name='stp')
 app.add_typer(radio_app, name='radio')
 app.add_typer(ports_app, name='ports')
 app.add_typer(controller_app, name='controller')
+app.add_typer(backup_app, name='backup')
 
 
 @app.command()
@@ -4704,6 +4708,50 @@ def diagnose_wan_history(
             _cell(entry.get('status')),
         )
     console.print(table)
+
+
+@backup_app.command('verify')
+def backup_verify(
+    path: str = typer.Argument(..., help='The .unf backup file (relative paths and ~ work)'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """💾 Check a downloaded config backup (.unf) offline: structure only.
+
+    Decrypts the backup with the controller's fixed backup key, extracts and decompresses
+    the database (capped at 1 GiB) and counts the documents in each collection. Prints
+    no document contents and contacts no controller. The file must end in .unf, be a
+    regular file and be at most 512 MiB. Exits 0 when the backup is valid, 1 when it is
+    not. Read-only.
+    """
+    from .backup.verify import BACKUP_SUFFIX, check_backup_path, verify_backup_file
+    from .core.utils.errors import ErrorCodes, ToolError
+
+    with _offline_errors():
+        if Path(path).suffix.lower() != BACKUP_SUFFIX:  # before any filesystem call
+            raise ToolError(
+                message='the backup must be a .unf file', error_code=ErrorCodes.CONFIG_INVALID
+            )
+        checked = check_backup_path(Path(path).expanduser().resolve(), require_absolute=True)
+        result = verify_backup_file(checked)
+    if as_json:
+        _emit_json(result)
+    else:
+        style = 'green' if result['valid'] else 'red'
+        verdict = 'valid' if result['valid'] else 'NOT valid'
+        console.print(f'💾 {escape(result["path"])}: [{style}]{verdict}[/]', soft_wrap=True)
+        table = Table(title='Collections', show_header=True)
+        table.add_column('Collection', style='cyan')
+        table.add_column('Documents', justify='right')
+        for name, count in result['collections'].items():
+            table.add_row(escape(name), str(count))
+        console.print(table)
+        missing = [k for k, present in result['key_sections_present'].items() if not present]
+        if missing and result['valid']:
+            console.print(f'[yellow]⚠ Missing key sections: {escape(", ".join(missing))}[/]')
+        for error in result['errors']:
+            err_console.print(f'[red]{escape(error["stage"])}: {escape(error["error"])}[/red]')
+    if not result['valid']:
+        raise typer.Exit(1)
 
 
 @controller_app.command('config')

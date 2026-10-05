@@ -9,7 +9,7 @@ This project provides a complete suite of tools for managing UniFi networks:
 - **Network Automation**: LLDP/CDP-based discovery with automatic port naming
 - **Device Intelligence**: Model-specific capability detection and update strategies
 - **Ground Truth Verification**: Multi-read consistency checking prevents false positives
-- **83 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, device stats, AP retry rates and raw config objects with secrets removed, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
+- **84 MCP Tools**: Network health, performance, security diagnostics, read-only switch-port evidence bundles and event history, device stats, AP retry rates and raw config objects with secrets removed, STP safety, VLAN checks, SFP/radio analysis, radio optimisation, and Protect inventory
 - **UniFi Protect Integration**: Real-time event processing and Home Assistant MQTT bridge
 - **MCP Server**: AI-assisted network troubleshooting via Model Context Protocol
 
@@ -210,6 +210,9 @@ unifi-mapper controller config --json wlanconf --name "SSID A"
 # Config objects created in the last week, newest first (creation only, not edits)
 unifi-mapper controller config-changes --since-hours 168 --kind wlanconf --kind networkconf
 
+# Check a downloaded config backup offline: does it decrypt, and what does it hold?
+unifi-mapper backup verify ~/Downloads/network-backup.unf
+
 # Site-wide events, alarms and system-log entries from the last hour (admin edits included)
 unifi-mapper controller events --since-hours 1 --category security --max-events 50
 ```
@@ -220,6 +223,8 @@ before it left the machine. Secret keys never reach their output: `controller co
 lists what it removed by key path in `sanitised_paths`, never by value. `controller
 config-changes` dates each object by the creation time its ID records, so an edit to an older
 object does not appear; `controller events` shows the edits, in the admin-activity system log.
+`backup verify` contacts nothing: it decrypts the backup with the controller's fixed backup key
+and reports which collections it holds and how many documents each has, never their contents.
 
 `diagnose all` runs 15 checks: link quality, capacity planning, port profiles, MTU
 consistency, SFP diagnostics, radio optimisation, firmware skew, DHCP pools, PoE budget,
@@ -531,6 +536,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `radio restore` | Restore a previous radio configuration (writes with `--apply`) |
 | `radio auto-channel` | Utilization-weighted channel assignment (writes with `--apply`) |
 | `radio report` | Generate a radio optimisation report |
+| `backup verify` | Check a downloaded config backup (`.unf`) offline: structure and collection counts only |
 | `controller config` | The controller's raw config objects of one kind, secrets removed |
 | `controller config-changes` | Config objects created in the last N hours, newest first |
 | `controller events` | Site-wide events, alarms and system-log entries from the last N hours |
@@ -621,12 +627,12 @@ Credentials come from an env file, not the client config: `--config PATH`, else 
 
 The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch mode, the Codex config, all environment variables, the error codes and the config discovery rules. The [MCP standards review](docs/mcp-server/MCP_STANDARDS_REVIEW.md) audits the server against the MCP specification and SDK guidance.
 
-**Available Tools (83 total):**
+**Available Tools (84 total):**
 
 | Category | Tools | Description |
 |----------|-------|-------------|
 | discovery | 5 | Device/IP/MAC location, client tracing and client history |
-| diagnostics | 10 | Health checks, performance analysis, security audit, single-port inspection, all-ports view, port profile diff, port evidence bundle, WAN health and recorded speedtests |
+| diagnostics | 11 | Health checks, performance analysis, security audit, single-port inspection, all-ports view, port profile diff, port evidence bundle, WAN health and recorded speedtests, offline backup verification |
 | observability | 7 | Event, alarm, system-log and admin-audit history; port counter rates and history; site-wide recent events; one device's stats, AP retry rates, raw config objects and the config-change timeline |
 | connectivity | 4 | Firewall checks, path analysis, traceroute, inter-VLAN endpoint validation |
 | network | 6 | Firewall zones/policies, ACLs, DNS, clients, VLANs |
@@ -675,11 +681,11 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (83 tools via the MCP SDK's FastMCP)
+└── MCP Server (84 tools via the MCP SDK's FastMCP)
 
 Analysis Toolkit
 ├── Analysis Tools (46 tools)
-├── Diagnostics (10 tools)
+├── Diagnostics (11 tools)
 ├── Discovery (5 tools)
 ├── Observability (7 tools)
 ├── Connectivity (4 tools)

@@ -5,9 +5,11 @@ from .poc_decrypt import (
     DecryptionError,
     ExtractionError,
     BSONParseError,
+    DatabaseTooLargeError,
     decrypt_backup,
     extract_db_gz,
     decompress_db,
+    iter_bson_documents,
     parse_bson_documents,
 )
 
@@ -16,8 +18,10 @@ __all__ = [
     'DecryptionError',
     'ExtractionError',
     'BSONParseError',
+    'DatabaseTooLargeError',
     'decrypt_backup',
     'extract_db_gz',
     'decompress_db',
+    'iter_bson_documents',
     'parse_bson_documents',
 ]

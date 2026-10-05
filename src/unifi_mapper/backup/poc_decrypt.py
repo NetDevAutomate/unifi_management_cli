@@ -7,33 +7,40 @@ Usage:
     python -m unifi_mapper.backup.poc_decrypt /path/to/backup.unf
 
 Requirements:
-    pip install pycryptodome bson
+    pycryptodome and pymongo (for ``bson``), both project dependencies: run ``uv sync``.
+
+Its pure stages (``decrypt_backup``, ``extract_db_gz``, ``decompress_db``,
+``iter_bson_documents``) are also what ``backup/verify.py`` runs, so importing this module
+never prints or exits: a missing dependency raises ``ImportError``.
 
 Based on: https://github.com/zhangyoufu/unifi-backup-decrypt
 """
 
 import argparse
-import gzip
 import io
 import json
 import sys
 import zipfile
+import zlib
+from collections.abc import Iterator
 from datetime import datetime
+from loguru import logger
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
 try:
     from Crypto.Cipher import AES
-except ImportError:
-    print('ERROR: pycryptodome not installed. Run: pip install pycryptodome')
-    sys.exit(1)
+except ImportError as e:  # pragma: no cover - a project dependency
+    raise ImportError('pycryptodome is not installed: run uv sync') from e
 
 try:
     import bson
-except ImportError:
-    print('ERROR: bson not installed. Run: pip install pymongo')
-    sys.exit(1)
+except ImportError as e:  # pragma: no cover - a project dependency
+    raise ImportError('bson (from pymongo) is not installed: run uv sync') from e
+
+GZIP_MAGIC = b'\x1f\x8b'
+_INFLATE_STEP = 1024 * 1024  # bytes of output per decompress call
 
 
 # UniFi backup encryption constants (well-known, hardcoded in UniFi controller)
@@ -61,6 +68,12 @@ class ExtractionError(BackupDecryptError):
 
 class BSONParseError(BackupDecryptError):
     """Failed to parse BSON data."""
+
+    pass
+
+
+class DatabaseTooLargeError(ExtractionError):
+    """The decompressed database passed the size cap it was given."""
 
     pass
 
@@ -107,9 +120,9 @@ def extract_db_gz(zip_data: bytes) -> bytes:
     """
     try:
         with zipfile.ZipFile(io.BytesIO(zip_data), 'r') as zf:
-            # List contents for debugging
+            # List contents for debugging (a log line, so --json output stays clean)
             file_list = zf.namelist()
-            print(f'  ZIP contents: {file_list}')
+            logger.debug('ZIP contents: {}', file_list)
 
             # Look for db.gz
             if 'db.gz' in file_list:
@@ -118,7 +131,7 @@ def extract_db_gz(zip_data: bytes) -> bytes:
             # Try alternative names
             for name in file_list:
                 if name.endswith('.gz') or name == 'db':
-                    print(f'  Using alternative: {name}')
+                    logger.debug('Using alternative: {}', name)
                     return zf.read(name)
 
             raise ExtractionError(f'No database file found. Contents: {file_list}')
@@ -129,22 +142,111 @@ def extract_db_gz(zip_data: bytes) -> bytes:
         raise ExtractionError(f'ZIP extraction failed: {e}')
 
 
-def decompress_db(db_gz_data: bytes) -> bytes:
-    """Decompress gzipped database.
+def _inflate_member(data: bytes, out: bytearray, max_bytes: Optional[int]) -> bytes:
+    """Inflate one gzip member onto ``out``; return the bytes after its trailer.
+
+    ``zlib``'s gzip mode checks the member's CRC and length. Output is produced in
+    ``_INFLATE_STEP`` pieces, so the cap is enforced before the whole member is in memory.
+    """
+    inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    pending = data
+    try:
+        while not inflater.eof:
+            piece = inflater.decompress(pending, _INFLATE_STEP)
+            out += piece
+            if max_bytes is not None and len(out) > max_bytes:
+                raise DatabaseTooLargeError(
+                    f'Decompressed database is larger than {max_bytes} bytes'
+                )
+            pending = inflater.unconsumed_tail
+            if not pending and len(piece) < _INFLATE_STEP:
+                break  # input used up
+    except zlib.error as e:
+        raise ExtractionError(f'Invalid gzip data: {e}') from None
+    if not inflater.eof:
+        raise ExtractionError('Invalid gzip data: ended before the end-of-stream marker')
+    return inflater.unused_data
+
+
+def decompress_db(db_gz_data: bytes, max_bytes: Optional[int] = None) -> bytes:
+    """Decompress the gzipped database, member by member, by ``gzip.decompress``' rules.
+
+    Empty input is zero members (``b''``); input that doesn't start with the gzip magic is
+    refused; after each member, NUL padding is skipped, and the rest must be another member.
 
     Args:
-        db_gz_data: Gzipped BSON data
+        db_gz_data: Gzipped BSON data.
+        max_bytes: Stop once the output passes this many bytes (None: no cap, as before).
 
     Returns:
-        Raw BSON data
+        Raw BSON data.
+
+    Raises:
+        DatabaseTooLargeError: The output passed ``max_bytes``.
+        ExtractionError: Not gzip data, a truncated or corrupt member (``EOFError`` or
+            ``zlib.error`` territory), or trailing bytes that aren't a member.
     """
+    out = bytearray()
+    data = bytes(db_gz_data)
+    if not data:
+        return b''
+    if not data.startswith(GZIP_MAGIC):
+        raise ExtractionError('Invalid gzip data: not a gzipped file')
+    while True:
+        rest = _inflate_member(data, out, max_bytes).lstrip(b'\x00')
+        if not rest:
+            return bytes(out)
+        if not rest.startswith(GZIP_MAGIC):
+            raise ExtractionError('Invalid gzip data: trailing bytes')
+        data = rest
+
+
+def iter_bson_documents(
+    bson_data: bytes, errors: Optional[list[tuple[int, str]]] = None
+) -> Iterator[Dict[str, Any]]:
+    """Yield the documents of a stream of concatenated BSON documents, in order.
+
+    Walks the stream by each document's 4-byte little-endian size. A document that fails to
+    decode is skipped by one byte, as before, and recorded in ``errors`` (when given) as
+    ``(offset, message)``; nothing is printed. The walk stops at a size that is too small or
+    runs past the end.
+
+    Args:
+        bson_data: Raw BSON bytes.
+        errors: A list to append each parse error to.
+
+    Yields:
+        Each decoded document.
+    """
+    offset = 0
+    while offset + 4 <= len(bson_data):
+        doc_size = int.from_bytes(bson_data[offset : offset + 4], 'little')
+        if doc_size < 5 or offset + doc_size > len(bson_data):
+            break
+        try:
+            doc = bson.decode(bson_data[offset : offset + doc_size])
+        except Exception as e:  # noqa: BLE001 - one corrupt document must not end the walk
+            if errors is not None:
+                errors.append((offset, str(e)))
+            offset += 1  # try to continue by searching for the next valid document
+            continue
+        yield doc
+        offset += doc_size
+
+
+def collection_name(doc: Dict[str, Any]) -> Any:
+    """Return a document's collection: its ``_type`` (``'unknown'`` when absent)."""
+    collection = doc.get('_type', 'unknown')
     try:
-        return gzip.decompress(db_gz_data)
-    except gzip.BadGzipFile as e:
-        raise ExtractionError(f'Invalid gzip data: {e}')
+        hash(collection)
+    except TypeError:
+        collection = str(collection)
+    return collection
 
 
-def parse_bson_documents(bson_data: bytes) -> Dict[str, List[Dict[str, Any]]]:
+def parse_bson_documents(
+    bson_data: bytes, errors: Optional[list[tuple[int, str]]] = None
+) -> Dict[str, List[Dict[str, Any]]]:
     """Parse concatenated BSON documents into collections.
 
     UniFi backups contain multiple BSON documents concatenated together.
@@ -152,44 +254,14 @@ def parse_bson_documents(bson_data: bytes) -> Dict[str, List[Dict[str, Any]]]:
 
     Args:
         bson_data: Raw BSON bytes
+        errors: A list to append each parse error to, as ``(offset, message)``.
 
     Returns:
         Dictionary mapping collection names to lists of documents
     """
     collections: Dict[str, List[Dict[str, Any]]] = {}
-    offset = 0
-    doc_count = 0
-
-    while offset < len(bson_data):
-        try:
-            # BSON documents start with 4-byte little-endian size
-            if offset + 4 > len(bson_data):
-                break
-
-            doc_size = int.from_bytes(bson_data[offset : offset + 4], 'little')
-
-            if doc_size < 5 or offset + doc_size > len(bson_data):
-                # Invalid size or not enough data
-                break
-
-            doc_bytes = bson_data[offset : offset + doc_size]
-            doc = bson.decode(doc_bytes)
-            doc_count += 1
-
-            # Determine collection name
-            collection = doc.get('_type', 'unknown')
-            if collection not in collections:
-                collections[collection] = []
-            collections[collection].append(doc)
-
-            offset += doc_size
-
-        except Exception as e:
-            print(f'  Warning: BSON parse error at offset {offset}: {e}')
-            # Try to continue by searching for next valid document
-            offset += 1
-
-    print(f'  Parsed {doc_count} BSON documents across {len(collections)} collections')
+    for doc in iter_bson_documents(bson_data, errors):
+        collections.setdefault(collection_name(doc), []).append(doc)
     return collections
 
 
@@ -343,7 +415,12 @@ Examples:
 
         # Step 4: Parse BSON
         print('\n[4/4] Parsing BSON documents...')
-        collections = parse_bson_documents(bson_data)
+        parse_errors: list[tuple[int, str]] = []
+        collections = parse_bson_documents(bson_data, parse_errors)
+        for offset, message in parse_errors:
+            print(f'  Warning: BSON parse error at offset {offset}: {message}')
+        doc_count = sum(len(docs) for docs in collections.values())
+        print(f'  Parsed {doc_count} BSON documents across {len(collections)} collections')
 
         # Show results
         dump_collections_summary(collections)

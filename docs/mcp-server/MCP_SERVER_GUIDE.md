@@ -3,7 +3,7 @@
 ## Overview
 
 `unifi-mcp` is a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server over
-the same Python modules the `unifi-mapper` CLI uses. It registers **83 tools** in seven
+the same Python modules the `unifi-mapper` CLI uses. It registers **84 tools** in seven
 categories (see [Tool categories](#tool-categories) and the [tool index](#tool-index)). Every
 tool it will run is read-only against the controller. The three tools that would change it
 are refused over MCP (see [Control boundary](#mcp-control-boundary)); those changes go through
@@ -206,7 +206,7 @@ the private `_get_versions_from_api`. No tool uses either.
 | Surface | `tools/list` shows | Size (measured at this commit) |
 | --- | --- | --- |
 | `discovery` (default) | the four meta-tools: `search_tools`, `list_categories`, `get_tool_info`, `execute_tool` | 4 tools, about 6.4k characters |
-| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 73 tools (4 + 69), about 193k characters |
+| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 74 tools (4 + 70), about 194k characters |
 
 On either surface every catalog tool runs through the same `ToolRunner`, so arguments are
 validated, credentials gated, results masked and errors coded identically. The 11 pipeline
@@ -215,7 +215,7 @@ are reachable only through `execute_tool`; the 3 mutating tools are never listed
 `--check` prints `listed_tools` for both surfaces.
 
 Use `direct` with hosts that defer tool schemas (kiro-cli, Claude Code tool search): the
-host keeps the 73 schemas out of context until needed and the model calls tools by name. Use
+host keeps the 74 schemas out of context until needed and the model calls tools by name. Use
 `discovery` with hosts that load every schema up front (Codex): the model searches, reads one
 schema with `get_tool_info`, then calls `execute_tool`.
 
@@ -239,28 +239,28 @@ which previews unless `--no-dry-run` is given).
 
 **Annotations.** Catalog tools carry `readOnlyHint: true` (except `snapshot_radio_config`, which
 writes a local file), `destructiveHint: false`, `openWorldHint` (false for the six STP pipeline
-tools that compute from their input and for `get_wan_speedtest_history`, which reads a local
-file; none of them contacts a controller), and
+tools that compute from their input, and for `get_wan_speedtest_history` and
+`verify_config_backup`, which read a local file; none of them contacts a controller), and
 `idempotentHint: false` for the sampling tools (`get_port_counter_rates`,
 `get_ap_retry_rates`, `diagnose_switch_port`, `check_device_freshness`). `execute_tool` is annotated non-read-only because it can reach
 `snapshot_radio_config`.
 
 ## Tool Categories
 
-Counted from `ToolRegistry()` at this commit (83 tools):
+Counted from `ToolRegistry()` at this commit (84 tools):
 
 | Category | Tools | Covers |
 | --- | ---: | --- |
 | analysis | 46 | IP conflicts, storms, MAC table, VLAN diagnostics and coverage, STP topology, guard, path costs, drift, preflight and snapshots, link quality and link-speed audit, port-profile usage and validation, MTU, QoS, SFP, LAG, PoE and power budgets, uplink redundancy and transparency, client density, DHCP pools, device freshness, capacity, firmware, Wi-Fi radio, traffic matrix, foreign bridges, 10G readiness |
 | connectivity | 4 | Firewall check, path analysis, traceroute, inter-VLAN routing |
-| diagnostics | 10 | Health, performance, security, connectivity, single-port inspection, all-ports view, port-profile diff, port evidence bundle, WAN health and the recorded speedtest history |
+| diagnostics | 11 | Health, performance, security, connectivity, single-port inspection, all-ports view, port-profile diff, port evidence bundle, WAN health, the recorded speedtest history and offline backup verification |
 | discovery | 5 | Find device, IP or MAC; client trace; client history |
 | network | 6 | Firewall zones and policies, ACLs, DNS policies, clients, networks (Network Integration API, `network_api` family) |
 | observability | 7 | Event, alarm, system-log and admin-audit history; port counter rates and history; site-wide recent events; one device's stats, AP retry rates, raw config objects and the config-change timeline |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells (`protect` family) |
 
-Of the 83: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
-`restore_radio_config`) and 11 are pipeline tools, leaving 69 on the direct surface.
+Of the 84: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
+`restore_radio_config`) and 11 are pipeline tools, leaving 70 on the direct surface.
 
 Some tools overlap on purpose, and their descriptions say which to use. `get_device_stats`
 repeats the CPU, memory, load and uptime that `find_device` reports, and one AP's share of
@@ -459,7 +459,7 @@ The design rationale and the decisions still open are in the
 
 ## Tool Index
 
-All 83 registered tools by category, generated from `ToolRegistry()`. **Family** is
+All 84 registered tools by category, generated from `ToolRegistry()`. **Family** is
 the credential family a tool needs (`none`: it computes from its input). **Marks**:
 *mutating* tools are never listed or run over MCP; *pipeline* tools are reachable only
 through `execute_tool`; *writes a local file* drops `readOnlyHint`. Every tool that is
@@ -526,7 +526,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `path_analysis` | `controller` |  | Network path analysis between two endpoints |
 | `traceroute` | `controller` |  | Layer 3 path tracing to destination |
 
-### diagnostics (10)
+### diagnostics (11)
 
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
@@ -540,6 +540,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `network_health_check` | `controller` |  | Overall infrastructure health monitoring and assessment |
 | `performance_analysis` | `controller` |  | Network performance analysis and bottleneck identification |
 | `security_audit` | `controller` |  | Security configuration review and vulnerability assessment |
+| `verify_config_backup` | `none` |  | Check a downloaded UniFi config backup (.unf) offline: does it decrypt, extract and decompress, and how many documents does each collection hold (device, networkconf, wlanconf, setting and the rest)? Reports structure only, never document contents. The path must be absolute, end in .unf and name a regular file of at most 512 MiB; the database is capped at 1 GiB. Contacts no controller. Read-only. |
 
 ### discovery (5)
 

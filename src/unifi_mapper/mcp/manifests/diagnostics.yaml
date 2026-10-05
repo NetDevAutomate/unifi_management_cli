@@ -169,3 +169,23 @@ tools:
       limit:
         type: integer
         description: At most this many results, newest first (1-1000, default 100)
+
+  verify_config_backup:
+    module: unifi_mapper.backup.verify
+    handler: verify_config_backup
+    title: Verify Config Backup
+    credentials: none
+    open_world: false
+    description: >-
+      Check a downloaded UniFi config backup (.unf) offline: does it decrypt, extract and
+      decompress, and how many documents does each collection hold (device, networkconf,
+      wlanconf, setting and the rest)? Reports structure only, never document contents.
+      The path must be absolute, end in .unf and name a regular file of at most 512 MiB;
+      the database is capped at 1 GiB. Contacts no controller. Read-only.
+    priority: P2
+    tags: [backup, restore, verify, offline, read-only]
+    parameters:
+      path:
+        type: string
+        required: true
+        description: Absolute path of a .unf backup file on this machine

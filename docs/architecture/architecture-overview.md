@@ -83,7 +83,7 @@ graph TB
 
     subgraph AT["Layer 4 - Analysis Toolkit"]
         AN["analysis/ (46 registered tools)"]
-        DG["diagnostics (10 registered tools)"]
+        DG["diagnostics (11 registered tools)"]
         DS["discovery (5 registered tools)"]
         OB["observability (7 registered tools)"]
         CN["connectivity/ (4 registered tools)"]
@@ -148,6 +148,7 @@ graph LR
         CMD_DIAGNOSE["diagnose\nHealth / perf / connectivity\nall / latency-matrix / bandwidth\ndevice-stats / ap-retries\nwan / wan-history"]
         CMD_PORTS["ports\nPort labels and read-only\nport diagnostics"]
         CMD_CTRL["controller\nconfig / config-changes / events"]
+        CMD_BACKUP["backup\nverify (offline)"]
         CMD_STP["stp\nSTP topology and optimization"]
         CMD_RADIO["radio\nsnapshot / optimize / restore\nauto-channel / report"]
         CMD_INV["inventory\nDevice management"]
@@ -184,6 +185,7 @@ graph LR
     APP --> CMD_DIAGNOSE
     APP --> CMD_PORTS
     APP --> CMD_CTRL
+    APP --> CMD_BACKUP
     APP --> CMD_STP
     APP --> CMD_RADIO
     APP --> CMD_INV
@@ -240,7 +242,7 @@ The `unifi-mcp` server is built on the FastMCP bundled with the official MCP Pyt
 | `get_tool_info` | Fetch the parameters, JSON input/output schemas and annotations for a named tool |
 | `execute_tool` | Run a read-only catalog tool by name; mutating tools are refused with `MUTATION_REFUSED` |
 
-With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) the server also lists the 69 non-mutating, non-pipeline catalog tools directly. The server holds no domain logic. Its modules:
+With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) the server also lists the 70 non-mutating, non-pipeline catalog tools directly. The server holds no domain logic. Its modules:
 
 | Module | Responsibility |
 | --- | --- |
@@ -285,6 +287,10 @@ observability tools, `events` through the sync client behind `ReadOnlySession`:
 | `controller config` | `diagnostics/observability.py` | The config objects of one kind, every secret key removed |
 | `controller config-changes` | `diagnostics/observability.py` | Objects created in a window, newest first, from each object's ID |
 | `controller events` | `port_history.py` (`collect_recent_events`) | Site-wide events, alarms and system-log entries in the last N hours |
+
+**`backup` subcommand group** — `backup verify` (`backup/verify.py`) checks a downloaded `.unf`
+backup offline: decrypt, extract, decompress (capped at 1 GiB) and per-collection document
+counts, never document contents; it contacts nothing.
 
 **New `analyze` commands** — time-series analysis with snapshot/compare pattern:
 
@@ -499,7 +505,7 @@ The adapter gives `unifi-network-toolkit` synchronous versions of three tools (`
 
 ## 6. Layer 4: Analysis Toolkit
 
-The toolkit is 83 registered tools in seven categories, implemented in the `analysis/`, `diagnostics/`, `discovery/` and `connectivity/` packages, the read-only port diagnostics (`port_inspect.py`, `port_diagnostics.py`, `port_history.py`, behind `core/utils/readonly.py`'s guard, with secrets stripped by `core/utils/redact.py` and each port's effective profile resolved by `analysis/link_settings.py`) and the `mcp/tools/` wrappers for the Integration API and Protect. All of them are registered via YAML manifests and exposed through the MCP server. Several analysis modules are CLI-only and not registered: the two SSH tools (latency matrix, bandwidth test) and the snapshot-and-compare commands (`analyze link-errors`, `roaming`, `config-drift`, `neighbours`).
+The toolkit is 84 registered tools in seven categories, implemented in the `analysis/`, `diagnostics/`, `discovery/` and `connectivity/` packages, the read-only port diagnostics (`port_inspect.py`, `port_diagnostics.py`, `port_history.py`, behind `core/utils/readonly.py`'s guard, with secrets stripped by `core/utils/redact.py` and each port's effective profile resolved by `analysis/link_settings.py`) and the `mcp/tools/` wrappers for the Integration API and Protect. All of them are registered via YAML manifests and exposed through the MCP server. Several analysis modules are CLI-only and not registered: the two SSH tools (latency matrix, bandwidth test) and the snapshot-and-compare commands (`analyze link-errors`, `roaming`, `config-drift`, `neighbours`).
 
 ### Tool inventory
 
@@ -513,7 +519,7 @@ graph TD
         S["STP and 10G (14)\ndiscover_stp_topology, calculate_optimal_priorities, generate_stp_report,\nformat_stp_report_markdown, audit_stp_path_costs, audit_stp_guard_recommendations,\ncreate_stp_change_plan, detect_stp_config_drift, snapshot_stp_topology,\ndiff_stp_snapshots, stp_preflight_simulate_add, validate_10g_expansion_readiness,\nformat_10g_validation_report_markdown, apply_stp_changes (mutating, refused)"]
     end
 
-    subgraph diagnostics["diagnostics (10 registered tools)"]
+    subgraph diagnostics["diagnostics (11 registered tools)"]
         D1["connectivity_analysis"]
         D2["network_health_check"]
         D3["performance_analysis"]
@@ -524,6 +530,7 @@ graph TD
         D8["diff_port_profiles"]
         D9["get_wan_health"]
         D10["get_wan_speedtest_history\n(local history, no request)"]
+        D11["verify_config_backup\n(offline .unf check)"]
     end
 
     subgraph discovery["discovery (5 registered tools)"]
@@ -1046,7 +1053,7 @@ class DeviceRepository(Generic[T]):
 
 ### Lazy Loading / Proxy Pattern (mcp/registry.py)
 
-`ToolProxy` defers importing a tool's implementation module until the first `execute()` call, and `ToolCatalog` (`mcp/catalog.py`) likewise builds a tool's SDK definition (schemas, annotations) only when it is first looked up or listed. This keeps MCP server startup fast even though 83 tools are registered -- only the YAML manifests are parsed at startup on the default discovery surface:
+`ToolProxy` defers importing a tool's implementation module until the first `execute()` call, and `ToolCatalog` (`mcp/catalog.py`) likewise builds a tool's SDK definition (schemas, annotations) only when it is first looked up or listed. This keeps MCP server startup fast even though 84 tools are registered -- only the YAML manifests are parsed at startup on the default discovery surface:
 
 ```python
 class ToolProxy:
@@ -1079,7 +1086,7 @@ async with UniFiProtectClient(config) as client:
 
 ### Code Mode Pattern (mcp/server.py + mcp/registry.py)
 
-The MCP server implements a progressive-disclosure pattern designed for AI agents. On the default discovery surface, rather than exposing 83 individual tool definitions to the AI's context window, it exposes four public meta-tools, and the agent runs the tool it chose through `execute_tool`:
+The MCP server implements a progressive-disclosure pattern designed for AI agents. On the default discovery surface, rather than exposing 84 individual tool definitions to the AI's context window, it exposes four public meta-tools, and the agent runs the tool it chose through `execute_tool`:
 
 ```text
 1. search_tools(category="analysis") -> list of matching tools
@@ -1087,7 +1094,7 @@ The MCP server implements a progressive-disclosure pattern designed for AI agent
 3. execute_tool("detect_ip_conflicts", {}) -> {"ok": true, "result": ...}
 ```
 
-This keeps the AI's tool list short (4 tools, about 6.4k characters of `tools/list`) and avoids overwhelming the model with schema for all 83 tools at once. The agent requests detail only for tools it intends to use. Hosts that defer tool schemas themselves can use the direct surface instead (73 tools listed).
+This keeps the AI's tool list short (4 tools, about 6.4k characters of `tools/list`) and avoids overwhelming the model with schema for all 84 tools at once. The agent requests detail only for tools it intends to use. Hosts that defer tool schemas themselves can use the direct surface instead (74 tools listed).
 
 ---
 
@@ -1495,8 +1502,8 @@ Commands executed: `ping` (latency matrix), `iperf3` (bandwidth test).
 
 The MCP server implements the Model Context Protocol with the FastMCP bundled in the official MCP Python SDK (`mcp>=1.30,<1.31`). AI clients connect over stdio; no network transport is served. The server exports:
 
-- 4 public meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`); with `--surface direct`, also the 69 non-mutating, non-pipeline catalog tools
-- 83 registered tools in YAML manifests, of which 80 run through `execute_tool` (the 3 mutating tools are refused)
+- 4 public meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`); with `--surface direct`, also the 70 non-mutating, non-pipeline catalog tools
+- 84 registered tools in YAML manifests, of which 81 run through `execute_tool` (the 3 mutating tools are refused)
 - 2 resources (`unifi://catalog`, `unifi://config/status`) and 2 prompts (`troubleshoot_port_link`, `plan_stp_change`)
 - Server `instructions`, per-tool annotations, and `serverInfo.version` set to the package version
 

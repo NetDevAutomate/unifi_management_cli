@@ -40,6 +40,7 @@ APPS = {
     'radio_app': typer_cli.radio_app,
     'ports_app': typer_cli.ports_app,
     'controller_app': typer_cli.controller_app,
+    'backup_app': typer_cli.backup_app,
     'inventory_app': inventory_cli.inventory_app,
 }
 

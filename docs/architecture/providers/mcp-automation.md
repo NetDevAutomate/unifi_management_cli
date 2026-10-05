@@ -26,7 +26,7 @@ C4Component
         Component(registry, "mcp/registry.py / ToolRegistry", "Python", "Loads manifests lazily, indexes metadata, supports category/tag/query search")
         Component(proxy, "mcp/registry.py / ToolProxy", "Python", "Thread-safe lazy import and sync/async handler execution")
         Component(metadata, "mcp/registry.py / ToolMetadata", "dataclass", "Tool contract: name, module, handler, description, category, priority, tags, parameters")
-        Component(manifests, "mcp/manifests/*.yaml", "YAML", "83 registered tool contracts across analysis, connectivity, diagnostics, discovery, network, observability and protect")
+        Component(manifests, "mcp/manifests/*.yaml", "YAML", "84 registered tool contracts across analysis, connectivity, diagnostics, discovery, network, observability and protect")
         Component(network_tools, "mcp/tools/network.py", "Python", "Network control tool handlers")
         Component(protect_tools, "mcp/tools/protect.py", "Python", "Protect inventory tool handlers")
     }
@@ -136,14 +136,14 @@ ToolProxy ..> "importlib" : imports handler module
 | Manifest | Category | Registered tools | Examples |
 | --- | --- | ---: | --- |
 | `analysis.yaml` | analysis | 46 | `discover_stp_topology`, `audit_link_speeds`, `audit_port_profile_usage`, `check_poe_budget`, `audit_mtu_consistency`, `validate_qos` |
-| `diagnostics.yaml` | diagnostics | 10 | `network_health_check`, `inspect_switch_port`, `diagnose_switch_port`, `get_switch_ports`, `diff_port_profiles`, `get_wan_health`, `get_wan_speedtest_history` |
+| `diagnostics.yaml` | diagnostics | 11 | `network_health_check`, `inspect_switch_port`, `diagnose_switch_port`, `get_switch_ports`, `diff_port_profiles`, `get_wan_health`, `get_wan_speedtest_history`, `verify_config_backup` |
 | `discovery.yaml` | discovery | 5 | `find_device`, `find_ip`, `find_mac`, `client_trace`, `get_client_history` |
 | `observability.yaml` | observability | 7 | `get_device_events`, `get_port_counter_rates`, `get_device_stats`, `get_ap_retry_rates`, `get_config_object`, `find_recent_config_changes`, `get_recent_events` |
 | `connectivity.yaml` | connectivity | 4 | `firewall_check`, `path_analysis`, `check_inter_vlan_routing`, `traceroute` |
 | `network.yaml` | network | 6 | `get_firewall_zones`, `get_firewall_policies`, `get_acl_rules`, `get_dns_policies`, `get_clients`, `get_networks` |
 | `protect.yaml` | protect | 5 | `get_cameras`, `get_nvr_info`, `get_sensors`, `get_lights`, `get_doorbells` |
 
-Total registered tools: **83** (3 mutating, never run over MCP; 11 pipeline tools, reachable only through `execute_tool`).
+Total registered tools: **84** (3 mutating, never run over MCP; 11 pipeline tools, reachable only through `execute_tool`).
 
 ## Discovery Flow
 
