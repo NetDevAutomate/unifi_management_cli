@@ -656,7 +656,7 @@ The [MCP server guide](docs/mcp-server/MCP_SERVER_GUIDE.md) covers every launch 
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells |
 | analysis | 47 | Capacity, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, STP, VLAN coverage, SFP, radio, LAG, traffic matrix, drift and change plans |
 
-Three of the 76 change the controller and are never run over MCP.
+Three of the 85 change the controller and are never run over MCP.
 
 **Usage Example:**
 

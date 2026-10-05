@@ -292,7 +292,7 @@ observability tools, `events` through the sync client behind `ReadOnlySession`:
 backup offline: decrypt, extract and decompress (each capped at 1 GiB) and per-collection document
 counts, never document contents; it contacts nothing.
 
-**New `stp` command** — `stp audit-priorities` (`analysis/stp_audit.py`) is a one-shot,
+**New `stp audit-priorities` command** (`analysis/stp_audit.py`) — a one-shot,
 read-only priority audit: each switch's current against its recommended priority, a warning
 when non-core switches tie at the lowest priority, and the gateway under "Skipped". It always
 tiers the whole fleet (`--device` narrows the rows only) and writes no plan; `stp optimize
