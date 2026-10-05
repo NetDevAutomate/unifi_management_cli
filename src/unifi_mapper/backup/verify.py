@@ -328,10 +328,9 @@ async def verify_config_backup(
 
     Decrypts the file with the controller's fixed backup key, extracts and decompresses the
     database (capped at 1 GiB and 64 gzip members) and counts the documents in each
-    collection. Reports
-    structure only, never a document's contents. Contacts no controller and needs no
-    credentials. The path must be absolute, end in .unf and name a regular file of at most
-    512 MiB.
+    collection. Reports structure only, never a document's contents. Contacts no controller
+    and needs no credentials. The path must be absolute, end in .unf and name a regular file
+    of at most 512 MiB.
 
     Args:
         path: The backup's absolute path.

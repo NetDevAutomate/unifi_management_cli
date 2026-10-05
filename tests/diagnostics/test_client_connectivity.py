@@ -159,7 +159,7 @@ NETWORKS = [
         'vlan': 30,
         'vlan_enabled': True,
         'ip_subnet': '198.51.100.1/24',
-    },  # fmt: skip
+    },
 ]
 DEVICES = [
     {
@@ -169,7 +169,7 @@ DEVICES = [
         'model': 'U6IW',
         'x_authkey': 'FAKE-AP-AUTHKEY',  # pragma: allowlist secret
         'vap_table': [{'essid': 'SSID A', 'radio': 'ng', 'tx_packets': 1000, 'tx_retries': 30}],
-    },  # fmt: skip
+    },
 ]
 CLIENTS = [
     {
@@ -181,7 +181,7 @@ CLIENTS = [
         'is_wired': False,
         'network': 'IoT',
         'network_id': 'net-iot',
-    },  # fmt: skip
+    },
     {
         'name': 'Printer',
         'mac': '02:00:00:00:02:02',
@@ -189,7 +189,7 @@ CLIENTS = [
         'is_wired': True,
         'network': 'LAN',
         'network_id': 'net-lan',
-    },  # fmt: skip
+    },
     {'name': 'Phone B', 'mac': '02:00:00:00:02:03', 'is_wired': False},  # no lease
 ]
 

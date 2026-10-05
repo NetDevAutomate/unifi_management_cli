@@ -464,12 +464,14 @@ async def _gateway_interfaces(conn: Any) -> list[dict[str, Any]]:
 
 
 async def _vlan_interface(conn: Any, vlan: int) -> str:
+    """The gateway interface whose address is in the VLAN's subnet, validated like --interface."""
     async with UniFiClient() as client:
         networks = await client.get_networks()
     mapping = resolve_vlan_interfaces(networks, await _gateway_interfaces(conn))
     for entry in mapping['resolved']:
         if entry['vlan_id'] == vlan:
-            return entry['iface']
+            # The gateway reports the name; it reaches curl's argv, so check it as typed input.
+            return require_interface_name(entry['iface'])
     raise ToolError(
         message=f'VLAN {vlan} has no live interface on the gateway whose address is in its subnet',
         error_code=ErrorCodes.NO_DATA,
@@ -509,9 +511,19 @@ async def gateway_http_check(
     async with gateway_session() as conn:
         iface = interface if vlan is None else await _vlan_interface(conn, vlan)
         argv = [
-            'curl', '-sS', '--globoff', '-o', '/dev/null', '--max-time', str(timeout_seconds),
-            '-w', WRITE_OUT, *(['--interface', iface] if iface else []), '--', url,
-        ]  # fmt: skip
+            'curl',
+            '-sS',
+            '--globoff',
+            '-o',
+            '/dev/null',
+            '--max-time',
+            str(timeout_seconds),
+            '-w',
+            WRITE_OUT,
+            *(['--interface', iface] if iface else []),
+            '--',
+            url,
+        ]
         result = await run_gateway_command(conn, argv, timeout=timeout_seconds + 10)
     parsed = parse_curl_writeout(check_exit_status(result, 'curl', CURL_RESULT_CODES).stdout)
     out = {**parsed, 'url': url, 'interface': iface, 'vlan': vlan}

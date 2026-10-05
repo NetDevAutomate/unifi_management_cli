@@ -88,14 +88,14 @@ NETWORKS = [
         'vlan': 30,
         'vlan_enabled': True,
         'ip_subnet': '198.51.100.1/24',
-    },  # fmt: skip
+    },
     {
         'name': 'Lab',
         'purpose': 'corporate',
         'vlan': 40,
         'vlan_enabled': True,
         'ip_subnet': '203.0.113.1/24',
-    },  # fmt: skip
+    },
 ]
 DEVICES = [
     {
@@ -104,7 +104,7 @@ DEVICES = [
         'type': 'uap',
         'model': 'U6IW',
         'ip': '192.0.2.21',
-    },  # fmt: skip
+    },
 ]
 CLIENTS = [
     {'name': 'Phone A', 'hostname': 'phone-a', 'mac': '02:00:00:00:02:01', 'ip': '192.0.2.50'},
@@ -454,9 +454,20 @@ async def test_http_uses_globoff_and_an_interface_or_a_resolved_vlan(
         by_vlan = await gateway_http_check('http://www.example.com/', vlan=30, timeout_seconds=5)
     argv = _argv(ssh)
     assert argv[0] == [
-        'curl', '-sS', '--globoff', '-o', '/dev/null', '--max-time', '10', '-w', WRITE_OUT,
-        '--interface', 'br0', '--', 'https://www.example.com/[a]',
-    ]  # fmt: skip
+        'curl',
+        '-sS',
+        '--globoff',
+        '-o',
+        '/dev/null',
+        '--max-time',
+        '10',
+        '-w',
+        WRITE_OUT,
+        '--interface',
+        'br0',
+        '--',
+        'https://www.example.com/[a]',
+    ]
     assert argv[1] == ['ip', '-j', 'addr', 'show']
     assert argv[2][-4:] == ['--interface', 'br7', '--', 'http://www.example.com/']
     assert plain['ok'] is True and plain['interface'] == 'br0'
@@ -473,6 +484,22 @@ async def test_a_vlan_with_no_live_interface_is_no_data(
     assert caught.value.error_code == ErrorCodes.NO_DATA
     assert 'VLAN 40' in caught.value.message
     assert _argv(ssh) == [['ip', '-j', 'addr', 'show']]  # no curl
+
+
+async def test_the_interface_a_vlan_resolves_to_is_validated_too(
+    monkeypatch: pytest.MonkeyPatch, controller: FakeController
+) -> None:
+    """Review F12: the name the gateway reports goes through require_interface_name."""
+    odd = json.dumps(
+        [{'ifname': '-oProxy', 'addr_info': [{'local': '198.51.100.1', 'prefixlen': 24}]}]
+    )
+    fake = FakeSSH({**REPLIES, 'ip': odd})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    async with serving(controller):
+        with pytest.raises(ToolError) as caught:
+            await gateway_http_check('https://www.example.com/', vlan=30)
+    assert caught.value.error_code == ErrorCodes.CONFIG_INVALID
+    assert [shlex.split(c)[0] for c in fake.commands] == ['ip']  # no curl
 
 
 # --- a probe that could not run is an error, not a result (review F7) ----------------------
@@ -579,6 +606,11 @@ async def test_a_result_code_is_still_a_result(
 
 
 def test_the_flow_states_are_the_design_s() -> None:
+    from unifi_mapper.typer_cli import _FlowState
+
+    # SR4-N2: the CLI's --state choices are the core's list, in order (the CLI keeps its own
+    # enum so that importing it never imports the SSH module at startup).
+    assert [state.value for state in _FlowState] == list(FLOW_STATES)
     assert set(FLOW_STATES) == {
         'ESTABLISHED',
         'SYN_SENT',
@@ -598,8 +630,13 @@ def test_the_probes_are_cli_only() -> None:
 
     categories = ToolRegistry(default_manifests_dir(), strict=True).get_categories()
     names = {name for names in categories.values() for name in names}
-    for name in ('gateway_ping', 'gateway_traceroute', 'gateway_dns_check',
-                 'gateway_http_check', 'get_active_flows'):  # fmt: skip
+    for name in (
+        'gateway_ping',
+        'gateway_traceroute',
+        'gateway_dns_check',
+        'gateway_http_check',
+        'get_active_flows',
+    ):
         assert name not in names
 
 
