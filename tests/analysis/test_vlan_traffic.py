@@ -268,10 +268,14 @@ def test_a_db_that_is_a_directory_exits_2_naming_it(
 def test_the_db_path_is_expanded(
     cli: FakeController, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    cwd = tmp_path / 'cwd'  # an unexpanded '~/…' would land here, never in the source tree
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
     monkeypatch.setenv('HOME', str(tmp_path))
     result = runner.invoke(app, ['vlan-traffic', 'sample', '--db', '~/vlan.sqlite3'])
     assert result.exit_code == 0, result.output
     assert set(_rows(tmp_path / 'vlan.sqlite3')) == {1, 30, 40}
+    assert list(cwd.iterdir()) == []
 
 
 @pytest.mark.parametrize('command', ['sample', 'rollup', 'report', 'coverage'])

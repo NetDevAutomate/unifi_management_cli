@@ -526,6 +526,9 @@ def test_an_output_whose_directory_cannot_be_made_is_refused_before_any_read(
 def test_the_output_path_is_expanded_and_its_new_directory_private(
     cli: FakeController, pauses: list[float], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    cwd = tmp_path / 'cwd'  # an unexpanded '~/…' would land here, never in the source tree
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
     monkeypatch.setenv('HOME', str(tmp_path))
     args = ['diagnose', 'ap-health', 'AP 1', '--samples', '1', '--interval', '30']
     result = runner.invoke(app, [*args, '--output', '~/reports/ap-health.md'])
@@ -533,6 +536,7 @@ def test_the_output_path_is_expanded_and_its_new_directory_private(
     written = tmp_path / 'reports' / 'ap-health.md'
     assert written.read_text(encoding='utf-8').startswith('# AP Health Report')
     assert stat.S_IMODE(written.parent.stat().st_mode) == 0o700
+    assert list(cwd.iterdir()) == []
 
 
 def test_a_report_that_cannot_be_written_is_printed_first_then_exits_2(
