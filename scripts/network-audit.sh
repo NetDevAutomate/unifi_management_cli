@@ -22,6 +22,9 @@
 #                         ${XDG_STATE_HOME:-$HOME/.local/state}/unifi_mapper/audits/<UTC stamp>)
 #   --planned-switches N  also check 10G uplink readiness for N planned switches
 #
+# Example:
+#   scripts/network-audit.sh --config ~/.config/unifi_management_cli/prod.env --planned-switches 3
+#
 # Rebuilt from the July work's audit script (a local archive, not in the repo): no
 # reports/ directory in the repository, no STP apply step and no confirmation prompt
 # (`stp apply --plan` already previews, then applies with --no-dry-run), and no default
@@ -38,7 +41,9 @@ OUTPUT_DIR=""
 PLANNED_SWITCHES=""
 
 usage() {
-    sed -n '3,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    # The header from its first line up to the maintainers' "Rebuilt from" note, so no
+    # option line is cut when the header grows.
+    awk 'NR >= 3 && /^# Rebuilt from/ { exit } NR >= 3' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 die() {

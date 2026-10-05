@@ -241,6 +241,10 @@ def test_the_audit_script_has_help() -> None:
     assert result.returncode == 0
     for flag in ('--config', '--output-dir', '--planned-switches'):
         assert flag in result.stdout
+    flat = ' '.join(result.stdout.split())
+    assert 'also check 10G uplink readiness for N planned switches' in flat  # review N1
+    assert '--planned-switches 3' in flat  # an example value
+    assert 'Rebuilt from' not in flat  # the maintainers' note is not help
 
 
 def _fake_uv_env(tmp_path: Path) -> dict[str, str]:
