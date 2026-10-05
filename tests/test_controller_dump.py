@@ -8,6 +8,7 @@ argument handling run: every step it runs needs a controller.
 
 import json
 import pytest
+import shlex
 import stat
 import subprocess
 from pathlib import Path
@@ -240,3 +241,41 @@ def test_the_audit_script_has_help() -> None:
     assert result.returncode == 0
     for flag in ('--config', '--output-dir', '--planned-switches'):
         assert flag in result.stdout
+
+
+def _fake_uv_env(tmp_path: Path) -> dict[str, str]:
+    """An environment whose ``uv`` only records its arguments: no step reaches anything."""
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    fake = bin_dir / 'uv'
+    fake.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_UV_LOG"\n', encoding='utf-8')
+    fake.chmod(0o700)
+    return {
+        'PATH': f'{bin_dir}:/usr/bin:/bin',
+        'HOME': str(tmp_path),
+        'FAKE_UV_LOG': str(tmp_path / 'uv.log'),
+    }
+
+
+def test_the_printed_apply_commands_carry_the_audits_own_config(tmp_path: Path) -> None:
+    """Review B6: pasted with --apply, a bare command acted on the default config's controller."""
+    config = tmp_path / 'site a.env'  # a space: the printed command must quote it
+    config.write_text('UNIFI_URL=https://192.0.2.1\n', encoding='utf-8')
+    out = tmp_path / 'audit out'
+    result = subprocess.run(
+        ['bash', str(AUDIT), '--config', str(config), '--output-dir', str(out)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=_fake_uv_env(tmp_path),
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    printed = [shlex.split(line) for line in result.stdout.splitlines() if line.startswith('  ')]
+    mapper = ['uv', 'run', '--project', str(REPO), 'unifi-mapper', '--config', str(config)]
+    assert [argv[:7] for argv in printed] == [mapper, mapper]
+    assert printed[0][7:] == ['ports', 'refresh']
+    assert printed[1][7:] == ['stp', 'apply', '--plan', str(out / 'stp-plan.json')]
+    ran = (tmp_path / 'uv.log').read_text(encoding='utf-8').splitlines()
+    assert len(ran) == 6 and all(f'--config {config}' in line for line in ran)
+    assert not any('--apply' in line or '--no-dry-run' in line for line in ran)

@@ -679,7 +679,8 @@ uv run python scripts/controller_dump.py --output ~/tmp/controller-dump [--endpo
 - `scripts/network-audit.sh` runs `discover --dry-run`, `stp snapshot`, `stp analyze`,
   `stp optimize --dry-run --plan`, `stp guard` and `stp report` (and `stp validate-10g` only
   with `--planned-switches`) into `${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/audits/`,
-  then prints the commands that apply what you agree with. It never applies anything.
+  then prints the commands that apply what you agree with, carrying the audit's own
+  `--config` and `--project`. It never applies anything.
 - `scripts/controller_dump.py` reads a fixed table of endpoints (`wlanconf`, `networkconf`,
   `setting`, `firewallrule`, `firewallgroup`, `sta`, `device`, `health`, and the v2
   `firewall-policies`, `firewall-zone`, `trafficrules`, `apgroups`) through the read-only

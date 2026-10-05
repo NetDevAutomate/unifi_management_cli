@@ -10,7 +10,7 @@
 #   5. unifi-mapper stp guard
 #   6. unifi-mapper stp report -o <dir>/stp-report.md
 #   7. unifi-mapper stp validate-10g --planned-switches N   (only with --planned-switches)
-# then prints the commands that apply what you agree with, each of which previews first.
+# then prints the apply commands, each previewing first, with this run's --config and --project.
 # A failed step is reported and the others still run; the exit status is 1 if any failed.
 #
 # Usage:
@@ -115,12 +115,24 @@ if [[ -n "${PLANNED_SWITCHES}" ]]; then
     step "10G readiness" stp validate-10g --planned-switches "${PLANNED_SWITCHES}"
 fi
 
+# The follow-up commands are built from the MAPPER the steps ran (--project and --config
+# included) and shell-quoted, so a pasted command acts on the controller this audit read.
+quoted() {
+    local out
+    printf -v out '%q ' "$@"
+    printf '%s' "${out% }"
+}
+APPLY_PORTS="$(quoted "${MAPPER[@]}" ports refresh)"
+APPLY_STP="$(quoted "${MAPPER[@]}" stp apply --plan "${OUTPUT_DIR}/stp-plan.json")"
+
 cat <<EOF
 
 Review the reports in ${OUTPUT_DIR}, then apply only what you agree with.
-Each command below previews first and writes only with its apply flag:
-  uv run unifi-mapper ports refresh                          (add --apply to write port names)
-  uv run unifi-mapper stp apply --plan ${OUTPUT_DIR}/stp-plan.json   (add --no-dry-run to apply)
+Each command below previews first and writes only with its apply flag.
+Port names (add --apply to write them):
+  ${APPLY_PORTS}
+STP priorities (add --no-dry-run to apply the plan):
+  ${APPLY_STP}
 Plan STP changes for a maintenance window: a priority change recalculates the topology.
 EOF
 
