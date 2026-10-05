@@ -655,6 +655,28 @@ Schedules: the link-error history (`analyze link-errors --record`) and roaming s
 > shows `❌ not loaded` for every task. Linux crontab installs are unaffected. See
 > [issue 025](docs/issues/025-launchd-plists-are-invalid-xml.md) (open, decision needed).
 
+### Read-Only Scripts
+
+```bash
+# One read-only audit: port-name preview, STP snapshot, analysis, plan, guards and report
+./scripts/network-audit.sh [--config PATH] [--output-dir DIR] [--planned-switches N]
+
+# The controller's config and state objects as JSON, secrets removed (outside the repo only)
+uv run python scripts/controller_dump.py --output ~/tmp/controller-dump [--endpoint NAME]...
+```
+
+- `scripts/network-audit.sh` runs `discover --dry-run`, `stp snapshot`, `stp analyze`,
+  `stp optimize --dry-run --plan`, `stp guard` and `stp report` (and `stp validate-10g` only
+  with `--planned-switches`) into `${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/audits/`,
+  then prints the commands that apply what you agree with. It never applies anything.
+- `scripts/controller_dump.py` reads a fixed table of endpoints (`wlanconf`, `networkconf`,
+  `setting`, `firewallrule`, `firewallgroup`, `sta`, `device`, `health`, and the v2
+  `firewall-policies`, `firewall-zone`, `trafficrules`, `apgroups`) through the read-only
+  guard, strips every secret field, and writes one `0o600` JSON file per endpoint plus
+  `manifest.json` (counts, the removed paths and the request audit). `--output` inside the
+  repository is refused (exit 2), so a dump can't be committed. Events and alarms come from
+  `unifi-mapper controller events --json`.
+
 ### MCP Server (AI-Assisted Troubleshooting)
 
 The MCP Server enables AI assistants like Claude to directly query and troubleshoot your UniFi network infrastructure using the Model Context Protocol. It is read-only against the controller: tools that change it are refused, and changes go through this CLI.

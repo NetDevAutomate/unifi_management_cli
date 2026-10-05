@@ -670,6 +670,22 @@ The report includes:
 - Mermaid diagram of optimal topology
 - Configuration diff
 
+**All of the above in one read-only run: `scripts/network-audit.sh`**
+
+```bash
+# Port-name preview, STP snapshot, analysis, plan (preview), guards and report, into
+# ${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/audits/<UTC stamp>/ with an audit.log
+./scripts/network-audit.sh
+./scripts/network-audit.sh --config ~/.config/unifi_management_cli/prod.env \
+  --output-dir ~/tmp/audit --planned-switches 2   # also the 10G readiness check
+```
+
+The script runs only previews and reads: it has no apply step and asks for no confirmation.
+It ends by printing the commands that apply what you agree with, each of which previews
+first (`ports refresh --apply`, `stp apply --plan <dir>/stp-plan.json --no-dry-run`). A step
+that fails is reported and the others still run; the exit status is 1 if any failed. The
+reports are created private (`umask 077`).
+
 ### Priority Tier Model
 
 The optimizer assigns bridge priorities based on position in the network hierarchy:
