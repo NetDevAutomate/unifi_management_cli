@@ -63,6 +63,30 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
 
 
+def is_gateway_switch(switch: SwitchSTPConfig, topology: STPTopology) -> bool:
+    """Return True for the gateway, whose bridge priority this module never plans.
+
+    The gateway (``udm``/``udmpro``) appears in the topology so the other switches can be
+    tiered by their distance to it, but its bridge runs with STP disabled: it is never
+    proposed a priority and never named as the root.
+
+    Args:
+        switch: A switch of ``topology``.
+        topology: The discovered topology (its ``gateway_id`` names the gateway).
+
+    Returns:
+        True when the switch's capability is ``GATEWAY`` or it is the topology's gateway.
+    """
+    return switch.capability == SwitchCapabilityClass.GATEWAY or (
+        topology.gateway_id is not None and switch.device_id == topology.gateway_id
+    )
+
+
+def gateway_skipped_line(switch: SwitchSTPConfig) -> str:
+    """The sentence ``stp optimize`` and ``stp report`` print for a skipped gateway."""
+    return f'Skipped {switch.name}: gateway; its STP priority is not changed'
+
+
 def _switch_capability(switch: SwitchSTPConfig) -> SwitchCapabilityClass:
     """Classify a switch while preserving explicit non-unknown capability overrides."""
     classified = classify_model(switch.model)
@@ -601,9 +625,13 @@ async def calculate_optimal_priorities(
     changes: list[STPChange] = []
     _apply_root_eligibility(topology.switches)
 
-    # Sort switches by tier to assign priorities
+    # Sort switches by tier to assign priorities. A gateway stays in the topology (it tiered
+    # the others) but is never planned: no change, never a root candidate (its STP is off).
     switches_by_tier: dict[int, list[SwitchSTPConfig]] = {}
     for switch in topology.switches:
+        if is_gateway_switch(switch, topology):
+            switch.optimal_priority = None
+            continue
         tier = switch.hierarchy_tier
         if tier not in switches_by_tier:
             switches_by_tier[tier] = []
@@ -623,7 +651,9 @@ async def calculate_optimal_priorities(
         has_non_root_tier_zero = any(
             switch.device_id != preferred_root_id for switch in tier_zero_switches
         ) or any(
-            switch.connected_to_gateway and switch.device_id != preferred_root_id
+            switch.connected_to_gateway
+            and switch.device_id != preferred_root_id
+            and not is_gateway_switch(switch, topology)
             for switch in topology.switches
         )
 
@@ -739,19 +769,20 @@ async def generate_stp_report(
     if changes:
         recommendations.append(f'Apply {len(changes)} priority change(s) to optimize STP topology')
 
-    # Find optimal root candidate
+    # Find optimal root candidate: one shared filter, so no tier below names the gateway
     optimal_root = None
     optimal_root_reason = ''
     _apply_root_eligibility(topology.switches)
+    gateways = [switch for switch in topology.switches if is_gateway_switch(switch, topology)]
+    plannable = [switch for switch in topology.switches if switch not in gateways]
+    recommendations.extend(gateway_skipped_line(switch) for switch in gateways)
     root_candidates = [
-        switch
-        for switch in topology.switches
-        if switch.hierarchy_tier == 0 and switch.root_eligible
+        switch for switch in plannable if switch.hierarchy_tier == 0 and switch.root_eligible
     ]
     if not root_candidates:
         root_candidates = [
             switch
-            for switch in topology.switches
+            for switch in plannable
             if switch.hierarchy_tier == 0 and switch.connected_to_gateway
         ]
     if root_candidates:
@@ -764,9 +795,9 @@ async def generate_stp_report(
             'Core switch directly connected to gateway'
         )
 
-    if not optimal_root and topology.switches:
-        # Fall back to switch with lowest tier
-        sorted_switches = sorted(topology.switches, key=lambda s: s.hierarchy_tier)
+    if not optimal_root and plannable:
+        # Fall back to the lowest-tier switch that isn't a gateway
+        sorted_switches = sorted(plannable, key=lambda s: s.hierarchy_tier)
         if sorted_switches:
             optimal_root = sorted_switches[0].name
             optimal_root_reason = f'Tier {sorted_switches[0].hierarchy_tier} switch'

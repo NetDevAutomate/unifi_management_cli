@@ -1097,3 +1097,119 @@ class Test10GExpansionValidation:
         assert '8192' in markdown
         assert '16384' in markdown
         assert '32768' in markdown
+
+
+class TestGatewayIsNeverPlanned:
+    """The gateway's bridge priority is not managed here: never proposed, never the root."""
+
+    @staticmethod
+    def _switch(device_id: str, name: str, model: str, *, tier: int, **over: object):
+        return SwitchSTPConfig(
+            device_id=device_id,
+            name=name,
+            mac=f'02:00:00:00:00:{int(device_id[-2:], 16):02x}',
+            model=model,
+            current_priority=over.pop('priority', STP_PRIORITY_DEFAULT),  # type: ignore[arg-type]
+            hierarchy_tier=tier,
+            **over,  # type: ignore[arg-type]
+        )
+
+    def _gateway(self, *, tier: int, connected: bool) -> SwitchSTPConfig:
+        return self._switch(
+            '0000000000000000000000f1',
+            'Gateway',
+            'UDMPRO',
+            tier=tier,
+            priority=STP_PRIORITY_DEFAULT,  # so any tier's priority would be a change
+            connected_to_gateway=connected,
+            capability=SwitchCapabilityClass.GATEWAY,
+        )
+
+    async def test_no_change_is_proposed_for_a_gateway_in_the_topology(self) -> None:
+        core = self._switch(
+            '0000000000000000000000a1',
+            'Switch A',
+            'USW-Aggregation',
+            tier=0,
+            connected_to_gateway=True,
+        )
+        topology = STPTopology(
+            gateway_id='0000000000000000000000f1',
+            gateway_name='Gateway',
+            switches=[core, self._gateway(tier=1, connected=False)],
+        )
+        changes = await calculate_optimal_priorities(topology)
+        assert [c.device_name for c in changes] == ['Switch A']
+        assert changes[0].new_priority == STP_PRIORITY_CORE
+
+    async def test_the_gateway_is_never_the_preferred_root(self) -> None:
+        # An unknown-model core and the gateway both at tier 0, neither root-eligible: on a
+        # name tie-break the gateway ('Gateway' < 'Switch A') used to win the root.
+        core = self._switch(
+            '0000000000000000000000a1',
+            'Switch A',
+            'unknown-model',
+            tier=0,
+            connected_to_gateway=True,
+        )
+        topology = STPTopology(
+            gateway_id='0000000000000000000000f1',
+            switches=[self._gateway(tier=0, connected=True), core],
+        )
+        changes = {
+            c.device_name: c.new_priority for c in await calculate_optimal_priorities(topology)
+        }
+        assert changes == {'Switch A': STP_PRIORITY_CORE}
+
+    async def test_the_report_never_names_the_gateway_as_optimal_root(self) -> None:
+        from unifi_mapper.analysis.stp_optimizer import generate_stp_report
+
+        # No LLDP to the gateway: every switch keeps tier 2 and the gateway comes first.
+        switches = [
+            self._gateway(tier=2, connected=False),
+            self._switch('0000000000000000000000a1', 'Switch A', 'USW-Pro-24', tier=2),
+        ]
+        topology = STPTopology(gateway_id='0000000000000000000000f1', switches=switches)
+        changes = await calculate_optimal_priorities(topology)
+        report = await generate_stp_report(topology, changes)
+        assert report.optimal_root == 'Switch A'
+        assert all(c.device_name != 'Gateway' for c in report.changes)
+        assert any('Skipped Gateway' in line for line in report.recommendations)
+
+    async def test_a_gateway_alone_leaves_no_optimal_root(self) -> None:
+        from unifi_mapper.analysis.stp_optimizer import generate_stp_report
+
+        topology = STPTopology(
+            gateway_id='0000000000000000000000f1',
+            switches=[self._gateway(tier=2, connected=False)],
+        )
+        report = await generate_stp_report(topology, await calculate_optimal_priorities(topology))
+        assert report.optimal_root is None and report.changes == []
+
+    def test_stp_optimize_prints_one_line_per_skipped_gateway(self, monkeypatch) -> None:
+        from typer.testing import CliRunner
+        from unifi_mapper.analysis import stp_optimizer
+        from unifi_mapper.typer_cli import app
+
+        core = self._switch(
+            '0000000000000000000000a1',
+            'Switch A',
+            'USW-Aggregation',
+            tier=0,
+            connected_to_gateway=True,
+        )
+        topology = STPTopology(
+            gateway_id='0000000000000000000000f1',
+            switches=[core, self._gateway(tier=1, connected=False)],
+        )
+
+        async def _discover(*_args: object, **_kwargs: object) -> STPTopology:
+            return topology
+
+        monkeypatch.setattr('unifi_mapper.cli.load_env_from_config', lambda path: None)
+        monkeypatch.setattr(stp_optimizer, 'discover_stp_topology', _discover)
+        result = CliRunner().invoke(app, ['stp', 'optimize'])
+        assert result.exit_code == 0, result.output
+        flat = ' '.join(result.output.split())
+        assert flat.count('Skipped Gateway: gateway; its STP priority is not changed') == 1
+        assert 'Switch A' in flat

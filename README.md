@@ -165,6 +165,11 @@ unifi-mapper stp diff reports/stp-baseline.json
 unifi-mapper stp report -o stp-report.md
 ```
 
+The gateway (`udm`/`udmpro`) stays in the topology so the switches can be tiered by their
+distance to it, but its bridge runs with STP disabled: `stp optimize` and `stp report` never
+propose a priority for it or name it as the root, and print "Skipped <gateway>: gateway; its STP
+priority is not changed" instead.
+
 ### Device Inventory
 
 ```bash

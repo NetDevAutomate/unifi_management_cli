@@ -927,7 +927,7 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 | `radio_optimization.py` | `analyze_radio_optimization` | Reviews Wi-Fi channel reuse and transmit power |
 | `sfp_diagnostics.py` | `audit_sfp_diagnostics` | Pulls transceiver identity and DOM diagnostics |
 | `storm_detection.py` | `detect_storms` | Identifies broadcast/multicast storm conditions |
-| `stp_optimizer.py` | `discover_stp_topology`, `calculate_optimal_priorities`, `apply_stp_changes`, `validate_10g_expansion_readiness` | STP topology discovery, priority optimisation, path-cost auditing, remediation, and 10G preflight |
+| `stp_optimizer.py` | `discover_stp_topology`, `calculate_optimal_priorities`, `is_gateway_switch`, `apply_stp_changes`, `validate_10g_expansion_readiness` | STP topology discovery, priority optimisation (the gateway is tiered from but never planned or named root), path-cost auditing, remediation, and 10G preflight |
 | `stp_change_plan.py` | `create_stp_change_plan` | Creates ordered STP changes with rollback bundle and checks |
 | `stp_drift.py` | `detect_stp_config_drift`, `load_stp_intent` | Compares live STP state with desired intent |
 | `stp_guard.py` | `audit_stp_guard_recommendations` | Finds Root Guard candidates and high topology-change counters |

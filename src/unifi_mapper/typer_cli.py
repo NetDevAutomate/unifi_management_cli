@@ -2219,6 +2219,8 @@ def stp_optimize(
             apply_stp_changes,
             calculate_optimal_priorities,
             discover_stp_topology,
+            gateway_skipped_line,
+            is_gateway_switch,
         )
 
         # Discover topology
@@ -2228,6 +2230,9 @@ def stp_optimize(
         # Calculate optimal priorities
         console.print('🧮 [dim]Calculating optimal priorities...[/dim]')
         changes = asyncio.run(calculate_optimal_priorities(topology))
+        for switch in topology.switches:
+            if is_gateway_switch(switch, topology):
+                console.print(f'[dim]{escape(gateway_skipped_line(switch))}[/dim]')
 
         if not changes:
             console.print('✅ [bold green]STP configuration is already optimal![/bold green]')
