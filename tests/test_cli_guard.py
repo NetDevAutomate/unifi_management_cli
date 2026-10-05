@@ -35,7 +35,7 @@ REPO = Path(__file__).resolve().parents[1]
 PACKAGE = REPO / 'src' / 'unifi_mapper'
 TYPER_CLI = PACKAGE / 'typer_cli.py'
 GUARD_HELPERS = frozenset({'_run_analysis', '_run_gateway_ssh'})
-I6_DIRECT_SITES = 47  # issue 064: lower this as each command group moves
+DIRECT_ASYNCIO_RUN_SITES = 47  # issue 064: lower this as each command group moves
 API = '/proxy/network/api/s/default'
 
 
@@ -146,7 +146,7 @@ def test_new_commands_run_behind_the_read_only_transport() -> None:
             assert isinstance(call.args[0], ast.Call)
             assert getattr(call.args[0].func, 'id', None) == '_guarded', helper.name
         direct = len(_asyncio_runs(tree)) - len(helpers)
-        assert direct <= I6_DIRECT_SITES, 'route new commands through the guard helpers'
+        assert direct <= DIRECT_ASYNCIO_RUN_SITES, 'route new commands through the guard helpers'
 
 
 def test_the_host_key_notice_prints_once_per_invocation(

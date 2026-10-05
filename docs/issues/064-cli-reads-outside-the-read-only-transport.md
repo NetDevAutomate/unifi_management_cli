@@ -16,7 +16,7 @@ The July port moves `typer_cli.py`'s two async helpers, `_run_analysis` and
 borrows one guarded controller client, so a write refuses before it leaves the host. The
 rest of the CLI's async commands call `asyncio.run(...)` directly and each build their own
 `UniFiClient`, outside that guard. Counted by AST after `diagnose latency-matrix` moved onto
-`_run_gateway_ssh`: **47 direct sites**, pinned by `I6_DIRECT_SITES` in
+`_run_gateway_ssh`: **47 direct sites**, pinned by `DIRECT_ASYNCIO_RUN_SITES` in
 `tests/test_cli_guard.py`.
 
 Read paths (40 sites), by command:
@@ -50,5 +50,5 @@ the host. Breaks fresh clones, CI or prod: no.
 ## Recommendation
 
 Move each read path onto `_run_analysis`, one commit per command group, test first, and lower
-`I6_DIRECT_SITES` in the same commit. Leave the write paths on their own guarded plan, review
-and apply flow.
+`DIRECT_ASYNCIO_RUN_SITES` in the same commit. Leave the write paths on their own guarded
+plan, review and apply flow.
