@@ -9,8 +9,13 @@ are reported. That proves the stripping was complete without leaking a value.
 Rules:
     * A key is removed together with its value when it starts with ``x_`` or
       contains ``password``, ``secret``, ``token``, ``authkey``, ``psk``,
-      ``passphrase``, ``api_key`` or ``private_key`` (case-insensitive). This
-      applies at every depth, including dicts nested inside lists.
+      ``preshared``, ``passphrase``, ``api_key`` or ``private_key``
+      (case-insensitive). This applies at every depth, including dicts nested
+      inside lists.
+    * So is a key that is exactly ``community`` (the SNMP community string),
+      ``syslog_key`` or ``lcm_tracker_seed``, in any case. These match the whole
+      key only: ``community_id`` and ``snmp_community`` stay. Free text is not
+      matched on them, because ``community`` is an ordinary word.
     * Bare ``key``, ``name`` and ``id`` keys are never removed. Event records
       use ``key`` for the event type.
     * Values are not scanned. Free text that may quote a secret (exception
@@ -27,9 +32,11 @@ from typing import Any
 
 
 SECRET_KEY_RE = re.compile(
-    r'password|secret|token|authkey|psk|passphrase|api[_-]?key|private[_-]?key',
+    r'password|secret|token|authkey|psk|preshared|passphrase|api[_-]?key|private[_-]?key',
     re.IGNORECASE,
 )
+# Whole keys that hold a credential although no keyword matches them (compared lower-cased).
+_EXACT_SECRET_KEYS = frozenset({'community', 'syslog_key', 'lcm_tracker_seed'})
 REDACTED = '***redacted***'
 DEFAULT_TEXT_LIMIT = 300
 
@@ -39,7 +46,7 @@ _SECRET_NAME = (
     r'(?<![A-Za-z0-9_.\-])'
     r'(?:x_[A-Za-z0-9_.\-]*'
     r'|[A-Za-z0-9_.\-]*'
-    r'(?:password|secret|token|authkey|psk|passphrase|api[_-]?key|private[_-]?key)'
+    r'(?:password|secret|token|authkey|psk|preshared|passphrase|api[_-]?key|private[_-]?key)'
     r'[A-Za-z0-9_.\-]*)'
 )
 _SECRET_ASSIGNMENT_RE = re.compile(
@@ -57,10 +64,16 @@ def is_secret_key(key: object) -> bool:
         key: The mapping key. Non-string keys are compared by their ``str()``.
 
     Returns:
-        True for keys starting with ``x_`` or containing a secret keyword.
+        True for keys starting with ``x_``, containing a secret keyword, or equal to one of
+        the exact secret keys (``community``, ``syslog_key``, ``lcm_tracker_seed``).
     """
     name = str(key)
-    return name.lower().startswith('x_') or bool(SECRET_KEY_RE.search(name))
+    lowered = name.lower()
+    return (
+        lowered.startswith('x_')
+        or lowered in _EXACT_SECRET_KEYS
+        or bool(SECRET_KEY_RE.search(name))
+    )
 
 
 def strip_secrets(value: Any, path: str = '') -> tuple[Any, list[str]]:

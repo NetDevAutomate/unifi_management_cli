@@ -334,8 +334,9 @@ session is wrapped by a transport guard that allows `GET` (except `cmd/` and `up
 paths) and `POST` only to the `stat/event`, `list/alarm` and v2 `system-log` query
 endpoints. Anything else, including every `PUT`/`DELETE`, is refused before it leaves
 the machine. If the client has to log in again mid-run, the new session is wrapped too.
-Secret fields (`x_*`, passwords, tokens, PSKs, passphrases) are removed from every
-output, and only their key paths are listed in `sanitised_paths`. These commands read
+Secret fields (`x_*`, passwords, tokens, PSKs and pre-shared keys, passphrases, SNMP
+communities, syslog keys) are removed from every output, and only their key paths are
+listed in `sanitised_paths`. These commands read
 configuration only from `--config` (or the default config path), never from a stray
 `./.env` in the working directory; `ports inspect` follows the same rule.
 

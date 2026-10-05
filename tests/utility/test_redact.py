@@ -215,3 +215,51 @@ def test_unrelated_true_survives_masking():
     secrets = mcp_secret_values({'FOO_TOKEN': 'true', 'UNIFI_API_TOKEN': 'abc'})
     assert secrets == frozenset()
     assert mask_secrets({'enabled': 'true'}, secrets) == {'enabled': 'true'}
+
+
+# --- exact keys and pre-shared keys (the July port's config objects) ---------------------
+
+EXACT_KEYS = [
+    'community',
+    'COMMUNITY',
+    'Community',
+    'syslog_key',
+    'SYSLOG_KEY',
+    'lcm_tracker_seed',
+]
+
+
+@pytest.mark.parametrize('key', EXACT_KEYS)
+def test_exact_secret_keys_are_stripped_and_masked_in_any_case(key):
+    clean, removed = strip_secrets({'snmp': {key: FAKE, 'enabled': True}}, 'setting[0]')
+    assert clean == {'snmp': {'enabled': True}}
+    assert removed == [f'setting[0].snmp.{key}']
+    assert is_secret_key(key) is True
+    assert mask_secrets({key: FAKE}, frozenset())[key] == REDACTED
+
+
+@pytest.mark.parametrize(
+    'key', ['community_id', 'snmp_community', 'communityname', 'syslog_key_id', 'my_syslog_key']
+)
+def test_exact_keys_match_the_whole_key_only(key):
+    assert is_secret_key(key) is False
+    assert strip_secrets({key: 'value'}) == ({key: 'value'}, [])
+
+
+@pytest.mark.parametrize(
+    'key', ['preshared_key', 'wireguard_preshared_key', 'PreShared', 'x_preshared']
+)
+def test_preshared_keys_are_stripped(key):
+    assert is_secret_key(key) is True
+    assert strip_secrets({key: FAKE}) == ({}, [key])
+
+
+def test_preshared_values_are_masked_in_free_text():
+    text = f'tunnel failed: preshared_key={FAKE} peer=203.0.113.9'
+    assert FAKE not in redact_text(text)
+    assert 'peer=203.0.113.9' in redact_text(text)
+
+
+def test_community_is_an_ordinary_word_in_free_text():
+    text = 'see community.ui.com for the release notes; community=public'
+    assert redact_text(text) == text
