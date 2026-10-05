@@ -5217,6 +5217,48 @@ def diagnose_client_connectivity_command(
         raise typer.Exit(1)
 
 
+def _file_option(path: Optional[Path], option: str) -> Optional[Path]:
+    """Expand a file option's ``~`` and refuse an existing directory (design 6.1: exit 2)."""
+    if path is None:
+        return None
+    expanded = path.expanduser()
+    if expanded.is_dir():
+        _fail(f'{option} names a directory, not a file: {expanded}', code=2)
+    return expanded
+
+
+def _prepare_output(path: Path, option: str) -> None:
+    """Before a long run: create the output's directory (``0o700``) and check it is writable.
+
+    A missing directory is created private; an existing one keeps its mode. Exits 2 naming
+    the path when the directory can't be made or the file can't be written.
+    """
+    import os
+
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except OSError as e:
+        _fail(f'cannot write {option} {path}: {e.strerror or type(e).__name__}', code=2)
+    if not os.access(path if path.exists() else path.parent, os.W_OK):
+        _fail(f'cannot write {option} {path}: permission denied', code=2)
+
+
+def _write_report(path: Path, text: str, option: str) -> bool:
+    """Write a report that was already printed; a failure is one redacted line (False)."""
+    from .core.utils.redact import redact_text
+
+    try:
+        path.write_text(text + '\n', encoding='utf-8')
+    except OSError as e:
+        reason = redact_text(e.strerror or type(e).__name__)
+        err_console.print(
+            f'❌ cannot write {option} {path}: {reason}', style='red', markup=False, soft_wrap=True
+        )
+        return False
+    err_console.print(f'💾 Report written to {path}', markup=False)
+    return True
+
+
 @diagnose_app.command('ap-health')
 def diagnose_ap_health(
     target: str = typer.Argument(..., help='The AP to sample: its name, MAC or IP'),
@@ -5236,7 +5278,7 @@ def diagnose_ap_health(
         help="Also ping up to 4 of each AP's wireless clients from the gateway over SSH",
     ),
     output: Optional[Path] = typer.Option(
-        None, '--output', help='Also write the markdown report to this file'
+        None, '--output', help='Also write the markdown report to this file (checked first)'
     ),
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of markdown'),
 ):
@@ -5244,11 +5286,12 @@ def diagnose_ap_health(
 
     Takes --samples reads --interval seconds apart (at most 60 x 600 s, 10 h; the expected
     duration is printed first) and reports each sample and the mean interval retry rate,
-    beside a --reference AP when given. A sample whose read times out is recorded as
-    missing. Read-only, with no power-cycle step. --ping-clients also pings each AP's clients
-    from the gateway over SSH, as the SSH user (the gateway's host key is not verified).
-    Ctrl-C prints the samples taken so far as a partial report (and writes it to --output)
-    and exits 130.
+    beside a --reference AP when given. A sample whose read times out or fails is recorded
+    as missing. Read-only, with no power-cycle step. --ping-clients also pings each AP's
+    clients from the gateway over SSH, as the SSH user (the gateway's host key is not
+    verified). --output is checked before the first sample and written after the report is
+    printed. Ctrl-C prints the samples taken so far as a partial report (and writes it to
+    --output) and exits 130; a failure that ends the run does the same and exits 1.
     """
     import asyncio
     from .analysis.ap_health import (
@@ -5259,6 +5302,9 @@ def diagnose_ap_health(
         run_ap_health_capture,
     )
 
+    output = _file_option(output, '--output')
+    if output is not None:
+        _prepare_output(output, '--output')
     expected = _duration_text(expected_duration_seconds(samples, interval))
     err_console.print(f'Expected duration: about {expected}', style='dim')
     capture = ApHealthCapture()
@@ -5272,21 +5318,28 @@ def diagnose_ap_health(
             target, reference, essid, samples, interval, ping_clients, progress, sink=capture
         )
 
+    failure_code = 0
     try:
         report = _probe(run) if ping_clients else _run_analysis(run)
     except (KeyboardInterrupt, asyncio.CancelledError):
         report = build_report(capture, partial=True)
+    except typer.Exit as e:  # the error line is printed; keep the samples taken so far
+        if not capture.samples:
+            raise
+        failure_code = e.exit_code or 1
+        report = build_report(capture, partial=True)
     markdown = render_markdown(report)
-    if output is not None:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(markdown + '\n', encoding='utf-8')
-        err_console.print(f'💾 Report written to {output}', markup=False)
     if as_json:
         _emit_json(report)
     else:
         console.print(markdown, markup=False, soft_wrap=True)
+    written = output is None or _write_report(output, markdown, '--output')
     if report['partial']:
-        raise typer.Exit(130)
+        rounds = sum(1 for s in capture.samples if s.role == 'target')
+        err_console.print(f'Partial run: {rounds} of {samples} samples taken.', markup=False)
+        raise typer.Exit(failure_code or 130)
+    if not written:
+        raise typer.Exit(2)
 
 
 # ─── VLAN traffic (sample over SSH; rollup, report and coverage offline) ────
@@ -5329,7 +5382,8 @@ def vlan_traffic_sample(
     from .analysis.vlan_traffic import sample_vlan_traffic
     from datetime import UTC, datetime
 
-    result = _probe(lambda: sample_vlan_traffic(db))
+    store = _file_option(db, '--db')
+    result = _probe(lambda: sample_vlan_traffic(store))
     when = datetime.fromtimestamp(result['ts'], tz=UTC).isoformat(timespec='seconds')
     extra = f', {len(result["skipped"])} without counters' if result['skipped'] else ''
     console.print(
@@ -5353,8 +5407,9 @@ def vlan_traffic_rollup(
     """
     from .analysis.vlan_traffic_store import run_rollups
 
+    store = _file_option(db, '--db')
     with _offline_errors():
-        result = run_rollups(db)
+        result = run_rollups(store)
     console.print(
         f'Rolled {result["raw_rows_rolled"]} raw row(s) into {result["hourly_rows_written"]} '
         f'hourly and {result["hourly_rows_rolled"]} hourly into {result["daily_rows_written"]} '
@@ -5377,8 +5432,9 @@ def vlan_traffic_report(
     """
     from .analysis.vlan_traffic_store import read_vlan_traffic_report
 
+    store = _file_option(db, '--db')
     with _offline_errors():
-        report = read_vlan_traffic_report(period.value, db)
+        report = read_vlan_traffic_report(period.value, store)
     if as_json:
         _emit_json(report)
         return
@@ -5411,8 +5467,9 @@ def vlan_traffic_coverage(
     from .analysis.vlan_traffic_store import read_vlan_traffic_periods
     from datetime import UTC, datetime
 
+    store = _file_option(db, '--db')
     with _offline_errors():
-        periods = read_vlan_traffic_periods(db)
+        periods = read_vlan_traffic_periods(store)
     if as_json:
         _emit_json(periods)
         return

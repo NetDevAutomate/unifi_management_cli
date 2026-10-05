@@ -14,6 +14,7 @@ import inspect
 import json
 import pytest
 import shlex
+import stat
 from pathlib import Path
 from tests.fake_controller import API, FakeController, legacy, route_cli, serving
 from tests.fake_ssh import FakeSSH
@@ -293,6 +294,53 @@ async def test_a_sample_read_that_times_out_is_missing_not_fatal(
     assert report['samples_taken'] == {'target': 2} and report['samples_missing'] == {'target': 1}
 
 
+async def test_a_sample_read_that_fails_with_any_error_is_missing_not_fatal(
+    pauses: list[float], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review F4: a read failing with something other than a ToolError (here a body that is
+    not JSON, a RuntimeError) is a missing sample with its reason; the run goes on."""
+    real = ap_health._read_sample
+    calls = {'n': 0}
+
+    async def _fail_second(ping_clients: bool) -> Any:
+        calls['n'] += 1
+        if calls['n'] == 2:
+            raise RuntimeError('unexpected body token=FAKE-READ-TOKEN')  # pragma: allowlist secret
+        return await real(ping_clients)
+
+    monkeypatch.setattr(ap_health, '_read_sample', _fail_second)
+    report, capture = await _run(_controller(), target='AP 1', samples=3, interval=30)
+    assert [s.missing for s in capture.samples] == [False, True, False]
+    reason = capture.samples[1].reason or ''
+    assert reason.startswith('read failed: unexpected body') and 'FAKE-READ-TOKEN' not in reason
+    assert report['samples_taken'] == {'target': 2} and report['samples_missing'] == {'target': 1}
+
+
+async def test_a_ping_that_fails_with_any_error_is_recorded_and_the_run_goes_on(
+    pauses: list[float], ssh: FakeSSH, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review F4: a dropped SSH session raises an asyncssh or OS error, not a ToolError. That
+    ping records the redacted error and the samples before and after it are kept."""
+    real = ap_health.run_gateway_command
+    calls = {'n': 0}
+
+    async def _drop_second(conn: Any, argv: list[str], *, timeout: float) -> Any:
+        calls['n'] += 1
+        if calls['n'] == 2:
+            raise ConnectionResetError('Connection lost')
+        return await real(conn, argv, timeout=timeout)
+
+    monkeypatch.setattr(ap_health, 'run_gateway_command', _drop_second)
+    report, capture = await _run(
+        _controller(), target='AP 1', samples=3, interval=30, ping_clients=True
+    )
+    pings = [s.pings['192.0.2.31'] for s in capture.samples]
+    assert pings[0]['loss_pct'] == 0.0 and pings[2]['loss_pct'] == 0.0
+    assert pings[1] == {'error': ErrorCodes.API_ERROR, 'detail': 'Connection lost'}
+    assert report['samples_taken'] == {'target': 3}
+    assert 'API_ERROR (Connection lost)' in render_markdown(report)
+
+
 @pytest.mark.parametrize(
     'kwargs',
     [{'samples': 0}, {'samples': 61}, {'interval': 29}, {'interval': 601}],
@@ -386,6 +434,98 @@ def test_an_interrupt_prints_and_writes_a_partial_report_and_exits_130(
     data = json.loads(result.stdout)
     assert data['partial'] is True and data['samples_taken'] == {'target': 2}
     assert 'Partial' in output.read_text(encoding='utf-8')
+    assert 'Partial run: 2 of 5 samples taken.' in result.stderr  # council N1
+
+
+def test_a_failure_after_samples_prints_and_writes_the_partial_report_and_exits_1(
+    cli: FakeController, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Review F4: a failure that still ends the capture (here in the pause before the third
+    sample) keeps the samples taken: one redacted error line, then the partial report."""
+    calls: list[float] = []
+
+    async def _fail_after_two(seconds: float) -> None:
+        calls.append(seconds)
+        if len(calls) == 2:
+            raise RuntimeError('session closed password=FAKE-PAUSE-PW')  # pragma: allowlist secret
+
+    monkeypatch.setattr(ap_health, '_pause', _fail_after_two)
+    output = tmp_path / 'ap-health.md'
+    args = ['diagnose', 'ap-health', 'AP 1', '--samples', '5', '--interval', '30']
+    result = runner.invoke(app, [*args, '--output', str(output), '--json'])
+    assert result.exit_code == 1, result.output
+    data = json.loads(result.stdout)
+    assert data['partial'] is True and data['samples_taken'] == {'target': 2}
+    assert 'Partial' in output.read_text(encoding='utf-8')
+    assert 'Error: session closed' in result.stderr and 'FAKE-PAUSE-PW' not in result.output
+    assert 'Partial run: 2 of 5 samples taken.' in result.stderr
+
+
+def test_a_failure_before_any_sample_exits_1_without_a_report(
+    cli: FakeController, pauses: list[float], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    async def _no_discovery() -> Any:
+        raise RuntimeError('controller gone')
+
+    monkeypatch.setattr(ap_health, '_discover', _no_discovery)
+    output = tmp_path / 'ap-health.md'
+    result = runner.invoke(app, ['diagnose', 'ap-health', 'AP 1', '--output', str(output)])
+    assert result.exit_code == 1, result.output
+    assert 'Error: controller gone' in result.stderr
+    assert result.stdout == '' and not output.exists()
+
+
+# --- --output (design section 6.1; review F8) ---------------------------------------------
+
+
+def test_an_output_that_is_a_directory_is_refused_before_any_read(
+    cli: FakeController, pauses: list[float], tmp_path: Path
+) -> None:
+    result = runner.invoke(app, ['diagnose', 'ap-health', 'AP 1', '--output', str(tmp_path)])
+    assert result.exit_code == 2, result.output
+    assert '--output names a directory' in result.stderr and cli.calls == []
+
+
+def test_an_output_whose_directory_cannot_be_made_is_refused_before_any_read(
+    cli: FakeController, pauses: list[float], tmp_path: Path
+) -> None:
+    blocker = tmp_path / 'a-file'
+    blocker.write_text('x', encoding='utf-8')
+    target = blocker / 'ap-health.md'
+    result = runner.invoke(app, ['diagnose', 'ap-health', 'AP 1', '--output', str(target)])
+    assert result.exit_code == 2, result.output
+    assert 'cannot write --output' in result.stderr and cli.calls == []
+
+
+def test_the_output_path_is_expanded_and_its_new_directory_private(
+    cli: FakeController, pauses: list[float], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv('HOME', str(tmp_path))
+    args = ['diagnose', 'ap-health', 'AP 1', '--samples', '1', '--interval', '30']
+    result = runner.invoke(app, [*args, '--output', '~/reports/ap-health.md'])
+    assert result.exit_code == 0, result.output
+    written = tmp_path / 'reports' / 'ap-health.md'
+    assert written.read_text(encoding='utf-8').startswith('# AP Health Report')
+    assert stat.S_IMODE(written.parent.stat().st_mode) == 0o700
+
+
+def test_a_report_that_cannot_be_written_is_printed_first_then_exits_2(
+    cli: FakeController, pauses: list[float], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    output = tmp_path / 'ap-health.md'
+    real_write = Path.write_text
+
+    def _full_disk(self: Path, *args: Any, **kwargs: Any) -> int:
+        if self == output:
+            raise OSError(28, 'No space left on device')
+        return real_write(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'write_text', _full_disk)
+    args = ['diagnose', 'ap-health', 'AP 1', '--samples', '1', '--interval', '30']
+    result = runner.invoke(app, [*args, '--output', str(output)])
+    assert result.exit_code == 2, result.output
+    assert '# AP Health Report — AP 1' in result.stdout  # printed before the write
+    assert 'cannot write --output' in result.stderr and 'No space left' in result.stderr
 
 
 @pytest.mark.parametrize(

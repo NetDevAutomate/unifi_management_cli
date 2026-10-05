@@ -281,7 +281,7 @@ The lifespan resolves config once, installs one `SharedControllerClient` (from `
 | `diagnose wan-history` | `diagnostics/wan_history.py` | The recorded speedtest results (reads a local file only) |
 | `diagnose device-stats` | `diagnostics/observability.py` | One device's CPU, memory, load, uptime, radios and per-VAP counters |
 | `diagnose ap-retries` | `diagnostics/observability.py` | Every AP's per-VAP TX retry rate over an interval (two reads) |
-| `diagnose ap-health` | `analysis/ap_health.py` | One AP's 2.4 GHz counters sampled 1-60 times, 30-600 s apart, beside a reference AP; a markdown or JSON report (CLI only; `--ping-clients` pings each AP's clients over SSH; Ctrl-C ends with a partial report, exit 130) |
+| `diagnose ap-health` | `analysis/ap_health.py` | One AP's 2.4 GHz counters sampled 1-60 times, 30-600 s apart, beside a reference AP; a markdown or JSON report (CLI only; `--ping-clients` pings each AP's clients over SSH; a failed read or ping is recorded, never fatal; Ctrl-C ends with a partial report, exit 130, a failure that ends the run with one, exit 1) |
 | `diagnose client-connectivity` | `diagnostics/client_connectivity.py` | One client: lookup, AP counters, then gateway ping, DNS, HTTP from its VLAN and flows over SSH; each layer bounded, 120 s in all (CLI only) |
 
 **`controller` subcommand group** — the controller's raw config objects and site-wide event

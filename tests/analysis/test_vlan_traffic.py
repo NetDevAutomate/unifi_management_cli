@@ -253,6 +253,27 @@ def test_an_unknown_period_is_a_usage_error(tmp_path: Path) -> None:
     assert result.exit_code == 2
 
 
+@pytest.mark.parametrize(
+    'command', [['sample'], ['rollup'], ['report', 'now'], ['coverage']], ids=lambda c: c[0]
+)
+def test_a_db_that_is_a_directory_exits_2_naming_it(
+    cli: FakeController, tmp_path: Path, command: list[str]
+) -> None:
+    """Design section 6.1 (review F8): ``--db`` naming a directory is refused, exit 2."""
+    result = runner.invoke(app, ['vlan-traffic', *command, '--db', str(tmp_path)])
+    assert result.exit_code == 2, result.output
+    assert '--db names a directory' in result.stderr and cli.calls == []
+
+
+def test_the_db_path_is_expanded(
+    cli: FakeController, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv('HOME', str(tmp_path))
+    result = runner.invoke(app, ['vlan-traffic', 'sample', '--db', '~/vlan.sqlite3'])
+    assert result.exit_code == 0, result.output
+    assert set(_rows(tmp_path / 'vlan.sqlite3')) == {1, 30, 40}
+
+
 @pytest.mark.parametrize('command', ['sample', 'rollup', 'report', 'coverage'])
 def test_every_command_has_help(command: str) -> None:
     result = runner.invoke(app, ['vlan-traffic', command, '--help'])

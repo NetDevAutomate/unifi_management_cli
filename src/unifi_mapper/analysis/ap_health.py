@@ -8,9 +8,11 @@ is ``get_device_stats`` with ``get_ap_retry_rates``. The controller reads borrow
 holder the CLI installs. Client pings (class B) run only with ``ping_clients=True``, in one
 gateway SSH session through ``analysis/gateway_ssh.py``.
 
-Each sample's read is bounded (:data:`SAMPLE_READ_TIMEOUT`); a sample that times out or fails
-is recorded as missing, never fatal. The capture fills the :class:`ApHealthCapture` it is
-given as it goes, so after Ctrl-C the CLI builds a partial report from what was gathered.
+Each sample's read is bounded (:data:`SAMPLE_READ_TIMEOUT`); a sample whose read times out or
+fails with any error is recorded as missing with its reason, and a ping that fails records
+its redacted error: neither is fatal. The capture fills the :class:`ApHealthCapture` it is
+given as it goes, so after Ctrl-C, or a failure that still ends the run, the CLI builds a
+partial report from what was gathered.
 
 Rebuilt from the July work (a local archive, not in the repo) without July's PoE power-cycle
 phase (a controller write, W9 in issue 060), its job registry (issue 012), its hard-coded SSID
@@ -43,7 +45,7 @@ from unifi_mapper.core.utils.counters import (
 )
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.ping_parse import parse_ping_output
-from unifi_mapper.core.utils.redact import strip_secrets
+from unifi_mapper.core.utils.redact import redact_text, strip_secrets
 from unifi_mapper.diagnostic_reads import normalise_mac
 from unifi_mapper.diagnostics.observability import CU_TOTAL_CAVEAT, MAX_QUERY_LENGTH
 
@@ -328,7 +330,8 @@ def _pings_cell(pings: dict[str, dict[str, Any]]) -> str:
     parts = []
     for ip, ping in pings.items():
         if 'error' in ping:
-            parts.append(f'{ip}: {ping["error"]}')
+            detail = f' ({_cell(ping["detail"])})' if ping.get('detail') else ''
+            parts.append(f'{ip}: {ping["error"]}{detail}')
         else:
             parts.append(f'{ip}: {_cell(ping.get("loss_pct"))}% loss')
     return '; '.join(parts) or '-'
@@ -340,7 +343,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     name = target.get('name') or 'unknown AP'
     lines = [f'# AP Health Report — {name}', '']
     if report['partial']:
-        lines += ['**Partial**: the capture was interrupted; these are the samples it took.', '']
+        lines += ['**Partial**: the capture stopped early; these are the samples it took.', '']
     lines += [
         f'Method: {report["samples_requested"]} samples, {report["interval_seconds"]} s apart'
         f'{", with gateway pings to clients" if report["ping_clients"] else ""}; '
@@ -441,8 +444,17 @@ async def _read_sample(ping_clients: bool) -> tuple[list[Any], list[Any]]:
     return devices, clients
 
 
+def _failure_text(error: object) -> str:
+    """A failure's redacted text, or its class name when it has none."""
+    return redact_text(error) or type(error).__name__
+
+
 async def _ping_clients(conn: Any, ips: list[str]) -> dict[str, dict[str, Any]]:
-    """Ping each address from the gateway: loss and round trips, or the error code."""
+    """Ping each address from the gateway: loss and round trips, or the error.
+
+    A ping that fails (a ``ToolError``, or anything else, such as the connection reset of a
+    dropped SSH session) records its error code and redacted text; the others still run.
+    """
     results: dict[str, dict[str, Any]] = {}
     for ip in ips:
         try:
@@ -450,7 +462,10 @@ async def _ping_clients(conn: Any, ips: list[str]) -> dict[str, dict[str, Any]]:
             argv = ['ping', '-c', str(PING_COUNT), '-i', f'{PING_INTERVAL:g}', '-W', '2', address]
             out = await run_gateway_command(conn, argv, timeout=PING_COUNT * PING_INTERVAL + 12)
         except ToolError as e:
-            results[ip] = {'error': e.error_code}
+            results[ip] = {'error': e.error_code, 'detail': _failure_text(e.message)}
+            continue
+        except Exception as e:  # noqa: BLE001 - a failed ping is its result, never fatal
+            results[ip] = {'error': ErrorCodes.API_ERROR, 'detail': _failure_text(e)}
             continue
         stats = parse_ping_output(out.stdout)
         results[address] = {
@@ -527,19 +542,25 @@ async def run_ap_health_capture(
 async def _take_sample(
     sink: ApHealthCapture, macs: dict[str, str | None], conn: Any, ping_clients: bool
 ) -> None:
-    """Read once and append one sample per AP to ``sink`` (missing when the read gave none)."""
+    """Read once and append one sample per AP to ``sink`` (missing when the read gave none).
+
+    A read that times out or fails with any error is a missing sample with its reason.
+    """
     ts = time.time()
+    reason: str | None = None
+    devices: list[Any] = []
+    clients: list[Any] = []
     try:
         async with asyncio.timeout(SAMPLE_READ_TIMEOUT):
             devices, clients = await _read_sample(ping_clients)
     except TimeoutError:
         reason = f'read timed out after {SAMPLE_READ_TIMEOUT:g} s'
-        sink.samples += [ApSample(role=role, ts=ts, missing=True, reason=reason) for role in macs]
-        return
     except ToolError as e:
-        sink.samples += [
-            ApSample(role=role, ts=ts, missing=True, reason=e.error_code) for role in macs
-        ]
+        reason = e.error_code
+    except Exception as e:  # noqa: BLE001 - a failed read is a missing sample, never fatal
+        reason = f'read failed: {_failure_text(e)}'
+    if reason is not None:
+        sink.samples += [ApSample(role=role, ts=ts, missing=True, reason=reason) for role in macs]
         return
     by_mac = {normalise_mac(d.get('mac')): d for d in _dicts(devices)}
     for role, mac in macs.items():
