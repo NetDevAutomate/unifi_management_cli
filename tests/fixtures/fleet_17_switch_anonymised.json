@@ -1,0 +1,1766 @@
+{
+  "devices": [
+    {
+      "_id": "000000000000000000000000",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:ff:00:00",
+          "local_port_idx": 1,
+          "local_port_name": "Port 1",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:04",
+          "local_port_idx": 5,
+          "local_port_name": "Port 5",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:00",
+      "model": "USWED35",
+      "name": "Switch 00",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 0,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 0,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": false,
+          "full_duplex": false,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 0,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        }
+      ],
+      "stp_priority": 24576,
+      "type": "usw"
+    },
+    {
+      "_id": "000000000000000000000001",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:0a",
+          "local_port_idx": 1,
+          "local_port_name": "Port 1",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:01",
+      "model": "US8P60",
+      "name": "Switch 01",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 1000,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 6",
+          "port_idx": 6,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 7",
+          "port_idx": 7,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 8",
+          "port_idx": 8,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        }
+      ],
+      "stp_priority": 28672,
+      "type": "usw"
+    },
+    {
+      "_id": "000000000000000000000002",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:05",
+          "local_port_idx": 1,
+          "local_port_name": "Port 1",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:02",
+      "model": "US8P60",
+      "name": "Switch 02",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "root",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 6",
+          "port_idx": 6,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 7",
+          "port_idx": 7,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 8",
+          "port_idx": 8,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        }
+      ],
+      "stp_priority": 28672,
+      "type": "usw"
+    },
+    {
+      "_id": "000000000000000000000003",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:07",
+          "local_port_idx": 1,
+          "local_port_name": "Port 1",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:ff:00:01",
+          "local_port_idx": 2,
+          "local_port_name": "Port 2",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:ff:00:02",
+          "local_port_idx": 3,
+          "local_port_name": "Port 3",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:03",
+      "model": "USL8LP",
+      "name": "Switch 03",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "root",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 100,
+          "stp_pathcost": 200000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 6",
+          "port_idx": 6,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 7",
+          "port_idx": 7,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 8",
+          "port_idx": 8,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        }
+      ],
+      "stp_priority": 24576,
+      "type": "usw"
+    },
+    {
+      "_id": "000000000000000000000004",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:07",
+          "local_port_idx": 1,
+          "local_port_name": "Port 1",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:0f",
+          "local_port_idx": 2,
+          "local_port_name": "Port 2",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:ff:00:03",
+          "local_port_idx": 4,
+          "local_port_name": "Port 4",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:0a",
+          "local_port_idx": 5,
+          "local_port_name": "Port 5",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:00",
+          "local_port_idx": 6,
+          "local_port_name": "Port 6",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:09",
+          "local_port_idx": 8,
+          "local_port_name": "Port 8",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:0e",
+          "local_port_idx": 9,
+          "local_port_name": "Port 9",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:04",
+      "model": "USWED37",
+      "name": "Switch 04",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "disabled",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "disabled",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "disabled",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 6",
+          "port_idx": 6,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 7",
+          "port_idx": 7,
+          "speed": 0,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 8",
+          "port_idx": 8,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 9",
+          "port_idx": 9,
+          "speed": 10000,
+          "stp_pathcost": 2000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 10",
+          "port_idx": 10,
+          "speed": 0,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": false
+        }
+      ],
+      "stp_priority": 20480,
+      "type": "usw"
+    },
+    {
+      "_id": "000000000000000000000005",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:ff:00:04",
+          "local_port_idx": 3,
+          "local_port_name": "Port 3",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:02",
+          "local_port_idx": 5,
+          "local_port_name": "Port 5",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:10",
+          "local_port_idx": 7,
+          "local_port_name": "Port 7",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:ff:00:05",
+          "local_port_idx": 8,
+          "local_port_name": "Port 8",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:05",
+      "model": "USL16LPB",
+      "name": "Switch 05",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 6",
+          "port_idx": 6,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 7",
+          "port_idx": 7,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "root",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 8",
+          "port_idx": 8,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 9",
+          "port_idx": 9,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 10",
+          "port_idx": 10,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 11",
+          "port_idx": 11,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 12",
+          "port_idx": 12,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 13",
+          "port_idx": 13,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 14",
+          "port_idx": 14,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 15",
+          "port_idx": 15,
+          "speed": 1000,
+          "stp_pathcost": 10000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 16",
+          "port_idx": 16,
+          "speed": 1000,
+          "stp_pathcost": 10000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        }
+      ],
+      "stp_priority": 20480,
+      "type": "usw"
+    },
+    {
+      "_id": "000000000000000000000006",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:0e",
+          "local_port_idx": 2,
+          "local_port_name": "Port 2",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:10",
+          "local_port_idx": 3,
+          "local_port_name": "Port 3",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:06",
+      "model": "USFXG",
+      "name": "Switch 06",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 0,
+          "stp_pathcost": 2000000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 10000,
+          "stp_pathcost": 2000,
+          "stp_role": "root",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 10000,
+          "stp_pathcost": 2000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 0,
+          "stp_pathcost": 2000000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 0,
+          "stp_pathcost": 2000000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        }
+      ],
+      "stp_priority": 8192,
+      "type": "usw"
+    },
+    {
+      "_id": "000000000000000000000007",
+      "lldp_table": [],
+      "mac": "02:00:00:00:00:07",
+      "model": "USL8LP",
+      "name": "Switch 07",
+      "port_table": [
+        {
+          "enabled": true,
+          "name": "Port 1",
+          "port_idx": 1
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 1000
+        },
+        {
+          "enabled": true,
+          "name": "Port 3",
+          "port_idx": 3
+        },
+        {
+          "enabled": true,
+          "name": "Port 4",
+          "port_idx": 4
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 1000
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 6",
+          "port_idx": 6,
+          "speed": 100
+        },
+        {
+          "enabled": true,
+          "name": "Port 7",
+          "port_idx": 7
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 8",
+          "port_idx": 8,
+          "speed": 10
+        }
+      ],
+      "stp_priority": 24576,
+      "type": "usw"
+    },
+    {
+      "_id": "000000000000000000000008",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:0a",
+          "local_port_idx": 5,
+          "local_port_name": "Port 5",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:08",
+      "model": "USWED35",
+      "name": "Switch 08",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 0,
+          "stp_pathcost": 20000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 0,
+          "stp_pathcost": 200000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "disabled",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "disabled",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        }
+      ],
+      "stp_priority": 24576,
+      "type": "usw"
+    },
+    {
+      "_id": "000000000000000000000009",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:0d",
+          "local_port_idx": 4,
+          "local_port_name": "Port 4",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:04",
+          "local_port_idx": 5,
+          "local_port_name": "Port 5",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:09",
+      "model": "USWED35",
+      "name": "Switch 09",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 0,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 0,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        }
+      ],
+      "stp_priority": 24576,
+      "type": "usw"
+    },
+    {
+      "_id": "00000000000000000000000a",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:04",
+          "local_port_idx": 1,
+          "local_port_name": "Port 1",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:08",
+          "local_port_idx": 2,
+          "local_port_name": "Port 2",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:0b",
+          "local_port_idx": 3,
+          "local_port_name": "Port 3",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:01",
+          "local_port_idx": 4,
+          "local_port_name": "Port 4",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:0a",
+      "model": "USWED37",
+      "name": "Switch 10",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "disabled",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 100,
+          "stp_pathcost": 200000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 6",
+          "port_idx": 6,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 7",
+          "port_idx": 7,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 8",
+          "port_idx": 8,
+          "speed": 100,
+          "stp_pathcost": 200000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 9",
+          "port_idx": 9,
+          "speed": 0,
+          "stp_pathcost": 200000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 10",
+          "port_idx": 10,
+          "speed": 0,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": false
+        }
+      ],
+      "stp_priority": 24576,
+      "type": "usw"
+    },
+    {
+      "_id": "00000000000000000000000b",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:0c",
+          "local_port_idx": 1,
+          "local_port_name": "Port 1",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:0a",
+          "local_port_idx": 5,
+          "local_port_name": "Port 5",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:0b",
+      "model": "USWED35",
+      "name": "Switch 11",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 0,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        }
+      ],
+      "stp_priority": 24576,
+      "type": "usw"
+    },
+    {
+      "_id": "00000000000000000000000c",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:0b",
+          "local_port_idx": 1,
+          "local_port_name": "Port 1",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:0c",
+      "model": "US8P60",
+      "name": "Switch 12",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "root",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 6",
+          "port_idx": 6,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 7",
+          "port_idx": 7,
+          "speed": 0,
+          "stp_pathcost": 0,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 8",
+          "port_idx": 8,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        }
+      ],
+      "stp_priority": 28672,
+      "type": "usw"
+    },
+    {
+      "_id": "00000000000000000000000d",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:ff:00:06",
+          "local_port_idx": 3,
+          "local_port_name": "Port 3",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:09",
+          "local_port_idx": 5,
+          "local_port_name": "Port 5",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:0d",
+      "model": "USWED35",
+      "name": "Switch 13",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 0,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 2500,
+          "stp_pathcost": 8000,
+          "stp_state": "forwarding",
+          "up": true
+        }
+      ],
+      "stp_priority": 24576,
+      "type": "usw"
+    },
+    {
+      "_id": "00000000000000000000000e",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:06",
+          "local_port_idx": 2,
+          "local_port_name": "Port 2",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:04",
+          "local_port_idx": 3,
+          "local_port_name": "Port 3",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:0e",
+      "model": "USFXG",
+      "name": "Switch 14",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 0,
+          "stp_pathcost": 2000000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 10000,
+          "stp_pathcost": 1,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 10000,
+          "stp_pathcost": 1,
+          "stp_role": "designated",
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 0,
+          "stp_pathcost": 2000000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        },
+        {
+          "enabled": true,
+          "full_duplex": false,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 0,
+          "stp_pathcost": 2000000,
+          "stp_role": "disabled",
+          "stp_state": "disabled",
+          "up": false
+        }
+      ],
+      "stp_priority": 4096,
+      "type": "usw"
+    },
+    {
+      "_id": "00000000000000000000000f",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:ff:00:07",
+          "local_port_idx": 1,
+          "local_port_name": "Port 1",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:ff:00:08",
+          "local_port_idx": 2,
+          "local_port_name": "Port 2",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:ff:00:09",
+          "local_port_idx": 3,
+          "local_port_name": "Port 3",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:ff:00:0a",
+          "local_port_idx": 4,
+          "local_port_name": "Port 4",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:ff:00:0b",
+          "local_port_idx": 5,
+          "local_port_name": "Port 5",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:ff:00:0c",
+          "local_port_idx": 6,
+          "local_port_name": "Port 6",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:04",
+          "local_port_idx": 8,
+          "local_port_name": "Port 8",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:0f",
+      "model": "USM8P210",
+      "name": "Switch 15",
+      "port_table": [
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 6",
+          "port_idx": 6,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 7",
+          "port_idx": 7,
+          "speed": 100,
+          "stp_pathcost": 200000000,
+          "stp_state": "disabled",
+          "up": true
+        },
+        {
+          "enabled": true,
+          "full_duplex": true,
+          "name": "Port 8",
+          "port_idx": 8,
+          "speed": 1000,
+          "stp_pathcost": 20000,
+          "stp_state": "forwarding",
+          "up": true
+        }
+      ],
+      "stp_priority": 20480,
+      "type": "usw"
+    },
+    {
+      "_id": "000000000000000000000010",
+      "lldp_table": [
+        {
+          "chassis_id": "02:00:00:00:00:06",
+          "local_port_idx": 10,
+          "local_port_name": "Port 10",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:0d",
+          "local_port_idx": 9,
+          "local_port_name": "Port 9",
+          "port_id": "Port 1"
+        },
+        {
+          "chassis_id": "02:00:00:00:00:05",
+          "local_port_idx": 8,
+          "local_port_name": "Port 8",
+          "port_id": "Port 1"
+        }
+      ],
+      "mac": "02:00:00:00:00:10",
+      "model": "UDMPROMAX",
+      "name": "Gateway",
+      "port_table": [
+        {
+          "full_duplex": false,
+          "name": "Port 1",
+          "port_idx": 1,
+          "speed": 10,
+          "up": false
+        },
+        {
+          "full_duplex": true,
+          "name": "Port 10",
+          "port_idx": 10,
+          "speed": 10000,
+          "up": true
+        },
+        {
+          "full_duplex": true,
+          "name": "Port 11",
+          "port_idx": 11,
+          "speed": 10000,
+          "up": true
+        },
+        {
+          "full_duplex": false,
+          "name": "Port 2",
+          "port_idx": 2,
+          "speed": 10,
+          "up": false
+        },
+        {
+          "full_duplex": false,
+          "name": "Port 3",
+          "port_idx": 3,
+          "speed": 10,
+          "up": false
+        },
+        {
+          "full_duplex": false,
+          "name": "Port 4",
+          "port_idx": 4,
+          "speed": 10,
+          "up": false
+        },
+        {
+          "full_duplex": false,
+          "name": "Port 5",
+          "port_idx": 5,
+          "speed": 10,
+          "up": false
+        },
+        {
+          "full_duplex": false,
+          "name": "Port 6",
+          "port_idx": 6,
+          "speed": 10,
+          "up": false
+        },
+        {
+          "full_duplex": false,
+          "name": "Port 7",
+          "port_idx": 7,
+          "speed": 10,
+          "up": false
+        },
+        {
+          "full_duplex": true,
+          "name": "Port 8",
+          "port_idx": 8,
+          "speed": 1000,
+          "up": true
+        },
+        {
+          "full_duplex": true,
+          "name": "Port 9",
+          "port_idx": 9,
+          "speed": 2500,
+          "up": true
+        }
+      ],
+      "stp_priority": 12288,
+      "type": "udm"
+    }
+  ],
+  "generated": "2026-01-01T00:00:00Z",
+  "source": "synthetic: every identifier replaced with documentation values"
+}
