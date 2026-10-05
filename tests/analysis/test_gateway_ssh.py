@@ -797,7 +797,7 @@ def test_require_bounded_float_refuses_anything_else(value: object) -> None:
 
 
 @pytest.mark.parametrize('check', [require_bounded_int, require_bounded_float])
-def test_the_number_checks_redact_the_value_they_refuse(check) -> None:
+def test_the_number_checks_redact_the_value_they_refuse(check: Callable[..., object]) -> None:
     refused = 'password=' + 'fake-value-for-the-echo'  # pragma: allowlist secret
     with pytest.raises(ToolError) as exc:
         check('ping count', refused, 1, 100)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from unifi_mapper.analysis.stp_optimizer import (
     _calculate_hierarchy_tiers,
     _extract_port_stp_states,
@@ -1186,7 +1187,9 @@ class TestGatewayIsNeverPlanned:
         report = await generate_stp_report(topology, await calculate_optimal_priorities(topology))
         assert report.optimal_root is None and report.changes == []
 
-    def test_stp_optimize_prints_one_line_per_skipped_gateway(self, monkeypatch) -> None:
+    def test_stp_optimize_prints_one_line_per_skipped_gateway(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from typer.testing import CliRunner
         from unifi_mapper.analysis import stp_optimizer
         from unifi_mapper.typer_cli import app

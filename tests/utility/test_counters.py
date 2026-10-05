@@ -3,6 +3,7 @@
 Ported from the July work (a local archive, not in the repo) with generic SSIDs.
 """
 
+import pytest
 from unifi_mapper.core.utils.counters import (
     VapCounters,
     pick_vap,
@@ -57,6 +58,10 @@ class TestVapCountersFromDict:
 
     def test_missing_essid_defaults(self) -> None:
         assert vap_counters_from_dict({}).essid == '?'
+
+    @pytest.mark.parametrize('essid', [None, ''])
+    def test_a_null_or_empty_essid_defaults_too(self, essid: str | None) -> None:
+        assert vap_counters_from_dict({'essid': essid}).essid == '?'
 
 
 class TestPickVap:

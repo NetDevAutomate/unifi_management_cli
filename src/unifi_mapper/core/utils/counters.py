@@ -57,7 +57,7 @@ def vap_counters_from_dict(vap: dict[str, Any]) -> VapCounters:
         None).
     """
     return VapCounters(
-        essid=vap.get('essid', '?'),
+        essid=vap.get('essid') or '?',  # a null or empty SSID is unknown too
         tx_packets=int_or_none(vap.get('tx_packets')) or 0,
         tx_retries=int_or_none(vap.get('tx_retries')) or 0,
         tx_dropped=int_or_none(vap.get('tx_dropped')) or 0,
