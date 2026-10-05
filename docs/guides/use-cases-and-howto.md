@@ -858,7 +858,10 @@ uv run unifi-mapper diagnose client-connectivity "Phone A" --json
 
 Each layer is bounded and the run stops at 120 s; a layer that fails is reported as that
 layer's finding and the others still run, and a layer left without time is listed as not
-run. The verdict names the first failing layer; the command exits 1 when a fault is found or
+run. A layer that can't test the client's own path is not run, with its reason: ping and
+flows without a client address, DNS when `--probe-url`'s host is an address, and the HTTP
+probe when the client's network isn't one the controller lists (the gateway's default path
+would test another VLAN), so such a run is inconclusive rather than a pass. The verdict names the first failing layer; the command exits 1 when a fault is found or
 a layer did not complete. When every layer passes and the phone still shows "No Internet",
 the banner is usually a stale captive-portal result from when it joined.
 

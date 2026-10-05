@@ -190,7 +190,19 @@ CLIENTS = [
         'network': 'LAN',
         'network_id': 'net-lan',
     },
-    {'name': 'Phone B', 'mac': '02:00:00:00:02:03', 'is_wired': False},  # no lease
+    {
+        'name': 'Phone B',
+        'mac': '02:00:00:00:02:03',
+        'is_wired': False,
+        'network': 'IoT',
+        'network_id': 'net-iot',
+    },  # no lease
+    {
+        'name': 'Tablet C',
+        'mac': '02:00:00:00:02:04',
+        'ip': '203.0.113.70',
+        'is_wired': False,
+    },  # no network the controller lists (review F5)
 ]
 
 
@@ -309,7 +321,8 @@ async def test_a_client_with_no_address_still_checks_dns_and_http(ssh: FakeSSH) 
     result = await _diagnose(_controller(), 'Phone B')
     assert set(result['not_run']) == {'ping', 'flows'}
     assert result['probes']['ping'] == {'not_run': 'no IP address'}
-    assert [argv[0] for argv in _argv(ssh)] == ['nslookup', 'curl']
+    assert [argv[0] for argv in _argv(ssh)] == ['nslookup', 'ip', 'curl']  # from its VLAN
+    assert result['probes']['http']['interface'] == 'br30'
     assert result['ok'] is False
 
 
@@ -318,6 +331,32 @@ async def test_a_client_on_the_untagged_lan_probes_from_its_interface(ssh: FakeS
     assert result['vlan'] == 1 and result['wired'] is True and result['ap'] is None
     curl = next(argv for argv in _argv(ssh) if argv[0] == 'curl')
     assert curl[curl.index('--interface') + 1] == 'br0'
+
+
+async def test_a_client_whose_network_is_unknown_gets_no_http_probe(ssh: FakeSSH) -> None:
+    """Review F5: the gateway's default path is not the client's VLAN, so with the client's
+    network unresolved the HTTP layer is not run (never a pass for a path not tested)."""
+    result = await _diagnose(_controller(), 'Tablet C')
+    assert result['vlan'] is None and result['not_run'] == ['http']
+    assert result['probes']['http'] == {'not_run': 'client network unknown'}
+    assert [argv[0] for argv in _argv(ssh)] == ['ping', 'nslookup', 'conntrack']  # no curl
+    assert result['ok'] is False and result['verdict'].startswith('Inconclusive')
+    assert 'No connectivity fault found' not in result['verdict']
+
+
+@pytest.mark.parametrize(
+    'url', ['http://203.0.113.10/hotspot-detect.html', 'http://[2001:db8::10]/hotspot.html']
+)
+async def test_a_probe_url_whose_host_is_an_address_gets_no_dns_layer(
+    ssh: FakeSSH, url: str
+) -> None:
+    """Review R4-011: an address needs no lookup (an IPv6 one failed the hostname check, an
+    IPv4 one asked for a reverse lookup that read as a DNS failure)."""
+    async with serving(_controller()):
+        result = await diagnose_client_connectivity('Phone A', probe_url=url)
+    assert result['probes']['dns'] == {'not_run': 'probe URL host is an address'}
+    assert 'nslookup' not in [argv[0] for argv in _argv(ssh)]
+    assert result['verdict'].startswith('Inconclusive') and 'DNS' in result['verdict']
 
 
 async def test_no_ssh_password_fails_before_the_controller_is_asked(

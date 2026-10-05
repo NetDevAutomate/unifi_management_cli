@@ -37,7 +37,7 @@ from unifi_mapper.connectivity.gateway_probe import (
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.redact import redact_text, strip_secrets
-from unifi_mapper.diagnostic_reads import normalise_mac
+from unifi_mapper.diagnostic_reads import is_ip_address, normalise_mac
 from unifi_mapper.diagnostics.observability import (
     MAX_QUERY_LENGTH,
     RETRY_PCT_UNHEALTHY,
@@ -61,6 +61,11 @@ LAYER_LABELS = {
 }
 NO_ADDRESS = 'no IP address'
 BUDGET = 'budget'
+# The HTTP probe runs from the client's VLAN; with the client's network unresolved, the
+# gateway's default path would test some other VLAN, so the layer is not run.
+NETWORK_UNKNOWN = 'client network unknown'
+# A probe URL whose host is an address needs no lookup, so DNS has nothing to test.
+HOST_IS_ADDRESS = 'probe URL host is an address'
 
 OK_VERDICT = (
     'No connectivity fault found: path, DNS, and captive probe all pass. '
@@ -135,7 +140,8 @@ def build_verdict(
         http: The HTTP probe result (from the client's VLAN).
         flows: The conntrack flows for the client's address.
         failed: Layer name (:data:`LAYERS`) to the error text of a layer that ran and failed.
-        not_run: Layer name to why it did not run (``budget``, ``no IP address``).
+        not_run: Layer name to why it did not run (``budget``, ``no IP address``, ``client
+            network unknown``, ``probe URL host is an address``).
 
     Returns:
         ``ok`` (every layer that was given ran and passed), ``verdict`` and ``findings``.
@@ -231,7 +237,11 @@ def find_client(clients: list[Any], query: str) -> dict[str, Any] | None:
 
 
 def client_network(entry: dict[str, Any], networks: list[Any]) -> tuple[str | None, int | None]:
-    """The client's network name and VLAN ID (an untagged LAN is 1), from networkconf. Pure."""
+    """The client's network name and VLAN ID, from networkconf. Pure.
+
+    An untagged LAN the controller lists is VLAN 1, so its HTTP probe runs from that LAN's
+    interface; the VLAN is None only when the client's network can't be resolved.
+    """
     rows = [n for n in networks if isinstance(n, dict)]
     network_id, name = entry.get('network_id'), entry.get('network')
     net = next((n for n in rows if network_id and n.get('_id') == network_id), None)
@@ -278,6 +288,22 @@ async def _lookup() -> tuple[list[Any], list[Any], list[Any]]:
         ) from None
 
 
+def skipped_layers(address: str | None, host: str, vlan: int | None) -> dict[str, str]:
+    """The layers that can't test the client's own path, and why. Pure.
+
+    Ping and flows need the client's address; DNS needs a probe URL host that is a name; the
+    HTTP probe needs the client's VLAN, since the gateway's default path is not it.
+    """
+    skip: dict[str, str] = {}
+    if not address:
+        skip['ping'] = skip['flows'] = NO_ADDRESS
+    if is_ip_address(host):
+        skip['dns'] = HOST_IS_ADDRESS
+    if vlan is None:
+        skip['http'] = NETWORK_UNKNOWN
+    return skip
+
+
 def _check_arguments(query: str, probe_url: str) -> str:
     if not query.strip() or len(query) > MAX_QUERY_LENGTH:
         raise ToolError(
@@ -302,7 +328,9 @@ async def diagnose_client_connectivity(
     looked up (name, hostname, MAC or IP) with its AP and network, and the probes run from
     the gateway in order, each bounded and the chain within :data:`CHAIN_BUDGET_SECONDS`:
     ping (4 echo requests), DNS for the probe URL's host, the HTTP probe from the client's
-    VLAN, and the conntrack flows for its address.
+    VLAN, and the conntrack flows for its address. A layer that can't test the client's own
+    path is not run, with the reason (:func:`skipped_layers`): no address, a probe URL host
+    that is an address, or a client network that can't be resolved.
 
     Args:
         client: The client's name, hostname, MAC or IP (1-128 characters).
@@ -350,14 +378,15 @@ async def diagnose_client_connectivity(
         'http': lambda: gateway_http_check(probe_url, vlan=vlan, timeout_seconds=HTTP_TIMEOUT),
         'flows': (lambda: get_active_flows(ip=address)) if address else None,
     }
+    skip = skipped_layers(address, host, vlan)
     probes: dict[str, dict[str, Any]] = {}
     usable: dict[str, dict[str, Any] | None] = dict.fromkeys(LAYERS)
     failed: dict[str, str] = {}
     not_run: dict[str, str] = {}
     for layer in LAYERS:
         step = steps[layer]
-        if step is None or deadline - loop.time() <= 0:
-            not_run[layer] = NO_ADDRESS if step is None else BUDGET
+        if step is None or layer in skip or deadline - loop.time() <= 0:
+            not_run[layer] = skip.get(layer, NO_ADDRESS if step is None else BUDGET)
             probes[layer] = {'not_run': not_run[layer]}
             continue
         probes[layer], ran = await _layer(step, deadline)

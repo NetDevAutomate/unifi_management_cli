@@ -267,9 +267,11 @@ apart (at most 10 h; it prints the expected duration first), reports a retry rat
 a real interval, records a sample whose read times out or fails as missing, and has no
 power-cycle step; without `--essid` it tracks the busiest 2.4 GHz SSID. It checks `--output`
 before the first sample and writes it after printing the report; Ctrl-C (exit 130), or a
-failure that ends the run (exit 1), still prints and writes the samples taken. `client-connectivity` bounds every layer
-and stops at 120 s, reporting the layers it had no time for; a layer that fails is a finding,
-and the others still run.
+failure that ends the run (exit 1), still prints and writes the samples taken.
+`client-connectivity` bounds every layer and stops at 120 s, reporting the layers it had no
+time for; a layer that fails is a finding, and the others still run; a layer that can't test
+the client's own path (no address, an address as the probe URL's host, an unknown client
+network for the HTTP probe) is not run, so the verdict is inconclusive rather than a pass.
 
 `vlan-traffic sample` is the only `vlan-traffic` command that reaches anything: it reads the
 controller's network list (read-only) and runs one fixed script on the gateway over SSH, then
