@@ -395,9 +395,9 @@ def discover(
         console.print('\n⚠️ [bold yellow]Operation cancelled by user[/bold yellow]')
         raise typer.Exit(1)
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -434,7 +434,7 @@ def install_completions(
             console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
 
     except Exception as e:
-        console.print(f'❌ [bold red]Completion installation failed: {e}[/bold red]')
+        console.print(f'❌ [bold red]Completion installation failed: {_error_text(e)}[/bold red]')
         console.print("\n💡 [bold blue]Alternative - Use Typer's built-in completion:[/bold blue]")
         console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
         console.print('   [cyan]unifi-mapper --show-completion[/cyan]')
@@ -590,9 +590,9 @@ def analyze_port_profiles():
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -635,9 +635,9 @@ def analyze_lag_candidates(
         else:
             console.print('No LAG candidates detected.')
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -677,9 +677,9 @@ def analyze_mtu():
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -720,9 +720,9 @@ def analyze_radio():
                 )
             console.print(table)
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -784,9 +784,9 @@ def analyze_sfp():
                 )
             console.print(findings_table)
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -845,9 +845,9 @@ def analyze_vlan_coverage(
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -924,9 +924,9 @@ def analyze_uplink_transparency(
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -1006,9 +1006,9 @@ def analyze_power_budget(
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -1225,7 +1225,7 @@ def _run_analysis[T](load: Callable[[], Coroutine[Any, Any, T]]) -> T:
         _fail(e.message)
     except Exception as e:  # noqa: BLE001 - every failure ends the command cleanly
         if state.debug:
-            err_console.print_exception(show_locals=False)
+            _print_debug_traceback(err_console)
         _fail(f'Error: {redact_text(e)}')
 
 
@@ -1470,9 +1470,9 @@ def analyze_traffic_matrix_cmd(
             for recommendation in report.recommendations:
                 console.print(f'  • {recommendation.recommendation}')
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -1540,7 +1540,7 @@ def diagnose_all():
                 console.print(f'[{style}]{status}[/]')
             except Exception as exc:
                 results.append((name, 'FAIL'))
-                console.print(f'[red]FAIL[/] ({exc})')
+                console.print(f'[red]FAIL[/] ({_error_text(exc)})')
 
         # Summary table
         console.print()
@@ -1563,9 +1563,9 @@ def diagnose_all():
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -1787,9 +1787,9 @@ def diagnose_inter_vlan(
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -1990,9 +1990,9 @@ def diagram(
         )
 
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2017,7 +2017,7 @@ def capabilities():
         analyze_main()
 
     except Exception as e:
-        console.print(f'❌ [bold red]Capability analysis failed: {e}[/bold red]')
+        console.print(f'❌ [bold red]Capability analysis failed: {_error_text(e)}[/bold red]')
         raise typer.Exit(1)
 
 
@@ -2076,7 +2076,7 @@ def verify(
             exit_code = e.code if isinstance(e.code, int) else 1
             raise typer.Exit(exit_code)
     except Exception as e:
-        console.print(f'❌ [bold red]Verification failed: {e}[/bold red]')
+        console.print(f'❌ [bold red]Verification failed: {_error_text(e)}[/bold red]')
         raise typer.Exit(1)
 
 
@@ -2149,9 +2149,9 @@ def stp_analyze(
             )
 
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2274,9 +2274,9 @@ def stp_optimize(
                     console.print(f'   • {failure["device_name"]}: {failure["error"]}')
 
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2332,9 +2332,9 @@ def stp_apply_plan(
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2385,9 +2385,9 @@ def stp_rollback_plan(
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2454,9 +2454,9 @@ def stp_report(
                 console.print(f'   • {issue}')
 
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2491,9 +2491,9 @@ def stp_snapshot(
         console.print(f'Switches: [cyan]{len(snapshot.switches)}[/cyan]')
 
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2552,9 +2552,9 @@ def stp_diff(
             console.print(f'📄 Diff saved to [cyan]{output}[/cyan]')
 
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2618,9 +2618,9 @@ def stp_preflight(
             console.print(f'📄 Preflight report saved to [cyan]{output}[/cyan]')
 
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2674,9 +2674,9 @@ def stp_guard(
             console.print('✅ [bold green]No STP guard findings detected[/bold green]')
 
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2738,9 +2738,9 @@ def stp_drift(
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2849,9 +2849,9 @@ def stp_validate_10g(
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f'❌ [bold red]Error: {e}[/bold red]')
+        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
-            console.print_exception(show_locals=False)
+            _print_debug_traceback(console)
         raise typer.Exit(1)
 
 
@@ -2982,10 +2982,57 @@ def ports_refresh(
 # ─── Read-only port diagnostics ──────────────────────────────────────────────
 
 
+# Long enough that a real message is never cut; redact_text's default (300) is for the
+# one-line summaries of unexpected exceptions.
+_FAIL_TEXT_LIMIT = 4000
+
+
 def _fail(message: object, code: int = 1) -> NoReturn:
-    """Print an error to stderr (unwrapped, so names and MACs stay intact) and exit."""
-    err_console.print(f'[red]❌ {escape(str(message))}[/red]', soft_wrap=True)
+    """Print an error to stderr (unwrapped, so names and MACs stay intact) and exit.
+
+    The text goes through ``redact_text`` first: a ``ToolError`` can carry a lower layer's
+    exception text, and a secret-looking assignment in it is masked.
+    """
+    from .core.utils.redact import redact_text
+
+    text = redact_text(str(message), limit=_FAIL_TEXT_LIMIT)
+    err_console.print(f'[red]❌ {escape(text)}[/red]', soft_wrap=True)
     raise typer.Exit(code=code)
+
+
+def _error_text(error: object) -> str:
+    """Return an exception's text for a Rich markup line: redacted, then markup-escaped."""
+    from .core.utils.redact import redact_text
+
+    return escape(redact_text(error))
+
+
+def _print_debug_traceback(target: Console) -> None:
+    """Print the exception being handled as a traceback (``--debug``), its messages redacted.
+
+    Every frame, no local variables, as Rich's own traceback without locals; but each
+    exception message (causes, groups and notes included) goes through ``redact_text``, so a
+    secret-looking assignment in it is masked.
+    """
+    import sys
+    from .core.utils.redact import redact_text
+    from rich.traceback import Traceback
+
+    exc_type, exc_value, tb = sys.exc_info()
+    if exc_type is None or exc_value is None:
+        return
+    trace = Traceback.extract(exc_type, exc_value, tb, show_locals=False)
+    pending = list(trace.stacks)
+    while pending:
+        stack = pending.pop()
+        stack.exc_value = redact_text(stack.exc_value, limit=_FAIL_TEXT_LIMIT)
+        stack.notes = [redact_text(note, limit=_FAIL_TEXT_LIMIT) for note in stack.notes]
+        if stack.syntax_error is not None:
+            stack.syntax_error.msg = redact_text(stack.syntax_error.msg)
+            stack.syntax_error.line = redact_text(stack.syntax_error.line)
+        for group in stack.exceptions:
+            pending.extend(group.stacks)
+    target.print(Traceback(trace, show_locals=False))
 
 
 def _path_not_a_flag(
@@ -3108,7 +3155,7 @@ def _diagnostic_errors() -> Iterator[None]:
         raise  # _fail raises typer.Exit, a RuntimeError, inside this block too
     except Exception as e:  # noqa: BLE001 - never Typer's traceback, which prints locals
         if state.debug:
-            err_console.print_exception(show_locals=False)
+            _print_debug_traceback(err_console)
         _fail(f'Error: {redact_text(e)}')
 
 
@@ -3859,7 +3906,7 @@ def analyze_link_errors(
     try:
         report = asyncio.run(compare_link_errors(baseline, threshold))
     except Exception as e:
-        console.print(f'[red]Error:[/red] {e}')
+        console.print(f'[red]Error:[/red] {_error_text(e)}')
         raise typer.Exit(1)
 
     if report.get('legacy_baseline'):
@@ -3960,7 +4007,7 @@ def analyze_roaming_cmd(
     try:
         report = asyncio.run(analyze_roaming(history))
     except Exception as e:
-        console.print(f'[red]Error:[/red] {e}')
+        console.print(f'[red]Error:[/red] {_error_text(e)}')
         raise typer.Exit(1)
 
     console.print(f'Snapshots analyzed: {report["snapshots_analyzed"]}')
@@ -4028,7 +4075,7 @@ def analyze_config_drift(
     try:
         report = asyncio.run(detect_drift(baseline))
     except Exception as e:
-        console.print(f'[red]Error:[/red] {e}')
+        console.print(f'[red]Error:[/red] {_error_text(e)}')
         raise typer.Exit(1)
 
     console.print(f'Baseline: {report["baseline_timestamp"]}')
@@ -4114,7 +4161,7 @@ def analyze_neighbours(
         try:
             report = asyncio.run(detect_neighbour_trend(baseline, signal_delta))
         except Exception as e:
-            console.print(f'[red]Error:[/red] {e}')
+            console.print(f'[red]Error:[/red] {_error_text(e)}')
             raise typer.Exit(1)
 
         console.print(f'Baseline: {report["baseline_timestamp"]}')
@@ -4286,7 +4333,7 @@ def _run_gateway_ssh[T](run: Callable[[], Coroutine[Any, Any, T]]) -> T:
         _fail(e)
     except Exception as e:  # noqa: BLE001 - every failure ends the command cleanly
         if state.debug:
-            err_console.print_exception(show_locals=False)
+            _print_debug_traceback(err_console)
         _fail(f'Error: {redact_text(e)}')
 
 

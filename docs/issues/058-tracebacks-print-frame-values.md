@@ -60,6 +60,13 @@ Fixed as recommended, in the July port, before any tool that returns config obje
   stderr handler at the same level before anything logs
   (`core/utils/logging.replace_default_loguru_handler`).
 
+A follow-up from the July port's M2 council closed the rest of the CLI's error output: `_fail`
+redacts its text (a `ToolError` can carry a lower layer's exception text), every `Error: …`
+line that showed a caught exception goes through `redact_text` (`typer_cli._error_text`), and
+`--debug` prints its traceback through `typer_cli._print_debug_traceback`, which keeps every
+frame but redacts each exception message. An AST test fails on any CLI print of a caught
+exception that isn't redacted, and on any `print_exception` call in either CLI.
+
 Tests: `tests/test_error_output.py` asserts the flag on all 8 apps and, by AST, that every
 `typer.Typer(` and `logger.add(` in `src/` sets it off and no `show_locals=True` remains; that
 the config's repr holds no password; and that a `logger.exception` from a frame holding a

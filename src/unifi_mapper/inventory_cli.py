@@ -10,11 +10,13 @@ import time
 import typer
 from .api_client import UnifiApiClient
 from .cli import get_default_config_path, load_env_from_config
+from .core.utils.redact import redact_text
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
@@ -823,7 +825,7 @@ def update_firmware(
 
         except Exception as e:
             fail_count += 1
-            console.print(f'  [red]✗ Error: {e}[/red]')
+            console.print(f'  [red]✗ Error: {escape(redact_text(e))}[/red]')
 
         # Wait between upgrades
         if wait and i < len(upgradable_devices):
