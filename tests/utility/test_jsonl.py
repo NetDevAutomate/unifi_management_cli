@@ -245,3 +245,12 @@ def test_without_modes_a_compacted_file_is_0600_as_before(tmp_path: Path) -> Non
 
 def test_epoch_field_rejects_non_finite_numbers_from_python() -> None:
     assert EPOCH(json.dumps({'epoch': math.inf})) is None
+
+
+def test_compaction_never_loosens_an_existing_file(tmp_path: Path) -> None:
+    path = tmp_path / 'h.jsonl'
+    path.write_text('junk\n')
+    os.chmod(path, 0o600)
+    append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH, file_mode=0o644)
+    assert _epochs(path) == [1]
+    assert _mode(path) == 0o600  # the stricter of the existing mode and file_mode

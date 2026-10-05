@@ -18,6 +18,7 @@ import fcntl
 import json
 import math
 import os
+import stat
 import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -203,8 +204,9 @@ def append_capped_jsonl(
     larger than ``max_bytes``, its first line is invalid, or, with ``cutoff_epoch``, its
     oldest line is more than ``age_grace_s`` older than the cutoff. A rewrite keeps the valid
     lines at or after the cutoff, then drops the oldest down to
-    :data:`COMPACT_LOW_WATER_RATIO` of ``max_bytes``; its temporary file is 0o600, or
-    ``file_mode`` when given, so compaction never loosens a file.
+    :data:`COMPACT_LOW_WATER_RATIO` of ``max_bytes``; its temporary file is 0o600, or the
+    stricter of ``file_mode`` and the file's current mode when a mode is given, so
+    compaction never loosens a file.
 
     Args:
         path: The JSON Lines file.
@@ -214,7 +216,8 @@ def append_capped_jsonl(
         cutoff_epoch: Drop lines older than this when compacting; None keeps every age.
         age_grace_s: How far past the cutoff the oldest line may be before an age rewrite.
         dedup_key: A line's identity, or None for a line that is never a duplicate.
-        file_mode: Mode for a newly created file and for a compacted one.
+        file_mode: Mode for a newly created file; a compacted file keeps the stricter of
+            this and its current mode.
         dir_mode: Mode for a newly created directory.
 
     Returns:
@@ -253,7 +256,8 @@ def append_capped_jsonl(
                 out.write(prefix)
                 out.writelines(incoming)
             result.lines_written = len(incoming)
-            size = path.stat().st_size
+            stat_result = path.stat()
+            size, size_mode = stat_result.st_size, stat_result.st_mode
             oldest = epoch_of(_first_line(path))
             age_due = (
                 cutoff_epoch is not None
@@ -277,7 +281,9 @@ def append_capped_jsonl(
                 result.dropped_by_age = len(valid) - len(in_age)
                 result.dropped_by_size = len(in_age) - len(kept)
                 if len(kept) != len(existing):
-                    _write_atomically(path, kept, file_mode)
+                    # The stricter of the file's current mode and file_mode: never looser.
+                    mode = None if file_mode is None else file_mode & stat.S_IMODE(size_mode)
+                    _write_atomically(path, kept, mode)
                     result.compacted = True
                 result.lines_kept = len(kept)
             result.bytes = path.stat().st_size
