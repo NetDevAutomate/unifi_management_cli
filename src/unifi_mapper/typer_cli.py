@@ -5038,6 +5038,10 @@ def gateway_traceroute_command(
     """🧭 Trace the gateway's real forwarding path to a target over SSH.
 
     Runs traceroute on the gateway as the SSH user; the gateway's host key is not verified.
+    "Reached the target" only when the last hop is the target itself and answered without an
+    ICMP unreachable. With --json each hop also has "timeout" (no reply) and "unreachable":
+    the hop answered with traceroute's !H (host), !N (network), !P (protocol), !S (source
+    route), !F (fragmentation needed), !X, !V or !C (prohibited) or !<code> annotation.
     """
     from .connectivity.gateway_probe import gateway_traceroute
 

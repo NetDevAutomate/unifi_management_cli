@@ -753,3 +753,5 @@ def test_every_command_has_help(command: str) -> None:
     assert result.exit_code == 0
     flat = ' '.join(result.output.split())
     assert 'SSH' in flat and 'host key is not verified' in flat
+    if command == 'traceroute':  # review M3 (council N2): the JSON hop fields are described
+        assert '"unreachable"' in flat and '!H (host)' in flat and '"timeout" (no reply)' in flat
