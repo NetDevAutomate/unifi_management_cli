@@ -664,9 +664,13 @@ def _arg_parser() -> argparse.ArgumentParser:
 
 
 def _configure_logging(level: str) -> None:
-    """Send loguru output to stderr only, at ``level`` (stdout carries JSON-RPC)."""
+    """Send loguru output to stderr only, at ``level`` (stdout carries JSON-RPC).
+
+    ``diagnose=False``: a logged traceback never shows the failing frames' variable values,
+    which can hold a credential (the MCP client keeps this stderr in its own logs).
+    """
     logger.remove()
-    logger.add(sys.stderr, level=level)
+    logger.add(sys.stderr, level=level, diagnose=False)
 
 
 def check_report(config: ResolvedConfig, surface: Surface = DEFAULT_SURFACE) -> dict[str, Any]:

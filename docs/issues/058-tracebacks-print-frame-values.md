@@ -1,7 +1,7 @@
 ---
 title: "Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on"
 date: 2026-10-05
-status: open
+status: resolved
 severity: medium
 components: [src/unifi_mapper/mcp/server.py, src/unifi_mapper/typer_cli.py, src/unifi_mapper/inventory_cli.py, src/unifi_mapper/core/utils/logging.py]
 found_by: July-port design review (revision 5, M1 and M2)
@@ -43,3 +43,27 @@ No such leak has been observed. This is about the defaults.
 3. Add tests: one imports each Typer app and asserts the flag is False; one logs an exception
    whose frame holds a sentinel credential and asserts the sentinel isn't in the output.
 4. Fix it before the next push. The planned July-port changes already include it.
+
+## Resolution
+
+Fixed as recommended, in the July port, before any tool that returns config objects:
+
+- Every `typer.Typer(...)` in `src/` (the 7 in `typer_cli.py` and `inventory_app`) passes
+  `pretty_exceptions_show_locals=False`; the 24 `print_exception(show_locals=True)` debug paths
+  pass `False`.
+- `_diagnostic_errors()` ends any other exception as one redacted `Error:` line on stderr
+  (exit 1), after re-raising `typer.Exit` and `typer.Abort`, so the nine sync diagnostic
+  commands never reach Typer's traceback.
+- `UnifiConfig.password` and `api_token` are `field(repr=False)`.
+- `diagnose=False` on `server._configure_logging`'s handler and on both `logger.add` calls in
+  `core/utils/logging.py`. Both CLIs replace loguru's default handler with a `diagnose=False`
+  stderr handler at the same level before anything logs
+  (`core/utils/logging.replace_default_loguru_handler`).
+
+Tests: `tests/test_error_output.py` asserts the flag on all 8 apps and, by AST, that every
+`typer.Typer(` and `logger.add(` in `src/` sets it off and no `show_locals=True` remains; that
+the config's repr holds no password; and that a `logger.exception` from a frame holding a
+sentinel credential writes no sentinel, after the server's setup and after the CLI's swap.
+`tests/test_ports_cli.py` runs `ports list` through the real `_readonly_client` on a password
+config: an unexpected error is one redacted `Error:` line, and a login failure still prints
+exactly one `❌` line.

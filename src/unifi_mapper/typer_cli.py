@@ -105,6 +105,8 @@ app = typer.Typer(
     epilog='Built with systematic debugging and AI-assisted development 🤖',
     rich_markup_mode='rich',
     invoke_without_command=True,
+    # Typer < 0.23 prints each frame's locals in a traceback; a config holds credentials.
+    pretty_exceptions_show_locals=False,
 )
 
 
@@ -166,6 +168,9 @@ def main(
     Before any other subcommand they exit 2, and so does --apply before any subcommand:
     put a subcommand's own flags after it (``discover --apply``).
     """
+    from .core.utils.logging import replace_default_loguru_handler
+
+    replace_default_loguru_handler()  # before anything logs: loguru's default has diagnose on
     # Set global state
     state.config_path = config if config else get_default_config_path()
     state.debug = debug
@@ -213,12 +218,25 @@ def main(
 
 
 # Create subcommands
-find_app = typer.Typer(help='🔍 Device and resource discovery')
-analyze_app = typer.Typer(help='📊 Network analysis and diagnostics')
-diagnose_app = typer.Typer(help='🏥 Network health and troubleshooting')
-stp_app = typer.Typer(help='🌳 STP topology analysis and optimization')
-radio_app = typer.Typer(help='📶 Wi-Fi radio configuration management')
-ports_app = typer.Typer(help='🔌 Switch port labels and read-only port diagnostics')
+find_app = typer.Typer(
+    help='🔍 Device and resource discovery', pretty_exceptions_show_locals=False
+)
+analyze_app = typer.Typer(
+    help='📊 Network analysis and diagnostics', pretty_exceptions_show_locals=False
+)
+diagnose_app = typer.Typer(
+    help='🏥 Network health and troubleshooting', pretty_exceptions_show_locals=False
+)
+stp_app = typer.Typer(
+    help='🌳 STP topology analysis and optimization', pretty_exceptions_show_locals=False
+)
+radio_app = typer.Typer(
+    help='📶 Wi-Fi radio configuration management', pretty_exceptions_show_locals=False
+)
+ports_app = typer.Typer(
+    help='🔌 Switch port labels and read-only port diagnostics',
+    pretty_exceptions_show_locals=False,
+)
 
 app.add_typer(find_app, name='find')
 app.add_typer(analyze_app, name='analyze')
@@ -379,7 +397,7 @@ def discover(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -574,7 +592,7 @@ def analyze_port_profiles():
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -619,7 +637,7 @@ def analyze_lag_candidates(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -661,7 +679,7 @@ def analyze_mtu():
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -704,7 +722,7 @@ def analyze_radio():
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -768,7 +786,7 @@ def analyze_sfp():
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -829,7 +847,7 @@ def analyze_vlan_coverage(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -908,7 +926,7 @@ def analyze_uplink_transparency(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -990,7 +1008,7 @@ def analyze_power_budget(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -1454,7 +1472,7 @@ def analyze_traffic_matrix_cmd(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if state.debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -1547,7 +1565,7 @@ def diagnose_all():
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -1771,7 +1789,7 @@ def diagnose_inter_vlan(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -1974,7 +1992,7 @@ def diagram(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2133,7 +2151,7 @@ def stp_analyze(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2258,7 +2276,7 @@ def stp_optimize(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2316,7 +2334,7 @@ def stp_apply_plan(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2369,7 +2387,7 @@ def stp_rollback_plan(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2438,7 +2456,7 @@ def stp_report(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2475,7 +2493,7 @@ def stp_snapshot(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2536,7 +2554,7 @@ def stp_diff(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2602,7 +2620,7 @@ def stp_preflight(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2658,7 +2676,7 @@ def stp_guard(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2722,7 +2740,7 @@ def stp_drift(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -2833,7 +2851,7 @@ def stp_validate_10g(
     except Exception as e:
         console.print(f'❌ [bold red]Error: {e}[/bold red]')
         if debug:
-            console.print_exception(show_locals=True)
+            console.print_exception(show_locals=False)
         raise typer.Exit(1)
 
 
@@ -3070,8 +3088,13 @@ def _readonly_client() -> Iterator[tuple[Any, str]]:
 
 @contextmanager
 def _diagnostic_errors() -> Iterator[None]:
-    """Turn diagnostic failures into clean exits: 1 for not-found, 2 for bad input."""
+    """Turn diagnostic failures into clean exits: 1 for not-found, 2 for bad input.
+
+    Anything else ends as one redacted ``Error:`` line on stderr (exit 1), never Typer's
+    traceback, which would print the frames' locals, the config's credentials among them.
+    """
     from .core.utils.readonly import ReadOnlyViolation
+    from .core.utils.redact import redact_text
 
     try:
         yield
@@ -3081,6 +3104,12 @@ def _diagnostic_errors() -> Iterator[None]:
         _fail(e)
     except ValueError as e:
         _fail(e, code=2)
+    except (typer.Exit, typer.Abort):
+        raise  # _fail raises typer.Exit, a RuntimeError, inside this block too
+    except Exception as e:  # noqa: BLE001 - never Typer's traceback, which prints locals
+        if state.debug:
+            err_console.print_exception(show_locals=False)
+        _fail(f'Error: {redact_text(e)}')
 
 
 def _resolve(client: Any, site: str, query: str, *, any_device: bool = False) -> JsonDict:

@@ -5,7 +5,7 @@ Centralizes configuration loading and validation.
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -19,9 +19,10 @@ class UnifiConfig:
 
     base_url: str
     site: str = 'default'
-    api_token: Optional[str] = None
+    # Kept out of repr, so a traceback or log line that shows the config shows no secret.
+    api_token: Optional[str] = field(default=None, repr=False)
     username: Optional[str] = None
-    password: Optional[str] = None
+    password: Optional[str] = field(default=None, repr=False)
     verify_ssl: bool = False
     timeout: int = 10
     max_retries: int = 3

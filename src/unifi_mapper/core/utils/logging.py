@@ -1,10 +1,41 @@
-"""Structured JSON logging configuration."""
+"""Structured JSON logging configuration, and the CLIs' loguru handler.
+
+Every loguru handler in ``src/`` sets ``diagnose=False``: with it on, a logged traceback shows
+the failing frames' variable values, which can hold a credential (issue 058).
+"""
 
 import os
 import sys
 from loguru import logger
 from pathlib import Path
 from typing import Any
+
+
+def _stderr_sink(message: str) -> None:
+    # Resolve sys.stderr on every write, so the handler follows a redirected stream.
+    sys.stderr.write(message)
+
+
+def replace_default_loguru_handler(handler_id: int = 0) -> int | None:
+    """Replace loguru's default stderr handler (``diagnose`` on) with one that has it off.
+
+    The CLIs call this before anything logs. Loguru installs its default handler as id 0
+    when imported; if that handler is already gone, someone configured loguru on purpose and
+    their handlers are left alone. The new handler keeps the default's level
+    (``LOGURU_LEVEL``, default ``DEBUG``).
+
+    Args:
+        handler_id: The handler to replace; loguru's default is 0.
+
+    Returns:
+        The new handler's id, or None when ``handler_id`` was not installed.
+    """
+    try:
+        logger.remove(handler_id)
+    except ValueError:
+        return None
+    level = os.environ.get('LOGURU_LEVEL') or 'DEBUG'
+    return logger.add(_stderr_sink, level=level, diagnose=False)
 
 
 def configure_logging(
@@ -38,7 +69,7 @@ def configure_logging(
         compression='gz',
         level=log_level,
         backtrace=True,
-        diagnose=True,
+        diagnose=False,
     )
 
     # Optional console logging for development
@@ -48,6 +79,7 @@ def configure_logging(
             format='<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>',
             level=log_level,
             colorize=True,
+            diagnose=False,
         )
 
     # Set default correlation ID

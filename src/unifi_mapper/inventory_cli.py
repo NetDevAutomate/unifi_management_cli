@@ -28,6 +28,8 @@ console = Console()
 inventory_app = typer.Typer(
     name='inventory',
     help='📦 Device inventory and firmware management',
+    # Typer < 0.23 prints each frame's locals in a traceback; a config holds credentials.
+    pretty_exceptions_show_locals=False,
 )
 
 
@@ -850,6 +852,9 @@ def update_firmware(
 # Standalone entry point for direct execution
 def main():
     """Standalone entry point."""
+    from .core.utils.logging import replace_default_loguru_handler
+
+    replace_default_loguru_handler()  # before anything logs: loguru's default has diagnose on
     inventory_app()
 
 

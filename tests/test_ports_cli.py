@@ -5,6 +5,7 @@ import pytest
 from contextlib import contextmanager
 from pathlib import Path
 from tests.fixtures_unifi import (
+    FAKE_PW,
     FAKE_TOKEN,
     NAS_MAC,
     OTHER_SWITCH_MAC,
@@ -399,6 +400,43 @@ def test_readonly_client_exits_1_when_login_fails(real_wrapper):
     result = runner.invoke(app, ['--config', str(real_wrapper), 'ports', 'list', SWITCH_NAME])
     assert result.exit_code == 1
     assert 'Could not authenticate' in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# No CLI error prints a secret (issue 058)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def password_wrapper(real_wrapper):
+    """The real _readonly_client on a username-and-password config holding FAKE_PW."""
+    real_wrapper.write_text(
+        'UNIFI_URL=https://192.0.2.1\nUNIFI_USERNAME=admin\n'
+        f'UNIFI_PASSWORD={FAKE_PW}\nUNIFI_SITE=default\n'
+    )
+    return real_wrapper
+
+
+def test_an_unexpected_read_error_is_one_redacted_line(monkeypatch, password_wrapper):
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError(f'boom, password={FAKE_PW}')
+
+    monkeypatch.setattr('unifi_mapper.port_diagnostics.list_switch_ports', _boom)
+    result = runner.invoke(app, ['--config', str(password_wrapper), 'ports', 'list', SWITCH_NAME])
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit)  # a clean exit, not a traceback
+    assert '❌ Error: boom' in result.stderr
+    assert FAKE_PW not in result.output
+
+
+def test_a_login_failure_keeps_its_own_message_and_exits_once(password_wrapper):
+    _LoginClient.login_result = False
+    result = runner.invoke(app, ['--config', str(password_wrapper), 'ports', 'list', SWITCH_NAME])
+    assert result.exit_code == 1
+    assert 'Could not authenticate' in result.stderr
+    assert result.stderr.count('❌') == 1
+    assert 'Error: 1' not in result.stderr
+    assert FAKE_PW not in result.output
 
 
 def test_bundle_file_has_no_host_in_the_audit(cli):
