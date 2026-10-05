@@ -5,11 +5,12 @@ to ``$XDG_STATE_HOME/unifi_mapper/port-counter-history.jsonl``. The history is
 kept separate from the comparison baselines (``--snapshot``), so recording never
 moves the point a comparison is made against.
 
-Writing happens only in :func:`append_history`, behind that explicit flag. It
-takes an exclusive ``fcntl.flock`` on a sibling ``.lock`` file, appends, and
-compacts the file through a temporary file plus ``os.replace`` only when the age
-or size cap is exceeded (with hysteresis, so a full file is not rewritten on
-every run), so a reader never sees a half-written file.
+Writing happens only in :func:`append_history`, behind that explicit flag, through the
+shared capped writer (``core/utils/jsonl.append_capped_jsonl``): an exclusive
+``fcntl.flock`` on a sibling ``.lock`` file, an append, and a compaction through a
+temporary file plus ``os.replace`` only when the age or size cap is exceeded (with
+hysteresis, so a full file is not rewritten on every run), so a reader never sees a
+half-written file.
 
 :func:`read_port_history` and :func:`summarise_port_history` only read. They feed
 the ``baselines.history`` section of ``ports counters``, ``ports diagnose``,
@@ -17,14 +18,15 @@ the ``baselines.history`` section of ``ports counters``, ``ports diagnose``,
 counter start increasing?".
 """
 
-import fcntl
 import json
-import os
-import tempfile
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import Any, Iterable, Optional
 from unifi_mapper.analysis.port_counter_baseline import SWITCH_DEVICE_TYPES, state_dir
+from unifi_mapper.core.utils.jsonl import (
+    COMPACT_LOW_WATER_RATIO as COMPACT_LOW_WATER_RATIO,  # re-exported: the cap's low water
+)
+from unifi_mapper.core.utils.jsonl import append_capped_jsonl, compact_jsonl_lines
 from unifi_mapper.diagnostic_reads import crc_errors, int_or_none, normalise_mac, str_or_none
 
 
@@ -37,9 +39,8 @@ DEFAULT_MAX_HISTORY_BYTES = 64 * 1024 * 1024
 HISTORY_POINTS_LIMIT = 48
 SECONDS_PER_DAY = 86400
 # Hysteresis, so a file at a cap is not rewritten on every append: compaction trims to
-# this fraction of max_bytes, and an age compaction waits until the oldest line is
-# this far past the retention cutoff (then drops everything older than the cutoff).
-COMPACT_LOW_WATER_RATIO = 0.8
+# COMPACT_LOW_WATER_RATIO (core/utils/jsonl) of max_bytes, and an age compaction waits until
+# the oldest line is this far past the retention cutoff (then drops everything older).
 AGE_COMPACTION_GRACE_SECONDS = SECONDS_PER_DAY
 
 # Counters recorded per port, in output order.
@@ -210,10 +211,6 @@ def _line_epoch(line: str) -> Optional[float]:
     return parsed[1] if parsed else None
 
 
-def _with_newline(line: str) -> str:
-    return line if line.endswith('\n') else line + '\n'
-
-
 def compact_history_lines(lines: list[str], *, cutoff_epoch: float, max_bytes: int) -> list[str]:
     """Return the lines to keep: drop unparsable and too-old lines, then the oldest over the cap.
 
@@ -225,48 +222,9 @@ def compact_history_lines(lines: list[str], *, cutoff_epoch: float, max_bytes: i
         cutoff_epoch: Lines with an ``epoch`` before this are dropped.
         max_bytes: Drop the oldest lines until the total UTF-8 size is at most this.
     """
-    kept = [
-        _with_newline(line)
-        for line in lines
-        if (epoch := _line_epoch(line)) is not None and epoch >= cutoff_epoch
-    ]
-    sizes = [len(line.encode('utf-8')) for line in kept]
-    total, start = sum(sizes), 0
-    while total > max_bytes and start < len(kept):
-        total -= sizes[start]
-        start += 1
-    return kept[start:]
-
-
-def _write_atomically(path: Path, lines: list[str]) -> None:
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f'.{path.name}.', suffix='.tmp')
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as tmp:
-            tmp.writelines(lines)
-            tmp.flush()
-            os.fsync(tmp.fileno())
-        os.replace(tmp_name, path)
-    except BaseException:
-        Path(tmp_name).unlink(missing_ok=True)
-        raise
-
-
-def _first_line(path: Path) -> str:
-    with path.open('r', encoding='utf-8', errors='replace') as file:
-        return file.readline()
-
-
-def _ends_with_newline(path: Path) -> bool:
-    """True when ``path`` is missing, empty or ends with a newline.
-
-    A torn last line (an interrupted writer) would otherwise swallow the next
-    record appended after it.
-    """
-    if not path.exists() or path.stat().st_size == 0:
-        return True
-    with path.open('rb') as file:
-        file.seek(-1, os.SEEK_END)
-        return file.read(1) == b'\n'
+    return compact_jsonl_lines(
+        lines, epoch_of=_line_epoch, cutoff_epoch=cutoff_epoch, max_bytes=max_bytes
+    )
 
 
 def append_history(
@@ -310,48 +268,31 @@ def append_history(
     if max_bytes < 1:
         raise ValueError(f'max_bytes must be at least 1, got {max_bytes}')
     target = path or default_history_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
     lines = [json.dumps(r, sort_keys=True, separators=(',', ':')) + '\n' for r in records]
     cutoff = now - retention_days * SECONDS_PER_DAY
+    written = append_capped_jsonl(
+        target,
+        lines,
+        max_bytes=max_bytes,
+        epoch_of=_line_epoch,
+        cutoff_epoch=cutoff,
+        age_grace_s=AGE_COMPACTION_GRACE_SECONDS,
+    )
     result = HistoryWriteResult(
         path=str(target),
         records_written=len(lines),
+        compacted=written.compacted,
+        lines_kept=written.lines_kept,
+        dropped_by_age=written.dropped_by_age,
+        dropped_by_size=written.dropped_by_size,
+        dropped_unparsable=written.dropped_invalid,
+        bytes=written.bytes,
         retention_days=retention_days,
         max_bytes=max_bytes,
+        earliest_epoch=written.earliest_epoch,
     )
-    lock_path = target.with_name(target.name + '.lock')
-    with lock_path.open('a') as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        try:
-            prefix = '' if _ends_with_newline(target) else '\n'
-            with target.open('a', encoding='utf-8') as history:
-                history.write(prefix)
-                history.writelines(lines)
-            size = target.stat().st_size
-            oldest = _line_epoch(_first_line(target))
-            age_due = oldest is not None and oldest < cutoff - AGE_COMPACTION_GRACE_SECONDS
-            if size > max_bytes or oldest is None or age_due:
-                existing = target.read_text(encoding='utf-8', errors='replace').splitlines(True)
-                parsed = [(line, _line_epoch(line)) for line in existing]
-                valid = [line for line, epoch in parsed if epoch is not None]
-                in_age = [line for line, epoch in parsed if epoch is not None and epoch >= cutoff]
-                low_water = max(1, int(max_bytes * COMPACT_LOW_WATER_RATIO))
-                kept = compact_history_lines(existing, cutoff_epoch=cutoff, max_bytes=low_water)
-                result.dropped_unparsable = len(existing) - len(valid)
-                result.dropped_by_age = len(valid) - len(in_age)
-                result.dropped_by_size = len(in_age) - len(kept)
-                if len(kept) != len(existing):
-                    _write_atomically(target, kept)
-                    result.compacted = True
-                result.lines_kept = len(kept)
-            result.bytes = target.stat().st_size
-            result.earliest_epoch = _line_epoch(_first_line(target)) if result.bytes else None
-            if result.earliest_epoch is not None:
-                result.span_days = round(
-                    max(0.0, now - result.earliest_epoch) / SECONDS_PER_DAY, 1
-                )
-        finally:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+    if result.earliest_epoch is not None:
+        result.span_days = round(max(0.0, now - result.earliest_epoch) / SECONDS_PER_DAY, 1)
     return result
 
 

@@ -1,0 +1,287 @@
+"""A capped, locked JSON Lines file: append, deduplicate, compact, never a half-written file.
+
+Every capped history the tools keep under the XDG state root goes through
+:func:`append_capped_jsonl`: the port counter history (``analysis/counter_history``), and
+the files the July port adds on top of it. One append holds an exclusive ``fcntl.flock`` on
+a sibling ``<file>.lock`` for the whole append-and-compact; repairs a torn last line (an
+interrupted writer) before appending; optionally drops incoming lines whose key is already
+in the file; and compacts through a temporary file plus ``os.replace`` only when the file is
+over its size cap, its first line is invalid, or its oldest line is past an age cutoff (with
+hysteresis, so a full file is not rewritten on every append). A reader never sees a
+half-written file.
+
+A line is valid when the caller's ``epoch_of(line)`` returns a number; :func:`epoch_field`
+builds that function for a top-level numeric field.
+"""
+
+import fcntl
+import json
+import math
+import os
+import tempfile
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+
+# Compaction trims the file to this fraction of max_bytes, so a file at the cap is not
+# rewritten on every append.
+COMPACT_LOW_WATER_RATIO = 0.8
+
+EpochOf = Callable[[str], float | None]
+
+
+@dataclass
+class CappedWriteResult:
+    """What :func:`append_capped_jsonl` wrote and what compaction removed.
+
+    Attributes:
+        path: The file written.
+        lines_written: Lines appended (after deduplication).
+        skipped_duplicates: Incoming lines dropped because their key was already present.
+        bytes: The file's size afterwards.
+        compacted: Whether the file was rewritten.
+        dropped_invalid: Lines compaction dropped because ``epoch_of`` gave None.
+        dropped_by_age: Valid lines compaction dropped as older than the cutoff.
+        dropped_by_size: Lines compaction dropped, oldest first, to fit the cap.
+        lines_kept: Lines left after a compaction check, or None when none was due.
+        earliest_epoch: The first line's epoch afterwards, or None for an empty file.
+    """
+
+    path: str
+    lines_written: int
+    skipped_duplicates: int = 0
+    bytes: int = 0
+    compacted: bool = False
+    dropped_invalid: int = 0
+    dropped_by_age: int = 0
+    dropped_by_size: int = 0
+    lines_kept: int | None = None
+    earliest_epoch: float | None = None
+
+
+def epoch_field(name: str) -> EpochOf:
+    """Return an ``epoch_of`` that reads the numeric top-level field ``name``.
+
+    The function returns ``float(obj[name])`` when the line is a JSON object holding a
+    finite number (not a ``bool``) under ``name``, else None.
+
+    Args:
+        name: The field holding the line's time in Unix seconds.
+
+    Returns:
+        A function from one line to its epoch or None.
+    """
+
+    def _epoch_of(line: str) -> float | None:
+        try:
+            obj = json.loads(line)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(obj, dict):
+            return None
+        value = obj.get(name)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return None
+        epoch = float(value)
+        return epoch if math.isfinite(epoch) else None
+
+    return _epoch_of
+
+
+def _with_newline(line: str) -> str:
+    return line if line.endswith('\n') else line + '\n'
+
+
+def compact_jsonl_lines(
+    lines: Sequence[str],
+    *,
+    epoch_of: EpochOf,
+    cutoff_epoch: float | None,
+    max_bytes: int,
+) -> list[str]:
+    """Return the lines to keep: drop invalid and too-old lines, then the oldest over the cap.
+
+    Pure. Lines are in file (append) order, oldest first, and the result keeps that order.
+    Every returned line ends with a newline.
+
+    Args:
+        lines: File lines.
+        epoch_of: A line's epoch, or None for an invalid line.
+        cutoff_epoch: Lines with an epoch before this are dropped; None keeps every age.
+        max_bytes: Drop the oldest lines until the total UTF-8 size is at most this.
+
+    Returns:
+        The kept lines.
+    """
+    kept = [
+        _with_newline(line)
+        for line in lines
+        if (epoch := epoch_of(line)) is not None
+        and (cutoff_epoch is None or epoch >= cutoff_epoch)
+    ]
+    sizes = [len(line.encode('utf-8')) for line in kept]
+    total, start = sum(sizes), 0
+    while total > max_bytes and start < len(kept):
+        total -= sizes[start]
+        start += 1
+    return kept[start:]
+
+
+def _write_atomically(path: Path, lines: list[str], file_mode: int | None = None) -> None:
+    """Replace ``path`` with ``lines`` through a temporary file (``mkstemp``: 0o600)."""
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f'.{path.name}.', suffix='.tmp')
+    try:
+        if file_mode is not None:
+            os.fchmod(fd, file_mode)
+        with os.fdopen(fd, 'w', encoding='utf-8') as tmp:
+            tmp.writelines(lines)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+
+
+def _first_line(path: Path) -> str:
+    with path.open('r', encoding='utf-8', errors='replace') as file:
+        return file.readline()
+
+
+def _ends_with_newline(path: Path) -> bool:
+    """True when ``path`` is missing, empty or ends with a newline.
+
+    A torn last line (an interrupted writer) would otherwise swallow the next line
+    appended after it.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return True
+    with path.open('rb') as file:
+        file.seek(-1, os.SEEK_END)
+        return file.read(1) == b'\n'
+
+
+def _ensure_parent(parent: Path, dir_mode: int | None) -> None:
+    if dir_mode is not None and not parent.exists():
+        parent.mkdir(parents=True, exist_ok=True, mode=dir_mode)
+        os.chmod(parent, dir_mode)  # mkdir's mode is masked by the umask
+    else:
+        parent.mkdir(parents=True, exist_ok=True)
+
+
+def _open_for_append(path: Path, file_mode: int | None) -> int:
+    existed = path.exists()
+    fd = os.open(
+        path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o666 if file_mode is None else file_mode
+    )
+    if file_mode is not None and not existed:
+        os.fchmod(fd, file_mode)  # the umask masks os.open's mode too
+    return fd
+
+
+def append_capped_jsonl(
+    path: Path,
+    lines: Sequence[str],
+    *,
+    max_bytes: int,
+    epoch_of: EpochOf,
+    cutoff_epoch: float | None = None,
+    age_grace_s: float = 0.0,
+    dedup_key: Callable[[str], str | None] | None = None,
+    file_mode: int | None = None,
+    dir_mode: int | None = None,
+) -> CappedWriteResult:
+    """Append ``lines`` to ``path`` under its lock, then enforce the size and age caps.
+
+    Creates the directory (with ``dir_mode`` when it is missing and a mode is given; an
+    existing directory keeps its mode), holds an exclusive ``flock`` on ``<file>.lock`` for
+    the whole append-and-compact, prefixes a newline when the last line is torn, drops
+    incoming lines whose ``dedup_key`` is already in the file (the file is read only when a
+    ``dedup_key`` is given), and appends (creating the file with ``file_mode`` when given).
+    It then rewrites the file (temporary file plus ``os.replace``) only when the file is
+    larger than ``max_bytes``, its first line is invalid, or, with ``cutoff_epoch``, its
+    oldest line is more than ``age_grace_s`` older than the cutoff. A rewrite keeps the valid
+    lines at or after the cutoff, then drops the oldest down to
+    :data:`COMPACT_LOW_WATER_RATIO` of ``max_bytes``; its temporary file is 0o600, or
+    ``file_mode`` when given, so compaction never loosens a file.
+
+    Args:
+        path: The JSON Lines file.
+        lines: The lines to append, oldest first (a missing newline is added).
+        max_bytes: Size cap in bytes (at least 1).
+        epoch_of: A line's epoch, or None for an invalid line.
+        cutoff_epoch: Drop lines older than this when compacting; None keeps every age.
+        age_grace_s: How far past the cutoff the oldest line may be before an age rewrite.
+        dedup_key: A line's identity, or None for a line that is never a duplicate.
+        file_mode: Mode for a newly created file and for a compacted one.
+        dir_mode: Mode for a newly created directory.
+
+    Returns:
+        What was written and what compaction removed.
+
+    Raises:
+        ValueError: ``max_bytes`` is below 1.
+        OSError: The file or its directory cannot be written.
+    """
+    if max_bytes < 1:
+        raise ValueError(f'max_bytes must be at least 1, got {max_bytes}')
+    _ensure_parent(path.parent, dir_mode)
+    incoming = [_with_newline(line) for line in lines]
+    result = CappedWriteResult(path=str(path), lines_written=0)
+    lock_path = path.with_name(path.name + '.lock')
+    with lock_path.open('a') as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            if dedup_key is not None:
+                seen: set[str] = set()
+                if path.exists():
+                    with path.open('r', encoding='utf-8', errors='replace') as file:
+                        seen = {key for line in file if (key := dedup_key(line)) is not None}
+                fresh: list[str] = []
+                for line in incoming:
+                    key = dedup_key(line)
+                    if key is not None and key in seen:
+                        result.skipped_duplicates += 1
+                        continue
+                    if key is not None:
+                        seen.add(key)
+                    fresh.append(line)
+                incoming = fresh
+            prefix = '' if _ends_with_newline(path) else '\n'
+            with os.fdopen(_open_for_append(path, file_mode), 'a', encoding='utf-8') as out:
+                out.write(prefix)
+                out.writelines(incoming)
+            result.lines_written = len(incoming)
+            size = path.stat().st_size
+            oldest = epoch_of(_first_line(path))
+            age_due = (
+                cutoff_epoch is not None
+                and oldest is not None
+                and oldest < cutoff_epoch - age_grace_s
+            )
+            if size > max_bytes or oldest is None or age_due:
+                existing = path.read_text(encoding='utf-8', errors='replace').splitlines(True)
+                parsed = [(line, epoch_of(line)) for line in existing]
+                valid = [line for line, epoch in parsed if epoch is not None]
+                in_age = [
+                    line
+                    for line, epoch in parsed
+                    if epoch is not None and (cutoff_epoch is None or epoch >= cutoff_epoch)
+                ]
+                low_water = max(1, int(max_bytes * COMPACT_LOW_WATER_RATIO))
+                kept = compact_jsonl_lines(
+                    existing, epoch_of=epoch_of, cutoff_epoch=cutoff_epoch, max_bytes=low_water
+                )
+                result.dropped_invalid = len(existing) - len(valid)
+                result.dropped_by_age = len(valid) - len(in_age)
+                result.dropped_by_size = len(in_age) - len(kept)
+                if len(kept) != len(existing):
+                    _write_atomically(path, kept, file_mode)
+                    result.compacted = True
+                result.lines_kept = len(kept)
+            result.bytes = path.stat().st_size
+            result.earliest_epoch = epoch_of(_first_line(path)) if result.bytes else None
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+    return result

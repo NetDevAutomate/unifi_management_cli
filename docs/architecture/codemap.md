@@ -899,6 +899,7 @@ The `core/` package provides shared infrastructure consumed by the async analysi
 | Module | Key names | Purpose |
 |---|---|---|
 | `coerce.py` | `int_or_none`, `float_or_none` | Numeric coercion for controller fields whose JSON type varies by model and firmware (system stats sent as strings) |
+| `jsonl.py` | `append_capped_jsonl`, `compact_jsonl_lines`, `epoch_field`, `CappedWriteResult` | The shared capped JSON Lines writer: `flock` on `<file>.lock`, torn-line repair, optional dedup by key, compaction by size (to 80% of the cap) or age through a temp file and `os.replace`, optional file and directory modes; the port counter history writes through it |
 | `overrides.py` | `load_stp_overrides`, `STPOverrides` | Loads the STP optimiser's root-eligible and forced-access MACs from `UNIFI_STP_OVERRIDES` (default `~/.config/unifi_management_cli/stp_overrides.yaml`) |
 | `logging.py` | `configure_logging`, `get_logger` | A loguru JSON-file setup that nothing calls, so `UNIFI_MAPPER_DEBUG` has no effect ([issue 045](../issues/045-configure-logging-is-never-called.md)); the CLI uses `typer_cli.setup_logging` and the MCP server `server._configure_logging` |
 
@@ -1474,7 +1475,7 @@ sequenceDiagram
     Note over Hist,Disk: Read only: never calls save(), a snapshot function or append_history()
 ```
 
-Writers, all behind explicit flags of `analyze link-errors`: `--snapshot` (both baselines) and `--record` (`append_history`: `fcntl.flock` on `port-counter-history.jsonl.lock`, append, then compaction through a temp file and `os.replace` only once the oldest line is a day past `--retention-days` (default 14) or the file passes the 64 MiB cap, trimming to 80% of the cap, so a full file is not rewritten on every run). Issues [002](../issues/002-port-counter-baseline-has-no-producer.md) and [004](../issues/004-no-counter-history.md) record the decision.
+Writers, all behind explicit flags of `analyze link-errors`: `--snapshot` (both baselines) and `--record` (`append_history`, through the shared `core/utils/jsonl.append_capped_jsonl`: `fcntl.flock` on `port-counter-history.jsonl.lock`, append, then compaction through a temp file and `os.replace` only once the oldest line is a day past `--retention-days` (default 14) or the file passes the 64 MiB cap, trimming to 80% of the cap, so a full file is not rewritten on every run). Issues [002](../issues/002-port-counter-baseline-has-no-producer.md) and [004](../issues/004-no-counter-history.md) record the decision.
 
 **State location.** `port_counter_baseline.state_dir()` is `$XDG_STATE_HOME/unifi_mapper` when set, otherwise `~/.local/state/unifi_mapper`. It holds `port-counters.json` (`default_baseline_path()`), `link-error-baseline.json` (`default_link_error_baseline_path()`) and `port-counter-history.jsonl` (`default_history_path()`).
 
