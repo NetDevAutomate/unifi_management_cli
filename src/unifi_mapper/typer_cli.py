@@ -245,6 +245,10 @@ controller_app = typer.Typer(
 backup_app = typer.Typer(
     help='💾 Offline checks of downloaded config backups', pretty_exceptions_show_locals=False
 )
+gateway_app = typer.Typer(
+    help="🛰️ Live probes run on the gateway over SSH (the gateway's host key is not verified)",
+    pretty_exceptions_show_locals=False,
+)
 
 app.add_typer(find_app, name='find')
 app.add_typer(analyze_app, name='analyze')
@@ -255,6 +259,7 @@ app.add_typer(radio_app, name='radio')
 app.add_typer(ports_app, name='ports')
 app.add_typer(controller_app, name='controller')
 app.add_typer(backup_app, name='backup')
+app.add_typer(gateway_app, name='gateway')
 
 
 @app.command()
@@ -4950,6 +4955,192 @@ def controller_config_changes(
         )
     console.print(table)
     _print_dim_notes(result['notes'])
+
+
+# ─── Gateway probes (class B: SSH, CLI only) ─────────────────────────────────
+
+
+class _FlowState(StrEnum):
+    """A conntrack state or flag ``gateway flows --state`` filters on."""
+
+    ESTABLISHED = 'ESTABLISHED'
+    SYN_SENT = 'SYN_SENT'
+    SYN_RECV = 'SYN_RECV'
+    FIN_WAIT = 'FIN_WAIT'
+    CLOSE_WAIT = 'CLOSE_WAIT'
+    LAST_ACK = 'LAST_ACK'
+    TIME_WAIT = 'TIME_WAIT'
+    CLOSE = 'CLOSE'
+    UNREPLIED = 'UNREPLIED'
+    ASSURED = 'ASSURED'
+
+
+def _probe[T](run: Callable[[], Coroutine[Any, Any, T]]) -> T:
+    """Load the config, then run one gateway probe through ``_run_gateway_ssh``."""
+    load_env_from_config(str(state.config_path or get_default_config_path()))
+    return _run_gateway_ssh(run)
+
+
+@gateway_app.command('ping')
+def gateway_ping_command(
+    target: str = typer.Argument(..., help='An IP, or a device or client name, hostname or MAC'),
+    count: int = typer.Option(10, '--count', min=1, max=100, help='Echo requests (1-100)'),
+    interval: float = typer.Option(
+        0.3, '--interval', min=0.2, max=5.0, help='Seconds between requests (0.2-5.0)'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """📡 Ping one target from the gateway over SSH: loss and round trips.
+
+    A name is resolved to its address through the read-only controller client. Runs ping
+    on the gateway as the SSH user; the gateway's host key is not verified.
+    """
+    from .connectivity.gateway_probe import gateway_ping
+
+    result = _probe(lambda: gateway_ping(target, count=count, interval=interval))
+    if as_json:
+        _emit_json(result)
+        return
+    table = Table(title=f'📡 Ping {escape(target)} from the gateway', show_header=False)
+    rtts = ' / '.join(_cell(result[k]) for k in ('rtt_min_ms', 'rtt_avg_ms', 'rtt_max_ms'))
+    for label, value in (
+        ('Address', _cell(result['probe_ip'])),
+        ('Resolved from', _cell(result['resolved_name'])),
+        ('Sent / received', f'{result["transmitted"]} / {result["received"]}'),
+        ('Loss %', _cell(result['loss_pct'])),
+        ('RTT min / avg / max ms', rtts),
+        ('Reachable', _cell(result['reachable'])),
+    ):
+        table.add_row(label, value)
+    console.print(table)
+
+
+@gateway_app.command('traceroute')
+def gateway_traceroute_command(
+    target: str = typer.Argument(..., help='An IP, or a device or client name, hostname or MAC'),
+    max_hops: int = typer.Option(20, '--max-hops', min=1, max=30, help='Hops to probe (1-30)'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """🧭 Trace the gateway's real forwarding path to a target over SSH.
+
+    Runs traceroute on the gateway as the SSH user; the gateway's host key is not verified.
+    """
+    from .connectivity.gateway_probe import gateway_traceroute
+
+    result = _probe(lambda: gateway_traceroute(target, max_hops=max_hops))
+    if as_json:
+        _emit_json(result)
+        return
+    table = Table(title=f'🧭 Path to {escape(result["probe_ip"])}')
+    for column in ('Hop', 'Host', 'Address', 'RTT ms'):
+        table.add_column(column)
+    for hop in result['hops']:
+        rtts = ', '.join(f'{rtt:g}' for rtt in hop['rtt_ms']) or '*'
+        table.add_row(str(hop['hop']), _cell(hop['host']), _cell(hop['ip']), escape(rtts))
+    console.print(table)
+    console.print('Reached the target.' if result['reached'] else '[yellow]Not reached.[/]')
+
+
+@gateway_app.command('dns')
+def gateway_dns_command(
+    hostname: str = typer.Argument(..., help='The hostname to resolve'),
+    server: Optional[str] = typer.Option(None, '--server', help='Ask this DNS server (an IP)'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """🔤 Resolve a hostname on the gateway over SSH (nslookup).
+
+    Runs nslookup on the gateway as the SSH user; the gateway's host key is not verified.
+    """
+    from .connectivity.gateway_probe import gateway_dns_check
+
+    result = _probe(lambda: gateway_dns_check(hostname, server=server))
+    if as_json:
+        _emit_json(result)
+        return
+    verdict = '[green]resolved[/]' if result['resolved'] else '[red]not resolved[/]'
+    console.print(f'🔤 {escape(hostname)}: {verdict} (server {_cell(result["server"])})')
+    for address in result['addresses']:
+        console.print(f'  {escape(address)}')
+    if result['error']:
+        console.print(f'[yellow]{escape(result["error"])}[/]')
+
+
+@gateway_app.command('http')
+def gateway_http_command(
+    url: str = typer.Argument(..., help='The http(s) URL to fetch (no user name or password)'),
+    vlan: Optional[int] = typer.Option(
+        None, '--vlan', min=1, max=4094, help="Fetch from this VLAN's gateway interface"
+    ),
+    interface: Optional[str] = typer.Option(
+        None, '--interface', help='Fetch from this interface (not with --vlan)'
+    ),
+    timeout: int = typer.Option(
+        10, '--timeout', min=1, max=60, help="curl's --max-time in seconds (1-60)"
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """🌐 Fetch a URL from the gateway over SSH (curl), from a VLAN if asked.
+
+    --vlan resolves to the interface whose address is in that VLAN's subnet, from the
+    controller's network list. Runs curl on the gateway as the SSH user; the gateway's host
+    key is not verified.
+    """
+    from .connectivity.gateway_probe import gateway_http_check
+
+    result = _probe(
+        lambda: gateway_http_check(url, vlan=vlan, interface=interface, timeout_seconds=timeout)
+    )
+    if as_json:
+        _emit_json(result)
+        return
+    style = 'green' if result['ok'] else 'red'
+    via = f' via {escape(result["interface"])}' if result['interface'] else ''
+    console.print(
+        f'🌐 HTTP [{style}]{result["http_status"]}[/] in {_cell(result["time_total_s"])} s'
+        f' from {_cell(result["remote_ip"])}{via}',
+        soft_wrap=True,
+    )
+    if result.get('error'):
+        console.print(f'[yellow]{escape(result["error"])}[/]', soft_wrap=True)
+
+
+@gateway_app.command('flows')
+def gateway_flows_command(
+    ip: Optional[str] = typer.Option(None, '--ip', help='Only flows to or from this address'),
+    flow_state: Optional[_FlowState] = typer.Option(
+        None, '--state', case_sensitive=False, help='Only this state or flag, e.g. UNREPLIED'
+    ),
+    limit: int = typer.Option(200, '--limit', min=1, max=5000, help='Flows to show (1-5000)'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """🔁 The gateway's connection-tracking flows over SSH (conntrack), filtered here.
+
+    UNREPLIED flows are traffic that left with nothing back. Runs conntrack -L on the gateway
+    as the SSH user; the gateway's host key is not verified.
+    """
+    from .connectivity.gateway_probe import get_active_flows
+
+    chosen = None if flow_state is None else flow_state.value
+    result = _probe(lambda: get_active_flows(ip=ip, state=chosen, limit=limit))
+    if as_json:
+        _emit_json(result)
+        return
+    table = Table(
+        title=f'🔁 Flows ({result["total_matching"]}, {result["unreplied_count"]} unreplied)'
+    )
+    for column in ('Proto', 'State', 'Source', 'Destination', 'Port'):
+        table.add_column(column)
+    for flow in result['flows']:
+        table.add_row(
+            _cell(flow['protocol']),
+            _cell(flow['state']),
+            _cell(flow['orig_src']),
+            _cell(flow['orig_dst']),
+            _cell(flow['orig_dport']),
+        )
+    console.print(table)
+    if result['truncated']:
+        console.print(f'[dim]Showing the first {limit}.[/dim]')
 
 
 if __name__ == '__main__':

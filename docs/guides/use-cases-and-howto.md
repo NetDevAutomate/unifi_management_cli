@@ -153,9 +153,9 @@ UNIFI_TIMEOUT=10                        # API timeout in seconds
 
 These five settings have no effect on `unifi-mapper`
 ([issue 042](../issues/042-settings-with-no-effect.md)); `UNIFI_TIMEOUT` does. The optional
-credential families (gateway SSH for `diagnose latency-matrix` and `diagnose bandwidth`,
-`UNIFI_NETWORK_*` and `PROTECT_*` for the MCP network and Protect tools) are listed in
-`.env.example` and the README's Configuration section.
+credential families (gateway SSH for `diagnose latency-matrix`, `diagnose bandwidth` and the
+`gateway` probes, `UNIFI_NETWORK_*` and `PROTECT_*` for the MCP network and Protect tools) are
+listed in `.env.example` and the README's Configuration section.
 
 **Step 4: Secure the configuration file**
 

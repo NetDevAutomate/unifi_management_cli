@@ -149,6 +149,7 @@ graph LR
         CMD_PORTS["ports\nPort labels and read-only\nport diagnostics"]
         CMD_CTRL["controller\nconfig / config-changes / events"]
         CMD_BACKUP["backup\nverify (offline)"]
+        CMD_GATEWAY["gateway\nping / traceroute / dns\nhttp / flows (SSH)"]
         CMD_STP["stp\nSTP topology and optimization"]
         CMD_RADIO["radio\nsnapshot / optimize / restore\nauto-channel / report"]
         CMD_INV["inventory\nDevice management"]
@@ -186,6 +187,7 @@ graph LR
     APP --> CMD_PORTS
     APP --> CMD_CTRL
     APP --> CMD_BACKUP
+    APP --> CMD_GATEWAY
     APP --> CMD_STP
     APP --> CMD_RADIO
     APP --> CMD_INV
@@ -297,6 +299,13 @@ read-only priority audit: each switch's current against its recommended priority
 when non-core switches tie at the lowest priority, and the gateway under "Skipped". It always
 tiers the whole fleet (`--device` narrows the rows only) and writes no plan; `stp optimize
 --plan` does.
+
+**New `gateway` command group** (`connectivity/gateway_probe.py`) — live probes run on the
+gateway over SSH, CLI only (no MCP tool, decision D1 in issue 060): `gateway ping`,
+`traceroute`, `dns`, `http` and `flows`. Each opens one session and runs one argv with its own
+bound through `analysis/gateway_ssh.py`; a device or client name resolves to its address
+through the read-only controller client, and `http --vlan` to the interface whose address is in
+that VLAN's subnet (`analysis/vlan_interfaces.py`).
 
 **New `analyze` commands** — time-series analysis with snapshot/compare pattern:
 
@@ -511,7 +520,7 @@ The adapter gives `unifi-network-toolkit` synchronous versions of three tools (`
 
 ## 6. Layer 4: Analysis Toolkit
 
-The toolkit is 85 registered tools in seven categories, implemented in the `analysis/`, `diagnostics/`, `discovery/` and `connectivity/` packages, the read-only port diagnostics (`port_inspect.py`, `port_diagnostics.py`, `port_history.py`, behind `core/utils/readonly.py`'s guard, with secrets stripped by `core/utils/redact.py` and each port's effective profile resolved by `analysis/link_settings.py`) and the `mcp/tools/` wrappers for the Integration API and Protect. All of them are registered via YAML manifests and exposed through the MCP server. Several analysis modules are CLI-only and not registered: the two SSH tools (latency matrix, bandwidth test) and the snapshot-and-compare commands (`analyze link-errors`, `roaming`, `config-drift`, `neighbours`).
+The toolkit is 85 registered tools in seven categories, implemented in the `analysis/`, `diagnostics/`, `discovery/` and `connectivity/` packages, the read-only port diagnostics (`port_inspect.py`, `port_diagnostics.py`, `port_history.py`, behind `core/utils/readonly.py`'s guard, with secrets stripped by `core/utils/redact.py` and each port's effective profile resolved by `analysis/link_settings.py`) and the `mcp/tools/` wrappers for the Integration API and Protect. All of them are registered via YAML manifests and exposed through the MCP server. Several analysis modules are CLI-only and not registered: the SSH tools (latency matrix, bandwidth test, the `gateway` probes) and the snapshot-and-compare commands (`analyze link-errors`, `roaming`, `config-drift`, `neighbours`).
 
 ### Tool inventory
 
@@ -585,12 +594,13 @@ Twelve of the later analysis modules fall into four functional groups. Only the 
 | `radio_config.py` | `snapshot_radio_config`, `apply_radio_config`, `restore_radio_config` | Reversible AP radio changes |
 | `channel_optimiser.py` | `analyze_channels`, `optimize_5ghz`, `optimize_24ghz`, `optimize_radio_channels_mcp` | Utilization-weighted channel assignment with DFS penalty scoring |
 
-**SSH-based tools** (CLI only: `diagnose latency-matrix`, `diagnose bandwidth`) — require `asyncssh` and gateway SSH credentials (`UNIFI_SSH_PASSWORD`, see [section 10](#10-layer-8-ssh-integration)):
+**SSH-based tools** (CLI only: `diagnose latency-matrix`, `diagnose bandwidth` and the `gateway` probes) — require `asyncssh` and gateway SSH credentials (`UNIFI_SSH_PASSWORD`, see [section 10](#10-layer-8-ssh-integration)):
 
 | Module | Function | Purpose |
 | --- | --- | --- |
 | `latency_matrix.py` | `run_latency_matrix()` | SSH to UDM, ping all device/client IPs, build RTT/loss matrix |
 | `bandwidth_test.py` | `run_bandwidth_test()` | SSH to UDM, run iperf3 to target, report throughput |
+| `connectivity/gateway_probe.py` | `gateway_ping()`, `gateway_traceroute()`, `gateway_dns_check()`, `gateway_http_check()` and the conntrack flow reader | One probe per SSH session: ping, traceroute, nslookup, curl (`--globoff`) or conntrack, each an argv with its own bound |
 
 **Time-series analysis** (CLI only: the `analyze link-errors`, `roaming`, `config-drift` and `neighbours` commands) — snapshot/compare pattern with JSON baselines:
 
@@ -906,13 +916,14 @@ graph TD
 
 ## 10. Layer 8: SSH Integration
 
-Two analysis tools require direct SSH access to the UDM gateway to execute commands that cannot be performed via the REST API. Both go through `analysis/gateway_ssh.py`, the only module that opens an SSH session (`asyncssh`, non-blocking).
+The latency matrix, the bandwidth test and the gateway probes require direct SSH access to the UDM gateway to execute commands that cannot be performed via the REST API. All three go through `analysis/gateway_ssh.py`, the only module that opens an SSH session (`asyncssh`, non-blocking).
 
 ```mermaid
 graph TD
     subgraph ssh_layer["SSH Integration Layer"]
         LM["latency_matrix.py\nrun_latency_matrix()"]
         BW["bandwidth_test.py\nrun_bandwidth_test()"]
+        GP["connectivity/gateway_probe.py\nping / traceroute / dns / http / flows"]
         GS["gateway_ssh.py\ngateway_session()\nrun_gateway_command()"]
         CREDS["Credentials.from_env()\n+ UNIFI_SSH_USERNAME\n+ UNIFI_SSH_PASSWORD"]
     end
@@ -920,20 +931,23 @@ graph TD
     subgraph gateway["UDM Pro Max (SSH target)"]
         PING["ping -c N -W T <ip>"]
         IPERF["iperf3 -c <ip> -t D -P P -J"]
+        PROBES["traceroute / nslookup / curl\nconntrack -L / ip -j addr show"]
     end
 
     LM --> GS
     BW --> GS
+    GP --> GS
     GS -->|"run_gateway_command(argv, timeout)"| PING
     GS -->|"run_gateway_command(argv, timeout)"| IPERF
+    GS -->|"run_gateway_command(argv, timeout)"| PROBES
     CREDS --> GS
 ```
 
 **Why SSH?** The UniFi REST API provides no endpoint for active probing (ping, traceroute, iperf3). SSH to the gateway is the only way to measure real latency and throughput from the network's vantage point — analogous to running `show ip route` or `ping` from a router's CLI in traditional networking.
 
-**Connection pattern**: Both tools open one session with `gateway_ssh.gateway_session()`, the only caller of `asyncssh.connect()` in `src/` (a test scans for any other). It connects with `known_hosts=None` (the `GATEWAY_KNOWN_HOSTS` constant), which turns off SSH host-key verification (see [issue 038](../issues/038-ssh-host-key-verification-disabled.md); TLS certificates are a separate setting), and `preferred_auth='keyboard-interactive,password'`. The login comes from `gateway_ssh.ssh_login()`: the username from `UNIFI_SSH_USERNAME` (default `root`) and the password only from `UNIFI_SSH_PASSWORD`. Without it both tools stop with `CONFIG_MISSING` before any request; `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH, because it isn't the console's SSH password and a wrong password leaves failed root logins on the gateway. A failed connect is `CONTROLLER_UNREACHABLE`, "SSH connection to {host} failed: …", with the exception text redacted; the connect, handshake and login together are bounded at 30 s (`SSH_CONNECT_TIMEOUT`), so a stalled gateway ends as "SSH connection to {host} timed out after 30s".
+**Connection pattern**: Every SSH tool opens one session per run (each `gateway` probe its own) with `gateway_ssh.gateway_session()`, the only caller of `asyncssh.connect()` in `src/` (a test scans for any other). It connects with `known_hosts=None` (the `GATEWAY_KNOWN_HOSTS` constant), which turns off SSH host-key verification (see [issue 038](../issues/038-ssh-host-key-verification-disabled.md); TLS certificates are a separate setting), and `preferred_auth='keyboard-interactive,password'`. The login comes from `gateway_ssh.ssh_login()`: the username from `UNIFI_SSH_USERNAME` (default `root`) and the password only from `UNIFI_SSH_PASSWORD`. Without it each tool stops with `CONFIG_MISSING` before any request (a `gateway` probe checks it before it looks a name up); `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH, because it isn't the console's SSH password and a wrong password leaves failed root logins on the gateway. A failed connect is `CONTROLLER_UNREACHABLE`, "SSH connection to {host} failed: …", with the exception text redacted; the connect, handshake and login together are bounded at 30 s (`SSH_CONNECT_TIMEOUT`), so a stalled gateway ends as "SSH connection to {host} timed out after 30s".
 
-**Command lines**: every value is checked before it goes on a command line run on the gateway, normally as root (`analysis/gateway_ssh.py`). Each address must parse with `ipaddress` and carry no IPv6 zone id (`ipaddress` accepts any text after `%`); `--count` must be 1–100, `--timeout` 1–60 s, `--duration` 1–86400 s and `--parallel` 1–128 (iperf3's own limits). Each command is an argv list that `run_gateway_command()` joins with `shlex.join`, under a timeout the caller must state (`count × timeout + 5` s per ping, `duration + 15` s for iperf3); a timeout is `TIMEOUT`, naming the program and the bound only.
+**Command lines**: every value is checked before it goes on a command line run on the gateway, normally as root (`analysis/gateway_ssh.py`). Each address must parse with `ipaddress` and carry no IPv6 zone id (`ipaddress` accepts any text after `%`); `--count` must be 1–100, `--timeout` 1–60 s, `--duration` 1–86400 s and `--parallel` 1–128 (iperf3's own limits). Each command is an argv list that `run_gateway_command()` joins with `shlex.join`, under a timeout the caller must state (`count × timeout + 5` s per ping, `duration + 15` s for iperf3); a timeout is `TIMEOUT`, naming the program and the bound only. The `gateway` probes bound their own values the same way (ping count 1–100 and interval 0.2–5.0 s, traceroute 1–30 hops, curl `--max-time` 1–60 s, at most 5000 flows; a hostname, URL with no user name or password, or interface name each has its own check) and their timeouts follow their arguments (`count × interval + 12` s for ping, `hops × 6 + 15` s for traceroute, 20 s for nslookup, `--max-time + 10` s for curl, 60 s for conntrack).
 
 **Latency matrix** SSHs once, then runs `ping -c {count} -W {timeout} {ip}` for each target IP, ten at a time, parsing RTT stats from stdout. A target whose IP fails the check is not pinged and is listed in `skipped_targets`. Returns a `LatencyMatrixReport` with per-target `LatencyResult` entries.
 
@@ -1352,6 +1366,7 @@ graph TD
         GS["analysis/gateway_ssh"]
         LM["analysis/latency_matrix"]
         BW["analysis/bandwidth_test"]
+        GP["connectivity/gateway_probe"]
     end
 
     subgraph network_cp["Network Control Plane"]
@@ -1486,13 +1501,13 @@ Used by `protect/aiport.py` to communicate with third-party cameras paired to Un
 
 ### 15.3a SSH (Gateway Management Plane)
 
-Used by `analysis/latency_matrix.py` and `analysis/bandwidth_test.py` to execute commands on the UDM gateway. Every session and command goes through `analysis/gateway_ssh.py` (`gateway_session()`, `run_gateway_command()`), on `asyncssh`.
+Used by `analysis/latency_matrix.py`, `analysis/bandwidth_test.py` and `connectivity/gateway_probe.py` to execute commands on the UDM gateway. Every session and command goes through `analysis/gateway_ssh.py` (`gateway_session()`, `run_gateway_command()`), on `asyncssh`.
 
 | Interface | Protocol | Auth | Notes |
 | --- | --- | --- | --- |
 | UDM SSH | SSH (port 22) | Password (`UNIFI_SSH_USERNAME` / `UNIFI_SSH_PASSWORD`) | `known_hosts=None`: the host key isn't verified ([issue 038](../issues/038-ssh-host-key-verification-disabled.md)) |
 
-Commands executed: `ping` (latency matrix), `iperf3` (bandwidth test).
+Commands executed: `ping` (latency matrix, `gateway ping`), `iperf3` (bandwidth test), `traceroute`, `nslookup`, `curl`, `conntrack -L` and `ip -j addr show` (the `gateway` probes).
 
 ### 15.4 MQTT (Home Assistant Integration)
 

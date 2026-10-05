@@ -82,7 +82,7 @@ UNIFI_TIMEOUT=10                         # API timeout in seconds
 
 | Family | Keys | Used by |
 | --- | --- | --- |
-| Gateway SSH | `UNIFI_SSH_PASSWORD` (required), `UNIFI_SSH_USERNAME` (default `root`) | `diagnose latency-matrix` and `diagnose bandwidth` only (no MCP tool uses SSH) |
+| Gateway SSH | `UNIFI_SSH_PASSWORD` (required), `UNIFI_SSH_USERNAME` (default `root`) | `diagnose latency-matrix`, `diagnose bandwidth` and the `gateway` probes only (no MCP tool uses SSH) |
 | `network_api` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID`, all three | The six MCP network tools |
 | `protect` | `PROTECT_HOST`, `PROTECT_USERNAME`, `PROTECT_PASSWORD` | The five MCP Protect tools and the Protect monitor |
 
@@ -205,6 +205,14 @@ unifi-mapper diagnose latency-matrix --devices-only --count 5 --timeout 2
 unifi-mapper diagnose bandwidth 192.0.2.50 --bidir --duration 10
 unifi-mapper diagnose bandwidth 192.0.2.50 --reverse --parallel 4
 
+# Live probes run on the gateway over SSH (CLI only); a name resolves through the
+# read-only controller client, --vlan to the interface whose address is in its subnet
+unifi-mapper gateway ping "Phone A" --count 5
+unifi-mapper gateway traceroute 203.0.113.53 --max-hops 15
+unifi-mapper gateway dns www.example.com --server 203.0.113.53
+unifi-mapper gateway http http://www.example.com/ --vlan 30
+unifi-mapper gateway flows --ip 192.0.2.50 --state unreplied
+
 # One device's CPU, memory, load, uptime, radios and per-VAP TX counters
 unifi-mapper diagnose device-stats "AP 1" --json
 
@@ -247,11 +255,11 @@ consistency, SFP diagnostics, radio optimisation, firmware skew, DHCP pools, PoE
 client density, uplink redundancy, uplink VLAN transparency, device power budget, foreign
 bridges and telemetry freshness.
 
-The latency matrix and bandwidth tests SSH to the gateway, so they need SSH enabled in
-UniFi OS (Settings > Control Plane > Console) and `UNIFI_SSH_PASSWORD` in your config, plus
-`UNIFI_SSH_USERNAME` if the SSH user isn't `root`. Without `UNIFI_SSH_PASSWORD` both exit 1
-before connecting to anything, and print this on stderr (the first line, once per command,
-comes before every SSH command runs; see
+The latency matrix, the bandwidth test and the `gateway` probes SSH to the gateway, so they
+need SSH enabled in UniFi OS (Settings > Control Plane > Console) and `UNIFI_SSH_PASSWORD` in
+your config, plus `UNIFI_SSH_USERNAME` if the SSH user isn't `root`. Without
+`UNIFI_SSH_PASSWORD` each exits 1 before connecting to anything, and prints this on stderr
+(the first line, once per command, comes before every SSH command runs; see
 [issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)):
 
 ```text
@@ -260,7 +268,7 @@ comes before every SSH command runs; see
 💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
 ```
 
-Any other failure of either command is also a line on stderr, with secrets redacted.
+Any other failure of these commands is also a line on stderr, with secrets redacted.
 
 `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH. Every address and number is
 checked before it reaches the gateway's command line, which is shell-quoted as well:
@@ -532,6 +540,11 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `diagnose inter-vlan` | Inter-VLAN routing and firewall verdict between two endpoints |
 | `diagnose latency-matrix` | SSH to the gateway and ping every device |
 | `diagnose bandwidth` | iperf3 throughput test via the gateway |
+| `gateway ping` | Ping one target from the gateway over SSH (loss, round trips) |
+| `gateway traceroute` | The gateway's real forwarding path to a target, over SSH |
+| `gateway dns` | Resolve a hostname on the gateway over SSH (nslookup) |
+| `gateway http` | Fetch a URL from the gateway over SSH, from a VLAN's interface if asked |
+| `gateway flows` | The gateway's conntrack flows over SSH, filtered by address or state |
 | `inventory list` | List devices with upgrade information |
 | `inventory check-updates` | Check for firmware updates |
 | `inventory firmware-skew` | Report firmware version skew by model |

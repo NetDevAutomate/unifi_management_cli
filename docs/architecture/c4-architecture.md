@@ -349,7 +349,7 @@ C4Component
         Component(analysis_pkg, "analysis/ (47 registered MCP tools, 50 modules)", "Python", "Capacity, firmware, IP conflicts, LAG, link quality and link speeds, MAC table, MTU, QoS, PoE and power budgets, port-profile usage, radio, SFP, STP, traffic matrix, uplinks, VLAN, freshness and 10G readiness analysis.")
         Component(diagnostics_pkg, "diagnostics/ (11 registered MCP tools, 9 modules)", "Python", "connectivity_analysis, network_health, performance_analysis, security_audit, inspect_port, port_diagnostics_tools, observability, wan_health, wan_history; backup/verify registers verify_config_backup here too. port_diagnostics_tools also provides get_client_history (discovery) and the observability tools get_device_events, get_recent_events and get_port_counter_rates; observability provides get_device_stats, get_ap_retry_rates, get_config_object and find_recent_config_changes.")
         Component(discovery_pkg, "discovery/ (5 registered MCP tools, 4 modules)", "Python", "client_trace, find_device, find_ip, find_mac; get_client_history lives in diagnostics/")
-        Component(connectivity_pkg, "connectivity/ (4 registered MCP tools)", "Python", "firewall_check, path_analysis, traceroute, inter_vlan")
+        Component(connectivity_pkg, "connectivity/ (4 registered MCP tools)", "Python", "firewall_check, path_analysis, traceroute, inter_vlan; gateway_probe (SSH, CLI only)")
         Component(network_pkg, "network/ (6 registered MCP tools)", "Python", "Control plane: firewall zones/policies, ACL rules, DNS policies, clients, and networks")
     }
 

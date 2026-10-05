@@ -4,10 +4,11 @@ The root ``tests/conftest.py`` bans a real ``asyncssh.connect`` in every test
 (``_no_live_ssh``). A test that needs SSH installs ``FakeSSH`` over the ban with
 ``monkeypatch.setattr(asyncssh, 'connect', FakeSSH())``; the later patch wins. Each
 connection records every command it is asked to run and answers ``ping`` and ``iperf3`` with
-canned output.
+canned output, or, given ``replies``, each program (the command's first word) with its own.
 """
 
 import json
+import shlex
 from typing import Any
 
 
@@ -29,20 +30,30 @@ IPERF3_OK = json.dumps(
 class FakeProcess:
     """What ``SSHClientConnection.run`` returns."""
 
-    def __init__(self, stdout: str, exit_status: int = 0) -> None:
+    def __init__(self, stdout: str, exit_status: int = 0, stderr: str = '') -> None:
         self.stdout = stdout
-        self.stderr = ''
+        self.stderr = stderr
         self.exit_status = exit_status
+
+
+# A reply: the stdout, or (stdout, stderr, exit status).
+Reply = str | tuple[str, str, int]
 
 
 class FakeConnection:
     """What ``asyncssh.connect`` returns: records every command it is asked to run."""
 
-    def __init__(self) -> None:
+    def __init__(self, replies: dict[str, Reply] | None = None) -> None:
         self.commands: list[str] = []
+        self.replies = replies or {}
 
     async def run(self, command: str, check: bool = False) -> FakeProcess:
         self.commands.append(command)
+        reply = self.replies.get(shlex.split(command)[0]) if self.replies else None
+        if isinstance(reply, tuple):
+            return FakeProcess(reply[0], exit_status=reply[2], stderr=reply[1])
+        if reply is not None:
+            return FakeProcess(reply)
         return FakeProcess(IPERF3_OK if command.startswith('iperf3 ') else PING_OK)
 
     async def __aenter__(self) -> 'FakeConnection':
@@ -55,13 +66,14 @@ class FakeConnection:
 class FakeSSH:
     """Stands in for ``asyncssh.connect``; one connection per call."""
 
-    def __init__(self) -> None:
+    def __init__(self, replies: dict[str, Reply] | None = None) -> None:
         self.connects: list[tuple[str, dict[str, Any]]] = []
         self.connections: list[FakeConnection] = []
+        self.replies = replies
 
     async def __call__(self, host: str, **kwargs: Any) -> FakeConnection:
         self.connects.append((host, kwargs))
-        self.connections.append(FakeConnection())
+        self.connections.append(FakeConnection(self.replies))
         return self.connections[-1]
 
     @property

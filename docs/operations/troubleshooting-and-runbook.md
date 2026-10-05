@@ -220,10 +220,11 @@ Authentication issue with devices endpoint. Attempting to re-authenticate...
 
 #### Gateway SSH Commands Fail
 
-`diagnose latency-matrix` and `diagnose bandwidth` run `ping` and `iperf3` on the gateway
-over SSH. They are the only commands that use SSH, and no MCP tool does.
+`diagnose latency-matrix`, `diagnose bandwidth` and the `gateway` probes (`ping`,
+`traceroute`, `dns`, `http`, `flows`) run commands on the gateway over SSH. They are the only
+commands that use SSH, and no MCP tool does.
 
-**Symptom**: both exit 1 before connecting to anything, and print this on stderr (the first
+**Symptom**: each exits 1 before connecting to anything, and prints this on stderr (the first
 line, once per command, comes before every SSH command runs; see
 [issue 038](../issues/038-ssh-host-key-verification-disabled.md)):
 
@@ -233,7 +234,7 @@ line, once per command, comes before every SSH command runs; see
 💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
 ```
 
-Every other failure of either command is also one line on stderr: a refused or failed
+Every other failure of these commands is also one line on stderr: a refused or failed
 connection is `[CONTROLLER_UNREACHABLE] SSH connection to <gateway> failed: …`, a gateway
 that stalls during the connect, handshake or login is `[CONTROLLER_UNREACHABLE] SSH
 connection to <gateway> timed out after 30s`, and an unexpected error is `Error: …`, with
@@ -1379,7 +1380,7 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
 | `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
 | `UNIFI_CONFIG` | No | XDG search | File path | The env file to read, like `--config` (see section 1). |
-| `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix` and `diagnose bandwidth` (see section 2). |
+| `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix`, `diagnose bandwidth` and the `gateway` probes (see section 2). |
 | `UNIFI_SSH_USERNAME` | No | `root` | String | Gateway SSH user. |
 | `UNIFI_STP_OVERRIDES` | No | `~/.config/unifi_management_cli/stp_overrides.yaml` | File path | Root-eligible and forced-access switch MACs for the STP optimiser. |
 | `XDG_CONFIG_HOME` | No | `~/.config` | Directory path | Overrides XDG config base directory. |

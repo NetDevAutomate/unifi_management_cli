@@ -117,7 +117,7 @@ graph TB
         ANA["analysis/\n50 modules, 47 tools"]
         DIA["diagnostics/\n9 modules, 11 tools"]
         DIS["discovery/\n4 modules, 5 tools"]
-        CON["connectivity/\n4 modules, 4 tools"]
+        CON["connectivity/\n5 modules, 4 tools"]
         NET["network/\n12 modules"]
         PRO["protect/\n9 modules"]
     end
@@ -942,8 +942,9 @@ Analysis modules expose focused `async` functions or pure data helpers. Controll
 | `client_density.py` | `analyze_client_density` | Wireless client density analysis per AP |
 | `config_drift.py` | `snapshot_config`, `detect_drift` | Configuration drift detection with baseline snapshot and diff |
 | `dhcp_pool.py` | `check_dhcp_pool_utilization` | DHCP pool utilization and exhaustion analysis |
-| `gateway_ssh.py` | `gateway_session`, `run_gateway_command`, `require_ip`, `require_hostname`, `require_http_url`, `require_interface_name`, `require_bounded_int`, `require_bounded_float`, `ssh_login` | The only SSH door: opens every gateway session and runs every command as a shell-quoted argv under a timeout the caller states; checks every value before it goes on a command line, and reads the SSH login from `UNIFI_SSH_*` only (latency matrix, bandwidth test) |
+| `gateway_ssh.py` | `gateway_session`, `run_gateway_command`, `require_ip`, `require_hostname`, `require_http_url`, `require_interface_name`, `require_bounded_int`, `require_bounded_float`, `ssh_login` | The only SSH door: opens every gateway session and runs every command as a shell-quoted argv under a timeout the caller states; checks every value before it goes on a command line, and reads the SSH login from `UNIFI_SSH_*` only (latency matrix, bandwidth test, gateway probes) |
 | `latency_matrix.py` | `run_latency_matrix` | Gateway-centric ping matrix via SSH across all device and client IPs |
+| `vlan_interfaces.py` | `resolve_vlan_interfaces` | Pure: maps each VLAN network to the gateway interface whose address is in its subnet (never by name), the rest unresolved |
 | `link_error_tracking.py` | `snapshot_link_errors`, `compare_link_errors` | Link error rate tracking with baseline deltas for active degradation detection |
 | `neighbour_scan.py` | `scan_neighbours`, `get_our_ap_bssids`, `compute_channel_neighbour_score` | RF neighbour AP scanning for external network detection per channel |
 | `poe_budget.py` | `check_poe_budget` | PoE budget validation: per-switch consumption vs capacity |
@@ -1001,7 +1002,7 @@ Four modules for locating specific assets, all on `UniFiClient`. The `discovery`
 
 ## 14. `connectivity/` Package
 
-Four connectivity tools. All use `UniFiClient`.
+Four connectivity tools, all on `UniFiClient`, and the CLI-only gateway probes over SSH.
 
 | Module | Purpose |
 |---|---|
@@ -1009,6 +1010,7 @@ Four connectivity tools. All use `UniFiClient`.
 | `inter_vlan.py` | `check_inter_vlan_routing`: resolves two endpoints, their VLANs and gateway, and the firewall verdict between them (`diagnose inter-vlan`) |
 | `path_analysis.py` | Calculates layer-2 and layer-3 path between two endpoints |
 | `traceroute.py` | Logical traceroute through UniFi topology (does not send ICMP) |
+| `gateway_probe.py` | `gateway ping`, `traceroute`, `dns`, `http` and `flows` (CLI only, no MCP tool): one SSH session per probe through `analysis/gateway_ssh.py`, an argv with its own bound, July's parsers; names resolve through the read-only `UniFiClient()` |
 
 The package `__init__.py` exports `firewall_check`, `path_analysis`, `traceroute`, `check_inter_vlan_routing` and its models directly.
 

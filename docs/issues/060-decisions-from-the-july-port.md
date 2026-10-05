@@ -23,9 +23,9 @@ plan, kept outside the repo), and the port's last update records the commit for 
 
 ## Decision needed
 
-- **D1: expose the class B probes over MCP?** These are `diagnose latency-matrix` (it exists)
-  and the CLI-only probes the port plans: the gateway probes (`gateway ping`, `traceroute`,
-  `dns`, `http`, `flows`; planned in item 15), `diagnose client-connectivity` and AP-health
+- **D1: expose the class B probes over MCP?** These are `diagnose latency-matrix` (it exists),
+  the gateway probes (`gateway ping`, `traceroute`, `dns`, `http`, `flows`; they exist, CLI
+  only) and the CLI-only probes the port plans: `diagnose client-connectivity` and AP-health
   sampling with client pings (planned in item 16), and an on-demand `vlan-traffic sample`
   (planned in item 17). Recommendation: **not by default, and not before issue
   [038](038-ssh-host-key-verification-disabled.md) is fixed**: an MCP-triggered probe would
