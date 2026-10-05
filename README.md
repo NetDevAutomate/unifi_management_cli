@@ -236,7 +236,9 @@ lists what it removed by key path in `sanitised_paths`, never by value. `control
 config-changes` dates each object by the creation time its ID records, so an edit to an older
 object does not appear; `controller events` shows the edits, in the admin-activity system log.
 `backup verify` contacts nothing: it decrypts the backup with the controller's fixed backup key
-and reports which collections it holds and how many documents each has, never their contents.
+and reports which collections it holds and how many documents each has, never their contents
+(a collection outside the known UniFi set is counted as `other`, and a version that is not a
+version number is shown as `<unrecognised>`, so no string from the file is echoed unchecked).
 A truncated download, or a database holding a document that does not decode, is reported as
 not valid (exit 1).
 

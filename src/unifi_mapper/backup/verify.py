@@ -8,9 +8,12 @@ declared size before any of it is inflated, so a small crafted file can't exhaus
 The documents must parse cleanly: one that fails to decode, or bytes left after the last
 whole document (a truncated download), make the backup invalid.
 Documents are counted as they are decoded and none is kept, so the result never carries a
-setting, a password hash or any other value from the backup. Expected failures (a foreign
-or corrupt file) are a result with ``valid: false`` and an ``errors`` list naming the stage
-and the exception class, never bytes or messages.
+setting, a password hash or a document's contents. Two strings do come from the backup, and
+each is checked first: the version only when it is a version number (``9.10.0``), else
+``<unrecognised>``, and a collection name only when it is one of :data:`KNOWN_COLLECTIONS`;
+every other document is counted under ``other``, so no name a document chose is echoed.
+Expected failures (a foreign or corrupt file) are a result with ``valid: false`` and an
+``errors`` list naming the stage and the exception class, never bytes or messages.
 
 The backup is read from a local path only: no controller is contacted and this module
 imports no client (``credentials: none``). The path is checked before the file is opened:
@@ -20,6 +23,7 @@ regular file and at most 512 MiB.
 
 import asyncio
 import os
+import re
 import stat
 from pathlib import Path
 from pydantic import Field
@@ -33,6 +37,57 @@ MAX_DB_BYTES = 1024 * 1024 * 1024  # the decompressed database
 BACKUP_SUFFIX = '.unf'
 # Collections whose presence shows the backup carries the network configuration.
 KEY_SECTIONS = ('device', 'networkconf', 'wlanconf', 'setting')
+# The UniFi Network application's collections that are reported by name; any other name a
+# document carries (or none) is counted under OTHER_COLLECTION.
+KNOWN_COLLECTIONS = frozenset(
+    {
+        *KEY_SECTIONS,
+        'account',
+        'admin',
+        'alarm',
+        'apgroup',
+        'broadcastgroup',
+        'channelplan',
+        'dashboard',
+        'dhcpoption',
+        'dpiapp',
+        'dpigroup',
+        'dynamicdns',
+        'event',
+        'firewallgroup',
+        'firewallrule',
+        'heatmap',
+        'heatmappoint',
+        'hotspot2conf',
+        'hotspotop',
+        'hotspotpackage',
+        'map',
+        'mediafile',
+        'payment',
+        'portalfile',
+        'portconf',
+        'portforward',
+        'privilege',
+        'radiusprofile',
+        'rogue',
+        'rogueknown',
+        'routing',
+        'scheduletask',
+        'site',
+        'spatialrecord',
+        'tag',
+        'task',
+        'user',
+        'usergroup',
+        'verification',
+        'virtualdevice',
+        'voucher',
+        'wlangroup',
+    }
+)
+OTHER_COLLECTION = 'other'
+UNRECOGNISED_VERSION = '<unrecognised>'
+_VERSION_NUMBER = re.compile(r'\d{1,5}(?:\.\d{1,5}){1,3}')
 
 
 def _error(stage: str, error: BaseException | str) -> dict[str, str]:
@@ -41,8 +96,19 @@ def _error(stage: str, error: BaseException | str) -> dict[str, str]:
 
 
 def _version_of(doc: dict[str, Any]) -> str | None:
+    """The setting's version when it is a version number, ``<unrecognised>`` when it isn't."""
     version = doc.get('version') or doc.get('mgmt_cfgVersion')
-    return version if isinstance(version, str) and version else None
+    if version is None or version == '':
+        return None
+    if isinstance(version, str) and _VERSION_NUMBER.fullmatch(version):
+        return version
+    return UNRECOGNISED_VERSION
+
+
+def _reported_name(doc: dict[str, Any]) -> str:
+    """A document's collection when it is a known one, else :data:`OTHER_COLLECTION`."""
+    name = poc_decrypt.collection_name(doc)
+    return name if isinstance(name, str) and name in KNOWN_COLLECTIONS else OTHER_COLLECTION
 
 
 def verify_backup_bytes(data: bytes, *, max_db_bytes: int = MAX_DB_BYTES) -> dict[str, Any]:
@@ -60,8 +126,10 @@ def verify_backup_bytes(data: bytes, *, max_db_bytes: int = MAX_DB_BYTES) -> dic
     Returns:
         ``valid`` (every stage worked, at least one document decoded and the stream parsed
         cleanly: no document failed to decode and no byte was left after the last one),
-        ``format`` (``bson`` when valid), ``version`` (the controller version a ``setting``
-        document names, or None), ``collections`` (name to document count),
+        ``format`` (``bson`` when valid), ``version`` (the version number a ``setting``
+        document names, ``<unrecognised>`` when it names something else, or None),
+        ``collections`` (each of :data:`KNOWN_COLLECTIONS` found, plus ``other``, to its
+        document count),
         ``key_sections_present`` (each of :data:`KEY_SECTIONS` to bool),
         ``bson_parse_errors`` (0, or 1 when the walk stopped at a corrupt or truncated
         document: it stops at the first, so its cost stays linear) and ``errors``
@@ -105,7 +173,7 @@ def _verify(buffer: list[bytes], max_db_bytes: int) -> dict[str, Any]:
     version: str | None = None
     parse_errors: list[tuple[int, str]] = []
     for doc in poc_decrypt.iter_bson_documents(payload, parse_errors, strict=True):
-        name = str(poc_decrypt.collection_name(doc))
+        name = _reported_name(doc)
         counts[name] = counts.get(name, 0) + 1
         if name == 'setting' and version is None:
             version = _version_of(doc)

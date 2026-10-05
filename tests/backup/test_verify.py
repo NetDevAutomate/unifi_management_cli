@@ -78,6 +78,50 @@ def test_the_result_holds_no_document_content() -> None:
         assert value not in dumped
 
 
+FAKE_SECRET = 'x_passphrase=FAKE-PASSPHRASE-MUST-NOT-APPEAR'  # pragma: allowlist secret
+
+
+@pytest.mark.parametrize(
+    ('value', 'reported'),
+    [
+        ('9.10.0', '9.10.0'),
+        ('8.6.9.1', '8.6.9.1'),
+        (FAKE_SECRET, '<unrecognised>'),
+        ('9.10.0 ' + FAKE_SECRET, '<unrecognised>'),
+        ('123456.0', '<unrecognised>'),
+        ('9', '<unrecognised>'),
+    ],
+    ids=['three parts', 'four parts', 'secret', 'secret after a version', 'long part', 'one part'],
+)
+def test_only_a_version_number_is_reported(value: str, reported: str) -> None:
+    setting = [{'_id': 'set1', 'key': 'super', 'version': value}]
+    result = verify_backup_bytes(build_unf_bytes({**COLLECTIONS, 'setting': setting}))
+    assert result['valid'] is True and result['version'] == reported
+    assert 'FAKE-PASSPHRASE' not in json.dumps(result)
+
+
+def test_only_known_collection_names_are_reported() -> None:
+    collections = {
+        **COLLECTIONS,
+        FAKE_SECRET: [{'_id': 'x1'}],
+        'mystery': [{'_id': 'm1'}, {'_id': 'm2'}],
+    }
+    stream = bson_stream(collections) + bson.encode({'_id': 'no-type'})
+    result = verify_backup_bytes(build_unf_bytes(db_gz=_gz(stream)))
+    assert result['valid'] is True
+    assert result['collections'] == {
+        'device': 1,
+        'networkconf': 1,
+        'other': 4,  # the secret-looking name, 'mystery' twice and the untyped document
+        'setting': 1,
+        'usergroup': 1,
+        'wlanconf': 1,
+    }
+    dumped = json.dumps(result)
+    assert 'FAKE-PASSPHRASE' not in dumped and 'mystery' not in dumped
+    assert {'device', 'networkconf', 'setting', 'wlanconf'} <= verify.KNOWN_COLLECTIONS
+
+
 def test_a_missing_section_is_flagged_but_still_valid() -> None:
     collections = {k: v for k, v in COLLECTIONS.items() if k != 'wlanconf'}
     result = verify_backup_bytes(build_unf_bytes(collections))
