@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from unifi_mapper.analysis.gateway_ssh import (
+    check_exit_status,
     gateway_session,
     require_bounded_int,
     require_ip,
@@ -481,6 +482,7 @@ async def _ping_clients(conn: Any, ips: list[str]) -> dict[str, dict[str, Any]]:
             address = require_ip(ip)
             argv = ['ping', '-c', str(PING_COUNT), '-i', f'{PING_INTERVAL:g}', '-W', '2', address]
             out = await run_gateway_command(conn, argv, timeout=PING_COUNT * PING_INTERVAL + 12)
+            check_exit_status(out, 'ping', (0, 1))  # 1 is no reply; anything else: not run
         except ToolError as e:
             results[ip] = {'error': e.error_code, 'detail': _failure_text(e.message)}
             continue

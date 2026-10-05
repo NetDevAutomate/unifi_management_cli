@@ -475,6 +475,109 @@ async def test_a_vlan_with_no_live_interface_is_no_data(
     assert _argv(ssh) == [['ip', '-j', 'addr', 'show']]  # no curl
 
 
+# --- a probe that could not run is an error, not a result (review F7) ----------------------
+
+FAKE_STDERR_PW = 'FAKE-STDERR-PASSWORD'  # pragma: allowlist secret
+
+
+@pytest.mark.parametrize(
+    ('program', 'reply', 'call'),
+    [
+        (
+            'ping',
+            ('', 'ping: socket: Operation not permitted', 2),
+            lambda: gateway_ping('192.0.2.50'),
+        ),
+        (
+            'traceroute',
+            ('', 'sh: traceroute: not found', 127),
+            lambda: gateway_traceroute('192.0.2.50'),
+        ),
+        (
+            'nslookup',
+            ('', 'sh: nslookup: not found', 127),
+            lambda: gateway_dns_check('www.example.com'),
+        ),
+        (
+            'curl',
+            ('', 'sh: curl: not found', 127),
+            lambda: gateway_http_check('https://www.example.com/'),
+        ),
+        (
+            'conntrack',
+            ('', 'conntrack v1.4: Operation not permitted', 1),
+            lambda: get_active_flows(),
+        ),
+        ('conntrack', ('', f'error password={FAKE_STDERR_PW}', 1), lambda: get_active_flows()),
+    ],
+    ids=['ping 2', 'traceroute 127', 'nslookup 127', 'curl 127', 'conntrack 1', 'redacted'],
+)
+async def test_a_probe_that_could_not_run_is_an_api_error(
+    monkeypatch: pytest.MonkeyPatch, program: str, reply: tuple[str, str, int], call: Any
+) -> None:
+    monkeypatch.setattr(asyncssh, 'connect', FakeSSH({**REPLIES, program: reply}))
+    with pytest.raises(ToolError) as caught:
+        await call()
+    assert caught.value.error_code == ErrorCodes.API_ERROR
+    message = caught.value.message
+    assert message.startswith(f'{program} could not run on the gateway (exit status {reply[2]})')
+    assert FAKE_STDERR_PW not in message
+    if 'password' not in reply[1]:
+        assert reply[1] in message
+
+
+async def test_a_vlan_whose_interfaces_cannot_be_read_is_an_api_error(
+    monkeypatch: pytest.MonkeyPatch, controller: FakeController
+) -> None:
+    fake = FakeSSH({**REPLIES, 'ip': ('', 'sh: ip: not found', 127)})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    async with serving(controller):
+        with pytest.raises(ToolError) as caught:
+            await gateway_http_check('https://www.example.com/', vlan=30)
+    assert caught.value.error_code == ErrorCodes.API_ERROR
+    assert caught.value.message.startswith('ip could not run on the gateway (exit status 127)')
+
+
+@pytest.mark.parametrize(
+    ('program', 'reply', 'call', 'key', 'value'),
+    [
+        (
+            'ping',
+            ('1 packets transmitted, 0 received, 100% packet loss\n', '', 1),
+            lambda: gateway_ping('192.0.2.50', count=1),
+            'reachable',
+            False,
+        ),
+        (
+            'nslookup',
+            (NSLOOKUP_FAIL, '', 1),
+            lambda: gateway_dns_check('nowhere.invalid'),
+            'resolved',
+            False,
+        ),
+        (
+            'curl',
+            ('000 10.0 -', 'curl: (28) Operation timed out', 28),
+            lambda: gateway_http_check('https://www.example.com/'),
+            'ok',
+            False,
+        ),
+    ],
+    ids=['ping: no reply is exit 1', 'nslookup: NXDOMAIN is exit 1', 'curl: a timeout is 28'],
+)
+async def test_a_result_code_is_still_a_result(
+    monkeypatch: pytest.MonkeyPatch,
+    program: str,
+    reply: tuple[str, str, int],
+    call: Any,
+    key: str,
+    value: bool,
+) -> None:
+    monkeypatch.setattr(asyncssh, 'connect', FakeSSH({**REPLIES, program: reply}))
+    result = await call()
+    assert result[key] is value
+
+
 def test_the_flow_states_are_the_design_s() -> None:
     assert set(FLOW_STATES) == {
         'ESTABLISHED',

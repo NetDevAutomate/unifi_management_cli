@@ -19,7 +19,7 @@ import math
 import os
 import re
 import shlex
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Container, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from unifi_mapper.core.utils.auth import Credentials
@@ -203,6 +203,36 @@ async def run_gateway_command(
         stdout=as_text(result.stdout),
         stderr=as_text(result.stderr),
         exit_status=-1 if exit_status is None else exit_status,
+    )
+
+
+def check_exit_status(
+    result: GatewayResult, program: str, result_codes: Container[int] = (0,)
+) -> GatewayResult:
+    """Return ``result`` when its exit status is one of the program's result codes.
+
+    A program that could not run (missing, not permitted for the SSH user, killed) prints
+    nothing on stdout, which its parser would read as an answer: no flows, or 100% loss. So
+    any other status is an error naming the program and the status, with the last line of
+    its stderr redacted.
+
+    Args:
+        result: What :func:`run_gateway_command` returned.
+        program: The program's name, for the message.
+        result_codes: The statuses that carry a result (``ping`` 0 and 1, ``conntrack`` 0).
+
+    Raises:
+        ToolError: ``API_ERROR`` for any other status.
+    """
+    if result.exit_status in result_codes:
+        return result
+    lines = result.stderr.strip().splitlines()
+    detail = f': {redact_text(lines[-1])}' if lines else ''
+    status = result.exit_status
+    raise ToolError(
+        message=f'{program} could not run on the gateway (exit status {status}){detail}',
+        error_code=ErrorCodes.API_ERROR,
+        suggestion='Check that the SSH user may run it on the gateway (UNIFI_SSH_USERNAME)',
     )
 
 

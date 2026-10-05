@@ -240,7 +240,11 @@ connection is `[CONTROLLER_UNREACHABLE] SSH connection to <gateway> failed: …`
 that stalls during the connect, handshake or login is `[CONTROLLER_UNREACHABLE] SSH
 connection to <gateway> timed out after 30s`, and an unexpected error is `Error: …`, with
 any secret-looking value in its text redacted (a traceback only with `--debug`, without
-local variables).
+local variables). A probe whose program can't run on the gateway (missing, or not permitted
+for a non-root `UNIFI_SSH_USERNAME`) is `[API_ERROR] <program> could not run on the gateway
+(exit status N): <its last stderr line>`, never an empty answer such as "no flows" or 100%
+loss; `diagnose client-connectivity` reports that layer as could not run, and `diagnose
+ap-health --ping-clients` records it as that ping's error.
 
 **Resolution**:
 

@@ -261,6 +261,19 @@ async def test_a_failing_layer_never_hides_the_others(
     assert result['ok'] is False and result['verdict'].startswith('Inconclusive')
 
 
+async def test_a_conntrack_that_could_not_run_is_not_a_healthy_no_flows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review F7: an empty stdout from a conntrack the SSH user may not run read as "No live
+    conntrack flows" (healthy); now that layer could not run and the verdict says so."""
+    replies = {**REPLIES, 'conntrack': ('', 'conntrack v1.4: Operation not permitted', 1)}
+    monkeypatch.setattr(asyncssh, 'connect', FakeSSH(replies))
+    result = await _diagnose(_controller())
+    assert result['probes']['flows']['error_code'] == ErrorCodes.API_ERROR
+    assert 'No live conntrack flows' not in ' '.join(result['findings'])
+    assert result['ok'] is False and result['verdict'].startswith('Inconclusive')
+
+
 async def test_the_budget_ends_the_chain_and_names_what_did_not_run(
     ssh: FakeSSH, monkeypatch: pytest.MonkeyPatch
 ) -> None:

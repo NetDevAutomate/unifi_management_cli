@@ -353,6 +353,20 @@ async def test_a_ping_that_fails_with_any_error_is_recorded_and_the_run_goes_on(
     assert 'API_ERROR (Connection lost)' in render_markdown(report)
 
 
+async def test_a_ping_that_could_not_run_is_its_error_not_full_loss(
+    pauses: list[float], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review F7: a ping that can't run prints nothing, which read as 100% loss."""
+    fake = FakeSSH({'ping': ('', 'ping: socket: Operation not permitted', 2)})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    _, capture = await _run(
+        _controller(), target='AP 1', samples=1, interval=30, ping_clients=True
+    )
+    ping = capture.samples[0].pings['192.0.2.31']
+    assert ping['error'] == ErrorCodes.API_ERROR
+    assert ping['detail'].startswith('ping could not run on the gateway (exit status 2)')
+
+
 @pytest.mark.parametrize(
     'kwargs',
     [{'samples': 0}, {'samples': 61}, {'interval': 29}, {'interval': 601}],

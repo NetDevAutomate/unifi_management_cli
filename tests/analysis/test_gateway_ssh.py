@@ -38,6 +38,7 @@ from unifi_mapper.analysis.gateway_ssh import (
     SSH_PASSWORD_SUGGESTION,
     GatewayResult,
     as_text,
+    check_exit_status,
     gateway_session,
     require_bounded_float,
     require_bounded_int,
@@ -900,3 +901,21 @@ def test_a_refused_value_is_echoed_redacted(check: Callable[[object], str]) -> N
         check(f'token={FAKE_URL_PW}')
     assert FAKE_URL_PW not in exc.value.message
     assert 'token=' in exc.value.message
+
+
+def test_a_result_code_passes_and_any_other_status_is_an_api_error() -> None:
+    """Review F7: a program that could not run is an error, never an empty answer."""
+    ok = GatewayResult(stdout='out', stderr='', exit_status=1)
+    assert check_exit_status(ok, 'ping', (0, 1)) is ok
+    for status, stderr, detail in (
+        (2, 'first\nping: bad address', ': ping: bad address'),
+        (-1, '', ''),  # ended by a signal: no status
+        (127, f'sh: token={FAKE_URL_PW}', ': sh: token=***redacted***'),
+    ):
+        with pytest.raises(ToolError) as exc:
+            check_exit_status(GatewayResult('', stderr, status), 'ping', (0, 1))
+        assert exc.value.error_code == ErrorCodes.API_ERROR
+        assert (
+            exc.value.message
+            == f'ping could not run on the gateway (exit status {status}){detail}'
+        )

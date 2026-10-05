@@ -18,6 +18,7 @@ import json
 import re
 from typing import Any
 from unifi_mapper.analysis.gateway_ssh import (
+    check_exit_status,
     gateway_session,
     require_bounded_float,
     require_bounded_int,
@@ -52,6 +53,13 @@ FLOW_STATES = (
     'ASSURED',
 )
 DNS_TIMEOUT = 20
+# The exit statuses that carry each program's result; any other means it could not run
+# (``check_exit_status``). ping and nslookup exit 1 for no reply or no answer; curl's own
+# codes (6 could not resolve, 7 could not connect, 28 timed out, ...) are the HTTP check's
+# result, while 126 and 127 mean the shell could not run it.
+PING_RESULT_CODES = (0, 1)
+NSLOOKUP_RESULT_CODES = (0, 1)
+CURL_RESULT_CODES = range(126)
 FLOWS_TIMEOUT = 60  # July's 30 s, raised for busy tables
 INTERFACES_TIMEOUT = 15
 
@@ -365,7 +373,7 @@ async def gateway_ping(target: str, count: int = 10, interval: float = 0.3) -> d
     argv = ['ping', '-c', str(count), '-i', f'{interval:g}', '-W', '2', probe_ip]
     async with gateway_session() as conn:
         result = await run_gateway_command(conn, argv, timeout=count * interval + 12)
-    stats = parse_ping_output(result.stdout)
+    stats = parse_ping_output(check_exit_status(result, 'ping', PING_RESULT_CODES).stdout)
     return {
         'target': target,
         'probe_ip': probe_ip,
@@ -399,7 +407,7 @@ async def gateway_traceroute(target: str, max_hops: int = 20) -> dict[str, Any]:
     argv = ['traceroute', '-m', str(max_hops), '-w', '2', probe_ip]
     async with gateway_session() as conn:
         result = await run_gateway_command(conn, argv, timeout=max_hops * 6 + 15)
-    hops = parse_traceroute_output(result.stdout)
+    hops = parse_traceroute_output(check_exit_status(result, 'traceroute').stdout)
     last = hops[-1] if hops else None
     reached = (
         last is not None
@@ -433,6 +441,7 @@ async def gateway_dns_check(hostname: str, server: str | None = None) -> dict[st
     argv = ['nslookup', hostname, *([server] if server else [])]
     async with gateway_session() as conn:
         result = await run_gateway_command(conn, argv, timeout=DNS_TIMEOUT)
+    check_exit_status(result, 'nslookup', NSLOOKUP_RESULT_CODES)
     parsed = parse_nslookup_output(result.stdout + result.stderr)
     return {**parsed, 'hostname': hostname, 'requested_server': server}
 
@@ -443,7 +452,7 @@ async def _gateway_interfaces(conn: Any) -> list[dict[str, Any]]:
         conn, ['ip', '-j', 'addr', 'show'], timeout=INTERFACES_TIMEOUT
     )
     try:
-        parsed = json.loads(result.stdout)
+        parsed = json.loads(check_exit_status(result, 'ip').stdout)
     except ValueError:
         raise ToolError(
             message='ip -j addr show on the gateway did not return JSON',
@@ -504,7 +513,7 @@ async def gateway_http_check(
             '-w', WRITE_OUT, *(['--interface', iface] if iface else []), '--', url,
         ]  # fmt: skip
         result = await run_gateway_command(conn, argv, timeout=timeout_seconds + 10)
-    parsed = parse_curl_writeout(result.stdout)
+    parsed = parse_curl_writeout(check_exit_status(result, 'curl', CURL_RESULT_CODES).stdout)
     out = {**parsed, 'url': url, 'interface': iface, 'vlan': vlan}
     if not parsed['ok'] and result.stderr.strip():
         out['error'] = redact_text(result.stderr.strip().splitlines()[-1])
@@ -539,7 +548,8 @@ async def get_active_flows(
     limit = require_bounded_int('flow limit', limit, 1, 5000)
     async with gateway_session() as conn:
         result = await run_gateway_command(conn, ['conntrack', '-L'], timeout=FLOWS_TIMEOUT)
-    flows = parse_conntrack_output(result.stdout, ip=ip, state=state_filter)
+    stdout = check_exit_status(result, 'conntrack').stdout
+    flows = parse_conntrack_output(stdout, ip=ip, state=state_filter)
     return {
         'ip_filter': ip,
         'state_filter': state_filter,
