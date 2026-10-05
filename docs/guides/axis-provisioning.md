@@ -661,7 +661,7 @@ masked (`onvifuser:***@`), and `test-rtsp` prints the masked form. Error text, i
 ffprobe excerpt, is masked the same way, so neither command shows `ONVIF_PASSWORD`. To play a
 stream, build the authenticated form by hand from the masked line. `test-rtsp` passes the
 credentials to ffprobe on its command line, so other local users can see them in the process
-list while it runs.
+list while it runs ([issue 057](../issues/057-onvif-test-rtsp-puts-the-password-on-argv.md)).
 
 ---
 
