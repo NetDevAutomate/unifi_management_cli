@@ -107,3 +107,12 @@ class TestRetryDelta:
         prev = [_vap('SSID B', 1000, 10), _vap('SSID C', 2000, 20)]
         cur = [_vap('SSID B', 1100, 11), _vap('SSID C', 2500, 45)]
         assert retry_delta(prev, cur, 'Missing SSID') == (500, 25, 5.0)
+
+
+def test_a_retry_counter_regression_is_a_reset_too() -> None:
+    """Packets rose but retries fell: a reset of the retry counter, never a negative delta."""
+    prev = [_vap('SSID A', 1000, 100)]
+    cur = [_vap('SSID A', 1500, 40)]
+    dp, dr, pct = retry_delta(prev, cur, 'SSID A')
+    assert (dp, dr, pct) == (1500, 40, 2.7)
+    assert dp >= 0 and dr >= 0

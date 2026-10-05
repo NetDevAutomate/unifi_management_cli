@@ -73,10 +73,10 @@ def retry_delta(
 ) -> tuple[int, int, float | None]:
     """Return the interval delta of ``tx_packets``/``tx_retries`` for one VAP, reset-aware.
 
-    Counters are cumulative and reset on AP reboot. If the current cumulative value is lower
-    than the previous sample (or the VAP is missing from the previous sample), the counter is
-    treated as freshly reset and the current cumulative value becomes the delta: never a
-    negative number.
+    Counters are cumulative and reset on AP reboot. If either current cumulative value is
+    lower than the previous sample's (or the VAP is missing from the previous sample), the
+    counters are treated as freshly reset and the current cumulative values become the delta:
+    never a negative number.
 
     Args:
         prev_vaps: VAP counters from the previous sample, or None for the first sample
@@ -96,8 +96,13 @@ def retry_delta(
         base_p, base_r = 0, 0
     else:
         prev_v = next((v for v in prev_vaps if v.essid == cur_v.essid), None)
-        # Counter reset (AP rebooted): the cumulative value is the delta
-        if prev_v is None or cur_v.tx_packets < prev_v.tx_packets:
+        # Counter reset (AP rebooted, or either counter went down): the cumulative value is
+        # the delta, so neither delta is ever negative
+        if (
+            prev_v is None
+            or cur_v.tx_packets < prev_v.tx_packets
+            or cur_v.tx_retries < prev_v.tx_retries
+        ):
             base_p, base_r = 0, 0
         else:
             base_p, base_r = prev_v.tx_packets, prev_v.tx_retries
