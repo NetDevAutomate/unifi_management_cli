@@ -5279,7 +5279,10 @@ def diagnose_ap_health(
     ping_clients: bool = typer.Option(
         False,
         '--ping-clients',
-        help="Also ping up to 4 of each AP's 2.4 GHz clients from the gateway over SSH",
+        help=(
+            "Also ping up to 4 of each AP's wireless clients on 2.4 GHz (or with no radio "
+            'reported) from the gateway over SSH'
+        ),
     ),
     output: Optional[Path] = typer.Option(
         None, '--output', help='Also write the markdown report to this file (checked first)'
@@ -5291,11 +5294,13 @@ def diagnose_ap_health(
     Takes --samples reads --interval seconds apart (at most 60 x 600 s, 10 h; the expected
     duration is printed first) and reports each sample and the mean interval retry rate,
     beside a --reference AP when given. A sample whose read times out or fails is recorded
-    as missing. Read-only, with no power-cycle step. --ping-clients also pings each AP's
-    2.4 GHz clients from the gateway over SSH, as the SSH user (the gateway's host key is not
-    verified). --output is checked before the first sample and written after the report is
-    printed. Ctrl-C prints the samples taken so far as a partial report (and writes it to
-    --output) and exits 130; a failure that ends the run does the same and exits 1.
+    as missing. Read-only, with no power-cycle step. --ping-clients also pings up to 4 of each
+    AP's wireless clients from the gateway over SSH: those on 2.4 GHz, the radio the report
+    measures, and those whose radio the controller doesn't report (5 and 6 GHz clients are
+    left out), as the SSH user (the gateway's host key is not verified). --output is checked
+    before the first sample and written after the report is printed. Ctrl-C prints the
+    samples taken so far as a partial report (and writes it to --output) and exits 130; a
+    failure that ends the run does the same and exits 1.
     """
     import asyncio
     from .analysis.ap_health import (

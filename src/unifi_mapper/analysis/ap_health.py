@@ -195,10 +195,19 @@ def device_block(dev: dict[str, Any]) -> dict[str, Any]:
 
 
 def clients_on_ap(clients: list[Any], ap_mac: str) -> list[str]:
-    """The addresses of up to :data:`MAX_PINGED_CLIENTS` 2.4 GHz wireless clients on an AP.
+    """The addresses of up to :data:`MAX_PINGED_CLIENTS` wireless clients an AP pings. Pure.
 
-    Pure. Only clients on the radio the report measures are pinged, as in July: ``radio``
-    ``ng``, or not reported; a 5 or 6 GHz client is left out.
+    Only clients on the radio the report measures are pinged, as in July: ``radio`` ``ng``
+    (2.4 GHz), or not reported, since an unknown radio may be 2.4 GHz; a 5 or 6 GHz client
+    is left out, and so is a wired one or one without an address.
+
+    Args:
+        clients: The controller's client records (``stat/sta``).
+        ap_mac: The AP's MAC, in any notation.
+
+    Returns:
+        The clients' addresses, in the controller's order, at most
+        :data:`MAX_PINGED_CLIENTS` of them.
     """
     wanted = normalise_mac(ap_mac)
     found = [

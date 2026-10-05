@@ -10,11 +10,13 @@ the fake behind the real read-only guard; SSH is the shared fake over the root b
 
 import asyncio
 import asyncssh
+import click
 import inspect
 import json
 import pytest
 import shlex
 import stat
+import typer
 from pathlib import Path
 from tests.fake_controller import API, FakeController, legacy, route_cli, serving
 from tests.fake_ssh import FakeSSH
@@ -573,3 +575,11 @@ def test_the_command_has_help() -> None:
     assert result.exit_code == 0
     flat = ' '.join(result.output.split())
     assert 'Read-only' in flat and 'no power-cycle' in flat and 'exits 130' in flat
+    # Review M2 (council N1): the help states the filter clients_on_ap applies.
+    assert "whose radio the controller doesn't report (5 and 6 GHz clients are left out)" in flat
+    root = typer.main.get_command(app)
+    assert isinstance(root, click.Group)
+    group = root.commands['diagnose']
+    assert isinstance(group, click.Group)
+    option = next(p for p in group.commands['ap-health'].params if p.name == 'ping_clients')
+    assert 'on 2.4 GHz (or with no radio reported)' in (getattr(option, 'help', None) or '')

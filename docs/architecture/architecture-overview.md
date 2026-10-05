@@ -282,7 +282,7 @@ The lifespan resolves config once, installs one `SharedControllerClient` (from `
 | `diagnose wan-history` | `diagnostics/wan_history.py` | The recorded speedtest results (reads a local file only) |
 | `diagnose device-stats` | `diagnostics/observability.py` | One device's CPU, memory, load, uptime, radios and per-VAP counters |
 | `diagnose ap-retries` | `diagnostics/observability.py` | Every AP's per-VAP TX retry rate over an interval (two reads) |
-| `diagnose ap-health` | `analysis/ap_health.py` | One AP's 2.4 GHz counters sampled 1-60 times, 30-600 s apart, beside a reference AP; a markdown or JSON report (CLI only; `--ping-clients` pings each AP's 2.4 GHz clients over SSH; a failed read or ping is recorded, never fatal; Ctrl-C ends with a partial report, exit 130, a failure that ends the run with one, exit 1) |
+| `diagnose ap-health` | `analysis/ap_health.py` | One AP's 2.4 GHz counters sampled 1-60 times, 30-600 s apart, beside a reference AP; a markdown or JSON report (CLI only; `--ping-clients` pings up to 4 of each AP's wireless clients over SSH, those on 2.4 GHz and those with no radio reported; a failed read or ping is recorded, never fatal; Ctrl-C ends with a partial report, exit 130, a failure that ends the run with one, exit 1) |
 | `diagnose client-connectivity` | `diagnostics/client_connectivity.py` | One client: lookup, AP counters, then gateway ping, DNS, HTTP from its VLAN and flows over SSH; each layer bounded, 120 s in all (CLI only) |
 
 **`controller` subcommand group** — the controller's raw config objects and site-wide event
@@ -622,7 +622,7 @@ Twelve of the later analysis modules fall into four functional groups. Only the 
 | `connectivity/gateway_probe.py` | `gateway_ping()`, `gateway_traceroute()`, `gateway_dns_check()`, `gateway_http_check()` and the conntrack flow reader | One probe per SSH session: ping, traceroute, nslookup, curl (`--globoff`) or conntrack, each an argv with its own bound |
 | `diagnostics/client_connectivity.py` | `diagnose_client_connectivity()`, `build_verdict()` | One client: lookup and AP counters, then the gateway probes in order (ping, DNS, HTTP from the client's VLAN, flows), each a bounded layer within a 120 s budget; a failed layer is a finding, and a layer that can't test the client's own path is not run |
 | `analysis/vlan_traffic.py` | `sample_vlan_traffic()` | One fixed `sh -c` script per sample (each `br*` interface's byte counters and addresses, 30 s bound), each VLAN matched to its interface by subnet, rows stored in `analysis/vlan_traffic_store.py` (no MCP tool samples) |
-| `analysis/ap_health.py` | `run_ap_health_capture()`, `build_report()`, `render_markdown()` | An AP's 2.4 GHz counters sampled over time (no SSH); with `--ping-clients`, one SSH session pings up to 4 2.4 GHz clients per AP each sample |
+| `analysis/ap_health.py` | `run_ap_health_capture()`, `build_report()`, `render_markdown()` | An AP's 2.4 GHz counters sampled over time (no SSH); with `--ping-clients`, one SSH session pings up to 4 wireless clients per AP each sample (on 2.4 GHz, or with no radio reported) |
 
 **Time-series analysis** (CLI only: the `analyze link-errors`, `roaming`, `config-drift` and `neighbours` commands) — snapshot/compare pattern with JSON baselines:
 
