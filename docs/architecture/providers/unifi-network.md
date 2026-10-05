@@ -61,7 +61,7 @@ C4Component
     Rel(typer_cli, config, "Loads")
     Rel(typer_cli, smart_mapper, "Runs discovery and update workflows")
     Rel(typer_cli, port_diag, "Runs the ports commands")
-    Rel(typer_cli, analysis, "Runs the analyze, diagnose, stp and radio commands")
+    Rel(typer_cli, analysis, "Runs the analyze, diagnose, controller, stp and radio commands")
     Rel(network_cli, port_mapper, "Runs discover")
     Rel(network_cli, toolkit_adapter, "Runs find, analyze and diagnose")
     Rel(inventory_cli, api_client, "Reads devices, sends upgrade commands")

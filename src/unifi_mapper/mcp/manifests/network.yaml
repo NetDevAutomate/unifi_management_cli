@@ -52,6 +52,8 @@ tools:
     handler: get_networks
     title: Get Networks
     credentials: network_api
-    description: List networks/VLANs and their configurations
+    description: >-
+      List networks/VLANs and their configurations. For the full legacy network object,
+      use get_config_object.
     priority: P1
     tags: [networks, vlans, configuration, layer2]

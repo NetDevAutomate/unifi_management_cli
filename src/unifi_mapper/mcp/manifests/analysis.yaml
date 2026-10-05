@@ -547,7 +547,9 @@ tools:
     module: unifi_mapper.analysis.channel_optimiser
     handler: get_radio_channel_report_mcp
     title: Get Radio Channel Report
-    description: Generate a channel utilization report showing current state and recommended changes for all APs.
+    description: >-
+      Generate a channel utilization report showing current state and recommended changes
+      for all APs. For one device's radio and VAP counters, use get_device_stats.
     priority: P2
     tags: [wifi, radio, channel, report, utilization]
 

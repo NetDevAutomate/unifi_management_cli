@@ -40,6 +40,16 @@ class TestVapCountersFromDict:
         assert vap.num_sta == 0
         assert vap.channel is None
 
+    def test_counters_sent_as_strings_are_numbers(self) -> None:
+        # Firmware varies the JSON types; retry_delta must not compare a str with an int.
+        vap = vap_counters_from_dict(
+            {'essid': 'SSID A', 'tx_packets': '1000', 'tx_retries': '50', 'channel': '36'}
+        )
+        assert (vap.tx_packets, vap.tx_retries, vap.channel) == (1000, 50, 36)
+        assert vap_counters_from_dict({'essid': 'SSID A', 'tx_packets': 'n/a'}).tx_packets == 0
+        previous = [vap_counters_from_dict({'essid': 'SSID A', 'tx_packets': '900'})]
+        assert retry_delta(previous, [vap], 'SSID A') == (100, 50, 50.0)
+
     def test_none_counters_coerce_to_zero(self) -> None:
         vap = vap_counters_from_dict({'essid': 'SSID A', 'tx_packets': None, 'tx_retries': None})
         assert vap.tx_packets == 0

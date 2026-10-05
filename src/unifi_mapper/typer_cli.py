@@ -6,6 +6,7 @@ import typer
 from .cli import get_default_config_path, load_env_from_config
 from .inventory_cli import inventory_app
 from contextlib import contextmanager
+from enum import StrEnum
 from pathlib import Path
 from rich.console import Console
 from rich.logging import RichHandler
@@ -237,6 +238,10 @@ ports_app = typer.Typer(
     help='🔌 Switch port labels and read-only port diagnostics',
     pretty_exceptions_show_locals=False,
 )
+controller_app = typer.Typer(
+    help='🗂️ Read-only controller config objects and change history',
+    pretty_exceptions_show_locals=False,
+)
 
 app.add_typer(find_app, name='find')
 app.add_typer(analyze_app, name='analyze')
@@ -245,6 +250,7 @@ app.add_typer(inventory_app, name='inventory')
 app.add_typer(stp_app, name='stp')
 app.add_typer(radio_app, name='radio')
 app.add_typer(ports_app, name='ports')
+app.add_typer(controller_app, name='controller')
 
 
 @app.command()
@@ -4414,6 +4420,236 @@ def diagnose_bandwidth(
                 console.print(f'  Transferred: {gb:.2f} GB')
         else:
             console.print(f'\n  [red]FAILED: {result.get("error", "unknown")}[/red]')
+
+
+# ─── Device stats, AP retries and controller config (read-only) ─────────────
+
+
+class _Radio(StrEnum):
+    """A radio band, as the controller names it."""
+
+    NG = 'ng'
+    NA = 'na'
+    SIX_E = '6e'
+
+
+class _ConfigKind(StrEnum):
+    """A kind of legacy controller config object."""
+
+    WLANCONF = 'wlanconf'
+    NETWORKCONF = 'networkconf'
+    SETTING = 'setting'
+    APGROUP = 'apgroup'
+
+
+def _cell(value: Any) -> str:
+    """A table cell: the value, or an em dash when it is missing, markup-escaped."""
+    return '—' if value is None or value == '' else escape(str(value))
+
+
+def _print_dim_notes(notes: list[str]) -> None:
+    """Print a result's notes, dimmed."""
+    for note in notes:
+        console.print(f'[dim]{escape(note)}[/dim]')
+
+
+@diagnose_app.command('device-stats')
+def diagnose_device_stats(
+    device: str = typer.Argument(..., help='Device name, MAC or IP (any adopted device)'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """📟 One device's CPU, memory, load, uptime, radios and per-VAP TX counters.
+
+    An exact name or MAC wins over a partial match; an ambiguous name lists the
+    candidates. The retry percentage per VAP is cumulative since the AP booted; for an
+    interval measurement use diagnose ap-retries. Read-only.
+    """
+    from .diagnostics.observability import get_device_stats
+
+    stats = _run_analysis(lambda: get_device_stats(device))
+    if as_json:
+        _emit_json(stats)
+        return
+    system = stats['system']
+    table = Table(title=f'📟 {escape(str(stats["name"] or "?"))}', show_header=False)
+    table.add_column('Metric', style='cyan')
+    table.add_column('Value')
+    table.add_row('Model / type', f'{_cell(stats["model"])} / {_cell(stats["type"])}')
+    table.add_row('Online', 'yes' if stats['online'] else '[red]no[/red]')
+    table.add_row('IP', _cell(stats['ip']))
+    table.add_row('Firmware', _cell(stats['firmware']))
+    table.add_row('Uptime (s)', _cell(stats['uptime_seconds']))
+    table.add_row('CPU / memory %', f'{_cell(system["cpu_pct"])} / {_cell(system["mem_pct"])}')
+    table.add_row('Load (1 min)', _cell(system['loadavg_1']))
+    console.print(table)
+    if stats['radios']:
+        radios = Table(title='Radios', show_header=True)
+        for column in ('Radio', 'Channel', 'Utilisation %', 'TX power', 'Clients'):
+            radios.add_column(column)
+        for r in stats['radios']:
+            radios.add_row(
+                _cell(r['radio']),
+                _cell(r['channel']),
+                _cell(r['cu_total']),
+                _cell(r['tx_power']),
+                _cell(r['num_sta']),
+            )
+        console.print(radios)
+    if stats['vaps']:
+        vaps = Table(title='VAPs', show_header=True)
+        for column in ('SSID', 'Radio', 'Channel', 'Clients', 'TX packets', 'Retry %'):
+            vaps.add_column(column)
+        for v in stats['vaps']:
+            vaps.add_row(
+                _cell(v['essid']),
+                _cell(v['radio']),
+                _cell(v['channel']),
+                str(v['num_sta']),
+                str(v['tx_packets']),
+                _cell(v['retry_pct_cumulative']),
+            )
+        console.print(vaps)
+    _print_dim_notes(stats['notes'])
+
+
+@diagnose_app.command('ap-retries')
+def diagnose_ap_retries(
+    essid: Optional[str] = typer.Option(
+        None, '--essid', help='Only this SSID (default every SSID)'
+    ),
+    radio: _Radio = typer.Option(
+        _Radio.NG, '--radio', case_sensitive=False, help='ng (2.4 GHz), na (5 GHz) or 6e (6 GHz)'
+    ),
+    interval: int = typer.Option(
+        30, '--interval', min=10, max=240, help='Seconds between the two device reads (10-240)'
+    ),
+    threshold: float = typer.Option(
+        10.0, '--threshold', min=0, max=100, help='Flag a VAP above this retry % (0-100)'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """📶 Every AP's per-VAP TX retry rate over an interval, from two device reads.
+
+    Waits --interval seconds between the reads (default 30, at most 240) and computes the
+    reset-aware retry percentage per VAP: an AP that rebooted in between counts from
+    zero. A VAP above --threshold is flagged; healthy VAPs run below 5 to 10%. Read-only.
+    """
+    from .diagnostics.observability import get_ap_retry_rates
+
+    err_console.print(f'⏳ Reading every AP twice, {interval}s apart…')
+    result = _run_analysis(
+        lambda: get_ap_retry_rates(
+            essid=essid,
+            radio=cast(Any, radio.value),
+            interval_seconds=interval,
+            threshold_pct=threshold,
+        )
+    )
+    if as_json:
+        _emit_json(result)
+        return
+    table = Table(title=f'📶 Retry rates ({result["radio"]}, {interval}s)', show_header=True)
+    for column in ('AP', 'SSID', 'Channel', 'Clients', 'Δ TX packets', 'Retry %'):
+        table.add_column(column)
+    for ap in result['aps']:
+        for vap in ap['vaps']:
+            pct = _cell(vap['retry_pct'])
+            table.add_row(
+                _cell(ap['ap']),
+                _cell(vap['essid']),
+                _cell(vap['channel']),
+                _cell(vap['num_sta']),
+                str(vap['delta_tx_packets']),
+                f'[red]{pct}[/red]' if vap['unhealthy'] else pct,
+            )
+    console.print(table)
+    if result['healthy']:
+        console.print(f'✅ No VAP above {threshold:g}% retries.')
+    else:
+        console.print(f'[red]⚠ {len(result["flagged"])} VAP(s) above {threshold:g}%[/red]')
+    _print_dim_notes(result['notes'])
+
+
+@controller_app.command('config')
+def controller_config(
+    kind: _ConfigKind = typer.Argument(
+        ..., case_sensitive=False, help='wlanconf, networkconf, setting or apgroup'
+    ),
+    name: Optional[str] = typer.Option(
+        None, '--name', help='Only objects whose name (key for settings) contains this'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print the objects as JSON'),
+):
+    """🗂️ The controller's raw config objects of one kind, with every secret removed.
+
+    Secret keys (passphrases, PSKs, SNMP communities, syslog keys and the rest) are
+    removed, never shown; --json lists their paths in sanitised_paths. Each object gains
+    created_utc, the creation time its ID records. Read-only.
+    """
+    from .diagnostics.observability import get_config_object
+
+    result = _run_analysis(lambda: get_config_object(kind=cast(Any, kind.value), name=name))
+    if as_json:
+        _emit_json(result)
+        return
+    table = Table(title=f'🗂️ {result["kind"]} ({result["count"]})', show_header=True)
+    for column in ('Name', 'ID', 'Created (UTC)', 'Fields'):
+        table.add_column(column)
+    name_key = 'key' if result['kind'] == 'setting' else 'name'
+    for obj in result['objects']:
+        table.add_row(
+            _cell(obj.get(name_key) or obj.get('name')),
+            _cell(obj.get('_id')),
+            _cell(obj.get('created_utc')),
+            str(len(obj)),
+        )
+    console.print(table)
+    removed = len(result['sanitised_paths'])
+    console.print(f'{removed} secret key(s) removed; --json lists them by path.')
+    _print_dim_notes(result['notes'])
+
+
+@controller_app.command('config-changes')
+def controller_config_changes(
+    since_hours: int = typer.Option(
+        24, '--since-hours', min=1, max=8760, help='Hours back from now (1-8760)'
+    ),
+    kinds: Optional[list[_ConfigKind]] = typer.Option(
+        None,
+        '--kind',
+        case_sensitive=False,
+        help='A config kind to search; repeat for more (default all four)',
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """🕑 Config objects created in the last --since-hours, newest first.
+
+    Reads the WLAN, network, setting and AP-group objects and decodes the creation time
+    each ID records. Creation only: an edit to an older object does not appear here.
+    Read-only.
+    """
+    from .diagnostics.observability import find_recent_config_changes
+
+    chosen = None if kinds is None else [cast(Any, k.value) for k in kinds]
+    result = _run_analysis(
+        lambda: find_recent_config_changes(since_hours=since_hours, kinds=chosen)
+    )
+    if as_json:
+        _emit_json(result)
+        return
+    table = Table(title=f'🕑 Created in the last {since_hours}h ({result["count"]})')
+    for column in ('Created (UTC)', 'Age (h)', 'Kind', 'Name', 'ID'):
+        table.add_column(column)
+    for change in result['changes']:
+        table.add_row(
+            _cell(change['created_utc']),
+            _cell(change['age_hours']),
+            _cell(change['kind']),
+            _cell(change['name']),
+            _cell(change['id']),
+        )
+    console.print(table)
+    _print_dim_notes(result['notes'])
 
 
 if __name__ == '__main__':

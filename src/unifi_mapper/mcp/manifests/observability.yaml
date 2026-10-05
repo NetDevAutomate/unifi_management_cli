@@ -62,3 +62,87 @@ tools:
       interval_seconds:
         type: integer
         description: Seconds between samples (30-300, default 100)
+
+  get_device_stats:
+    module: unifi_mapper.diagnostics.observability
+    handler: get_device_stats
+    title: Get Device Stats
+    description: >-
+      One device's CPU, memory, 1-minute load, uptime and reboot time, per-radio channel
+      utilisation and per-VAP TX counters with the cumulative retry percentage (2.4, 5 and
+      6 GHz). An exact name or MAC wins; an ambiguous query lists the candidates.
+      find_device reports the same system figures and get_radio_channel_report the
+      fleet's channel plan; this is one device's radio and VAP detail. Read-only.
+    priority: P1
+    tags: [device, stats, cpu, memory, radio, vap, retries, read-only]
+    parameters:
+      device:
+        type: string
+        required: true
+        description: Device name, MAC or IP (any adopted device)
+
+  get_ap_retry_rates:
+    module: unifi_mapper.diagnostics.observability
+    handler: get_ap_retry_rates
+    title: Get AP Retry Rates
+    idempotent: false
+    description: >-
+      Every AP's per-VAP TX retry percentage over a sampling interval, from two device
+      reads, reset-aware, with the VAPs above threshold_pct flagged. BLOCKS for
+      interval_seconds (default 30 s, at most 240 s) plus two device reads. Read-only.
+    priority: P1
+    tags: [wifi, retries, vap, radio, health, trend, read-only]
+    parameters:
+      essid:
+        type: string
+        description: Only this SSID's VAPs (default every SSID)
+      radio:
+        type: string
+        description: ng (2.4 GHz, default), na (5 GHz) or 6e (6 GHz)
+      interval_seconds:
+        type: integer
+        description: Seconds between the two device reads (10-240, default 30)
+      threshold_pct:
+        type: number
+        description: Flag a VAP above this retry percentage (0-100, default 10)
+
+  get_config_object:
+    module: unifi_mapper.diagnostics.observability
+    handler: get_config_object
+    title: Get Config Object
+    description: >-
+      The controller's raw legacy config objects of one kind (wlanconf, networkconf,
+      setting or apgroup) with every secret key removed and listed by path in
+      sanitised_paths, never by value, and each object's creation time from its _id.
+      get_networks reads networks through the Integration API; this returns the full
+      legacy network object. Read-only.
+    priority: P1
+    tags: [config, wlan, network, settings, apgroup, forensics, read-only]
+    parameters:
+      kind:
+        type: string
+        required: true
+        description: wlanconf, networkconf, setting or apgroup
+      name:
+        type: string
+        description: Only objects whose name (key for settings) contains this
+
+  find_recent_config_changes:
+    module: unifi_mapper.diagnostics.observability
+    handler: find_recent_config_changes
+    title: Find Recent Config Changes
+    description: >-
+      Timeline, newest first, of the WLAN, network, setting and AP-group objects created
+      in the last since_hours, from the creation time each object's _id records. Creation
+      only: an edit to an older object does not appear (edits are in the admin-activity
+      system log). An empty kinds list sends no request. Read-only.
+    priority: P2
+    tags: [config, changes, timeline, forensics, incident, read-only]
+    parameters:
+      since_hours:
+        type: integer
+        description: Hours back from now (1-8760, default 24)
+      kinds:
+        type: array
+        items: {type: string}
+        description: Config kinds to search (default all four)

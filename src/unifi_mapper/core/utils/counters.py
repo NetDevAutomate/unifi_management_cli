@@ -10,11 +10,14 @@ The honest per-radio health metric is the per-interval retry percentage (delta
 ``cu_total`` statistic is unreliable on some AP firmware (it conflates receiver noise with
 airtime), so the retry percentage is preferred for fault detection.
 
-Pure: no I/O. Written for the AP retry-rate tool and the AP health sampling the July port
-rebuilds (issue 059); nothing reads it until those land.
+Pure: no I/O. Used by ``get_ap_retry_rates`` and ``diagnose ap-retries``
+(``diagnostics/observability``); the AP health sampling the July port also rebuilds (issue
+059) will read it too.
 """
 
 from dataclasses import dataclass
+from typing import Any
+from unifi_mapper.core.utils.coerce import int_or_none
 
 
 @dataclass
@@ -40,23 +43,27 @@ class VapCounters:
     channel: int | None = None
 
 
-def vap_counters_from_dict(vap: dict) -> VapCounters:
+def vap_counters_from_dict(vap: dict[str, Any]) -> VapCounters:
     """Build ``VapCounters`` from a controller ``vap_table`` entry.
+
+    The controller's JSON types vary by model and firmware, so every number goes through
+    ``coerce.int_or_none``: a counter sent as a string is read as a number.
 
     Args:
         vap: One entry from a device's ``vap_table`` list.
 
     Returns:
-        VapCounters with missing or None counters coerced to 0.
+        VapCounters with missing, None or non-numeric counters coerced to 0 (``channel`` to
+        None).
     """
     return VapCounters(
         essid=vap.get('essid', '?'),
-        tx_packets=vap.get('tx_packets') or 0,
-        tx_retries=vap.get('tx_retries') or 0,
-        tx_dropped=vap.get('tx_dropped') or 0,
-        rx_packets=vap.get('rx_packets') or 0,
-        num_sta=vap.get('num_sta') or 0,
-        channel=vap.get('channel'),
+        tx_packets=int_or_none(vap.get('tx_packets')) or 0,
+        tx_retries=int_or_none(vap.get('tx_retries')) or 0,
+        tx_dropped=int_or_none(vap.get('tx_dropped')) or 0,
+        rx_packets=int_or_none(vap.get('rx_packets')) or 0,
+        num_sta=int_or_none(vap.get('num_sta')) or 0,
+        channel=int_or_none(vap.get('channel')),
     )
 
 

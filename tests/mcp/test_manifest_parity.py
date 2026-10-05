@@ -250,6 +250,9 @@ def _minimal_args(schema: dict[str, Any]) -> dict[str, Any]:
     args: dict[str, Any] = {}
     for prop in schema.get('required', []):
         spec = schema['properties'][prop]
+        if 'enum' in spec:
+            args[prop] = spec['enum'][0]  # a Literal parameter: its first allowed value
+            continue
         args[prop] = {} if '$ref' in spec else MINIMAL[spec.get('type', 'object')]
     return args
 

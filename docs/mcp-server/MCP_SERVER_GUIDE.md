@@ -3,7 +3,7 @@
 ## Overview
 
 `unifi-mcp` is a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server over
-the same Python modules the `unifi-mapper` CLI uses. It registers **76 tools** in seven
+the same Python modules the `unifi-mapper` CLI uses. It registers **80 tools** in seven
 categories (see [Tool categories](#tool-categories) and the [tool index](#tool-index)). Every
 tool it will run is read-only against the controller. The three tools that would change it
 are refused over MCP (see [Control boundary](#mcp-control-boundary)); those changes go through
@@ -206,7 +206,7 @@ the private `_get_versions_from_api`. No tool uses either.
 | Surface | `tools/list` shows | Size (measured at this commit) |
 | --- | --- | --- |
 | `discovery` (default) | the four meta-tools: `search_tools`, `list_categories`, `get_tool_info`, `execute_tool` | 4 tools, about 6.4k characters |
-| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 66 tools (4 + 62), about 185k characters |
+| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 70 tools (4 + 66), about 190k characters |
 
 On either surface every catalog tool runs through the same `ToolRunner`, so arguments are
 validated, credentials gated, results masked and errors coded identically. The 11 pipeline
@@ -215,7 +215,7 @@ are reachable only through `execute_tool`; the 3 mutating tools are never listed
 `--check` prints `listed_tools` for both surfaces.
 
 Use `direct` with hosts that defer tool schemas (kiro-cli, Claude Code tool search): the
-host keeps the 66 schemas out of context until needed and the model calls tools by name. Use
+host keeps the 70 schemas out of context until needed and the model calls tools by name. Use
 `discovery` with hosts that load every schema up front (Codex): the model searches, reads one
 schema with `get_tool_info`, then calls `execute_tool`.
 
@@ -241,12 +241,12 @@ which previews unless `--no-dry-run` is given).
 writes a local file), `destructiveHint: false`, `openWorldHint` (false for the six STP pipeline
 tools that compute from their input and never contact a controller), and
 `idempotentHint: false` for the sampling tools (`get_port_counter_rates`,
-`diagnose_switch_port`, `check_device_freshness`). `execute_tool` is annotated non-read-only because it can reach
+`get_ap_retry_rates`, `diagnose_switch_port`, `check_device_freshness`). `execute_tool` is annotated non-read-only because it can reach
 `snapshot_radio_config`.
 
 ## Tool Categories
 
-Counted from `ToolRegistry()` at this commit (76 tools):
+Counted from `ToolRegistry()` at this commit (80 tools):
 
 | Category | Tools | Covers |
 | --- | ---: | --- |
@@ -255,11 +255,17 @@ Counted from `ToolRegistry()` at this commit (76 tools):
 | diagnostics | 8 | Health, performance, security, connectivity, single-port inspection, all-ports view, port-profile diff, port evidence bundle |
 | discovery | 5 | Find device, IP or MAC; client trace; client history |
 | network | 6 | Firewall zones and policies, ACLs, DNS policies, clients, networks (Network Integration API, `network_api` family) |
-| observability | 2 | Event, alarm, system-log and admin-audit history; port counter rates and history |
+| observability | 6 | Event, alarm, system-log and admin-audit history; port counter rates and history; one device's stats, AP retry rates, raw config objects and the config-change timeline |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells (`protect` family) |
 
-Of the 76: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
-`restore_radio_config`) and 11 are pipeline tools, leaving 62 on the direct surface.
+Of the 80: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
+`restore_radio_config`) and 11 are pipeline tools, leaving 66 on the direct surface.
+
+Some tools overlap on purpose, and their descriptions say which to use. `get_device_stats`
+repeats the CPU, memory, load and uptime that `find_device` reports, and one AP's share of
+`get_radio_channel_report`, adding that device's per-radio and per-VAP counters.
+`get_config_object` with `kind` `networkconf` returns the full legacy network object, where
+`get_networks` reads the Network Integration API.
 
 ## Errors
 
@@ -452,7 +458,7 @@ The design rationale and the decisions still open are in the
 
 ## Tool Index
 
-All 76 registered tools by category, generated from `ToolRegistry()`. **Family** is
+All 80 registered tools by category, generated from `ToolRegistry()`. **Family** is
 the credential family a tool needs (`none`: it computes from its input). **Marks**:
 *mutating* tools are never listed or run over MCP; *pipeline* tools are reachable only
 through `execute_tool`; *writes a local file* drops `readOnlyHint`. Every tool that is
@@ -498,7 +504,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `generate_stp_report` | `controller` | pipeline | Generate comprehensive STP optimization report |
 | `get_capacity_report` | `controller` |  | Network capacity planning and utilization report |
 | `get_firmware_report` | `controller` |  | Firmware security assessment and update recommendations |
-| `get_radio_channel_report` | `controller` |  | Generate a channel utilization report showing current state and recommended changes for all APs. |
+| `get_radio_channel_report` | `controller` |  | Generate a channel utilization report showing current state and recommended changes for all APs. For one device's radio and VAP counters, use get_device_stats. |
 | `monitor_lags` | `controller` |  | LAG (Link Aggregation Group) health monitoring |
 | `optimize_radio_channels` | `controller` |  | Auto-optimise Wi-Fi channel assignments based on utilization data. Returns recommendations for both 5GHz and 2.4GHz bands with before/after comparison. |
 | `restore_radio_config` | `controller` | mutating | Restore radio configuration from a previously saved snapshot file. |
@@ -537,7 +543,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
 | `client_trace` | `controller` |  | End-to-end client path analysis through the network |
-| `find_device` | `controller` |  | Search for devices by name, IP address, or MAC address |
+| `find_device` | `controller` |  | Search for devices by name, IP address, or MAC address. For one device's radio and VAP counters, use get_device_stats. |
 | `find_ip` | `controller` |  | Locate device and port by IP address |
 | `find_mac` | `controller` |  | MAC address location tracking across the network |
 | `get_client_history` | `controller` |  | Where the controller places a client, across stat/sta, v2 clients/active, v2 clients/history, rest/user and stat/user, including offline records and previous ports and link rates. With switch and port, each record is checked against that port from its own location fields, independently of how it was found. Read-only. |
@@ -551,13 +557,17 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `get_dns_policies` | `network_api` |  | List DNS policies and configurations |
 | `get_firewall_policies` | `network_api` |  | List firewall policies between zones |
 | `get_firewall_zones` | `network_api` |  | List all firewall zones and their configurations |
-| `get_networks` | `network_api` |  | List networks/VLANs and their configurations |
+| `get_networks` | `network_api` |  | List networks/VLANs and their configurations. For the full legacy network object, use get_config_object. |
 
-### observability (2)
+### observability (6)
 
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
+| `find_recent_config_changes` | `controller` |  | Timeline, newest first, of the WLAN, network, setting and AP-group objects created in the last since_hours, from the creation time each object's _id records. Creation only: an edit to an older object does not appear (edits are in the admin-activity system log). An empty kinds list sends no request. Read-only. |
+| `get_ap_retry_rates` | `controller` |  | Every AP's per-VAP TX retry percentage over a sampling interval, from two device reads, reset-aware, with the VAPs above threshold_pct flagged. BLOCKS for interval_seconds (default 30 s, at most 240 s) plus two device reads. Read-only. |
+| `get_config_object` | `controller` |  | The controller's raw legacy config objects of one kind (wlanconf, networkconf, setting or apgroup) with every secret key removed and listed by path in sanitised_paths, never by value, and each object's creation time from its _id. get_networks reads networks through the Integration API; this returns the full legacy network object. Read-only. |
 | `get_device_events` | `controller` |  | Events, alarms, system log and admin audit entries that mention a device, one of its ports, or a client. Pages stat/event, reads list/alarm and pages the v2 system-log classes device-alert, admin-activity, update-alert and client-alert. Each source reports its record count, truncation and the earliest entry returned, which is the observed retention. Read-only. |
+| `get_device_stats` | `controller` |  | One device's CPU, memory, 1-minute load, uptime and reboot time, per-radio channel utilisation and per-VAP TX counters with the cumulative retry percentage (2.4, 5 and 6 GHz). An exact name or MAC wins; an ambiguous query lists the candidates. find_device reports the same system figures and get_radio_channel_report the fleet's channel plan; this is one device's radio and VAP detail. Read-only. |
 | `get_port_counter_rates` | `controller` |  | Sample one port's error, drop, CRC and link-down counters and report per-minute rates with a trust verdict that withholds rates when the device did not inform between samples. BLOCKS for (samples - 1) x interval_seconds, about 100 s by default; use samples=1 for a single snapshot. Existing baselines and the recorded counter history (baselines.history, with first_increase per counter) are compared, never written. Read-only. |
 
 ### protect (5)

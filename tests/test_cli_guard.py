@@ -149,6 +149,34 @@ def test_new_commands_run_behind_the_read_only_transport() -> None:
         assert direct <= DIRECT_ASYNCIO_RUN_SITES, 'route new commands through the guard helpers'
 
 
+# Modules the July port added that read the controller. Each must borrow the installed holder:
+# a UniFiClient(...) with arguments would bypass it, an httpx.AsyncClient(...) the guard.
+PORTED_CONTROLLER_MODULES = [PACKAGE / 'diagnostics' / 'observability.py']
+
+
+def _own_clients(tree: ast.AST) -> list[int]:
+    return [
+        n.lineno
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call)
+        and (
+            (getattr(n.func, 'id', None) == 'UniFiClient' and (n.args or n.keywords))
+            or (getattr(n.func, 'attr', None) == 'AsyncClient')
+        )
+    ]
+
+
+@pytest.mark.parametrize('path', PORTED_CONTROLLER_MODULES, ids=lambda p: p.name)
+def test_ported_modules_only_borrow_the_guarded_client(path: Path) -> None:
+    assert path.exists()
+    assert _own_clients(ast.parse(path.read_text(encoding='utf-8'))) == []
+
+
+def test_the_own_client_scan_sees_arguments_and_raw_httpx() -> None:
+    sample = 'UniFiClient()\nUniFiClient(creds)\nUniFiClient(credentials=c)\nhttpx.AsyncClient()\n'
+    assert _own_clients(ast.parse(sample)) == [2, 3, 4]
+
+
 def test_the_host_key_notice_prints_once_per_invocation(
     monkeypatch: pytest.MonkeyPatch, transport: LoginOnlyTransport
 ) -> None:

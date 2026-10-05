@@ -39,6 +39,7 @@ APPS = {
     'stp_app': typer_cli.stp_app,
     'radio_app': typer_cli.radio_app,
     'ports_app': typer_cli.ports_app,
+    'controller_app': typer_cli.controller_app,
     'inventory_app': inventory_cli.inventory_app,
 }
 

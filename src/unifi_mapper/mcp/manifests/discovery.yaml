@@ -8,7 +8,9 @@ tools:
     title: Find Device
     aliases:
       query: identifier
-    description: Search for devices by name, IP address, or MAC address
+    description: >-
+      Search for devices by name, IP address, or MAC address. For one device's radio and
+      VAP counters, use get_device_stats.
     priority: P1
     tags: [device, search, find, inventory]
     parameters:
