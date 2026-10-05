@@ -11,7 +11,8 @@ tools:
       one of its ports, or a client. Pages stat/event, reads list/alarm and pages
       the v2 system-log classes device-alert, admin-activity, update-alert and
       client-alert. Each source reports its record count, truncation and the
-      earliest entry returned, which is the observed retention. Read-only.
+      earliest entry returned, which is the observed retention. For the whole
+      site, use get_recent_events. Read-only.
     priority: P1
     tags: [events, alarms, syslog, audit, history, port, client, read-only]
     parameters:
@@ -146,3 +147,33 @@ tools:
         type: array
         items: {type: string}
         description: Config kinds to search (default all four)
+
+  get_recent_events:
+    module: unifi_mapper.diagnostics.port_diagnostics_tools
+    handler: get_recent_events
+    title: Get Recent Events
+    description: >-
+      Site-wide events, alarms and system-log entries from the last since_hours, newest
+      first, with optional category, severity and text filters. Reads stat/event, list/alarm
+      and the v2 system-log classes device-alert, admin-activity, update-alert and
+      client-alert, removes every secret key and reports each source's status, record
+      count and truncation. Admin edits are in admin-activity. For one device, port or
+      client, use get_device_events. Read-only.
+    priority: P1
+    tags: [events, alarms, syslog, audit, history, site, incident, read-only]
+    parameters:
+      since_hours:
+        type: integer
+        description: History window in hours (1-8760, default 24)
+      category:
+        type: string
+        description: Only this category (system-log category, else event subsystem)
+      severity:
+        type: string
+        description: Only this system-log severity
+      contains:
+        type: string
+        description: Only entries whose key, message or record contains this
+      max_events:
+        type: integer
+        description: Keep at most this many entries, newest first (1-1000, default 100)

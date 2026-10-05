@@ -41,7 +41,8 @@ RETRY_NOTE = (
 CREATION_TIME_NOTE = (
     "An object's time comes from its ObjectId, which records when it was CREATED, not when "
     'it was last edited: an edit to an older object does not appear here. Edits are in the '
-    "admin-activity system log, which get_device_events reads for one device's history."
+    'admin-activity system log: get_recent_events reads it site-wide, get_device_events for '
+    'one device.'
 )
 STRIPPED_KEYS_NOTE = 'Secret keys are removed, never returned; sanitised_paths lists them by path.'
 
@@ -525,8 +526,8 @@ async def find_recent_config_changes(
 
     An ObjectId records when an object was CREATED, not when it was last edited, so an edit to
     an older WLAN, network or setting does not appear here; edits are in the admin-activity
-    system log (get_device_events reads it for one device). An empty kinds list searches
-    nothing and sends no request.
+    system log (get_recent_events reads it site-wide). An empty kinds list searches nothing
+    and sends no request.
 
     Args:
         since_hours: How many hours back to search.

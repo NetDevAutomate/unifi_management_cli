@@ -20,7 +20,7 @@ from unifi_mapper.port_diagnostics import (
     ProfileDiff,
     SwitchPortsReport,
 )
-from unifi_mapper.port_history import CounterTrend, EventHistory
+from unifi_mapper.port_history import CounterTrend, EventHistory, EventSources, RecentEvents
 
 
 def _text(value: Any) -> str:
@@ -215,19 +215,15 @@ def render_client_history(console: Console, history: ClientHistory) -> None:
     render_errors(console, history.errors)
 
 
-def render_event_history(console: Console, history: EventHistory, limit: int = 50) -> None:
-    """Print per-source retention and the newest matched entries."""
-    console.print(
-        f'Window: {escape(history.window.since)} → {escape(history.window.until)} '
-        f'({history.window.since_days} days requested)'
-    )
+def _render_sources(console: Console, event_sources: EventSources) -> None:
+    """Print one row per history source: status, records, paging and retention."""
     sources = Table(title='Sources (earliest = observed retention)')
     for column in ('Source', 'Status', 'HTTP', 'Records', 'Pages', 'Truncated', 'Earliest'):
         sources.add_column(column)
     sources.add_column('Latest')
     sources.add_column('Matched', justify='right')
-    rows = [('stat/event', history.sources.stat_event), ('list/alarm', history.sources.alarms)]
-    rows += [(f'system-log/{k}', v) for k, v in history.sources.system_log.items()]
+    rows = [('stat/event', event_sources.stat_event), ('list/alarm', event_sources.alarms)]
+    rows += [(f'system-log/{k}', v) for k, v in event_sources.system_log.items()]
     for name, result in rows:
         colour = {'ok': 'green', 'unavailable': 'yellow'}.get(result.status, 'red')
         sources.add_row(
@@ -242,6 +238,15 @@ def render_event_history(console: Console, history: EventHistory, limit: int = 5
             str(result.matched),
         )
     console.print(sources)
+
+
+def render_event_history(console: Console, history: EventHistory, limit: int = 50) -> None:
+    """Print per-source retention and the newest matched entries."""
+    console.print(
+        f'Window: {escape(history.window.since)} → {escape(history.window.until)} '
+        f'({history.window.since_days} days requested)'
+    )
+    _render_sources(console, history.sources)
     matched = Table(title=f'Matched entries ({history.returned} of {history.matched_total})')
     for column in ('Time (UTC)', 'Source', 'Key', 'Matched on', 'Message'):
         matched.add_column(column)
@@ -260,6 +265,31 @@ def render_event_history(console: Console, history: EventHistory, limit: int = 5
     if history.returned > limit:
         console.print(f'[dim]Showing {limit}; use --json for all {history.returned}.[/dim]')
     render_errors(console, history.errors)
+
+
+def render_recent_events(console: Console, recent: RecentEvents, limit: int = 50) -> None:
+    """Print per-source results and the newest site-wide entries."""
+    console.print(
+        f'Window: {escape(recent.window.since)} → {escape(recent.window.until)} '
+        f'({recent.window.since_hours} hours requested)'
+    )
+    _render_sources(console, recent.sources)
+    entries = Table(title=f'Entries ({recent.returned} of {recent.matched_total})')
+    for column in ('Time (UTC)', 'Source', 'Category', 'Severity', 'Key', 'Message'):
+        entries.add_column(column)
+    for event in recent.events[:limit]:
+        entries.add_row(
+            _text(event.time),
+            escape(event.source),
+            _text(event.category),
+            _text(event.severity),
+            _text(event.key),
+            _text(event.message),
+        )
+    console.print(entries)
+    if recent.returned > limit:
+        console.print(f'[dim]Showing {limit}; use --json for all {recent.returned}.[/dim]')
+    render_errors(console, recent.errors)
 
 
 def history_line(history: Optional[PortCounterHistoryView]) -> str:

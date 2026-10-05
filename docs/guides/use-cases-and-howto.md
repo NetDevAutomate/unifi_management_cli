@@ -1237,7 +1237,7 @@ sensor.back_door_sensor_battery
 
 ### Description
 
-The MCP (Model Context Protocol) server exposes the toolkit's 80 tools to AI assistants (every one it runs is read-only against the controller). When connected to an MCP client such as kiro-cli, Claude Code or Claude Desktop, you can ask natural-language questions about your network and the assistant calls the appropriate tools. On the default discovery surface the AI calls `search_tools` first, then `execute_tool`; with `UNIFI_MCP_TOOL_SURFACE=direct` it calls tools by name.
+The MCP (Model Context Protocol) server exposes the toolkit's 81 tools to AI assistants (every one it runs is read-only against the controller). When connected to an MCP client such as kiro-cli, Claude Code or Claude Desktop, you can ask natural-language questions about your network and the assistant calls the appropriate tools. On the default discovery surface the AI calls `search_tools` first, then `execute_tool`; with `UNIFI_MCP_TOOL_SURFACE=direct` it calls tools by name.
 
 ### Prerequisites
 
@@ -1315,14 +1315,14 @@ execute_tool("detect_ip_conflicts", {})
 | `get_tool_info` | Get full parameter details for a specific tool |
 | `execute_tool` | Run a read-only tool by name (mutating tools are refused) |
 
-### Tool Categories Reference (80 registered tools)
+### Tool Categories Reference (81 registered tools)
 
 | Category | Count | Tools |
 |----------|-------|-------|
 | analysis | 46 | STP, VLAN, MTU, SFP, radio, traffic matrix, LAG, QoS, capacity, firmware, IP conflicts, storm detection, MAC table, link quality, link-speed and port-profile-usage audits, PoE budget, uplink redundancy, client density, DHCP pools, change-plan, snapshot, drift, guard, preflight, and 10G validation tools |
 | diagnostics | 8 | `network_health_check`, `performance_analysis`, `security_audit`, `connectivity_analysis`, `inspect_switch_port`, `get_switch_ports`, `diff_port_profiles`, `diagnose_switch_port` |
 | discovery | 5 | `find_device`, `find_ip`, `find_mac`, `client_trace`, `get_client_history` |
-| observability | 6 | `get_device_events`, `get_port_counter_rates`, `get_device_stats`, `get_ap_retry_rates`, `get_config_object`, `find_recent_config_changes` |
+| observability | 7 | `get_device_events`, `get_port_counter_rates`, `get_device_stats`, `get_ap_retry_rates`, `get_config_object`, `find_recent_config_changes`, `get_recent_events` |
 | connectivity | 4 | `firewall_check`, `path_analysis`, `check_inter_vlan_routing`, `traceroute` |
 | network | 6 | `get_firewall_zones`, `get_firewall_policies`, `get_acl_rules`, `get_dns_policies`, `get_clients`, `get_networks` |
 | protect | 5 | `get_cameras`, `get_nvr_info`, `get_sensors`, `get_lights`, `get_doorbells` |
@@ -1839,7 +1839,7 @@ flowchart TB
         J[connectivity - 4 tools]
         K[network - 6 tools]
         L[protect - 5 tools]
-        P[observability - 6 tools]
+        P[observability - 7 tools]
     end
 
     subgraph API["API Integration Layer"]
@@ -1881,7 +1881,7 @@ flowchart TB
 | `port_mapper.py` | Traditional port mapping (LLDP to port name) |
 | `smart_port_mapper.py` | SmartPortMapper with verification and cache-busting |
 | `mcp/server.py` | FastMCP server: the meta-tools, the direct surface, resources and prompts |
-| `mcp/manifests/` | YAML tool definitions for all 80 registered tools |
+| `mcp/manifests/` | YAML tool definitions for all 81 registered tools |
 | `analysis/stp_optimizer.py` | STP topology discovery, priority calculation, report generation |
 | `protect/client.py` | Async wrapper around uiprotect ProtectApiClient |
 | `protect/mqtt.py` | MQTT bridge with Home Assistant discovery |

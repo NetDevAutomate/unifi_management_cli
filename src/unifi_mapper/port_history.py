@@ -9,6 +9,8 @@ with read-only queries:
   returned, whether paging was cut short, and the earliest and latest
   timestamps it returned. The earliest timestamp *is* the controller's observed
   retention, so "how far back does it keep history?" is answered by evidence.
+* :func:`collect_recent_events` reads the same sources site-wide for the last N
+  hours, with optional category, severity and text filters.
 * :func:`sample_port_counters` takes N samples of a port's counters an inform
   interval apart and reports per-minute rates with a verdict that refuses to
   report false zeros from a device that has stopped informing.
@@ -64,6 +66,10 @@ STAT_EVENT_PAGE_SIZE = 1000
 SYSTEM_LOG_PAGE_SIZE = 100
 MAX_SINCE_DAYS = 3650
 MAX_EVENTS_LIMIT = 5000
+DEFAULT_RECENT_SINCE_HOURS = 24
+DEFAULT_RECENT_EVENTS = 100
+MAX_SINCE_HOURS = 8760
+MAX_RECENT_EVENTS = 1000
 
 # The legacy working-directory baseline path. Kept importable; readers now resolve the
 # default with analysis.link_error_tracking.resolve_link_error_baseline (XDG first).
@@ -237,6 +243,38 @@ class EventHistory(DiagnosticModel):
     truncated: bool = False
 
 
+class RecentEventWindow(BaseModel):
+    """The time window a site-wide events read covered."""
+
+    since: str
+    until: str
+    since_hours: int
+
+
+class RecentEvent(BaseModel):
+    """One site-wide event, alarm or system-log entry, secrets removed."""
+
+    source: str
+    time: Optional[str] = None
+    epoch_ms: Optional[int] = None
+    key: Optional[str] = None
+    message: Optional[str] = None
+    category: Optional[str] = None  # system-log category, else the event's subsystem
+    severity: Optional[str] = None  # system-log entries only
+    raw: dict[str, Any]
+
+
+class RecentEvents(DiagnosticModel):
+    """Every source's entries in the window that pass the filters, newest first."""
+
+    window: RecentEventWindow
+    sources: EventSources
+    events: list[RecentEvent] = Field(default_factory=lambda: [])
+    matched_total: int = 0
+    returned: int = 0
+    truncated: bool = False
+
+
 class CounterSample(BaseModel):
     """One read of a port's counters."""
 
@@ -306,6 +344,14 @@ def validate_event_window(since_days: int, max_events: int) -> None:
         raise ValueError(f'since_days must be between 1 and {MAX_SINCE_DAYS}, got {since_days}')
     if not 1 <= max_events <= MAX_EVENTS_LIMIT:
         raise ValueError(f'max_events must be between 1 and {MAX_EVENTS_LIMIT}, got {max_events}')
+
+
+def validate_recent_window(since_hours: int, max_events: int) -> None:
+    """Raise ValueError unless 1 <= since_hours <= 8760 and 1 <= max_events <= 1000."""
+    if not 1 <= since_hours <= MAX_SINCE_HOURS:
+        raise ValueError(f'since_hours must be between 1 and {MAX_SINCE_HOURS}, got {since_hours}')
+    if not 1 <= max_events <= MAX_RECENT_EVENTS:
+        raise ValueError(f'max_events must be between 1 and {MAX_RECENT_EVENTS}, got {max_events}')
 
 
 def validate_sampling(samples: int, interval_seconds: int) -> None:
@@ -677,6 +723,138 @@ def collect_events(
         ),
         sources=EventSources(stat_event=stat_result, alarms=alarm_result, system_log=log_results),
         matched=[event for event, _ in kept],
+        matched_total=len(candidates),
+        returned=len(kept),
+        truncated=len(candidates) > len(kept),
+        errors=ctx.errors[first_error:],
+        sanitised_paths=ctx.sanitised_paths[first_path:],
+    )
+
+
+def _recent_event(source: str, record: dict[str, Any]) -> RecentEvent:
+    """Normalise one secret-free record into a ``RecentEvent``."""
+    stamp = _record_epoch_ms(record)
+    system_log = source.startswith('system_log.')
+    return RecentEvent(
+        source=source,
+        time=iso_from_ms(stamp),
+        epoch_ms=stamp,
+        key=_first_text(record, _KEY_KEYS),
+        message=_first_text(record, _MESSAGE_KEYS),
+        category=_first_text(record, ('category',) if system_log else ('subsystem',)),
+        severity=_first_text(record, ('severity',)) if system_log else None,
+        raw=record,
+    )
+
+
+def _passes(
+    event: RecentEvent,
+    category: Optional[str],
+    severity: Optional[str],
+    contains: Optional[str],
+) -> bool:
+    """Exact, case-insensitive category and severity; a substring of key, message or record."""
+    if category and (event.category or '').casefold() != category.casefold():
+        return False
+    if severity and (event.severity or '').casefold() != severity.casefold():
+        return False
+    if contains:
+        needle = contains.casefold()
+        haystack = ' '.join(
+            (event.key or '', event.message or '', json.dumps(event.raw, default=str))
+        )
+        return needle in haystack.casefold()
+    return True
+
+
+def collect_recent_events(
+    client: Any,
+    site: str,
+    *,
+    since_hours: int = DEFAULT_RECENT_SINCE_HOURS,
+    category: Optional[str] = None,
+    severity: Optional[str] = None,
+    contains: Optional[str] = None,
+    max_events: int = DEFAULT_RECENT_EVENTS,
+    max_pages: int = DEFAULT_MAX_PAGES,
+    now: Callable[[], float] = time.time,
+    ctx: Optional[Collection] = None,
+) -> RecentEvents:
+    """Collect the site's events, alarms and system-log entries from the last N hours.
+
+    Reads the sources :func:`collect_events` reads (``stat/event`` with a ``within`` of
+    ``since_hours``, ``list/alarm``, and the four system-log classes over the same window),
+    for the whole site rather than one device. Alarms are filtered to the window here,
+    because the controller does not window them; an alarm without a timestamp is kept.
+    Every record goes through ``strip_secrets`` before it is read.
+
+    Args:
+        client: Authenticated, read-only-guarded ``UnifiApiClient``.
+        site: Site name.
+        since_hours: How many hours back to read (1-8760).
+        category: Keep only this category (system-log ``category``, else the event's
+            ``subsystem``), compared case-insensitively.
+        severity: Keep only this system-log severity, compared case-insensitively.
+        contains: Keep only entries whose key, message or record contains this text.
+        max_events: Cap on returned entries (1-1000). The newest are kept.
+        max_pages: Page cap per source; hitting it sets that source's ``truncated``.
+        now: Clock, injectable for tests.
+        ctx: Shared collection context. A fresh one is used when omitted.
+
+    Returns:
+        The :class:`RecentEvents`, newest first.
+
+    Raises:
+        ValueError: ``since_hours`` or ``max_events`` is out of range.
+    """
+    validate_recent_window(since_hours, max_events)
+    if max_pages < 1:
+        raise ValueError(f'max_pages must be at least 1, got {max_pages}')
+    ctx = ctx or Collection()
+    first_error, first_path = len(ctx.errors), len(ctx.sanitised_paths)
+    until_ms = int(now() * 1000)
+    since_ms = until_ms - since_hours * 3_600_000
+
+    stat_result, stat_records = _read_stat_event(client, site, ctx, since_hours, max_pages)
+    alarm_result, alarm_records = _read_alarms(client, site, ctx)
+    log_results: dict[str, SourceResult] = {}
+    batches: list[tuple[str, SourceResult, list[dict[str, Any]], bool]] = [
+        ('stat_event', stat_result, stat_records, False),
+        ('alarms', alarm_result, alarm_records, True),  # not window-filtered server-side
+    ]
+    for log_class in SYSTEM_LOG_CLASS_FILTERS:
+        result, records = _read_system_log(
+            client, site, ctx, log_class, since_ms, until_ms, max_pages
+        )
+        log_results[log_class] = result
+        batches.append((f'system_log.{log_class}', result, records, False))
+
+    candidates: list[tuple[RecentEvent, list[str]]] = []
+    for source, result, records, filter_window in batches:
+        for index, record in enumerate(records):
+            clean, removed = strip_secrets(record, f'events.{source}[{index}]')
+            event = _recent_event(source, clean)
+            stamp = event.epoch_ms
+            if filter_window and stamp is not None and not since_ms <= stamp <= until_ms:
+                continue
+            if not _passes(event, category, severity, contains):
+                continue
+            result.matched += 1
+            candidates.append((event, removed))
+
+    candidates.sort(key=lambda item: item[0].epoch_ms or 0, reverse=True)
+    kept = candidates[:max_events]
+    for _, removed in kept:
+        ctx.sanitised_paths.extend(removed)
+
+    return RecentEvents(
+        window=RecentEventWindow(
+            since=iso_from_ms(since_ms) or '',
+            until=iso_from_ms(until_ms) or '',
+            since_hours=since_hours,
+        ),
+        sources=EventSources(stat_event=stat_result, alarms=alarm_result, system_log=log_results),
+        events=[event for event, _ in kept],
         matched_total=len(candidates),
         returned=len(kept),
         truncated=len(candidates) > len(kept),

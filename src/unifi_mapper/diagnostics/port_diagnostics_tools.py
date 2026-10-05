@@ -173,6 +173,28 @@ def _device_events_sync(
         ).to_json_dict()
 
 
+def _recent_events_sync(
+    since_hours: int,
+    category: Optional[str],
+    severity: Optional[str],
+    contains: Optional[str],
+    max_events: int,
+) -> dict[str, Any]:
+    from unifi_mapper.port_history import collect_recent_events, validate_recent_window
+
+    validate_recent_window(since_hours, max_events)
+    with _readonly_sync_client() as (api, site):
+        return collect_recent_events(
+            api,
+            site,
+            since_hours=since_hours,
+            category=category,
+            severity=severity,
+            contains=contains,
+            max_events=max_events,
+        ).to_json_dict()
+
+
 def _counter_rates_sync(
     switch: str, port: int, samples: int, interval_seconds: int
 ) -> dict[str, Any]:
@@ -371,6 +393,64 @@ async def get_device_events(
     """
     return await asyncio.to_thread(
         _mapped, _device_events_sync, device, port, clients, since_days, max_events
+    )
+
+
+async def get_recent_events(
+    since_hours: Annotated[
+        int, Field(description='How far back to read, 1-8760 hours', ge=1, le=8760)
+    ] = 24,
+    category: Annotated[
+        Optional[str],
+        Field(
+            description='Only this category (system-log category, else event subsystem)',
+            max_length=64,
+        ),
+    ] = None,
+    severity: Annotated[
+        Optional[str], Field(description='Only this system-log severity', max_length=64)
+    ] = None,
+    contains: Annotated[
+        Optional[str],
+        Field(
+            description='Only entries whose key, message or record contains this', max_length=128
+        ),
+    ] = None,
+    max_events: Annotated[
+        int,
+        Field(description='Keep at most this many entries, newest first, 1-1000', ge=1, le=1000),
+    ] = 100,
+) -> dict[str, Any]:
+    """Site-wide events, alarms and system-log entries from the last since_hours. Read-only.
+
+    When to use this tool:
+    - "What happened on the network in the last hour?" without naming a device
+    - Correlating an outage window with device, client and admin activity
+    - Finding admin edits (system-log class admin-activity), which config-object
+      creation times do not show
+
+    Reads the sources get_device_events reads (stat/event, list/alarm and the v2 system-log
+    classes device-alert, admin-activity, update-alert and client-alert) for the whole
+    site. Alarms are filtered to the window here; one without a timestamp is kept. Every
+    record has its secret keys removed. Each source reports its status, record count,
+    pages and truncation. For one device, port or client, use get_device_events.
+
+    Args:
+        since_hours: History window in hours.
+        category: Exact category, case-insensitive.
+        severity: Exact system-log severity, case-insensitive.
+        contains: Case-insensitive text to find in the key, message or record.
+        max_events: Cap on returned entries.
+
+    Returns:
+        RecentEvents as a dict: window, sources, events, matched_total, returned,
+        truncated, errors and sanitised_paths.
+
+    Raises:
+        ToolError: CONTROLLER_UNREACHABLE or CONFIG_INVALID.
+    """
+    return await asyncio.to_thread(
+        _mapped, _recent_events_sync, since_hours, category, severity, contains, max_events
     )
 
 

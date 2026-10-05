@@ -4609,6 +4609,52 @@ def controller_config(
     _print_dim_notes(result['notes'])
 
 
+@controller_app.command('events')
+def controller_events(
+    since_hours: int = typer.Option(24, '--since-hours', help='Hours back from now (1-8760)'),
+    category: Optional[str] = typer.Option(
+        None, '--category', help='Only this category (system-log category or event subsystem)'
+    ),
+    severity: Optional[str] = typer.Option(
+        None, '--severity', help='Only this system-log severity'
+    ),
+    contains: Optional[str] = typer.Option(
+        None, '--contains', help='Only entries whose key, message or record contains this'
+    ),
+    max_events: int = typer.Option(
+        100, '--max-events', help='Keep at most this many entries, newest first (1-1000)'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """📜 Site-wide events, alarms and system-log entries from the last --since-hours.
+
+    Reads stat/event, list/alarm and the v2 system-log classes (device-alert,
+    admin-activity, update-alert, client-alert) for the whole site, newest first, with
+    every secret key removed. Admin edits are in admin-activity. For one device, port
+    or client, use ports events. Read-only: the POSTs are query endpoints on an
+    allowlist.
+    """
+    from .port_diagnostics_render import render_recent_events
+    from .port_history import collect_recent_events, validate_recent_window
+
+    with _diagnostic_errors():
+        validate_recent_window(since_hours, max_events)  # exit 2 before connecting
+        with _readonly_client() as (client, site):
+            recent = collect_recent_events(
+                client,
+                site,
+                since_hours=since_hours,
+                category=category,
+                severity=severity,
+                contains=contains,
+                max_events=max_events,
+            )
+    if as_json:
+        _emit_json(recent.to_json_dict())
+    else:
+        render_recent_events(console, recent)
+
+
 @controller_app.command('config-changes')
 def controller_config_changes(
     since_hours: int = typer.Option(
