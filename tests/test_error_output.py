@@ -261,6 +261,46 @@ def test_an_existing_command_s_error_and_debug_traceback_are_redacted(args: list
         assert 'Traceback' in result.output and 'RuntimeError' in result.output
 
 
+def _chained_error(fake: str) -> BaseException:
+    try:
+        raise KeyError(f'password={fake}')
+    except KeyError as cause:
+        error = RuntimeError(f'login failed, token={fake}')
+        error.add_note(f'hint: retry with api_key={fake}')
+        error.__cause__ = cause
+        return error
+
+
+@pytest.mark.parametrize('shape', ['chained cause and note', 'exception group'])
+def test_the_debug_traceback_redacts_causes_notes_and_groups(
+    monkeypatch: pytest.MonkeyPatch, shape: str
+) -> None:
+    fake = secrets.token_hex(16)
+    if shape == 'exception group':
+        error: BaseException = ExceptionGroup(
+            'probes failed', [ValueError(f'secret={fake}'), OSError('timed out')]
+        )
+    else:
+        error = _chained_error(fake)
+
+    async def _raise() -> None:
+        raise error
+
+    monkeypatch.setattr(typer_cli, 'load_env_from_config', lambda path: None)
+    monkeypatch.setattr('unifi_mapper.analysis.mtu_audit.audit_mtu_consistency', _raise)
+    result = CliRunner().invoke(typer_cli.app, ['--debug', 'analyze', 'mtu'])
+    assert result.exit_code == 1, result.output
+    assert fake not in result.output
+    flat = ' '.join(result.output.split())
+    assert 'Traceback' in flat
+    if shape == 'exception group':
+        assert 'probes failed' in flat and 'secret=***redacted***' in flat
+    else:
+        assert 'direct cause' in flat
+        assert 'password=***redacted***' in flat and 'token=***redacted***' in flat
+        assert 'api_key=***redacted***' in flat
+
+
 def test_a_tool_error_through_the_analysis_helper_is_redacted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
