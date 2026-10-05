@@ -161,6 +161,48 @@ def test_traceroute_hops_timeouts_and_names() -> None:
     assert hops[2]['timeout'] is True and hops[2]['rtt_ms'] == []
     assert (hops[3]['host'], hops[3]['ip']) == ('dns.example.net', '203.0.113.53')
     assert parse_traceroute_output('') == []
+    assert not any(h['unreachable'] for h in hops)
+
+
+# A trace that ran out of hops at a router that answers, and one ended by an unreachable reply.
+TRACEROUTE_OUT_OF_HOPS = """\
+traceroute to 203.0.113.53 (203.0.113.53), 2 hops max, 60 byte packets
+ 1  gateway (192.0.2.1)  0.512 ms  0.401 ms  0.398 ms
+ 2  198.51.100.1 (198.51.100.1)  8.221 ms  8.105 ms  7.990 ms
+"""
+TRACEROUTE_HOST_UNREACHABLE = """\
+traceroute to 203.0.113.53 (203.0.113.53), 20 hops max, 60 byte packets
+ 1  gateway (192.0.2.1)  0.512 ms  0.401 ms  0.398 ms
+ 2  198.51.100.1 (198.51.100.1)  8.221 ms !H  8.105 ms !H  7.990 ms !H
+"""
+TRACEROUTE_TARGET_PROHIBITED = """\
+traceroute to 203.0.113.53 (203.0.113.53), 20 hops max, 60 byte packets
+ 1  gateway (192.0.2.1)  0.512 ms  0.401 ms  0.398 ms
+ 2  203.0.113.53 (203.0.113.53)  9.001 ms !X  9.002 ms !X  9.003 ms !X
+"""
+
+
+@pytest.mark.parametrize(
+    ('output', 'reached'),
+    [
+        (TRACEROUTE_OUTPUT, True),
+        (TRACEROUTE_OUT_OF_HOPS, False),
+        (TRACEROUTE_HOST_UNREACHABLE, False),
+        (TRACEROUTE_TARGET_PROHIBITED, False),
+        ('', False),
+    ],
+    ids=['ends at the target', 'out of hops', 'host unreachable', 'prohibited', 'no output'],
+)
+async def test_traceroute_reaches_only_when_the_last_hop_is_the_target(
+    monkeypatch: pytest.MonkeyPatch, output: str, reached: bool
+) -> None:
+    """Review F6: hops that ran out at a router, or a !H, !N or !X reply, are not reached."""
+    fake = FakeSSH({**REPLIES, 'traceroute': output})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    trace = await gateway_traceroute('203.0.113.53', max_hops=20)
+    assert trace['reached'] is reached
+    if output is TRACEROUTE_HOST_UNREACHABLE:
+        assert trace['hops'][-1]['unreachable'] is True
 
 
 def test_conntrack_flows_and_filters() -> None:
@@ -509,6 +551,18 @@ def test_every_command_prints_a_table(cli: FakeSSH, args: list[str]) -> None:
     result = runner.invoke(app, args)
     assert result.exit_code == 0, result.output
     assert result.stdout.strip()
+
+
+def test_a_trace_that_runs_out_of_hops_says_not_reached(
+    monkeypatch: pytest.MonkeyPatch, controller: FakeController
+) -> None:
+    monkeypatch.setattr(
+        asyncssh, 'connect', FakeSSH({**REPLIES, 'traceroute': TRACEROUTE_OUT_OF_HOPS})
+    )
+    route_cli(monkeypatch, controller)
+    result = runner.invoke(app, ['gateway', 'traceroute', '203.0.113.53', '--max-hops', '2'])
+    assert result.exit_code == 0, result.output
+    assert 'Not reached' in result.stdout and 'Reached the target' not in result.stdout
 
 
 @pytest.mark.parametrize(

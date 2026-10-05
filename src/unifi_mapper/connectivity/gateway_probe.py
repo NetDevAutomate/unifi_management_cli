@@ -58,6 +58,9 @@ INTERFACES_TIMEOUT = 15
 _TRACEROUTE_HOP_RE = re.compile(r'^\s*(\d+)\s+(.*)$')
 _HOP_HOST_RE = re.compile(r'([A-Za-z0-9._\-]+)\s+\(([\d.]+)\)|^([\d.]+)')
 _HOP_TIME_RE = re.compile(r'([\d.]+)\s*ms')
+# traceroute's annotation for an ICMP unreachable reply: !H host, !N network, !P protocol,
+# !S source route, !F fragmentation needed, !X, !V, !C prohibited or precedence, !<n> a code.
+_HOP_UNREACHABLE_RE = re.compile(r'(?<!\S)!(?:[HNPSFXVC]|\d+)(?!\S)')
 _CONNTRACK_KV_RE = re.compile(r'(\w+)=(\S+)')
 _CONNTRACK_FLAG_RE = re.compile(r'\[(\w+)\]')
 _NSLOOKUP_ADDR_RE = re.compile(r'^Address(?:\s+\d+)?:\s*(\S+)', re.M)
@@ -75,7 +78,9 @@ def parse_traceroute_output(output: str) -> list[dict[str, Any]]:
         output: Raw traceroute stdout.
 
     Returns:
-        One ``{hop, host, ip, rtt_ms, timeout}`` dict per hop line.
+        One ``{hop, host, ip, rtt_ms, timeout, unreachable}`` dict per hop line;
+        ``unreachable`` marks a hop that answered with an ICMP unreachable (``!H``, ``!N``,
+        ``!X`` and the like).
     """
     hops: list[dict[str, Any]] = []
     for line in output.splitlines():
@@ -84,7 +89,16 @@ def parse_traceroute_output(output: str) -> list[dict[str, Any]]:
             continue
         hop_no, rest = int(match.group(1)), match.group(2)
         if rest.strip().replace('*', '').strip() == '':
-            hops.append({'hop': hop_no, 'host': None, 'ip': None, 'rtt_ms': [], 'timeout': True})
+            hops.append(
+                {
+                    'hop': hop_no,
+                    'host': None,
+                    'ip': None,
+                    'rtt_ms': [],
+                    'timeout': True,
+                    'unreachable': False,
+                }
+            )
             continue
         host: str | None = None
         ip: str | None = None
@@ -95,7 +109,16 @@ def parse_traceroute_output(output: str) -> list[dict[str, Any]]:
             else:
                 host, ip = host_match.group(1), host_match.group(2)
         times = [float(t) for t in _HOP_TIME_RE.findall(rest)]
-        hops.append({'hop': hop_no, 'host': host, 'ip': ip, 'rtt_ms': times, 'timeout': not times})
+        hops.append(
+            {
+                'hop': hop_no,
+                'host': host,
+                'ip': ip,
+                'rtt_ms': times,
+                'timeout': not times,
+                'unreachable': bool(_HOP_UNREACHABLE_RE.search(rest)),
+            }
+        )
     return hops
 
 
@@ -366,7 +389,9 @@ async def gateway_traceroute(target: str, max_hops: int = 20) -> dict[str, Any]:
         max_hops: Hops to probe, 1-30.
 
     Returns:
-        ``target``, ``probe_ip``, ``resolved_name``, ``hops`` and ``reached``.
+        ``target``, ``probe_ip``, ``resolved_name``, ``hops`` and ``reached``: true only when
+        the last hop is the target itself and answered without an unreachable annotation (not
+        when the hops ran out at a router that answers).
     """
     max_hops = require_bounded_int('traceroute hops', max_hops, 1, 30)
     ssh_login()  # a missing SSH password fails before the controller is asked for a name
@@ -375,12 +400,19 @@ async def gateway_traceroute(target: str, max_hops: int = 20) -> dict[str, Any]:
     async with gateway_session() as conn:
         result = await run_gateway_command(conn, argv, timeout=max_hops * 6 + 15)
     hops = parse_traceroute_output(result.stdout)
+    last = hops[-1] if hops else None
+    reached = (
+        last is not None
+        and last['ip'] == probe_ip
+        and not last['timeout']
+        and not last['unreachable']
+    )
     return {
         'target': target,
         'probe_ip': probe_ip,
         'resolved_name': resolved,
         'hops': hops,
-        'reached': bool(hops) and not hops[-1]['timeout'],
+        'reached': reached,
     }
 
 
