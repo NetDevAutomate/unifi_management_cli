@@ -1615,8 +1615,11 @@ def diagnose_health(
 
     Scores the network 0-100 from device state, adoption, CPU/memory/load, uplinks
     and firmware, with critical issues, warnings and recommendations: 100 when every
-    device is online with no issue. An uplink counts as down only when its state says
-    so. --detailed adds the per-device findings. Read-only.
+    device is online with no issue. Connectivity gives 70 to 100 (offline devices cost
+    up to 30 points in proportion), then each finding costs points: 15 per critical
+    issue, 10 per uplink issue, 5 per warning and 3 per CPU or memory alert, down to 0.
+    90 or more is healthy, 70 or more a warning. An uplink counts as down only when
+    its state says so. --detailed adds the per-device findings. Read-only.
     """
     from .diagnostics.network_health import network_health_check
 

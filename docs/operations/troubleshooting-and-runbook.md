@@ -234,9 +234,11 @@ line, once per command, comes before every SSH command runs; see
 ```
 
 Every other failure of either command is also one line on stderr: a refused or failed
-connection is `[CONTROLLER_UNREACHABLE] SSH connection to <gateway> failed: …`, and an
-unexpected error is `Error: …`, with any secret-looking value in its text redacted (a
-traceback only with `--debug`, without local variables).
+connection is `[CONTROLLER_UNREACHABLE] SSH connection to <gateway> failed: …`, a gateway
+that stalls during the connect, handshake or login is `[CONTROLLER_UNREACHABLE] SSH
+connection to <gateway> timed out after 30s`, and an unexpected error is `Error: …`, with
+any secret-looking value in its text redacted (a traceback only with `--debug`, without
+local variables).
 
 **Resolution**:
 

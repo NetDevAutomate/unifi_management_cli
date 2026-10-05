@@ -10,8 +10,8 @@ The honest per-radio health metric is the per-interval retry percentage (delta
 ``cu_total`` statistic is unreliable on some AP firmware (it conflates receiver noise with
 airtime), so the retry percentage is preferred for fault detection.
 
-Pure: no I/O. Used by ``get_ap_retry_rates`` / ``diagnose ap-retries`` and the AP health
-sampling.
+Pure: no I/O. Written for the AP retry-rate tool and the AP health sampling the July port
+rebuilds (issue 059); nothing reads it until those land.
 """
 
 from dataclasses import dataclass
@@ -19,7 +19,17 @@ from dataclasses import dataclass
 
 @dataclass
 class VapCounters:
-    """Cumulative TX/RX counters for one VAP at one sample instant."""
+    """Cumulative TX/RX counters for one VAP at one sample instant.
+
+    Attributes:
+        essid: The VAP's SSID (``'?'`` when the entry has none).
+        tx_packets: Packets sent since the AP last booted.
+        tx_retries: Retransmissions since then; ``retry_delta`` turns two samples into a rate.
+        tx_dropped: Packets dropped since then.
+        rx_packets: Packets received since then.
+        num_sta: Clients associated at the sample instant (a gauge, not cumulative).
+        channel: The radio's channel, or None when the entry has none.
+    """
 
     essid: str
     tx_packets: int = 0
