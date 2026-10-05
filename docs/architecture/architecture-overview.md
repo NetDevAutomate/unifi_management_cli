@@ -904,7 +904,7 @@ classDiagram
 | `logging.py` | Loguru helpers: `replace_default_loguru_handler()`, which both CLIs call first so loguru never annotates a traceback with frame values (`diagnose=False`, [issue 058](../issues/058-tracebacks-print-frame-values.md)); nothing calls `configure_logging` ([issue 045](../issues/045-configure-logging-is-never-called.md)) |
 | `overrides.py` | `load_stp_overrides()`: the STP overrides YAML (`UNIFI_STP_OVERRIDES`) |
 | `ping_parse.py` | `parse_ping_output()`: GNU and BusyBox ping statistics (the latency matrix reads ping output through it) |
-| `readonly.py` | The read-only guards (`ReadOnlySession`, `ReadOnlyAsyncTransport`) and the opt-in request audit |
+| `readonly.py` | The read-only guards (`ReadOnlySession`, `ReadOnlyAsyncTransport`) and the opt-in request audit (a file, or a sink such as the MCP call log's buffer) |
 | `redact.py` | Strips secret fields from diagnostic output and masks secret values in MCP results and CLI error text |
 
 ### exceptions.py

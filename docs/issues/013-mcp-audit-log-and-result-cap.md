@@ -1,7 +1,7 @@
 ---
 title: "No default audit log of MCP calls, and no cap on result size"
 date: 2026-10-02
-status: open, decision needed
+status: resolved
 severity: low
 components: [mcp/runner, mcp/server, core/utils/readonly]
 found_by: MCP uvx standards work
@@ -37,3 +37,23 @@ today.
   results, and the new tools paginate (`limit`/`offset`). Revisit if a tool is seen to exceed
   it. D4 moved to issue [063](063-execute-tool-result-cap.md) (2026-10-05), so this issue can
   close when D5 lands.
+
+## Resolution
+
+D5 is implemented as recommended, in the July port: `mcp/call_audit.py` writes one JSON line
+per catalog tool call, on by default, to `$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl`
+(resolved at each write, never relative to the working directory). A line holds the time,
+the registered tool's name (an unregistered name is `<unregistered>` with its length), the
+surface, the argument keys that are the tool's own parameter names (any other key only
+counted), the duration and the outcome (`ok`, the error code, or `CANCELLED`); argument
+values, results and messages are never written. `UNIFI_MCP_CALL_AUDIT` turns it off or moves
+it to an absolute path, and `UNIFI_MCP_REQUEST_AUDIT=on` adds the read-only guards' request
+lines to the same file (a path still writes the separate file; the `off` family and `default`
+write nothing). The file is capped at 16 MiB through the shared capped JSON-lines writer
+(`core/utils/jsonl.py`: a lock file, torn-line repair, compaction to 80%), `0o600`. The runner
+writes in a worker thread inside a shielded cancel scope, and a failed write warns once and
+turns the log off for the process, so no tool result changes. `unifi-mcp --check` reports the
+path as `call_audit`.
+
+D4 moved to issue [063](063-execute-tool-result-cap.md) before this closed. Tests:
+`tests/mcp/test_call_audit.py`.

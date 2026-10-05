@@ -24,8 +24,9 @@ list as proof that collection was read-only.
 
 The same policy, as the pure :func:`request_allowed`, backs
 :class:`ReadOnlyAsyncTransport`, the httpx twin used by the MCP server's shared
-async client. Both guards also append ``{"t", "method", "path"}`` JSON lines to
-an opt-in file sink set with :func:`configure_request_audit`.
+async client. Both guards also report every request they let through to an opt-in
+sink set with :func:`configure_request_audit`: a file of ``{"t", "method", "path"}``
+JSON lines, or a callable (the MCP server's call log buffers them as ``request`` lines).
 
 APIs with no read-only POST use the stricter pure :func:`get_only_request_allowed`
 (``GET`` and ``HEAD`` only, with the same path checks, ``cmd``/``upd`` GETs included): the
@@ -68,6 +69,7 @@ _LOGIN_PATH_RE = re.compile(r'^/api/(?:auth/)?login/?$')
 
 _audit_lock = threading.Lock()
 _audit_path: Path | None = None
+_audit_sink: Callable[[str, str], None] | None = None
 
 
 class ReadOnlyViolation(PermissionError):
@@ -179,33 +181,51 @@ def is_login_request(method: str, url: object) -> bool:
     return str(method).upper() == 'POST' and not query and bool(_LOGIN_PATH_RE.match(path_only))
 
 
-def configure_request_audit(path: Path | None) -> None:
-    """Set (or clear, with ``None``) the opt-in request audit file for both guards.
+def configure_request_audit(
+    path: Path | None = None, *, sink: Callable[[str, str], None] | None = None
+) -> None:
+    """Set the opt-in request audit for both guards: a file, a callable, or neither.
 
-    When set, every request a guard lets through is appended as one JSON line
+    With a ``path``, every request a guard lets through is appended as one JSON line
     ``{"t": <UTC ISO time>, "method": ..., "path": ...}``: no host, query string,
-    headers, cookies or body.
+    headers, cookies or body. With a ``sink``, it is called with the method and path
+    instead (it must not block: the async transport calls it on the event loop). Neither
+    stops auditing.
 
     Args:
-        path: The JSON-lines file to append to, or ``None`` to stop auditing.
+        path: The JSON-lines file to append to.
+        sink: Called as ``sink(method, path)`` for each request.
+
+    Raises:
+        ValueError: Both were given.
     """
-    global _audit_path
+    global _audit_path, _audit_sink
+    if path is not None and sink is not None:
+        raise ValueError('give the request audit a path or a sink, not both')
     if path is not None:
         path = Path(path).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
     with _audit_lock:
-        _audit_path = path
+        _audit_path, _audit_sink = path, sink
 
 
 def audit_request(method: str, path: str) -> None:
-    """Append one request to the configured audit file, if any.
+    """Report one request to the configured sink, or append it to the audit file, if any.
 
-    A write failure is logged and never fails the request.
+    The sink is called outside the lock. A failure is logged and never fails the request.
 
     Args:
         method: Upper-case HTTP method.
         path: Decoded request path (no host or query).
     """
+    with _audit_lock:
+        sink = _audit_sink
+    if sink is not None:
+        try:
+            sink(method, path)
+        except Exception as e:  # noqa: BLE001 - auditing never fails the request
+            logger.warning(f'request audit sink failed: {type(e).__name__}')
+        return
     with _audit_lock:
         target = _audit_path
         if target is None:

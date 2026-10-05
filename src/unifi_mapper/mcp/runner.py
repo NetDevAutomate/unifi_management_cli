@@ -6,7 +6,8 @@
 5. unknown-key check, 6. argument validation against the handler signature,
 7. credential gate by the tool's family, 8. execution under a concurrency cap (and a
 deadline only when ``UNIFI_MCP_TOOL_TIMEOUT`` is set), 9. error mapping to stable codes,
-10. masking of every result and error text, 11. the result for the surface.
+10. masking of every result and error text, 11. the result for the surface, then one line
+in the call log (``mcp/call_audit.py``) when the server gave the runner one.
 
 The runner never raises: every outcome is a ``CallToolResult``. On ``execute_tool``
 its single text block is exactly today's JSON envelope and ``structuredContent`` is the
@@ -14,10 +15,14 @@ same dict; failures set ``isError`` (``ERRORS_SET_IS_ERROR``).
 """
 
 import anyio
+import anyio.to_thread
 import asyncio
+import functools
 import inspect
 import os
 import pydantic_core
+import time
+from .call_audit import CANCELLED, CallAuditLog
 from .catalog import ToolCatalog, ToolNotLoadableError
 from .config import (
     FOREIGN_FILE_SUGGESTION,
@@ -217,6 +222,7 @@ class ToolRunner:
         settings: ServerSettings | None = None,
         config: Callable[[], ResolvedConfig | None] | None = None,
         catalog: ToolCatalog | None = None,
+        call_audit: CallAuditLog | None = None,
     ) -> None:
         """Create a runner for ``registry``.
 
@@ -225,10 +231,12 @@ class ToolRunner:
             settings: Concurrency cap, credential timeout and optional tool deadline.
             config: Returns the resolved MCP config (for the paths tried), if any.
             catalog: The SDK tool catalog; built from ``registry`` when omitted.
+            call_audit: Where each call is logged (the server's; None logs nothing).
         """
         self.registry = registry
         self.catalog = catalog or ToolCatalog(registry)
         self.settings = settings or ServerSettings()
+        self.call_audit = call_audit
         self._config = config or (lambda: None)
         self._semaphore: anyio.Semaphore | None = None
         self._semaphore_loop: asyncio.AbstractEventLoop | None = None
@@ -256,18 +264,65 @@ class ToolRunner:
             surface: ``'execute_tool'`` (today's envelope) or ``'direct'``.
 
         Returns:
-            The call result; never raises.
+            The call result; never raises (a cancellation propagates, after it is logged).
         """
+        started = time.monotonic()
+        outcome = TOOL_FAILED
         try:
             tool, kwargs = await self._prepare(name, dict(params or {}))
             result = await self._execute(name, tool, kwargs)
             secrets = mcp_secret_values(os.environ)
-            return self._success(tool, result, secrets, surface)
+            packaged = self._success(tool, result, secrets, surface)
+            outcome = 'ok'
+            return packaged
         except _Failure as failure:
+            outcome = failure.error_code
             return self._failure(failure, mcp_secret_values(os.environ), surface)
+        except asyncio.CancelledError:
+            outcome = CANCELLED
+            raise
         except Exception as e:  # noqa: BLE001 - the runner never raises out of a tool call
             logger.exception('MCP tool {} failed while packaging its result', name)
             return self._failure(_Failure.tool_failed(e), mcp_secret_values(os.environ), surface)
+        finally:
+            if self.call_audit is not None:
+                await self._log_call(name, params, surface, started, outcome)
+
+    def _known_keys(self, name: str) -> frozenset[str]:
+        """The registered tool's parameter names (manifest, aliases and signature)."""
+        meta = self.registry.get_metadata(name)
+        if meta is None:
+            return frozenset()
+        keys = set(meta.parameters) | set(meta.aliases)
+        try:
+            keys |= set(self.catalog.get(name).parameters.get('properties', {}))
+        except Exception:  # noqa: BLE001 - refused or not loadable: the manifest's names
+            pass
+        return frozenset(keys)
+
+    async def _log_call(
+        self, name: str, params: dict[str, Any] | None, surface: str, started: float, outcome: str
+    ) -> None:
+        """Write the call's line in a worker thread, shielded, so a cancelled call is logged."""
+        audit = self.call_audit
+        if audit is None or not audit.enabled:
+            return
+        try:
+            registered = self.registry.get_metadata(name) is not None
+            record = functools.partial(
+                audit.record,
+                tool=name,
+                registered=registered,
+                surface=surface,
+                arg_keys=list(params or {}),
+                known_keys=self._known_keys(name) if registered else frozenset(),
+                duration_ms=(time.monotonic() - started) * 1000,
+                outcome=outcome,
+            )
+            with anyio.CancelScope(shield=True):
+                await anyio.to_thread.run_sync(record)
+        except Exception:  # noqa: BLE001 - logging a call never changes its result
+            logger.warning('MCP call log: the line for {} was not written', name)
 
     # --- steps 1-7 --------------------------------------------------------------------
 

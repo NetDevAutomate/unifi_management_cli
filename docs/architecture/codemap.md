@@ -59,7 +59,7 @@ Generated: 2026-05-02; refreshed against the code on 2026-10-04
     - 17.1 [mcp/server.py - FastMCP entry point](#171-mcpserverpy)
     - 17.2 [mcp/registry.py - ToolRegistry](#172-mcpregistrypy)
     - 17.3 [mcp/tools/ - Tool wrappers](#173-mcptools)
-    - 17.4 [mcp/catalog.py, mcp/runner.py and mcp/config.py](#174-mcpcatalogpy-mcprunnerpy-and-mcpconfigpy)
+    - 17.4 [mcp/catalog.py, mcp/runner.py, mcp/config.py and mcp/call_audit.py](#174-mcpcatalogpy-mcprunnerpy-mcpconfigpy-and-mcpcall_auditpy)
 18. [monitors/ and backup/ Packages](#18-monitors-and-backup-packages)
 19. [utility/ Package](#19-utility-package)
 20. [Key Workflows](#20-key-workflows)
@@ -1273,12 +1273,13 @@ Each call opens its own guarded client: the network wrappers build `UniFiNetwork
 
 ---
 
-### 17.4 `mcp/catalog.py`, `mcp/runner.py` and `mcp/config.py`
+### 17.4 `mcp/catalog.py`, `mcp/runner.py`, `mcp/config.py` and `mcp/call_audit.py`
 
 | Module | Key names | Responsibility |
 |---|---|---|
 | `catalog.py` | `ToolCatalog`, `build_tool`, `is_direct` | Builds each SDK `Tool` with `Tool.from_function` on first use (the handler signature is the input schema; a typed return gives the output schema), with its title and annotations; `direct_tools()` lists the non-mutating, non-pipeline tools for the direct surface |
 | `runner.py` | `ToolRunner`, `ERRORS_SET_IS_ERROR` | One path for every call on either surface: look up, refuse mutating tools, rewrite aliases, validate, gate the credential family, run under the concurrency cap and the optional `UNIFI_MCP_TOOL_TIMEOUT`, mask secrets and package the envelope; every failure sets `isError` |
+| `call_audit.py` | `CallAuditLog`, `parse_call_audit`, `env_switch`, `CallAuditSetting` | The default-on MCP call log (issue 013 D5): one line per catalog call in `$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl` (the registered tool or `<unregistered>`, the surface, its own parameter names with other keys counted, the duration, the outcome); never a value; request lines buffered from the guards' sink with `UNIFI_MCP_REQUEST_AUDIT=on`; written through `append_capped_jsonl` (16 MiB, `0o600`); a failed write warns once and turns it off |
 | `config.py` | `resolve_config_path`, `resolve_mcp_config`, `load_server_settings`, `CREDENTIAL_KEYS`, `FAMILY_KEYS` | Working-directory-independent config discovery, per-family loading (`controller`, `network_api`, `protect`), the bounded Keychain/1Password fallback and the `UNIFI_MCP_*` settings |
 
 ---

@@ -26,6 +26,7 @@ from typing import Any, Literal
 from unifi_mapper.core.utils import auth
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.mcp.call_audit import CALL_AUDIT_ENV, CallAuditSetting, parse_call_audit
 
 
 CredentialFamily = Literal['controller', 'network_api', 'protect', 'none']
@@ -480,6 +481,8 @@ class ServerSettings:
     credential_timeout: float = 15.0
     max_concurrency: int = 4
     tool_timeout: float | None = None  # unset = no per-call deadline
+    # UNIFI_MCP_CALL_AUDIT: the call log is on by default (issue 013 D5).
+    call_audit: CallAuditSetting = CallAuditSetting('default')
 
 
 def _bounded_number(
@@ -534,6 +537,7 @@ def load_server_settings(
     credential_timeout = _bounded_number(env, 'UNIFI_MCP_CREDENTIAL_TIMEOUT', float, 1, 120, warn)
     tool_timeout = _bounded_number(env, 'UNIFI_MCP_TOOL_TIMEOUT', float, 5, 3600, warn)
     max_concurrency = _bounded_number(env, 'UNIFI_MCP_MAX_CONCURRENCY', int, 1, 32, warn)
+    call_audit = parse_call_audit(env.get(CALL_AUDIT_ENV), warn)
     return ServerSettings(
         log_level=log_level,
         credential_timeout=(
@@ -543,6 +547,7 @@ def load_server_settings(
             defaults.max_concurrency if max_concurrency is None else int(max_concurrency)
         ),
         tool_timeout=tool_timeout,
+        call_audit=call_audit,
     )
 
 

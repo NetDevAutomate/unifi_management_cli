@@ -30,6 +30,7 @@ import importlib.metadata
 import json
 import os
 import sys
+from .call_audit import CallAuditLog, env_switch
 from .catalog import ToolCatalog, annotations_for
 from .config import (
     ConfigFileError,
@@ -140,10 +141,10 @@ async def lifespan(server: FastMCP[Any]) -> AsyncIterator[AppState]:
     _active_config = config
     with ExitStack() as stack:
         stack.callback(_clear_active_config)
-        audit_path = os.environ.get(REQUEST_AUDIT_ENV)
-        if audit_path:
-            configure_request_audit(Path(audit_path))
-            stack.callback(configure_request_audit, None)
+        call_audit = get_runner().call_audit
+        if call_audit is not None:
+            stack.callback(call_audit.flush)
+        _configure_request_audit(stack, call_audit)
         stack.enter_context(use_shared_controller_client(shared))
         sys.stdout = sys.stderr
         try:
@@ -153,6 +154,31 @@ async def lifespan(server: FastMCP[Any]) -> AsyncIterator[AppState]:
             # Bounded and shielded: a slow logout must never hold the process after EOF.
             with anyio.move_on_after(SHUTDOWN_TIMEOUT_S, shield=True):
                 await shared.aclose()
+
+
+def _configure_request_audit(stack: ExitStack, call_audit: CallAuditLog | None) -> None:
+    """Point the guards' request audit where ``UNIFI_MCP_REQUEST_AUDIT`` says, until exit.
+
+    Unset, empty, ``default`` or the ``off`` family: no request lines (never a file named
+    ``off`` or ``default``). The ``on`` family: request lines in the call log (one warning,
+    and none, when the call log is off). Anything else: a path to a separate file, as
+    before.
+    """
+    raw = os.environ.get(REQUEST_AUDIT_ENV)
+    switch = env_switch(raw)
+    if raw is None or not raw.strip() or raw.strip().casefold() == 'default' or switch == 'off':
+        return
+    if switch == 'on':
+        if call_audit is None or not call_audit.enabled:
+            logger.warning(
+                '{}=on writes request lines into the MCP call log, which is off; none written',
+                REQUEST_AUDIT_ENV,
+            )
+            return
+        configure_request_audit(sink=call_audit.note_request)
+    else:
+        configure_request_audit(Path(raw.strip()))
+    stack.callback(configure_request_audit, None)
 
 
 def _clear_active_config() -> None:
@@ -182,7 +208,13 @@ def get_runner() -> ToolRunner:
     global _runner
     registry = get_registry()
     if _runner is None or _runner.registry is not registry:
-        _runner = ToolRunner(registry, settings=current_settings(), config=lambda: _active_config)
+        settings = current_settings()
+        _runner = ToolRunner(
+            registry,
+            settings=settings,
+            config=lambda: _active_config,
+            call_audit=CallAuditLog(settings.call_audit),
+        )
     return _runner
 
 
@@ -674,15 +706,21 @@ def _configure_logging(level: str) -> None:
     logger.add(sys.stderr, level=level, diagnose=False)
 
 
-def check_report(config: ResolvedConfig, surface: Surface = DEFAULT_SURFACE) -> dict[str, Any]:
+def check_report(
+    config: ResolvedConfig,
+    surface: Surface = DEFAULT_SURFACE,
+    settings: ServerSettings | None = None,
+) -> dict[str, Any]:
     """Return the ``--check`` JSON: config source and per-family readiness, no values.
 
     Args:
         config: The resolved configuration.
         surface: The selected tool surface.
+        settings: The server settings (``None``: :func:`current_settings`).
 
     Returns:
-        A JSON-safe dict naming keys only, plus the tool counts each surface lists.
+        A JSON-safe dict naming keys only, plus the tool counts each surface lists and
+        ``call_audit``, the MCP call log's path or ``'off'``.
     """
     report = config.to_json_dict()
     controller = report['families'].get('controller')
@@ -696,6 +734,10 @@ def check_report(config: ResolvedConfig, surface: Surface = DEFAULT_SURFACE) -> 
         'discovery': len(META_TOOLS),
         'direct': len(META_TOOLS) + len(ToolCatalog(registry).direct_tools()),
     }
+    try:
+        report['call_audit'] = (settings or current_settings()).call_audit.describe()
+    except RuntimeError:  # the default path with no home directory: no line can be written
+        report['call_audit'] = 'off'
     return report
 
 
@@ -736,7 +778,7 @@ def main(argv: list[str] | None = None) -> None:
         except ConfigFileError as e:
             print(f'unifi-mcp: {e}', file=sys.stderr)
             sys.exit(2)
-        print(json.dumps(check_report(config, surface), indent=2))
+        print(json.dumps(check_report(config, surface, settings), indent=2))
         sys.exit(0 if config.families['controller'].ready else 1)
 
     _config_path, _settings = explicit, settings

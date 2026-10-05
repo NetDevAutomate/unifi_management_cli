@@ -86,7 +86,7 @@ with `--run-slow`, proves that an edit reaches the next launch.
 | `-h`, `--help` | Print usage and exit 0 |
 | `--surface discovery\|direct` | Choose the [tool surface](#tool-surfaces) (case-insensitive). An invalid value exits 2 |
 | `--config PATH` | Use this env file. Missing or unreadable exits 2 |
-| `--check` | Print, as JSON, where config comes from, which credential families are ready (key names only, never values), the surface and how many tools each surface lists, then exit 0 if the controller family is ready, else 1. Never contacts the controller, Keychain or 1Password |
+| `--check` | Print, as JSON, where config comes from, which credential families are ready (key names only, never values), the surface, how many tools each surface lists and where the MCP call log goes (`call_audit`: its path, or `off`), then exit 0 if the controller family is ready, else 1. Never contacts the controller, Keychain or 1Password |
 
 Unknown arguments are reported on stderr and ignored. Neither `--version` nor `--help` reads
 any config.
@@ -204,14 +204,46 @@ Call it again with `offset: 200` for the last 30 clients (`next_offset` is then 
 | `UNIFI_MCP_CREDENTIAL_TIMEOUT` | 15 | seconds, 1–120 | stderr warning; 15 |
 | `UNIFI_MCP_MAX_CONCURRENCY` | 4 | integer, 1–32 | stderr warning; 4 |
 | `UNIFI_MCP_LOG_LEVEL` | `WARNING` | a loguru level name | stderr warning; `WARNING` |
-| `UNIFI_MCP_REQUEST_AUDIT` | unset | path of a JSON-lines file | — (opt-in) |
+| `UNIFI_MCP_CALL_AUDIT` | on: `$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl` (default `~/.local/state/…`) | `on`/`true`/`1`/`default`; `off`/`false`/`0`/`none`; an absolute path (any case; `~` expanded) | a relative path or anything else: stderr warning; the call log is off |
+| `UNIFI_MCP_REQUEST_AUDIT` | unset (no request lines) | `on`/`true`/`1` (request lines in the call log); `off`/`false`/`0`/`none` or `default` (none); any other value: path of a separate JSON-lines file | `on` with the call log off: stderr warning; none |
 | `UNIFI_MCP_ENV` | `…/unifi_management_cli/prod.env` | path; read only by `scripts/unifi-mcp-launch.sh` | the script exits 1 |
 | `XDG_CONFIG_HOME` | `~/.config` | directory | — |
 
-`UNIFI_MCP_REQUEST_AUDIT=<file>` appends one line per request the read-only guards let
-through: `{"t": <UTC time>, "method": …, "path": …}`. No host, query string, headers or body
-is recorded. It's how you can show that a session sent nothing but reads, because every tool
-family goes through a guard:
+### What the call log holds
+
+The server writes one JSON line per catalog tool call (through `execute_tool` or the direct
+surface) to `$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl`, on by default
+(`UNIFI_MCP_CALL_AUDIT`; issue [013](../issues/013-mcp-audit-log-and-result-cap.md)):
+
+```json
+{"t": "2026-01-01T12:00:00.000+00:00", "epoch": 1767268800.0, "kind": "call", "pid": 4242, "tool": "get_clients", "surface": "execute_tool", "arg_keys": ["active_only", "limit"], "unknown_keys": 0, "duration_ms": 182.4, "outcome": "ok"}
+```
+
+- `tool` is the registered name. A name the registry doesn't hold is client text, so it is
+  written as `"<unregistered>"` with `tool_name_length`, never the name.
+- `arg_keys` lists only the keys that are the tool's own parameter names; any other key is
+  counted in `unknown_keys`, never named. Argument values, results and error messages are
+  never written.
+- `outcome` is `ok`, the error code (`INVALID_PARAMETERS`, `MUTATION_REFUSED`,
+  `TOOL_NOT_FOUND`, `CONFIG_MISSING`, `TIMEOUT`, …), or `CANCELLED` for a call the client
+  cancelled (still logged, still cancelled).
+- The meta-tools (`search_tools`, `get_tool_info`, `list_categories`) aren't logged.
+
+The file is `0o600` (a new directory `0o700`), capped at 16 MiB (compacted to 80%, oldest
+lines first) and locked per write, so several server processes can share it. A write that
+fails (an unwritable path, no home directory) logs one warning and turns the log off for that
+process; no tool result ever changes. `unifi-mcp --check` shows the path in `call_audit`.
+
+### Request lines
+
+`UNIFI_MCP_REQUEST_AUDIT=on` adds a `{"t", "epoch", "kind": "request", "method", "path"}` line
+to the call log for each request the read-only guards let through, written just before the
+next call line (buffered in memory, at most 1000, then one `request_overflow` line with the
+count). Request lines carry no call id: with concurrent calls they belong to the time window,
+not to one call. Any other value but the `off` family and `default` keeps the older form: a
+path to a separate file of `{"t": <UTC time>, "method": …, "path": …}` lines. No host, query
+string, headers or body is recorded either way. It's how you can show that a session sent
+nothing but reads, because every tool family goes through a guard:
 
 - `controller`: the shared client's read-only transport, or the guard on the sync
   diagnostics client (`inspect_switch_port` included). GET and HEAD (no `cmd`/`upd`

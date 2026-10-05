@@ -2,6 +2,7 @@
 
 import importlib
 import inspect
+import json
 import pytest
 import yaml
 from contextlib import contextmanager
@@ -143,10 +144,18 @@ async def test_counter_tools_report_the_recorded_history_and_write_nothing(fake_
         build_history_records,
         default_history_path,
     )
+    from unifi_mapper.mcp.call_audit import CALL_AUDIT_FILENAME
+
+    # The MCP call log (on by default, issue 013) is the server's own record, written beside
+    # the history; this test's point is that the reads leave the history alone.
+    call_log = {CALL_AUDIT_FILENAME, f'{CALL_AUDIT_FILENAME}.lock'}
+
+    def _state(directory: Path) -> dict[str, bytes]:
+        return {p.name: p.read_bytes() for p in directory.iterdir() if p.name not in call_log}
 
     append_history(build_history_records(fake_devices(), taken_at='T', epoch=1.0), now=1.0)
     state = default_history_path().parent
-    before = {p.name: p.read_bytes() for p in state.iterdir()}
+    before = _state(state)
 
     rates = _envelope(
         await server.execute_tool(
@@ -163,7 +172,22 @@ async def test_counter_tools_report_the_recorded_history_and_write_nothing(fake_
     ):
         assert history['found'] is True and history['records'] == 1
         assert 'rx_crc_errors' in history['first_increase']
-    assert {p.name: p.read_bytes() for p in state.iterdir()} == before
+    assert _state(state) == before
+
+
+async def test_the_call_log_appears_in_the_state_directory_by_default(fake_controller):
+    from unifi_mapper.analysis.port_counter_baseline import state_dir
+    from unifi_mapper.mcp.call_audit import CALL_AUDIT_FILENAME
+
+    params = {'switch': SWITCH_NAME, 'port': 5, 'samples': 1}
+    out = _envelope(await server.execute_tool('get_port_counter_rates', params))
+    assert out['ok'] is True, out
+    text = (state_dir() / CALL_AUDIT_FILENAME).read_text(encoding='utf-8')
+    lines = [json.loads(line) for line in text.splitlines()]
+    assert [(line['kind'], line['tool'], line['arg_keys']) for line in lines] == [
+        ('call', 'get_port_counter_rates', ['port', 'samples', 'switch'])
+    ]
+    assert lines[0]['outcome'] == 'ok' and SWITCH_NAME not in text  # keys, never values
 
 
 async def test_client_history_confirms_the_target_port(fake_controller):
