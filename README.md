@@ -237,6 +237,8 @@ config-changes` dates each object by the creation time its ID records, so an edi
 object does not appear; `controller events` shows the edits, in the admin-activity system log.
 `backup verify` contacts nothing: it decrypts the backup with the controller's fixed backup key
 and reports which collections it holds and how many documents each has, never their contents.
+A truncated download, or a database holding a document that does not decode, is reported as
+not valid (exit 1).
 
 `diagnose all` runs 15 checks: link quality, capacity planning, port profiles, MTU
 consistency, SFP diagnostics, radio optimisation, firmware skew, DHCP pools, PoE budget,

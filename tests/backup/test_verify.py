@@ -177,19 +177,73 @@ def test_an_empty_database_is_not_valid() -> None:
 
 
 CORRUPT = b'\x05\x00\x00\x00\x7f'  # a 5-byte document whose terminator is not NUL
+LAST = bson.encode({'_type': 'device', 'name': 'Switch B'})  # one more whole document
 
 
-def test_corrupt_documents_are_counted_and_skipped() -> None:
-    result = verify_backup_bytes(build_unf_bytes(db_gz=_gz(bson_stream(COLLECTIONS) + CORRUPT)))
-    assert result['valid'] is True
+def test_a_corrupt_document_makes_the_backup_invalid() -> None:
+    stream = bson_stream(COLLECTIONS) + CORRUPT + LAST
+    result = verify_backup_bytes(build_unf_bytes(db_gz=_gz(stream)))
+    assert result['valid'] is False and result['collections'] == {}
     assert result['bson_parse_errors'] == 1
-    assert sum(result['collections'].values()) == 5
+    assert result['errors'] == [{'stage': 'parse', 'error': 'corrupt_document'}]
 
 
 def test_only_corrupt_documents_is_not_valid() -> None:
     result = verify_backup_bytes(build_unf_bytes(db_gz=_gz(CORRUPT)))
     assert result['valid'] is False
-    assert result['errors'] == [{'stage': 'parse', 'error': 'no_documents'}]
+    assert result['errors'] == [{'stage': 'parse', 'error': 'corrupt_document'}]
+
+
+@pytest.mark.parametrize(
+    'tail',
+    [
+        pytest.param(LAST[:-3], id='a document cut short'),
+        pytest.param(b'\x01\x02', id='a fragment shorter than a size'),
+        pytest.param(b'\x00' * 8, id='NUL bytes after the last document'),
+    ],
+)
+def test_a_whole_document_followed_by_a_truncated_one_is_invalid(tail: bytes) -> None:
+    result = verify_backup_bytes(build_unf_bytes(db_gz=_gz(bson_stream(COLLECTIONS) + tail)))
+    assert result['valid'] is False and result['format'] is None
+    assert result['bson_parse_errors'] == 1
+    assert result['errors'] == [{'stage': 'parse', 'error': 'truncated'}]
+
+
+def test_the_strict_walk_stops_at_the_first_failure_and_copies_no_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # At the bad byte the size reads 1285, which fails; one byte on, a valid empty document
+    # starts. The POC's skip-one-byte recovery finds it; the verifier's strict walk stops.
+    padded = bson.encode({'_type': 'device', 'note': 'x' * 1400})
+    stream = bson_stream(COLLECTIONS) + b'\x05' + bson.encode({}) + padded
+    decoded: list[object] = []
+    real_decode = poc_decrypt.bson.decode
+
+    def _spy(data: object) -> object:
+        decoded.append(data)
+        return real_decode(data)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(poc_decrypt.bson, 'decode', _spy)
+    errors: list[tuple[int, str]] = []
+    docs = list(poc_decrypt.iter_bson_documents(stream, errors, strict=True))
+    assert len(docs) == len(COLLECTIONS) and len(decoded) == len(COLLECTIONS) + 1
+    assert [offset for offset, _ in errors] == [len(bson_stream(COLLECTIONS))]
+    assert all(isinstance(data, memoryview) for data in decoded)  # slices, never copies
+    decoded.clear()
+    recovered = list(poc_decrypt.iter_bson_documents(stream))  # the POC: recovery kept
+    assert len(recovered) == len(COLLECTIONS) + 2 and len(decoded) == len(COLLECTIONS) + 3
+    assert all(isinstance(data, memoryview) for data in decoded)
+
+
+def test_the_strict_walk_names_leftover_bytes_as_truncated() -> None:
+    errors: list[tuple[int, str]] = []
+    good = bson_stream(COLLECTIONS)
+    assert len(list(poc_decrypt.iter_bson_documents(good + b'\x01', errors, strict=True))) == 5
+    [(offset, message)] = errors
+    assert offset == len(good) and message.startswith(poc_decrypt.BSON_TRUNCATED)
+    errors.clear()
+    list(poc_decrypt.iter_bson_documents(good + b'\x01', errors))  # the POC: silent, as before
+    assert errors == []
 
 
 @pytest.fixture

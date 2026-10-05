@@ -5,6 +5,8 @@ extract ``db.gz``, decompress, walk the BSON documents) and reports whether each
 and how many documents each collection holds. The extracted ``db.gz`` member and the
 decompressed database are each capped at 1 GiB: an oversized member is refused by its
 declared size before any of it is inflated, so a small crafted file can't exhaust memory.
+The documents must parse cleanly: one that fails to decode, or bytes left after the last
+whole document (a truncated download), make the backup invalid.
 Documents are counted as they are decoded and none is kept, so the result never carries a
 setting, a password hash or any other value from the backup. Expected failures (a foreign
 or corrupt file) are a result with ``valid: false`` and an ``errors`` list naming the stage
@@ -56,11 +58,15 @@ def verify_backup_bytes(data: bytes, *, max_db_bytes: int = MAX_DB_BYTES) -> dic
             database; past it the result is ``too_large`` at that stage.
 
     Returns:
-        ``valid`` (every stage worked and at least one document decoded), ``format``
-        (``bson`` when valid), ``version`` (the controller version a ``setting`` document
-        names, or None), ``collections`` (name to document count), ``key_sections_present``
-        (each of :data:`KEY_SECTIONS` to bool), ``bson_parse_errors`` (a count) and
-        ``errors`` (``{stage, error}`` entries).
+        ``valid`` (every stage worked, at least one document decoded and the stream parsed
+        cleanly: no document failed to decode and no byte was left after the last one),
+        ``format`` (``bson`` when valid), ``version`` (the controller version a ``setting``
+        document names, or None), ``collections`` (name to document count),
+        ``key_sections_present`` (each of :data:`KEY_SECTIONS` to bool),
+        ``bson_parse_errors`` (0, or 1 when the walk stopped at a corrupt or truncated
+        document: it stops at the first, so its cost stays linear) and ``errors``
+        (``{stage, error}`` entries; a parse failure is ``corrupt_document`` or
+        ``truncated``).
     """
     return _verify([data], max_db_bytes)
 
@@ -96,19 +102,26 @@ def _verify(buffer: list[bytes], max_db_bytes: int) -> dict[str, Any]:
         return result
 
     counts: dict[str, int] = {}
+    version: str | None = None
     parse_errors: list[tuple[int, str]] = []
-    for doc in poc_decrypt.iter_bson_documents(payload, parse_errors):
+    for doc in poc_decrypt.iter_bson_documents(payload, parse_errors, strict=True):
         name = str(poc_decrypt.collection_name(doc))
         counts[name] = counts.get(name, 0) + 1
-        if name == 'setting' and result['version'] is None:
-            result['version'] = _version_of(doc)
+        if name == 'setting' and version is None:
+            version = _version_of(doc)
+    del payload
     result['bson_parse_errors'] = len(parse_errors)
+    if parse_errors:  # the strict walk stopped early: a backup that doesn't parse cleanly
+        truncated = parse_errors[-1][1].startswith(poc_decrypt.BSON_TRUNCATED)
+        result['errors'].append(_error('parse', 'truncated' if truncated else 'corrupt_document'))
+        return result
     if not counts:
         result['errors'].append(_error('parse', 'no_documents'))
         return result
     result.update(
         valid=True,
         format='bson',
+        version=version,
         collections=dict(sorted(counts.items())),
         key_sections_present={name: counts.get(name, 0) > 0 for name in KEY_SECTIONS},
     )

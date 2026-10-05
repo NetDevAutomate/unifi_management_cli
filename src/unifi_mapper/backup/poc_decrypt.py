@@ -41,6 +41,8 @@ except ImportError as e:  # pragma: no cover - a project dependency
 
 GZIP_MAGIC = b'\x1f\x8b'
 _INFLATE_STEP = 1024 * 1024  # bytes of output per decompress call
+# How a strict BSON walk's error for bytes left after the last whole document begins.
+BSON_TRUNCATED = 'truncated'
 
 
 # UniFi backup encryption constants (well-known, hardcoded in UniFi controller)
@@ -230,36 +232,52 @@ def decompress_db(db_gz_data: bytes, max_bytes: Optional[int] = None) -> bytes:
 
 
 def iter_bson_documents(
-    bson_data: bytes, errors: Optional[list[tuple[int, str]]] = None
+    bson_data: bytes, errors: Optional[list[tuple[int, str]]] = None, *, strict: bool = False
 ) -> Iterator[Dict[str, Any]]:
     """Yield the documents of a stream of concatenated BSON documents, in order.
 
-    Walks the stream by each document's 4-byte little-endian size. A document that fails to
-    decode is skipped by one byte, as before, and recorded in ``errors`` (when given) as
-    ``(offset, message)``; nothing is printed. The walk stops at a size that is too small or
-    runs past the end.
+    Walks the stream by each document's 4-byte little-endian size and decodes slices of a
+    ``memoryview``, so no document is copied. Nothing is printed.
+
+    By default (the POC) a document that fails to decode is skipped by one byte, as before,
+    and recorded in ``errors`` (when given) as ``(offset, message)``; the walk stops at a size
+    that is too small or runs past the end.
+
+    With ``strict`` (the verifier) the walk stops at the first document that fails to decode,
+    so no offset is tried twice and the work stays linear in the stream's size, and any bytes
+    left after the last whole document are recorded too, as a message that starts with
+    :data:`BSON_TRUNCATED`. A strict walk that records no error consumed the whole stream.
 
     Args:
         bson_data: Raw BSON bytes.
         errors: A list to append each parse error to.
+        strict: Stop at the first failure and report leftover bytes.
 
     Yields:
         Each decoded document.
     """
+    view = memoryview(bson_data)
+    end = len(view)
     offset = 0
-    while offset + 4 <= len(bson_data):
-        doc_size = int.from_bytes(bson_data[offset : offset + 4], 'little')
-        if doc_size < 5 or offset + doc_size > len(bson_data):
+    while offset + 4 <= end:
+        doc_size = int.from_bytes(view[offset : offset + 4], 'little')
+        if doc_size < 5 or offset + doc_size > end:
             break
         try:
-            doc = bson.decode(bson_data[offset : offset + doc_size])
+            doc = bson.decode(view[offset : offset + doc_size])
         except Exception as e:  # noqa: BLE001 - one corrupt document must not end the walk
             if errors is not None:
                 errors.append((offset, str(e)))
+            if strict:
+                return
             offset += 1  # try to continue by searching for the next valid document
             continue
         yield doc
         offset += doc_size
+    if strict and offset < end and errors is not None:
+        errors.append(
+            (offset, f'{BSON_TRUNCATED}: {end - offset} byte(s) after the last whole document')
+        )
 
 
 def collection_name(doc: Dict[str, Any]) -> Any:
