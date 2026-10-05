@@ -254,3 +254,25 @@ def test_compaction_never_loosens_an_existing_file(tmp_path: Path) -> None:
     append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH, file_mode=0o644)
     assert _epochs(path) == [1]
     assert _mode(path) == 0o600  # the stricter of the existing mode and file_mode
+
+
+# --- readers ------------------------------------------------------------------------------
+
+
+def test_the_readers_skip_the_incomplete_last_line_of_an_append_in_progress(
+    tmp_path: Path,
+) -> None:
+    # Readers take no lock, and an append writes to the live file: mid-append, a reader can
+    # see the last line cut short. Both readers of these files must skip it.
+    from unifi_mapper.analysis.counter_history import read_port_history
+    from unifi_mapper.diagnostics.wan_history import read_speedtest_history
+
+    record = {'epoch': 1_790_000_000, 'device_id': 'a1', 'ports': [{'port_idx': 5}]}
+    counters = tmp_path / 'counters.jsonl'
+    counters.write_text(json.dumps(record) + '\n' + json.dumps(record)[:-9])
+    assert [p.epoch for p in read_port_history('a1', 5, path=counters)] == [1_790_000_000]
+
+    speedtests = tmp_path / 'speedtests.jsonl'
+    speedtests.write_text(_line(1_790_000_000, run=1) + _line(1_790_000_001, run=2)[:-12])
+    result = read_speedtest_history(speedtests)
+    assert (result['total'], [e['epoch'] for e in result['entries']]) == (1, [1_790_000_000])

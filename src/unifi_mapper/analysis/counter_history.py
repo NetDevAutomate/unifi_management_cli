@@ -9,8 +9,9 @@ Writing happens only in :func:`append_history`, behind that explicit flag, throu
 shared capped writer (``core/utils/jsonl.append_capped_jsonl``): an exclusive
 ``fcntl.flock`` on a sibling ``.lock`` file, an append, and a compaction through a
 temporary file plus ``os.replace`` only when the age or size cap is exceeded (with
-hysteresis, so a full file is not rewritten on every run), so a reader never sees a
-half-written file.
+hysteresis, so a full file is not rewritten on every run). A reader never sees a
+half-compacted file, but can see the last line of an append in progress cut short, so
+:func:`read_port_history` skips every line that does not parse.
 
 :func:`read_port_history` and :func:`summarise_port_history` only read. They feed
 the ``baselines.history`` section of ``ports counters``, ``ports diagnose``,

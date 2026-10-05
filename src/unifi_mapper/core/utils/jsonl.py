@@ -1,4 +1,4 @@
-"""A capped, locked JSON Lines file: append, deduplicate, compact, never a half-written file.
+"""A capped, locked JSON Lines file: append, deduplicate, and compact by atomic replace.
 
 Every capped history the tools keep under the XDG state root goes through
 :func:`append_capped_jsonl`: the port counter history (``analysis/counter_history``), and
@@ -7,8 +7,12 @@ a sibling ``<file>.lock`` for the whole append-and-compact; repairs a torn last 
 interrupted writer) before appending; optionally drops incoming lines whose key is already
 in the file; and compacts through a temporary file plus ``os.replace`` only when the file is
 over its size cap, its first line is invalid, or its oldest line is past an age cutoff (with
-hysteresis, so a full file is not rewritten on every append). A reader never sees a
-half-written file.
+hysteresis, so a full file is not rewritten on every append).
+
+Only compaction is atomic: ``os.replace`` swaps in the whole new file, so a reader never sees
+a half-compacted one. An append writes to the live file, and readers take no lock, so while
+an append is in progress a reader can see the file's last line incomplete. Every reader must
+skip a line that does not parse; ``read_port_history`` and ``read_speedtest_history`` do.
 
 A line is valid when the caller's ``epoch_of(line)`` returns a number; :func:`epoch_field`
 builds that function for a top-level numeric field.
