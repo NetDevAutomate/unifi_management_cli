@@ -313,6 +313,15 @@ def test_an_unknown_device_is_one_error_line_on_stderr(controller: FakeControlle
     assert 'No switch matched' in result.stderr
 
 
+@pytest.mark.parametrize('device', ['', 'x' * 129], ids=['empty', 'too long'])
+def test_a_device_the_mcp_tool_would_refuse_is_a_usage_error(
+    controller: FakeController, device: str
+) -> None:
+    result = runner.invoke(app, ['stp', 'audit-priorities', '--device', device])
+    assert result.exit_code == 2, result.output
+    assert controller.calls == []  # refused before connecting
+
+
 def test_the_command_has_help_that_says_read_only() -> None:
     result = runner.invoke(app, ['stp', 'audit-priorities', '--help'])
     assert result.exit_code == 0

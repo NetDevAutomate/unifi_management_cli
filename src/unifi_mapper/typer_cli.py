@@ -2169,10 +2169,25 @@ def stp_analyze(
         raise typer.Exit(1)
 
 
+# The MCP tool's bound on its device parameter (Field(min_length=1, max_length=128)).
+_DEVICE_MAX_LENGTH = 128
+
+
+def _device_query(
+    ctx: typer.Context, param: typer.CallbackParam, value: Optional[str]
+) -> Optional[str]:
+    """Refuse a --device the MCP tool would refuse: empty, or over 128 characters."""
+    if value is not None and not 1 <= len(value) <= _DEVICE_MAX_LENGTH:
+        raise typer.BadParameter(
+            f'give 1 to {_DEVICE_MAX_LENGTH} characters (a name, MAC or ID)', ctx=ctx, param=param
+        )
+    return value
+
+
 @stp_app.command('audit-priorities')
 def stp_audit_priorities(
     device: Optional[str] = typer.Option(
-        None, '--device', help='Only this switch: its name, MAC or ID'
+        None, '--device', help='Only this switch: its name, MAC or ID', callback=_device_query
     ),
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
 ):
