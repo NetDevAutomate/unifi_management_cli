@@ -60,8 +60,9 @@ repos:
       # known-secrets and gitleaks hooks from the same template.
       # Live credentials: blocks results that are verified, or unknown because
       # verification failed. Fakes and revoked tokens verify as "unverified" and pass.
-      # At pre-commit, --since-commit HEAD scans the staged changes. At pre-push that
-      # would scan nothing, so the push hook scans the pushed range instead.
+      # At pre-commit, --since-commit HEAD scans the staged changes, and --branch HEAD
+      # keeps it from also scanning the commits since HEAD on every other local branch.
+      # At pre-push that would scan nothing, so the push hook scans the pushed range.
       # trufflehog switches to "pre-commit hook" mode (staged changes only, whatever the
       # flags say) when PRE_COMMIT is set, so the push hook unsets it first.
       # trufflehog has no --redact: results go through --json and only the detector,
@@ -74,7 +75,8 @@ repos:
           v=$($t --version 2>&1 | grep -Eo "[0-9]+[.][0-9]+[.][0-9]+" | head -n1);
           [ "$(printf "%s\n" $f "$v" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" = $f ] ||
           { echo "$t ${v:-unknown} is older than $f: $h" >&2; exit 1; };
-          set --; git rev-parse -q --verify HEAD >/dev/null && set -- --since-commit HEAD;
+          set --; git rev-parse -q --verify HEAD >/dev/null &&
+          set -- --since-commit HEAD --branch HEAD;
           o=$(trufflehog git file://. "$@" --results=verified,unknown --fail --no-update
           --trust-local-git-config --json 2>/dev/null); r=$?;
           printf "%s\n" "$o" | while IFS= read -r l; do case $l in *\"DetectorName\"*)
