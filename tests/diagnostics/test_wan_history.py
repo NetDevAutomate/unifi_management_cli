@@ -170,6 +170,31 @@ def test_wan_history_prints_the_recorded_runs(
     assert json.loads(as_json.stdout)['returned'] == 1
 
 
+OUT_OF_RANGE = [1e18, 10**18, -5, 0, 1_790_000_000_000]  # far future, negative, zero, ms
+
+
+def test_a_run_time_that_is_not_unix_seconds_is_never_recorded() -> None:
+    for epoch in OUT_OF_RANGE:
+        assert speedtest_line(_speedtest(run_epoch=epoch)) is None
+    assert speedtest_line(_speedtest(run_epoch=wan_history.MAX_RUN_EPOCH)) is not None
+
+
+def test_out_of_range_stored_run_times_are_skipped_and_the_table_still_prints(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv('XDG_STATE_HOME', str(tmp_path / 'xdg'))
+    append_speedtest(_speedtest())
+    path = default_speedtest_history_path()
+    with path.open('a') as f:  # hand-edited or foreign lines
+        f.writelines(
+            json.dumps({'epoch': epoch, 'down_mbps': 1.0}) + '\n' for epoch in OUT_OF_RANGE
+        )
+    assert read_speedtest_history(path)['total'] == 1
+    result = runner.invoke(app, ['diagnose', 'wan-history'])
+    assert result.exit_code == 0, result.output
+    assert '950.0' in result.stdout and 'Traceback' not in result.output
+
+
 @pytest.mark.parametrize('limit', ['0', '1001'])
 def test_wan_history_refuses_a_bad_limit(limit: str) -> None:
     assert runner.invoke(app, ['diagnose', 'wan-history', '--limit', limit]).exit_code == 2

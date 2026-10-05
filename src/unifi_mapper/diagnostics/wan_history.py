@@ -10,6 +10,7 @@ credentials at all; it only reads what was recorded.
 
 import asyncio
 import json
+import math
 from pathlib import Path
 from pydantic import Field
 from typing import Annotated, Any
@@ -23,6 +24,16 @@ DEFAULT_LIMIT = 100
 MAX_LIMIT = 1000
 RECORD_HINT = 'run `unifi-mapper diagnose wan --record` (or schedule it) to record results'
 _FIELDS = ('up_mbps', 'down_mbps', 'ping_ms', 'status')
+# The last second a date can be shown for (9999-12-31T23:59:59Z). A larger run time is not a
+# Unix time in seconds (a millisecond value, or a foreign line), so it is never recorded or read.
+MAX_RUN_EPOCH = 253_402_300_799
+
+
+def plausible_run_epoch(value: object) -> bool:
+    """True for a run time in Unix seconds that a date can be shown for (1..MAX_RUN_EPOCH)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value) and 0 < value <= MAX_RUN_EPOCH
 
 
 def default_speedtest_history_path() -> Path:
@@ -38,10 +49,11 @@ def speedtest_line(last_speedtest: dict[str, Any]) -> str | None:
 
     Returns:
         One JSON object with ``epoch`` (the run time, the line's identity) and the results,
-        or None when the controller gave no run time to date it by.
+        or None when the controller gave no run time to date it by, or one that is not a
+        Unix time in seconds (:func:`plausible_run_epoch`).
     """
     epoch = last_speedtest.get('run_epoch')
-    if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch <= 0:
+    if not isinstance(epoch, int) or not plausible_run_epoch(epoch):
         return None
     entry = {'epoch': epoch, **{key: last_speedtest.get(key) for key in _FIELDS}}
     return json.dumps(entry, sort_keys=True)
@@ -85,6 +97,9 @@ def append_speedtest(
 def read_speedtest_history(path: Path | None = None, limit: int = DEFAULT_LIMIT) -> dict[str, Any]:
     """Return the newest recorded speedtest results, newest first. Never writes.
 
+    A line that does not parse, or whose run time is not a Unix time in seconds
+    (:func:`plausible_run_epoch`), is skipped, so every entry's time can be shown as a date.
+
     Args:
         path: The history file (default :func:`default_speedtest_history_path`).
         limit: At most this many entries (1-1000).
@@ -107,8 +122,8 @@ def read_speedtest_history(path: Path | None = None, limit: int = DEFAULT_LIMIT)
                 entry = json.loads(raw)
             except ValueError:
                 continue  # a torn or foreign line: skip it, as the writer does
-            if isinstance(entry, dict) and epoch_field('epoch')(raw) is not None:
-                entries.append(entry)
+            if isinstance(entry, dict) and plausible_run_epoch(entry.get('epoch')):
+                entries.append(entry)  # an out-of-range run time is a foreign line too
     entries.sort(key=lambda e: e['epoch'], reverse=True)
     result.update(total=len(entries), returned=min(len(entries), limit), entries=entries[:limit])
     if not entries:
