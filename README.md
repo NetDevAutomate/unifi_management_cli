@@ -619,6 +619,15 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 
 Run any command with `--help` for its options.
 
+Exit codes, across the commands:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Done; a diagnosis found no fault |
+| 1 | An error, reported as one line on stderr (a traceback only with `--debug`, without local variables); some diagnoses (`diagnose client-connectivity`, for example) also exit 1 when they find a fault or a check could not run |
+| 2 | A usage or input error, before anything is read: an unknown option, a value out of range, a file option naming a directory, an invalid value the command checks itself |
+| 130 | Interrupted with Ctrl-C after a partial report was printed (`diagnose ap-health`) |
+
 > Invoke commands through the installed `unifi-mapper` script. `python -m unifi_mapper.typer_cli`
 > also works, and a test asserts both paths expose the same command set.
 
@@ -945,6 +954,31 @@ async with UniFiProtectClient(protect_config) as client:
 ```
 
 The bridge automatically creates Home Assistant entities for cameras, doorbells, sensors, and smart detections.
+
+### Protect Monitor
+
+A terminal monitor that polls Protect and prints AI-port pairing, cameras, smart and audio
+detection, and stream and recording health, then each change as it is seen. It reads the
+console from `PROTECT_HOST`, `PROTECT_USERNAME` and `PROTECT_PASSWORD` (the same view-only
+account as above):
+
+```bash
+uv run python -m unifi_mapper.monitors.protect_monitor          # poll every 3 s
+uv run python -m unifi_mapper.monitors.protect_monitor -i 1     # every second
+uv run python -m unifi_mapper.monitors.protect_monitor -q       # changes only
+uv run python -m unifi_mapper.monitors.protect_monitor -l ~/tmp/protect-monitor.log
+```
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `-i`, `--interval SECONDS` | 3 | Seconds between polls |
+| `-q`, `--quiet` | off | Print only changes, not the full status each poll |
+| `-l`, `--log PATH` | none | Append each change and status message to this file |
+| `-u`, `--url URL` | `$PROTECT_HOST` | The console's address |
+| `--user NAME` | `$PROTECT_USERNAME` | The Protect account |
+| `--password VALUE` | `$PROTECT_PASSWORD` | Its password. Prefer the variable: a password on the command line is visible to other processes and kept in shell history |
+
+Stop it with Ctrl-C.
 
 ## Development
 

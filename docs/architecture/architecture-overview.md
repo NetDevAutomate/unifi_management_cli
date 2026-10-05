@@ -254,7 +254,8 @@ With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) the server also lis
 | `mcp/config.py` | CWD-independent config discovery (`--config`, `UNIFI_CONFIG`, XDG, `~/.config`, legacy), per-family loading (`controller`, `network_api`, `protect`), the bounded Keychain/1Password pre-check and the `UNIFI_MCP_*` settings |
 | `mcp/registry.py` | `ToolRegistry`: validates and loads the YAML manifests (a bad file or entry is skipped and logged), search and metadata |
 | `mcp/catalog.py` | `ToolCatalog`: builds SDK tools (input/output schemas, titles, annotations) lazily; never builds mutating tools |
-| `mcp/runner.py` | `ToolRunner`: the one call path for `execute_tool` and direct tools: mutation gate, signature validation, credential gate, concurrency cap and optional deadline, error codes, secret masking (`core/utils/redact.py`), `isError: true` on failure |
+| `mcp/runner.py` | `ToolRunner`: the one call path for `execute_tool` and direct tools: mutation gate, signature validation, credential gate, concurrency cap and optional deadline, error codes, secret masking (`core/utils/redact.py`), `isError: true` on failure, then one call-log line |
+| `mcp/call_audit.py` | The default-on call log (`UNIFI_MCP_CALL_AUDIT`): one JSON line per catalog call in `$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl` with the tool, its parameter names only, the duration and the outcome, never a value; the guards' request lines join it with `UNIFI_MCP_REQUEST_AUDIT=on`; capped at 16 MiB |
 
 The lifespan resolves config once, installs one `SharedControllerClient` (from `core/utils/client.py`) behind a read-only HTTP transport, so a server process logs in to the controller once and every async tool borrows that session, and points `sys.stdout` at stderr so stray prints can't corrupt JSON-RPC. See the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md) for launch modes and client configuration.
 
@@ -890,6 +891,8 @@ classDiagram
 ```
 
 `Device`, `Port` and the STP models live in `core/models/device.py`, `port.py` and `stp.py`. `VLANInfo` is in `core/models/analysis.py`, next to the other analysis report models; `vlan.py` holds the `VLAN` model. The STP suite passes an `STPTopology` (switches, connections, root bridge) from tool to tool; under MCP, a tool that takes such a model as a required parameter is a pipeline tool, reachable only through `execute_tool`.
+
+**Why there is no port mirroring.** `core/models/mirror.py` still defines mirror-session models, but no tool or command uses them: port mirroring was built once and removed. UniFi switches mirror only locally (a source port to a destination port on the same switch, set in the controller's port settings). Remote SPAN across switches is not in the controller at all: it is configured over SSH on each switch, needs a dedicated VLAN and often an extra cable, and the controller overwrites it on reboot, re-adoption or a firmware update. Ubiquiti's EdgeSwitch line supports RSPAN; the UniFi line does not. A tool here could therefore only automate local SPAN, which is a controller write (class C: CLI only, plan, review, apply), so it was not rebuilt. For packet capture across switches, mirror locally on the switch nearest the traffic, or capture on the gateway.
 
 ### core/utils/
 

@@ -122,7 +122,7 @@ C4Container
     System_Ext(home_assistant, "Home Assistant", "MQTT")
 
     System_Boundary(platform, "UniFi Management CLI") {
-        Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI. Commands: discover, diagram, verify, capabilities and the find, analyze, diagnose, ports, controller, backup, stp, radio and inventory groups. discover previews unless --apply.")
+        Container(unifi_mapper_cli, "unifi-mapper", "Python / Typer / Rich", "Primary interactive CLI. Commands: discover, diagram, verify, capabilities and the find, analyze, diagnose, ports, controller, backup, gateway, vlan-traffic, stp, radio and inventory groups. discover previews unless --apply.")
         Container(network_toolkit_cli, "unifi-network-toolkit", "Python / argparse", "Script-friendly CLI. Subcommands: discover, analyze, find, diagnose, install-completions. Its discover writes port names unless --dry-run.")
         Container(inventory_cli, "unifi-inventory", "Python / Typer", "The four inventory commands (list, check-updates, firmware-skew, update-firmware) as their own program.")
         Container(mcp_server, "unifi-mcp", "Python / FastMCP", "MCP server. Runs over stdio. Backed by YAML manifests for 87 registered tools, run read-only through ToolRunner.")
@@ -198,7 +198,7 @@ C4Component
     title Component Diagram - CLI Layer
 
     Container_Boundary(cli_layer, "CLI Entry Points") {
-        Component(typer_cli, "typer_cli.py", "Typer + Rich", "unifi-mapper entry point: discover, diagram, verify, capabilities, version, install-completions and the find, analyze, diagnose, ports, controller, backup, stp, radio and inventory groups. Global state for config path, debug flag and root shortcuts.")
+        Component(typer_cli, "typer_cli.py", "Typer + Rich", "unifi-mapper entry point: discover, diagram, verify, capabilities, version, install-completions and the find, analyze, diagnose, ports, controller, backup, gateway, vlan-traffic, stp, radio and inventory groups. Global state for config path, debug flag and root shortcuts.")
         Component(network_cli, "network_cli.py", "argparse", "unifi-network-toolkit entry point. Subcommands: discover, analyze, find, diagnose, install-completions. Optimised for scripting.")
         Component(inventory_cli_comp, "inventory_cli.py", "Typer", "inventory_app: mounted as unifi-mapper inventory and run as unifi-inventory (list, check-updates, firmware-skew, update-firmware).")
         Component(completions, "completions.py", "Python", "Bundled bash and zsh completion installer; Typer installs other shells.")
@@ -230,7 +230,7 @@ C4Component
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
 Container_Boundary(cli_layer, "CLI Entry Points") {
-    Component(typer_cli, "typer_cli.py", "Typer + Rich", "unifi-mapper: discover, diagram, verify, find, analyze, diagnose, ports, controller, backup, stp, radio, inventory")
+    Component(typer_cli, "typer_cli.py", "Typer + Rich", "unifi-mapper: discover, diagram, verify, find, analyze, diagnose, ports, controller, backup, gateway, vlan-traffic, stp, radio, inventory")
     Component(network_cli, "network_cli.py", "argparse", "unifi-network-toolkit: discover, analyze, find, diagnose")
     Component(inventory_cli_comp, "inventory_cli.py", "Typer", "inventory_app: unifi-inventory, also mounted as the inventory group of unifi-mapper")
     Component(completions, "completions.py", "Python", "bash and zsh completion installer")

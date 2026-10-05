@@ -741,7 +741,7 @@ classDiagram
 | `firewall.py` | `FirewallRule` | Action, source/dest with type annotations, protocol, `is_blocking` property |
 | `vlan.py` | (VLAN models) | VLAN membership and configuration |
 | `stp.py` | `STPTopology`, `SwitchSTPConfig`, `STPPortConfig`, `STPChange`, `STPOptimizationReport` | Rich STP analysis models with priority constants |
-| `mirror.py` | (port mirror models) | SPAN/mirror session definitions |
+| `mirror.py` | `MirrorCapability`, `MirrorSession`, `DeviceMirrorCapabilities`, `MirrorSessionResult`, `MirrorReport` | SPAN/mirror session models, kept but used by no tool or command: port mirroring was removed (UniFi mirrors only locally; RSPAN needs per-switch SSH setup the controller overwrites). See "Why there is no port mirroring" in [architecture-overview.md](architecture-overview.md) |
 | `analysis.py` | (analysis result models) | Structured results for analysis tools |
 | `network_path.py` | `NetworkPath` | Used by `render_mermaid` for path visualisation |
 | `capability.py` | `SwitchCapabilityClass`, `is_root_eligible`, `is_access_class` | Switch capability classes shared by the STP models and `analysis/model_capabilities.py` |
@@ -1653,7 +1653,7 @@ The async `core/` and `protect/` stacks use separate exception classes (`ToolErr
 
 | Script | Purpose |
 |---|---|
-| `unifi-cron.sh` | Master cron/scheduler script supporting macOS (launchd) and Linux (crontab). Installs, updates, and removes scheduled audit jobs: the link-error history (`analyze link-errors --record`) and roaming snapshots every 5 min; config drift, `diagnose all` and the radio report hourly; port naming every 30 min, which writes (`--apply`). Subcommands: `install`, `status`, `run-all`, `update`, `uninstall`, `help`. On macOS the generated plists are invalid XML ([issue 025](../issues/025-launchd-plists-are-invalid-xml.md)) |
+| `unifi-cron.sh` | Master cron/scheduler script supporting macOS (launchd) and Linux (crontab). Installs, updates, and removes scheduled audit jobs: the link-error history (`analyze link-errors --record`) and roaming snapshots every 5 min; config drift, `diagnose all`, the radio report and the WAN speedtest record (`diagnose wan --record`, which reads the controller's last scheduled result and never starts a speedtest) hourly; port naming every 30 min, which writes (`--apply`); installing or updating installs every task. Subcommands: `install`, `status`, `run-all`, `update`, `uninstall`, `help`. On macOS the generated plists are invalid XML ([issue 025](../issues/025-launchd-plists-are-invalid-xml.md)) |
 | `unifi-mcp-launch.sh` | Legacy MCP launch wrapper: sources `$UNIFI_MCP_ENV`, exports every key, then runs `unifi-mcp` from the repo's environment |
 | `audit_port_labels.py` | Read-only census explaining why `ports refresh` proposes few changes |
 | `network-audit.sh` | One read-only audit run: `discover --dry-run`, `stp snapshot`, `stp analyze`, `stp optimize --dry-run --plan`, `stp guard` and `stp report` (plus `stp validate-10g` with `--planned-switches`) into `${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/audits/<stamp>`, private (`umask 077`); no apply path, it prints the review-then-apply commands |
