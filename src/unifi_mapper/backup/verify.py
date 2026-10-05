@@ -5,6 +5,8 @@ extract ``db.gz``, decompress, walk the BSON documents) and reports whether each
 and how many documents each collection holds. The extracted ``db.gz`` member and the
 decompressed database are each capped at 1 GiB: an oversized member is refused by its
 declared size before any of it is inflated, so a small crafted file can't exhaust memory.
+The gzip stream is walked in bounded slices and at most :data:`MAX_GZIP_MEMBERS` members
+are accepted, so a crafted stream of many empty members can't hold a CPU either.
 The documents must parse cleanly: one that fails to decode, or bytes left after the last
 whole document (a truncated download), make the backup invalid.
 Documents are counted as they are decoded and none is kept, so the result never carries a
@@ -34,6 +36,7 @@ from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 MAX_BACKUP_BYTES = 512 * 1024 * 1024  # the .unf file itself
 MAX_DB_BYTES = 1024 * 1024 * 1024  # the decompressed database
+MAX_GZIP_MEMBERS = 64  # gzip members in the database (a real backup's is one)
 BACKUP_SUFFIX = '.unf'
 # Collections whose presence shows the backup carries the network configuration.
 KEY_SECTIONS = ('device', 'networkconf', 'wlanconf', 'setting')
@@ -158,7 +161,7 @@ def _verify(buffer: list[bytes], max_db_bytes: int) -> dict[str, Any]:
         stage = 'extract'
         payload = poc_decrypt.extract_db_gz(payload, max_db_bytes)
         stage = 'decompress'
-        payload = poc_decrypt.decompress_db(payload, max_db_bytes)
+        payload = poc_decrypt.decompress_db(payload, max_db_bytes, MAX_GZIP_MEMBERS)
     except poc_decrypt.DatabaseTooLargeError:
         result['errors'].append(_error(stage, 'too_large'))
         return result
@@ -275,7 +278,8 @@ async def verify_config_backup(
     - After downloading a backup from UniFi Network, to confirm it is not truncated
 
     Decrypts the file with the controller's fixed backup key, extracts and decompresses the
-    database (capped at 1 GiB) and counts the documents in each collection. Reports
+    database (capped at 1 GiB and 64 gzip members) and counts the documents in each
+    collection. Reports
     structure only, never a document's contents. Contacts no controller and needs no
     credentials. The path must be absolute, end in .unf and name a regular file of at most
     512 MiB.

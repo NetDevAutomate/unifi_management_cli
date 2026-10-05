@@ -248,7 +248,7 @@ and reports which collections it holds and how many documents each has, never th
 (a collection outside the known UniFi set is counted as `other`, and a version that is not a
 version number is shown as `<unrecognised>`, so no string from the file is echoed unchecked).
 A truncated download, or a database holding a document that does not decode, is reported as
-not valid (exit 1).
+not valid (exit 1), as is a database of more than 64 gzip members (a real backup's is one).
 
 `diagnose all` runs 15 checks: link quality, capacity planning, port profiles, MTU
 consistency, SFP diagnostics, radio optimisation, firmware skew, DHCP pools, PoE budget,

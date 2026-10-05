@@ -28,7 +28,7 @@ from tests.backup.synthetic_unf import (
     zip_with,
 )
 from typer.testing import CliRunner
-from typing import cast
+from typing import Any, cast
 from unifi_mapper.backup import poc_decrypt, verify
 from unifi_mapper.backup.poc_decrypt import (
     DatabaseTooLargeError,
@@ -348,6 +348,55 @@ def test_the_cap_counts_every_member() -> None:
     assert len(decompress_db(data)) == MIB + 2
     with pytest.raises(DatabaseTooLargeError):
         decompress_db(data, max_bytes=MIB)
+
+
+EMPTY_MEMBER = _gz(b'')  # 20 bytes that inflate to nothing
+
+
+class _SpyInflater:
+    """A zlib decompressor that records the size of every input it is given."""
+
+    def __init__(self, real: Any, sizes: list[int]) -> None:
+        self._real, self._sizes = real, sizes
+
+    def decompress(self, data: Any, max_length: int = 0) -> bytes:
+        self._sizes.append(len(data))
+        return self._real.decompress(data, max_length)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real, name)
+
+
+def test_many_members_feed_the_decompressor_bounded_slices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A crafted stream of empty members costs linear work, never a copy of the rest."""
+    sizes: list[int] = []
+    real = zlib.decompressobj
+    monkeypatch.setattr(zlib, 'decompressobj', lambda *args: _SpyInflater(real(*args), sizes))
+    stream = EMPTY_MEMBER * 200_000
+    assert decompress_db(stream) == b''
+    assert len(sizes) >= 200_000
+    assert max(sizes) <= poc_decrypt.FEED_STEP < len(stream)
+
+
+def test_a_member_spanning_many_slices_inflates_whole() -> None:
+    payload = os.urandom(3 * poc_decrypt.FEED_STEP)  # incompressible: a stored member
+    data = _gz(payload) + b'\x00' * (2 * poc_decrypt.FEED_STEP) + _gz(b'tail')
+    assert decompress_db(data) == payload + b'tail'
+
+
+def test_the_verifier_refuses_more_gzip_members_than_its_cap() -> None:
+    cap = verify.MAX_GZIP_MEMBERS
+    first = _gz(bson_stream(COLLECTIONS))
+    at_cap = verify_backup_bytes(build_unf_bytes(db_gz=first + EMPTY_MEMBER * (cap - 1)))
+    assert at_cap['valid'] is True
+    over = verify_backup_bytes(build_unf_bytes(db_gz=first + EMPTY_MEMBER * cap))
+    assert over['valid'] is False
+    assert over['errors'] == [{'stage': 'decompress', 'error': 'TooManyMembersError'}]
+    with pytest.raises(poc_decrypt.TooManyMembersError):
+        decompress_db(EMPTY_MEMBER * 3, max_members=2)
+    assert decompress_db(EMPTY_MEMBER * 2, max_members=2) == b''
 
 
 # --- the BSON walk ------------------------------------------------------------------------

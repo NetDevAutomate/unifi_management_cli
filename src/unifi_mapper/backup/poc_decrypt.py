@@ -42,6 +42,7 @@ except ImportError as e:  # pragma: no cover - a project dependency
 
 GZIP_MAGIC = b'\x1f\x8b'
 _INFLATE_STEP = 1024 * 1024  # bytes of output per decompress call
+FEED_STEP = 64 * 1024  # bytes of input per decompress call (a slice of a memoryview)
 # How a strict BSON walk's error for bytes left after the last whole document begins.
 BSON_TRUNCATED = 'truncated'
 
@@ -77,6 +78,12 @@ class BSONParseError(BackupDecryptError):
 
 class DatabaseTooLargeError(ExtractionError):
     """The database member, or the decompressed database, passed the size cap it was given."""
+
+    pass
+
+
+class TooManyMembersError(ExtractionError):
+    """The gzipped database holds more members than the cap it was given."""
 
     pass
 
@@ -173,63 +180,96 @@ def extract_db_gz(zip_data: bytes, max_bytes: Optional[int] = None) -> bytes:
         raise ExtractionError(f'ZIP extraction failed: {e}')
 
 
-def _inflate_member(data: bytes, out: bytearray, max_bytes: Optional[int]) -> bytes:
-    """Inflate one gzip member onto ``out``; return the bytes after its trailer.
+def _inflate_member(view: memoryview, start: int, out: bytearray, max_bytes: Optional[int]) -> int:
+    """Inflate the gzip member at ``view[start:]`` onto ``out``; return the offset after it.
 
-    ``zlib``'s gzip mode checks the member's CRC and length. Output is produced in
-    ``_INFLATE_STEP`` pieces, so the cap is enforced before the whole member is in memory.
+    ``zlib``'s gzip mode checks the member's CRC and length. The input is fed in
+    :data:`FEED_STEP` slices of the view and the output taken in ``_INFLATE_STEP`` pieces, so
+    no call copies more than one slice (``unused_data`` and ``unconsumed_tail`` hold the
+    slice's leftover only) and the cap is enforced before the whole member is in memory.
+    The member's end is the fed bytes minus that leftover, so a stream of many members is
+    walked in linear time.
     """
     inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
-    pending = data
+    pos, end = start, len(view)
     try:
         while not inflater.eof:
-            piece = inflater.decompress(pending, _INFLATE_STEP)
+            fed = view[pos : pos + FEED_STEP]
+            piece = inflater.decompress(fed, _INFLATE_STEP)
             out += piece
             if max_bytes is not None and len(out) > max_bytes:
                 raise DatabaseTooLargeError(
                     f'Decompressed database is larger than {max_bytes} bytes'
                 )
-            pending = inflater.unconsumed_tail
-            if not pending and len(piece) < _INFLATE_STEP:
+            consumed = len(fed) - len(inflater.unconsumed_tail) - len(inflater.unused_data)
+            if fed and not consumed and not piece and not inflater.eof:
+                raise ExtractionError('Invalid gzip data: the decompressor made no progress')
+            pos += consumed
+            if pos >= end and len(piece) < _INFLATE_STEP:
                 break  # input used up
     except zlib.error as e:
         raise ExtractionError(f'Invalid gzip data: {e}') from None
     if not inflater.eof:
         raise ExtractionError('Invalid gzip data: ended before the end-of-stream marker')
-    return inflater.unused_data
+    return pos
 
 
-def decompress_db(db_gz_data: bytes, max_bytes: Optional[int] = None) -> bytes:
+def _skip_nuls(view: memoryview, pos: int) -> int:
+    """Return the offset of the first non-NUL byte at or after ``pos`` (or the end)."""
+    end = len(view)
+    while pos < end:
+        chunk = view[pos : pos + FEED_STEP].tobytes()
+        rest = chunk.lstrip(b'\x00')
+        pos += len(chunk) - len(rest)
+        if rest:
+            break
+    return pos
+
+
+def decompress_db(
+    db_gz_data: bytes, max_bytes: Optional[int] = None, max_members: Optional[int] = None
+) -> bytes:
     """Decompress the gzipped database, member by member, by ``gzip.decompress``' rules.
 
     Empty input is zero members (``b''``); input that doesn't start with the gzip magic is
     refused; after each member, NUL padding is skipped, and the rest must be another member.
+    The input is read through a ``memoryview`` in bounded slices, so the work is linear in
+    its size however many members it holds.
 
     Args:
         db_gz_data: Gzipped BSON data.
         max_bytes: Stop once the output passes this many bytes (None: no cap, as before).
+        max_members: Refuse a stream of more than this many members (None: no cap). A real
+            backup's database is one member.
 
     Returns:
         Raw BSON data.
 
     Raises:
         DatabaseTooLargeError: The output passed ``max_bytes``.
+        TooManyMembersError: The stream holds more than ``max_members`` members.
         ExtractionError: Not gzip data, a truncated or corrupt member (``EOFError`` or
             ``zlib.error`` territory), or trailing bytes that aren't a member.
     """
     out = bytearray()
-    data = bytes(db_gz_data)
-    if not data:
-        return b''
-    if not data.startswith(GZIP_MAGIC):
-        raise ExtractionError('Invalid gzip data: not a gzipped file')
-    while True:
-        rest = _inflate_member(data, out, max_bytes).lstrip(b'\x00')
-        if not rest:
-            return bytes(out)
-        if not rest.startswith(GZIP_MAGIC):
-            raise ExtractionError('Invalid gzip data: trailing bytes')
-        data = rest
+    with memoryview(db_gz_data) as view:
+        end = len(view)
+        if not end:
+            return b''
+        if view[:2] != GZIP_MAGIC:
+            raise ExtractionError('Invalid gzip data: not a gzipped file')
+        pos, members = 0, 0
+        while True:
+            if max_members is not None and members >= max_members:
+                raise TooManyMembersError(
+                    f'Invalid gzip data: more than {max_members} gzip member(s)'
+                )
+            pos = _skip_nuls(view, _inflate_member(view, pos, out, max_bytes))
+            members += 1
+            if pos >= end:
+                return bytes(out)
+            if view[pos : pos + 2] != GZIP_MAGIC:
+                raise ExtractionError('Invalid gzip data: trailing bytes')
 
 
 def iter_bson_documents(

@@ -291,8 +291,8 @@ observability tools, `events` through the sync client behind `ReadOnlySession`:
 | `controller events` | `port_history.py` (`collect_recent_events`) | Site-wide events, alarms and system-log entries in the last N hours |
 
 **`backup` subcommand group** — `backup verify` (`backup/verify.py`) checks a downloaded `.unf`
-backup offline: decrypt, extract and decompress (each capped at 1 GiB) and per-collection document
-counts, never document contents; it contacts nothing.
+backup offline: decrypt, extract and decompress (each capped at 1 GiB, the database at 64 gzip
+members) and per-collection document counts, never document contents; it contacts nothing.
 
 **New `stp audit-priorities` command** (`analysis/stp_audit.py`) — a one-shot,
 read-only priority audit: each switch's current against its recommended priority, a warning
