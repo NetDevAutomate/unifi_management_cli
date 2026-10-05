@@ -1,4 +1,7 @@
 default_install_hook_types: [pre-commit, pre-push]
+# Hooks without `stages` run at commit only. At pre-push, only the hooks that ask for that
+# stage run (trufflehog-push, pyright, pytest), not every hygiene hook again.
+default_stages: [pre-commit]
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
