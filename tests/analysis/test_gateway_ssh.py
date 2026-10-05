@@ -33,6 +33,7 @@ from unifi_mapper.analysis import bandwidth_test, latency_matrix
 from unifi_mapper.analysis.gateway_ssh import (
     GATEWAY_KNOWN_HOSTS,
     SSH_CONNECT_SUGGESTION,
+    SSH_CONNECT_TIMEOUT,
     SSH_PASSWORD_MISSING,
     SSH_PASSWORD_SUGGESTION,
     GatewayResult,
@@ -816,3 +817,26 @@ def test_latency_counts_a_target_with_total_loss_as_unreachable() -> None:
         target, '5 packets transmitted, 0 received, 100% packet loss\n'
     )
     assert (result.reachable, result.packet_loss, result.rtt_avg) == (False, 100.0, None)
+
+
+# --- the connect itself is bounded (M2 council finding M2-MAJOR-001) ---------------------
+
+
+async def test_a_stalled_connect_ends_as_unreachable_after_the_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _stalled(host: str, **kwargs: Any) -> FakeConnection:
+        await asyncio.sleep(60)
+        raise AssertionError('not reached')
+
+    monkeypatch.setattr(asyncssh, 'connect', _stalled)
+    with pytest.raises(ToolError) as exc:
+        async with gateway_session('192.0.2.1', connect_timeout=0.05):
+            pass
+    assert exc.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    assert exc.value.message == 'SSH connection to 192.0.2.1 timed out after 0.05s'
+    assert exc.value.suggestion == SSH_CONNECT_SUGGESTION
+
+
+def test_the_default_connect_bound_is_stated() -> None:
+    assert SSH_CONNECT_TIMEOUT == 30

@@ -43,6 +43,8 @@ SSH_CONNECT_SUGGESTION = (
 )
 # The gateway's host key is not checked (issue 038 changes this one line).
 GATEWAY_KNOWN_HOSTS: None = None
+# Seconds allowed for the TCP connect, the SSH handshake and the login together.
+SSH_CONNECT_TIMEOUT = 30
 
 MAX_HOSTNAME_LENGTH = 253
 MAX_URL_LENGTH = 2048
@@ -111,36 +113,48 @@ def ssh_login() -> tuple[str, str]:
 
 @asynccontextmanager
 async def gateway_session(
-    host: str | None = None, *, suggestion: str = SSH_CONNECT_SUGGESTION
+    host: str | None = None,
+    *,
+    suggestion: str = SSH_CONNECT_SUGGESTION,
+    connect_timeout: float = SSH_CONNECT_TIMEOUT,
 ) -> AsyncIterator[asyncssh.SSHClientConnection]:
     """Open one SSH session to the gateway, and close it on exit.
 
     The login is checked first (``ssh_login``), so a missing ``UNIFI_SSH_PASSWORD`` fails
-    before anything connects.
+    before anything connects. The connect, handshake and login together are bounded by
+    ``connect_timeout``, so a gateway that stalls never hangs the command.
 
     Args:
         host: The gateway's address; defaults to ``Credentials.from_env().host``.
         suggestion: What the connect error tells the user to check.
+        connect_timeout: Seconds allowed to connect and log in (default 30).
 
     Yields:
         The open connection, for ``run_gateway_command``.
 
     Raises:
         ToolError: ``CONFIG_MISSING`` without ``UNIFI_SSH_PASSWORD``;
-            ``CONTROLLER_UNREACHABLE`` if the connection or the login fails, with the
-            exception text redacted.
+            ``CONTROLLER_UNREACHABLE`` if the connection or the login fails or takes longer
+            than ``connect_timeout``, with the exception text redacted.
     """
     username, password = ssh_login()
     target = host if host is not None else Credentials.from_env().host
     try:
-        conn = await asyncssh.connect(
-            target,
-            username=username,
-            password=password,
-            known_hosts=GATEWAY_KNOWN_HOSTS,
-            client_keys=[],  # don't try local SSH keys
-            preferred_auth='keyboard-interactive,password',
-        )
+        async with asyncio.timeout(connect_timeout):
+            conn = await asyncssh.connect(
+                target,
+                username=username,
+                password=password,
+                known_hosts=GATEWAY_KNOWN_HOSTS,
+                client_keys=[],  # don't try local SSH keys
+                preferred_auth='keyboard-interactive,password',
+            )
+    except TimeoutError:
+        raise ToolError(
+            message=f'SSH connection to {target} timed out after {connect_timeout:g}s',
+            error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
+            suggestion=suggestion,
+        ) from None
     except Exception as e:
         raise ToolError(
             message=f'SSH connection to {target} failed: {redact_text(e)}',
