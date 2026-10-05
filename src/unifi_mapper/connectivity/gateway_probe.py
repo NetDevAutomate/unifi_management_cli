@@ -221,53 +221,96 @@ def _not_found(message: str) -> ToolError:
     )
 
 
-def _match_client(clients: list[dict[str, Any]], target: str) -> list[dict[str, Any]]:
-    """Clients whose name or hostname equals ``target`` (any case), or whose MAC does."""
-    query, query_mac = target.strip().casefold(), normalise_mac(target)
-    return [
-        c
-        for c in clients
-        if isinstance(c, dict)
-        and (
-            query in {str(c.get('name') or '').casefold(), str(c.get('hostname') or '').casefold()}
-            or (query_mac is not None and normalise_mac(c.get('mac')) == query_mac)
+def _names(record: dict[str, Any], kind: str) -> list[str]:
+    """What a record is called, folded: a device's name; a client's name and hostname."""
+    keys = ('name',) if kind == 'device' else ('name', 'hostname')
+    return [str(record[key]).strip().casefold() for key in keys if record.get(key)]
+
+
+def match_identities(
+    devices: list[Any], clients: list[Any], query: str
+) -> list[tuple[dict[str, Any], str]]:
+    """The devices and clients a query names, from the first tier with a match. Pure.
+
+    Tier 1 is an exact identity in either pool: a device's name or a client's name or
+    hostname (any case), a MAC in any notation, or an IP. Tier 2 is a partial name: the
+    query, or every word of a query of several, inside one of those names. So a client named
+    exactly "Hub 3" wins over an AP named "AP Hub 3", and ``phone`` finds the one client
+    called "Phone A". A device the controller also lists as a client (one MAC) counts once.
+    Shared by ``gateway ping`` and ``traceroute`` (both pools) and ``diagnose
+    client-connectivity`` (clients only).
+
+    Args:
+        devices: ``stat/device`` records (non-dict entries are ignored).
+        clients: ``stat/sta`` records.
+        query: A name, hostname, MAC, IP or part of a name.
+
+    Returns:
+        The winning tier's ``(record, kind)`` pairs, ``kind`` being ``device`` or ``client``:
+        none when nothing matched, more than one when that tier is ambiguous.
+    """
+    text = query.strip()
+    folded, mac = text.casefold(), normalise_mac(text)
+    words = folded.split()
+    pool = [(r, 'device') for r in devices if isinstance(r, dict)]
+    pool += [(r, 'client') for r in clients if isinstance(r, dict)]
+
+    def exact(record: dict[str, Any], kind: str) -> bool:
+        return (
+            (bool(folded) and folded in _names(record, kind))
+            or (mac is not None and normalise_mac(record.get('mac')) == mac)
+            or (bool(text) and str(record.get('ip') or '').strip() == text)
         )
-    ]
+
+    def partial(record: dict[str, Any], kind: str) -> bool:
+        return bool(words) and any(
+            all(word in name for word in words) for name in _names(record, kind)
+        )
+
+    for tier in (exact, partial):
+        matches = [(record, kind) for record, kind in pool if tier(record, kind)]
+        macs = {normalise_mac(record.get('mac')) for record, _ in matches}
+        if len(matches) > 1 and len(macs) == 1 and None not in macs:
+            return matches[:1]  # one MAC: a device the controller also lists as a client
+        if matches:
+            return matches
+    return []
+
+
+def describe_matches(matches: list[tuple[dict[str, Any], str]]) -> str:
+    """Name each candidate of an ambiguous match: its name (or hostname) and MAC."""
+    return '; '.join(
+        f'{record.get("name") or record.get("hostname") or "?"} ({record.get("mac")})'
+        for record, _ in matches
+    )
 
 
 async def resolve_probe_target(target: str) -> tuple[str, str | None]:
     """Return the address to probe and the name it resolved from (None for an address).
 
-    An IP address is used as given. Anything else is looked up through the controller: an
-    adopted device (``match_switch``, any type), then a client by exact name, hostname or
-    MAC. The address found goes through ``require_ip``.
+    An IP address is used as given. Anything else is looked up through the controller, in
+    the adopted devices and the clients together (:func:`match_identities`: exact identities
+    first, then a unique partial name). The address found goes through ``require_ip``.
 
     Raises:
-        ToolError: ``DEVICE_NOT_FOUND`` naming the candidates, ``DEVICE_OFFLINE`` for a match
-            with no address, ``INVALID_IP`` for an address that is not one.
+        ToolError: ``DEVICE_NOT_FOUND`` for no match or one naming the candidates,
+            ``DEVICE_OFFLINE`` for a match with no address, ``INVALID_IP`` for an address
+            that is not one.
     """
     if is_ip_address(target):
         return require_ip(target.strip()), None
-    from unifi_mapper.port_inspect import match_switch
-
     async with UniFiClient() as client:
         devices = await client.get_devices()
-        try:
-            device, _, _ = match_switch(devices, target, device_types=None)
-        except LookupError as e:
-            if str(e).startswith('Ambiguous'):
-                raise _not_found(str(e)) from None
-            device = None
-        if device is not None:
-            found, name = device.get('ip'), device.get('name') or target
-        else:
-            matches = _match_client(await client.get_clients(), target)
-            if len(matches) > 1:
-                described = '; '.join(f'{c.get("name") or "?"} ({c.get("mac")})' for c in matches)
-                raise _not_found(f'{target!r} matches more than one client: {described}')
-            if not matches:
-                raise _not_found(f'No device or client matched {target!r}')
-            found, name = matches[0].get('ip'), matches[0].get('name') or target
+        clients = await client.get_clients()
+    matches = match_identities(devices, clients, target)
+    if len(matches) > 1:
+        raise _not_found(
+            f'{target!r} matches more than one device or client: {describe_matches(matches)}'
+        )
+    if not matches:
+        raise _not_found(f'No device or client matched {target!r}')
+    record, _ = matches[0]
+    found, name = record.get('ip'), record.get('name') or record.get('hostname') or target
     if not found:
         raise ToolError(
             message=f'{name} has no IP address',

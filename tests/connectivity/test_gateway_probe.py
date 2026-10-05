@@ -26,6 +26,7 @@ from unifi_mapper.connectivity.gateway_probe import (
     gateway_ping,
     gateway_traceroute,
     get_active_flows,
+    match_identities,
     parse_conntrack_output,
     parse_curl_writeout,
     parse_nslookup_output,
@@ -247,6 +248,81 @@ async def test_an_unknown_name_is_not_found_before_any_ssh(
             await gateway_ping('No such thing')
     assert caught.value.error_code == ErrorCodes.DEVICE_NOT_FOUND
     assert ssh.connects == []
+
+
+# --- one resolver for devices and clients (review F10) -------------------------------------
+
+HUB_DEVICES = [
+    {'name': 'AP Hub 3', 'mac': '02:00:00:00:01:03', 'type': 'uap', 'ip': '192.0.2.23'},
+    {'name': 'Lab Switch', 'mac': '02:00:00:00:01:04', 'type': 'usw', 'ip': '192.0.2.24'},
+]
+HUB_CLIENTS = [
+    {'name': 'Hub 3', 'mac': '02:00:00:00:02:03', 'ip': '192.0.2.53'},
+    {
+        'name': 'Lab Laptop',
+        'hostname': 'lab-laptop',
+        'mac': '02:00:00:00:02:04',
+        'ip': '192.0.2.54',
+    },
+    {'name': 'Phone A', 'hostname': 'phone-a', 'mac': '02:00:00:00:02:01', 'ip': '192.0.2.50'},
+]
+
+
+@pytest.mark.parametrize(
+    ('query', 'kind', 'name'),
+    [
+        ('Hub 3', 'client', 'Hub 3'),
+        ('ap hub 3', 'device', 'AP Hub 3'),
+        ('02-00-00-00-02-04', 'client', 'Lab Laptop'),
+        ('192.0.2.24', 'device', 'Lab Switch'),
+        ('phone', 'client', 'Phone A'),
+        ('lab-lap', 'client', 'Lab Laptop'),
+        ('hub ap', 'device', 'AP Hub 3'),
+    ],
+    ids=[
+        "a client's exact name over a device's partial one",
+        'an exact name in any case',
+        'a MAC in any notation',
+        'an IP',
+        'a unique partial name',
+        'a partial hostname',
+        'every word of a partial name',
+    ],
+)
+def test_exact_identities_win_then_a_unique_partial_name(query: str, kind: str, name: str) -> None:
+    ((record, found_kind),) = match_identities(HUB_DEVICES, HUB_CLIENTS, query)
+    assert (found_kind, record['name']) == (kind, name)
+
+
+def test_a_partial_name_in_both_pools_is_ambiguous_and_nothing_is_none() -> None:
+    lab = match_identities(HUB_DEVICES, HUB_CLIENTS, 'Lab')
+    assert sorted(record['name'] for record, _ in lab) == ['Lab Laptop', 'Lab Switch']
+    assert match_identities(HUB_DEVICES, HUB_CLIENTS, 'nowhere') == []
+    assert match_identities(HUB_DEVICES, HUB_CLIENTS, '  ') == []
+
+
+def test_a_device_the_controller_also_lists_as_a_client_counts_once() -> None:
+    also_a_client = {'name': 'AP Hub 3', 'mac': '02:00:00:00:01:03', 'ip': '192.0.2.23'}
+    matches = match_identities(HUB_DEVICES, [also_a_client], 'AP Hub 3')
+    assert matches == [(HUB_DEVICES[0], 'device')]
+
+
+async def test_a_probe_resolves_exact_names_first_and_refuses_an_ambiguous_one(
+    ssh: FakeSSH,
+) -> None:
+    controller = FakeController(
+        {f'{API}/stat/device': legacy(HUB_DEVICES), f'{API}/stat/sta': legacy(HUB_CLIENTS)}
+    )
+    async with serving(controller):
+        hub = await gateway_ping('Hub 3', count=1)
+        phone = await gateway_traceroute('phone')
+        with pytest.raises(ToolError) as caught:
+            await gateway_ping('Lab', count=1)
+    assert (hub['probe_ip'], hub['resolved_name']) == ('192.0.2.53', 'Hub 3')
+    assert (phone['probe_ip'], phone['resolved_name']) == ('192.0.2.50', 'Phone A')
+    assert caught.value.error_code == ErrorCodes.DEVICE_NOT_FOUND
+    assert 'Lab Laptop' in caught.value.message and 'Lab Switch' in caught.value.message
+    assert len(ssh.connects) == 2 and controller.methods == {'GET'}
 
 
 @pytest.mark.parametrize('probe', [gateway_ping, gateway_traceroute])

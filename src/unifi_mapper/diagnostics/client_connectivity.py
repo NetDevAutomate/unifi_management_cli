@@ -27,10 +27,12 @@ from typing import Any
 from unifi_mapper.analysis.gateway_ssh import require_http_url, ssh_login
 from unifi_mapper.analysis.vlan_interfaces import network_vlan_id
 from unifi_mapper.connectivity.gateway_probe import (
+    describe_matches,
     gateway_dns_check,
     gateway_http_check,
     gateway_ping,
     get_active_flows,
+    match_identities,
 )
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
@@ -216,31 +218,16 @@ def _not_found(message: str) -> ToolError:
 def find_client(clients: list[Any], query: str) -> dict[str, Any] | None:
     """The client a query names: exact name, hostname, MAC or IP first, then a unique part.
 
-    Pure. Returns None when nothing matches.
+    Pure. The same rule as ``gateway ping``'s target (``gateway_probe.match_identities``,
+    over the clients only). Returns None when nothing matches.
 
     Raises:
         ToolError: ``DEVICE_NOT_FOUND`` naming the candidates when more than one matches.
     """
-    rows = [c for c in clients if isinstance(c, dict)]
-    text = query.strip()
-    folded, mac = text.casefold(), normalise_mac(text)
-
-    def names(c: dict[str, Any]) -> tuple[str, str]:
-        return str(c.get('name') or '').casefold(), str(c.get('hostname') or '').casefold()
-
-    matches = [
-        c
-        for c in rows
-        if folded in names(c)
-        or (mac is not None and normalise_mac(c.get('mac')) == mac)
-        or str(c.get('ip') or '') == text
-    ]
-    if not matches:
-        matches = [c for c in rows if any(folded in name for name in names(c) if name)]
+    matches = match_identities([], clients, query)
     if len(matches) > 1:
-        described = '; '.join(f'{c.get("name") or "?"} ({c.get("mac")})' for c in matches)
-        raise _not_found(f'{query!r} matches more than one client: {described}')
-    return matches[0] if matches else None
+        raise _not_found(f'{query!r} matches more than one client: {describe_matches(matches)}')
+    return matches[0][0] if matches else None
 
 
 def client_network(entry: dict[str, Any], networks: list[Any]) -> tuple[str | None, int | None]:

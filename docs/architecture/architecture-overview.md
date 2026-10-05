@@ -309,8 +309,10 @@ tiers the whole fleet (`--device` narrows the rows and the verdict, and keeps th
 gateway over SSH, CLI only (no MCP tool, decision D1 in issue 060): `gateway ping`,
 `traceroute`, `dns`, `http` and `flows`. Each opens one session and runs one argv with its own
 bound through `analysis/gateway_ssh.py`; a device or client name resolves to its address
-through the read-only controller client, and `http --vlan` to the interface whose address is in
-that VLAN's subnet (`analysis/vlan_interfaces.py`).
+through the read-only controller client (exact names, hostnames, MACs and IPs across devices and
+clients first, then a unique partial name; the rule `diagnose client-connectivity` shares), and
+`http --vlan` to the interface whose address is in that VLAN's subnet
+(`analysis/vlan_interfaces.py`).
 
 **New `vlan-traffic` command group** (`analysis/vlan_traffic.py`, `analysis/vlan_traffic_store.py`)
 — per-VLAN throughput history. `sample` (SSH, CLI only) reads the controller's network list and

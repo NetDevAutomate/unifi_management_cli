@@ -62,6 +62,12 @@ port's plan at filing time; the issue's last update records the commit that buil
   open SSH to the gateway; the port rebuilds them as CLI-only commands (`gateway …`,
   `diagnose client-connectivity`), and MCP exposure is decision D1. Breaks fresh clones, CI or
   prod: no.
+- The probes' hostname fallback: July passed a `gateway ping` or `traceroute` target that
+  matched no device or client to the gateway as a DNS hostname. The port probes only an
+  address or a name the controller knows (design section 4.8) and refuses anything else as
+  `DEVICE_NOT_FOUND`, so a mistyped name never reaches the gateway's resolver; `gateway dns
+  NAME` resolves a hostname, and the probes take its address. Breaks fresh clones, CI or prod:
+  no.
 - `run_spectrum_scan`, `power_cycle_poe_port`, `set_wlan_option`, `set_wlan_ap_group` and
   `run_wan_speedtest`: controller writes or commands; never over MCP, filed as W8, issue
   019 W2, W6, W7 and D2 in issue 060. Breaks fresh clones, CI or prod: no.

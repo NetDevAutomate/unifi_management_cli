@@ -4991,7 +4991,9 @@ def _probe[T](run: Callable[[], Coroutine[Any, Any, T]]) -> T:
 
 @gateway_app.command('ping')
 def gateway_ping_command(
-    target: str = typer.Argument(..., help='An IP, or a device or client name, hostname or MAC'),
+    target: str = typer.Argument(
+        ..., help='An IP, or a device or client name, hostname or MAC (or a unique part of a name)'
+    ),
     count: int = typer.Option(10, '--count', min=1, max=100, help='Echo requests (1-100)'),
     interval: float = typer.Option(
         0.3, '--interval', min=0.2, max=5.0, help='Seconds between requests (0.2-5.0)'
@@ -5027,7 +5029,9 @@ def gateway_ping_command(
 
 @gateway_app.command('traceroute')
 def gateway_traceroute_command(
-    target: str = typer.Argument(..., help='An IP, or a device or client name, hostname or MAC'),
+    target: str = typer.Argument(
+        ..., help='An IP, or a device or client name, hostname or MAC (or a unique part of a name)'
+    ),
     max_hops: int = typer.Option(20, '--max-hops', min=1, max=30, help='Hops to probe (1-30)'),
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
 ):
