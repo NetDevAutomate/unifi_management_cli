@@ -423,6 +423,19 @@ class UniFiClient:
         """
         return f'/proxy/network/api/s/{self._site_name}/{endpoint}'
 
+    def build_v2_path(self, endpoint: str) -> str:
+        """Build a full path on the Network application's v2 API, with the site.
+
+        GETs on it pass the read-only guard like any other read.
+
+        Args:
+            endpoint: v2 endpoint (e.g., 'apgroups')
+
+        Returns:
+            Full path (e.g., '/proxy/network/v2/api/site/default/apgroups')
+        """
+        return f'/proxy/network/v2/api/site/{self._site_name}/{endpoint}'
+
     # =========================================================================
     # Device & Port Methods (for port mirroring and topology)
     # =========================================================================

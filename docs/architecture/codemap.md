@@ -864,6 +864,7 @@ The `core/` package provides shared infrastructure consumed by the async analysi
 | `get_lldp_table(device_id)` | Returns the LLDP table for a device |
 | `get_clients()`, `get_rogue_aps()`, `get_networks()`, `get_network_topology()` | Client, neighbour-AP, network and topology reads |
 | `get(path)`, `post(path)`, `put(path)` | Raw requests on the site API |
+| `build_path(endpoint)`, `build_v2_path(endpoint)` | Full paths on the site API (`/proxy/network/api/s/{site}/…`) and the v2 API (`/proxy/network/v2/api/site/{site}/…`) |
 | `update_device_port()`, `update_port_names()`, `force_provision()` | Write helpers; under the MCP server, and in the CLI's analysis and SSH commands, the read-only transport refuses them |
 
 **Authentication.** Prefers token (`X-API-KEY` header). Falls back to username/password POST against `/api/auth/login` (UniFi OS) or `/api/login` (legacy).
@@ -898,8 +899,10 @@ The `core/` package provides shared infrastructure consumed by the async analysi
 
 | Module | Key names | Purpose |
 |---|---|---|
+| `counters.py` | `VapCounters`, `vap_counters_from_dict`, `pick_vap`, `retry_delta` | Reset-aware deltas of the cumulative per-VAP TX counters: a counter regression or a VAP missing from the previous sample is a reset, never a negative delta |
 | `coerce.py` | `int_or_none`, `float_or_none` | Numeric coercion for controller fields whose JSON type varies by model and firmware (system stats sent as strings) |
 | `jsonl.py` | `append_capped_jsonl`, `compact_jsonl_lines`, `epoch_field`, `CappedWriteResult` | The shared capped JSON Lines writer: `flock` on `<file>.lock`, torn-line repair, optional dedup by key, compaction by size (to 80% of the cap) or age through a temp file and `os.replace`, optional file and directory modes; the port counter history writes through it |
+| `ping_parse.py` | `parse_ping_output`, `PingStats` | Parses GNU (`rtt min/avg/max/mdev`) and BusyBox (`round-trip min/avg/max`) ping statistics; `latency_matrix` builds its results from it |
 | `overrides.py` | `load_stp_overrides`, `STPOverrides` | Loads the STP optimiser's root-eligible and forced-access MACs from `UNIFI_STP_OVERRIDES` (default `~/.config/unifi_management_cli/stp_overrides.yaml`) |
 | `logging.py` | `configure_logging`, `get_logger` | A loguru JSON-file setup that nothing calls, so `UNIFI_MAPPER_DEBUG` has no effect ([issue 045](../issues/045-configure-logging-is-never-called.md)); the CLI uses `typer_cli.setup_logging` and the MCP server `server._configure_logging` |
 

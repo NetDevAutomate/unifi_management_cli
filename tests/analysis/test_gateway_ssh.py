@@ -792,3 +792,27 @@ def test_cli_ssh_unexpected_error_is_redacted_on_stderr(
     assert '❌ Error: agent died' in _flat(result.stderr)
     assert 'agent died' not in result.stdout
     assert FAKE_SSH_PW not in result.output
+
+
+# --- the latency matrix reads ping output through the shared parser ----------------------
+
+BUSYBOX_PING = (
+    '10 packets transmitted, 8 packets received, 20% packet loss\n'
+    'round-trip min/avg/max = 2.100/5.500/12.300 ms\n'
+)
+
+
+def test_latency_reads_busybox_ping_output() -> None:
+    target = {'ip': '192.0.2.10', 'name': 'AP 1', 'type': 'device'}
+    result = latency_matrix._parse_ping_output(target, BUSYBOX_PING)
+    assert (result.reachable, result.packet_loss) == (True, 20.0)
+    assert (result.rtt_min, result.rtt_avg, result.rtt_max) == (2.1, 5.5, 12.3)
+    assert result.rtt_mdev is None
+
+
+def test_latency_counts_a_target_with_total_loss_as_unreachable() -> None:
+    target = {'ip': '192.0.2.10', 'name': 'AP 1', 'type': 'device'}
+    result = latency_matrix._parse_ping_output(
+        target, '5 packets transmitted, 0 received, 100% packet loss\n'
+    )
+    assert (result.reachable, result.packet_loss, result.rtt_avg) == (False, 100.0, None)

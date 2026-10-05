@@ -110,7 +110,7 @@ graph TB
     subgraph CD["Layer 7 - Core Domain"]
         MD["models.py\nPortInfo, DeviceInfo"]
         CM["core/models/\nPydantic typed models"]
-        CU["core/utils/\nauth, client, errors, readonly,\nredact, coerce, overrides, logging,\njsonl"]
+        CU["core/utils/\nauth, client, errors, readonly,\nredact, coerce, overrides, logging,\njsonl, counters, ping_parse"]
         EX["exceptions.py\nException hierarchy"]
     end
 
@@ -830,10 +830,12 @@ classDiagram
 | `auth.py` | `Credentials` Pydantic model + `get_credentials()` fallback chain |
 | `client.py` | `UniFiClient` async httpx client used by the toolkit, and `SharedControllerClient`, the one guarded client an MCP server process shares (and that each CLI analysis or SSH command borrows for its run) |
 | `coerce.py` | `int_or_none` and `float_or_none` for controller fields whose JSON type varies by model and firmware |
+| `counters.py` | Reset-aware per-VAP counter deltas (`retry_delta`): a counter regression or a missing VAP is a reset, never a negative delta |
 | `errors.py` | `ToolError` structured exception + `ErrorCodes` constants |
 | `jsonl.py` | `append_capped_jsonl()`: the shared capped JSON Lines writer (lock, torn-line repair, optional dedup, size and age compaction through a temp file); the port counter history writes through it |
 | `logging.py` | Loguru helpers; nothing calls `configure_logging` ([issue 045](../issues/045-configure-logging-is-never-called.md)) |
 | `overrides.py` | `load_stp_overrides()`: the STP overrides YAML (`UNIFI_STP_OVERRIDES`) |
+| `ping_parse.py` | `parse_ping_output()`: GNU and BusyBox ping statistics (the latency matrix reads ping output through it) |
 | `readonly.py` | The read-only guards (`ReadOnlySession`, `ReadOnlyAsyncTransport`) and the opt-in request audit |
 | `redact.py` | Strips secret fields from diagnostic output and masks secret values in MCP results and CLI error text |
 

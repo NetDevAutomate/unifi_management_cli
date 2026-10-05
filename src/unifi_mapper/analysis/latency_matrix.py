@@ -9,7 +9,6 @@ pinged and is listed in the report's ``skipped_targets``.
 
 import asyncio
 import asyncssh
-import re
 import shlex
 from datetime import datetime
 from unifi_mapper.analysis.gateway_ssh import (
@@ -23,6 +22,7 @@ from unifi_mapper.core.models import LatencyMatrixReport, LatencyResult, Latency
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.ping_parse import parse_ping_output
 
 
 # Each target waits up to count * timeout + 5 s, and targets are pinged ten at a time.
@@ -218,34 +218,29 @@ def _ping_command(ip: str, count: int, timeout: int) -> str:
 
 
 def _parse_ping_output(target: dict, output: str) -> LatencyResult:
-    """Parse ping output for RTT stats and packet loss."""
-    # Parse packet loss: "3 packets transmitted, 3 received, 0% packet loss"
-    loss_match = re.search(r'(\d+)% packet loss', output)
-    packet_loss = float(loss_match.group(1)) if loss_match else 100.0
+    """Parse ping output (GNU or BusyBox, ``core/utils/ping_parse``) into a LatencyResult.
 
-    # Parse RTT: "rtt min/avg/max/mdev = 0.123/0.456/0.789/0.012 ms"
-    rtt_match = re.search(
-        r'(?:rtt|round-trip) min/avg/max/(?:mdev|stddev) = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)',
-        output,
-    )
-
-    if rtt_match and packet_loss < 100:
+    RTT figures are kept only when some packets came back.
+    """
+    stats = parse_ping_output(output)
+    reachable = stats.loss_pct < 100
+    if reachable and stats.rtt_avg is not None:
         return LatencyResult(
             ip=target['ip'],
             name=target['name'],
             target_type=target['type'],
             reachable=True,
-            rtt_min=float(rtt_match.group(1)),
-            rtt_avg=float(rtt_match.group(2)),
-            rtt_max=float(rtt_match.group(3)),
-            rtt_mdev=float(rtt_match.group(4)),
-            packet_loss=packet_loss,
+            rtt_min=stats.rtt_min,
+            rtt_avg=stats.rtt_avg,
+            rtt_max=stats.rtt_max,
+            rtt_mdev=stats.rtt_mdev,
+            packet_loss=stats.loss_pct,
         )
 
     return LatencyResult(
         ip=target['ip'],
         name=target['name'],
         target_type=target['type'],
-        reachable=packet_loss < 100,
-        packet_loss=packet_loss,
+        reachable=reachable,
+        packet_loss=stats.loss_pct,
     )
