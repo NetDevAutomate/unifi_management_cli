@@ -77,10 +77,9 @@ reports/*.png
 # Every subdirectory too: raw controller dumps and live-run captures carry device secrets.
 reports/*/
 !reports/.gitkeep
-diagrams/*.png
-diagrams/*.svg
-diagrams/*.html
-diagrams/*.dot
+# Everything under diagrams/: a PNG or SVG render that fails (no Graphviz dot) leaves its
+# DOT source, which names the site's devices, at the diagram path minus its extension.
+diagrams/*
 !diagrams/.gitkeep
 
 # Real-network test fixtures. These contain live MACs, IPs and physical topology from one

@@ -6,6 +6,7 @@ before any other subcommand, so no typed flag is ever dropped silently.
 
 import pytest
 import re
+import subprocess
 from pathlib import Path
 from typer.testing import CliRunner
 from types import SimpleNamespace
@@ -436,3 +437,36 @@ def test_cron_port_naming_task_passes_apply() -> None:
     run_all = script.split('run_all() {')[1].split('\n}')[0]
     naming = [line for line in run_all.splitlines() if '--connected-devices' in line]
     assert naming and all('--apply' in line.split() for line in naming)
+
+
+def _git_ignored(path: str) -> bool:
+    """Return whether the repository's ignore rules ignore ``path`` (tracked or not)."""
+    repo = CRON_SCRIPT.parents[1]
+    if not (repo / '.git').exists():
+        pytest.skip('not a git checkout: the ignore rules need git')
+    result = subprocess.run(
+        ['git', 'check-ignore', '--no-index', '-q', path], cwd=repo, check=False
+    )
+    assert result.returncode in (0, 1), result
+    return result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    'path',
+    [
+        'diagrams/network_diagram',
+        'diagrams/network_diagram.png',
+        'diagrams/network_diagram.gv',
+        'diagrams/site-a/network.svg',
+    ],
+    ids=['dot source', 'png', 'gv source', 'subdirectory'],
+)
+def test_every_diagram_output_is_git_ignored(path: str) -> None:
+    """Review AGG-1: only diagrams/*.png, .svg, .html and .dot were ignored, so the DOT source
+    a render without Graphviz's dot leaves at the diagram path minus its extension, which
+    names the site's devices, could be staged."""
+    assert _git_ignored(path)
+
+
+def test_the_diagrams_keep_file_is_not_git_ignored() -> None:
+    assert not _git_ignored('diagrams/.gitkeep')
