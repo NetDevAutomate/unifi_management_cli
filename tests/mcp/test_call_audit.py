@@ -23,6 +23,7 @@ from unifi_mapper.mcp import runner as runner_module
 from unifi_mapper.mcp import server
 from unifi_mapper.mcp.call_audit import (
     CALL_AUDIT_FILENAME,
+    MAX_LOGGED_KEYS,
     MAX_PENDING_REQUESTS,
     UNREGISTERED,
     CallAuditLog,
@@ -165,6 +166,23 @@ async def test_unknown_keys_are_a_count_never_a_name(make_runner) -> None:
     (line,) = _lines()
     assert (line['arg_keys'], line['unknown_keys']) == (['n'], 1)
     assert FAKE_KEY not in json.dumps(line) and FAKE_VALUE not in json.dumps(line)
+
+
+def test_names_past_the_cap_are_not_counted_as_unknown() -> None:
+    """M4 council NBF-004: past 64 names, parameter names were counted as unknown keys."""
+    log = CallAuditLog(CallAuditSetting('default'))
+    known = {f'p{i:02d}' for i in range(70)}
+    log.record(
+        tool='find_device',
+        registered=True,
+        surface='direct',
+        arg_keys=[*sorted(known), 'not_a_parameter'],
+        known_keys=known,
+        duration_ms=1.0,
+        outcome='ok',
+    )
+    (line,) = _lines()
+    assert len(line['arg_keys']) == MAX_LOGGED_KEYS and line['unknown_keys'] == 1
 
 
 async def test_a_secret_named_parameter_logs_its_key_never_its_value(make_runner) -> None:

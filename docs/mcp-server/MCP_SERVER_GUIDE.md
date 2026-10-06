@@ -221,9 +221,9 @@ surface) to `$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl`, on by default
 
 - `tool` is the registered name. A name the registry doesn't hold is client text, so it is
   written as `"<unregistered>"` with `tool_name_length`, never the name.
-- `arg_keys` lists only the keys that are the tool's own parameter names; any other key is
-  counted in `unknown_keys`, never named. Argument values, results and error messages are
-  never written.
+- `arg_keys` lists only the keys that are the tool's own parameter names (at most 64); any
+  other key is counted in `unknown_keys`, never named. Argument values, results and error
+  messages are never written.
 - `outcome` is `ok`, the error code (`INVALID_PARAMETERS`, `MUTATION_REFUSED`,
   `TOOL_NOT_FOUND`, `CONFIG_MISSING`, `TIMEOUT`, …), or `CANCELLED` for a call the client
   cancelled (still logged, still cancelled).

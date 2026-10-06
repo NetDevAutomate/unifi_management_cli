@@ -235,13 +235,14 @@ class CallAuditLog:
         if self._disabled:
             return
         keys = list(arg_keys)
-        named = sorted(
+        known = sorted(
             {
                 k
                 for k in keys
                 if isinstance(k, str) and k in known_keys and len(k) <= MAX_KEY_LENGTH
             }
-        )[:MAX_LOGGED_KEYS]
+        )
+        named = known[:MAX_LOGGED_KEYS]  # the cap bounds the line, not what counts as unknown
         stamp, epoch = _now()
         line: dict[str, object] = {
             't': stamp,
@@ -255,7 +256,7 @@ class CallAuditLog:
         line |= {
             'surface': surface,
             'arg_keys': named,
-            'unknown_keys': len(keys) - len(named),
+            'unknown_keys': len(keys) - len(known),
             'duration_ms': round(duration_ms, 1),
             'outcome': outcome,
         }
