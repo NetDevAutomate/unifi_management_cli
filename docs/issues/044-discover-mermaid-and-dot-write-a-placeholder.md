@@ -18,7 +18,7 @@ diagram file holds one line of text, `Mermaid diagram would be generated here` o
 - `run_port_mapper` sends both formats to `generate_mermaid_diagram` and
   `generate_dot_diagram` (`src/unifi_mapper/run_methods.py:817-820`).
 - Both methods write that line and nothing else
-  (`src/unifi_mapper/enhanced_network_topology.py:888-906`).
+  (`src/unifi_mapper/enhanced_network_topology.py:896-914`).
 
 `png`, `svg` and `html` render a real diagram. `unifi-network-toolkit discover` and the
 legacy `python -m unifi_mapper.cli` reach the same code through `run_port_mapper`, so they
@@ -45,7 +45,7 @@ report is unaffected.
 Recommendation: implement both, since the pieces exist.
 
 - DOT: write the source `_generate_dot_source()` already builds for the png and svg
-  renderers (`enhanced_network_topology.py:466`).
+  renderers (`enhanced_network_topology.py:474`).
 - Mermaid: reuse the topology renderer in `src/unifi_mapper/utility/render_mermaid.py`
   (`_render_topology_diagram`), which already turns topology data into a Mermaid `graph`.
 

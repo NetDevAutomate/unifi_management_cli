@@ -82,6 +82,31 @@ def test_with_dot_a_render_writes_the_image_and_removes_the_source(
     assert sorted(p.name for p in out.parent.iterdir()) == [out.name]
 
 
+@pytest.mark.parametrize('fmt', ['png', 'svg'])
+@pytest.mark.parametrize('dir_name', ['site.{fmt}.d', 'run.{fmt}'])
+@pytest.mark.usefixtures('fake_dot')
+def test_a_render_strips_only_the_final_extension(tmp_path: Path, fmt: str, dir_name: str) -> None:
+    """Final council F1: an extension in a directory's name stays, so the image and its DOT
+    source go to the directory asked for, the one network-audit.sh checks, and nowhere else."""
+    out_dir = tmp_path / dir_name.format(fmt=fmt)
+    out_dir.mkdir()
+    out = out_dir / f'network.{fmt}'
+    _render(_topology(), fmt)(str(out))
+    assert sorted(p.name for p in out_dir.iterdir()) == [out.name]
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(['bin', out_dir.name])
+
+
+@pytest.mark.parametrize('fmt', ['png', 'svg'])
+@pytest.mark.usefixtures('fake_dot')
+def test_a_path_without_the_extension_keeps_its_name(tmp_path: Path, fmt: str) -> None:
+    """Only a final extension that matches the format is stripped; any other name gets the
+    format's extension appended, as before."""
+    out = tmp_path / 'diagrams' / 'network.dot'
+    out.parent.mkdir()
+    _render(_topology(), fmt)(str(out))
+    assert sorted(p.name for p in out.parent.iterdir()) == [f'network.dot.{fmt}']
+
+
 @pytest.mark.usefixtures('no_dot')
 def test_html_is_drawn_without_dot(tmp_path: Path) -> None:
     """The docs' way round a missing dot: --format html needs no Graphviz."""

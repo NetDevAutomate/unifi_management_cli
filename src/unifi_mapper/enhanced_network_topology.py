@@ -6,10 +6,22 @@ Contains the NetworkTopology class for managing network topology visualization.
 import json
 import logging
 from .models import DeviceInfo, PortInfo
+from pathlib import Path
 from typing import Dict, Optional
 
 
 log = logging.getLogger(__name__)
+
+
+def _render_base(output_path: str, extension: str) -> str:
+    """The path graphviz renders to: ``output_path`` without a final ``extension``.
+
+    graphviz writes the DOT source at this path and the image at it plus ``extension``. Only
+    a final, matching suffix is stripped, so an extension in a directory's name stays and the
+    files land in the directory asked for (final council F1).
+    """
+    path = Path(output_path)
+    return str(path.with_suffix('') if path.suffix == extension else path)
 
 
 class NetworkTopology:
@@ -417,7 +429,7 @@ class NetworkTopology:
 
             # Render to PNG
             graph = graphviz.Source(dot_source)
-            output_base = str(output_path).replace('.png', '')
+            output_base = _render_base(output_path, '.png')
             graph.render(output_base, format='png', cleanup=True, view=False)
 
             log.info(f'Generated PNG diagram ({layout_style} layout): {output_path}')
@@ -446,7 +458,7 @@ class NetworkTopology:
 
             # Render to SVG
             graph = graphviz.Source(dot_source)
-            output_base = str(output_path).replace('.svg', '')
+            output_base = _render_base(output_path, '.svg')
             graph.render(output_base, format='svg', cleanup=True, view=False)
 
             log.info(f'Generated SVG diagram ({layout_style} layout): {output_path}')
