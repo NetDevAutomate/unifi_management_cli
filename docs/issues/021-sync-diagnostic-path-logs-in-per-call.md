@@ -17,7 +17,8 @@ diagnostics path was deliberately left per call: `diagnose_switch_port`, `get_sw
 `diff_port_profiles`, `get_client_history`, `get_device_events`, `get_port_counter_rates`,
 `audit_link_speeds` and `audit_port_profile_usage` each build a new `UnifiApiClient` through
 `port_diagnostics_tools._readonly_sync_client()`, log in, install the read-only guard, run,
-and log out.
+and log out. The July port's `get_recent_events` (`9d21d0e`) takes the same path, so it logs
+in and out on every call too.
 
 They stay per call because each call's `request_audit` (the list of controller requests that
 call made, which ends up in the evidence bundle) must cover exactly that call. A shared

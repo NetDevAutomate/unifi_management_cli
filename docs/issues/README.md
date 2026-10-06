@@ -23,7 +23,7 @@ the reasoning stays next to the code it explains.
 | [010](010-cwd-relative-state-files.md) | Radio snapshots and several baselines are written relative to the working directory | open, decision needed |
 | [011](011-network-protect-errors-as-success.md) | Network and Protect MCP tools return failures as successful results | open, decision needed |
 | [012](012-mcp-default-tool-deadline.md) | MCP tool calls have no deadline by default | open, decision needed |
-| [013](013-mcp-audit-log-and-result-cap.md) | No default audit log of MCP calls, and no cap on result size | resolved |
+| [013](013-mcp-audit-log-and-result-cap.md) | No default audit log of MCP calls, and no cap on result size | resolved (`ec6aec9`) |
 | [014](014-optional-dependency-extras.md) | Every uvx launch installs the Protect, backup and ONVIF dependencies | open |
 | [015](015-other-discover-entry-points-write-by-default.md) | `unifi-network-toolkit discover` and `python -m unifi_mapper.cli` still write port names by default | open, decision needed |
 | [016](016-audit-lldp-consistency-tool.md) | Add an LLDP consistency audit (`audit_lldp_consistency` / `analyze lldp`) | open |
@@ -60,7 +60,7 @@ the reasoning stays next to the code it explains.
 | [047](047-install-completions-fish-and-all-fail.md) | `unifi-mapper install-completions` accepts `fish` and `all` but installs only bash and zsh | open |
 | [048](048-cli-and-mcp-config-searches-differ.md) | With `XDG_CONFIG_HOME` set, the CLI and the MCP server search different config files | open, decision needed |
 | [049](049-lines-over-99-characters.md) | At `8d51214`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it | open, decision needed |
-| [050](050-latency-matrix-errors-bypass-the-ssh-error-path.md) | `diagnose latency-matrix` reports errors on stdout and unredacted, unlike `diagnose bandwidth` | resolved |
+| [050](050-latency-matrix-errors-bypass-the-ssh-error-path.md) | `diagnose latency-matrix` reports errors on stdout and unredacted, unlike `diagnose bandwidth` | resolved (`8308183`) |
 | [051](051-verify-cli-help-example-held-a-password.md) | `verify_cli`'s help example held a real-looking password, and it is in pushed history | open, decision needed |
 | [052](052-class-names-outside-the-docs-guard.md) | Class names in the docs are outside the docs-drift guard | open |
 | [053](053-mcp-counts-in-prose-match-any-registry-count.md) | A tool count in prose only has to match one of the registry's counts | open |
@@ -68,7 +68,7 @@ the reasoning stays next to the code it explains.
 | [055](055-env-guard-counts-a-mention-as-a-read.md) | The env-var guard counts a variable as read when any string in the code names it | open |
 | [056](056-mcp-name-guard-knows-every-assigned-name.md) | The MCP-name guard counts any name assigned in `src/` as known, local variables included | open |
 | [057](057-onvif-test-rtsp-puts-the-password-on-argv.md) | `onvif_stream.py test-rtsp` passes the ONVIF password to ffprobe on its command line | open, decision needed |
-| [058](058-tracebacks-print-frame-values.md) | Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on | resolved |
+| [058](058-tracebacks-print-frame-values.md) | Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on | resolved (`14488b1`) |
 | [059](059-july-work-not-ported.md) | July work that was not ported, and why | open |
 | [060](060-decisions-from-the-july-port.md) | Decisions from the July port | open, decision needed |
 | [061](061-monitor-lags-misses-current-firmware-lags.md) | `monitor_lags` misses LAGs on current switch firmware | open |
@@ -79,5 +79,5 @@ the reasoning stays next to the code it explains.
 | [066](066-backup-collections-unverified-on-a-real-backup.md) | `backup verify` names collections by `_type`, unverified on a real backup | open |
 | [067](067-mcp-tool-failure-helper-duplicated.md) | The network and Protect tools each carry a copy of the redacted-failure helper | open |
 | [068](068-relative-xdg-config-home-is-honoured.md) | The config searches honour a relative `XDG_CONFIG_HOME`, so they can read a file under the working directory | open, decision needed |
-| [069](069-vlan-reports-read-tiers-without-recent-data.md) | VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty | resolved |
+| [069](069-vlan-reports-read-tiers-without-recent-data.md) | VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty | resolved (`56567fd`) |
 | [070](070-untagged-networks-share-vlan-1-in-the-traffic-store.md) | Two networks without a VLAN ID both sample as VLAN 1, so one overwrites the other in the traffic store | open |

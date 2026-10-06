@@ -43,10 +43,14 @@ figures here. Until then the variable works opt-in.
 
 ## A deadline ends the call, not a worker thread (found in the July port's review)
 
-Three tools run their blocking work in `asyncio.to_thread`: `get_device_events`,
-`get_recent_events` and `verify_config_backup`. When `UNIFI_MCP_TOOL_TIMEOUT` expires or the
+Fourteen tools run their blocking work in `asyncio.to_thread` (counted at the July port's last
+commit): `get_switch_ports`, `diff_port_profiles`, `get_client_history`, `get_device_events`,
+`get_recent_events`, `get_port_counter_rates`, `diagnose_switch_port`,
+`audit_port_profile_usage`, `audit_link_speeds`, `inspect_switch_port`,
+`get_wan_speedtest_history`, `verify_config_backup`, `get_vlan_traffic_report` and
+`list_vlan_traffic_periods`. When `UNIFI_MCP_TOOL_TIMEOUT` expires or the
 client cancels, the call ends (`[TIMEOUT]`, or cancelled) and `ToolRunner` frees its
-concurrency slot, but the thread cannot be cancelled and runs on to the end: up to 101
+concurrency slot, but the thread cannot be cancelled and runs on to the end: for example up to 101
 sequential controller reads for `get_recent_events` (one login per call, issue 021), and for
 `verify_config_backup` the decrypt, the extract and the decompress (each capped at 1 GiB)
 and a strict BSON walk that stops at the first failure. A client that retries after a
@@ -66,3 +70,8 @@ short over MCP. Recommended fix, with D11: bound each read as `diagnose ap-healt
 `SAMPLE_READ_TIMEOUT`), and cap `interval_seconds` so the interval plus both read bounds stays
 under the client limit (or raise the client timeouts, as above). Breaks fresh clones, CI or
 prod: no.
+
+The port's longest composite stays CLI only: `diagnose ap-health` runs up to about 10 h, so an
+MCP form waits for decision D4 in issue [060](060-decisions-from-the-july-port.md) (SDK v2
+tasks, issue [008](008-mcp-sdk-v2-migration.md)), not for a deadline here.
+`diagnose client-connectivity` stops at 120 s but uses SSH, so it waits for 060's D1 as well.

@@ -3,7 +3,7 @@ title: "The gateway SSH commands don't verify the gateway's host key (`known_hos
 date: 2026-10-03
 status: open, decision needed
 severity: medium
-components: [analysis/latency_matrix, analysis/bandwidth_test, analysis/gateway_ssh]
+components: [analysis/gateway_ssh, analysis/latency_matrix, analysis/bandwidth_test, connectivity/gateway_probe, diagnostics/client_connectivity, analysis/ap_health, analysis/vlan_traffic]
 found_by: review of the CLI-only SSH commands (`diagnose latency-matrix`, `diagnose bandwidth`)
 ---
 
@@ -69,3 +69,18 @@ Why this needs a decision: after the change, the first run on every machine fail
 the gateway's key is accepted once (`ssh root@<gateway>`), and so does any run after the
 key changes. That is the point of the check, but it changes how both commands behave for
 every user, so it is the user's call.
+
+## Since the July port
+
+- Every gateway SSH session now opens in one helper, `gateway_session()` in
+  `analysis/gateway_ssh.py` (`385e9d8`), which passes `known_hosts=GATEWAY_KNOWN_HOSTS`. That
+  constant (`None` today) is the one line step 1 changes; the `file:line` references above
+  predate the helper.
+- The port added CLI-only SSH entry points, all through that helper: `gateway ping`,
+  `traceroute`, `dns`, `http` and `flows` (`3a86d86`); `diagnose client-connectivity` and
+  `diagnose ap-health --ping-clients` (`3525478`); and `vlan-traffic sample` (`4875b15`). Each
+  prints the warning that the host key is not verified once per run, before it connects. None
+  is an MCP tool (decision D1 in issue [060](060-decisions-from-the-july-port.md)).
+- The VLAN traffic sampler is held off every schedule: `scripts/unifi-cron.sh` has no
+  `vlan-traffic sample` task. An unattended root SSH login every few minutes should wait for
+  this decision.

@@ -24,7 +24,7 @@ clones, CI or production. The open choices are in issue
 
 This issue was filed at the start of the July port, before its features were rebuilt. Where a
 line says the port *rebuilds* something (a CLI command, an MCP tool, a fixture), that is the
-port's plan at filing time; the issue's last update records the commit that built each one.
+port's plan at filing time; "Rebuilt by the port" below records the commit that built each one.
 
 ## Not ported
 
@@ -118,6 +118,22 @@ port's plan at filing time; the issue's last update records the commit that buil
 - 13 personal scripts kept in a git-ignored personal folder beside the archived July branch
   (a crash monitor, 11 one-off investigation scripts and an upgrade-ordering script):
   personal, git-ignored, kept outside the repo. Breaks fresh clones, CI or prod: no.
+
+## Rebuilt by the port
+
+The lines above that name a rebuilt command, tool or fixture, with the commit that built it:
+
+- The gateway probes as CLI-only `gateway ping`, `traceroute`, `dns`, `http` and `flows`, with
+  no hostname fallback: `3a86d86`.
+- `diagnose client-connectivity` and `diagnose ap-health` (no PoE phase, no SSID or `reports/`
+  default), which replace `scripts/ap_health_test.py`: `3525478`.
+- `vlan-traffic sample`, `rollup`, `report` and `coverage`, with `--db` instead of
+  `UNIFI_VLAN_TRAFFIC_DB`, which replace `scripts/vlan_traffic_sample.py`: `4875b15`.
+- `get_config_object`'s `created_utc` field: `3bc3969`.
+- `get_recent_events` over the four allowlisted system-log classes: `9d21d0e`.
+- The read-only controller dump and network audit scripts, without the 404 paths or a
+  `reports/` default: `13f05e9`.
+- The anonymised 17-switch fleet fixture and its STP audit test: `970c805`.
 
 ## Recommendation
 

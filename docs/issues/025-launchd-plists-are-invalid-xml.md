@@ -58,3 +58,6 @@ Fixing this makes macOS schedules start running for the first time, including th
 (`--verify-updates --connected-devices --apply`). `scripts/unifi-cron.sh run-all` runs the same
 command with `--apply` as its last step. Decide whether that task should stay in the default
 schedule before the fix lands, or whether it should be opt-in (in `run-all` too).
+
+Reinstalling the schedule to add the July port's read-only `wan-speedtest-record` task
+(`82e9b4d`) also installs `port-naming --apply`, because `install` writes every task.

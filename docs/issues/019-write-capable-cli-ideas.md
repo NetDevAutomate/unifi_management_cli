@@ -23,6 +23,10 @@ They change production, so each needs a decision before it is built.
 | W4 | `profiles merge`: merge duplicate port profiles and repoint their ports | `audit_port_profile_usage`'s `DUPLICATE_PROFILES` |
 | W5 | `devices provision NAME`: force-provision one device | Stuck configuration after a change |
 
+The July work's write ideas (W6 to W10: `wlan set-option`, `wlan ap-group`, `radio
+spectrum-scan`, the AP-health PoE power cycle and an unattended `radio auto-channel --apply`)
+are in issue [060](060-decisions-from-the-july-port.md); the rules below apply to them too.
+
 ## Impact
 
 Operators switch to the UI for each fix, so there's no reviewable plan, no audit trail and no

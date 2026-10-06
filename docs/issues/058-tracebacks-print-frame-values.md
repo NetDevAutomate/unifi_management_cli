@@ -2,6 +2,7 @@
 title: "Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on"
 date: 2026-10-05
 status: resolved
+resolved_by: 14488b1
 severity: medium
 components: [src/unifi_mapper/mcp/server.py, src/unifi_mapper/typer_cli.py, src/unifi_mapper/inventory_cli.py, src/unifi_mapper/core/utils/logging.py]
 found_by: July-port design review (revision 5, M1 and M2)

@@ -2,6 +2,7 @@
 title: "`diagnose latency-matrix` reports errors on stdout and unredacted, unlike `diagnose bandwidth`"
 date: 2026-10-04
 status: resolved
+resolved_by: 8308183
 severity: low
 components: [typer_cli, latency_matrix]
 found_by: docs and repo hygiene review (SSH error documentation)

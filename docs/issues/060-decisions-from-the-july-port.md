@@ -17,17 +17,17 @@ does: an SSH probe triggered from an MCP call, a controller command, or a contro
 Each needs a user decision. What was not ported and why is listed in issue
 [059](059-july-work-not-ported.md).
 
-This issue was filed at the start of the July port. It describes as existing only what has
-landed; a command or tool the port builds later is marked "planned in item N" (the port's
-plan, kept outside the repo), and the port's last update records the commit for each.
+This issue was filed at the start of the July port. Every command or tool it names now exists;
+the port's last update added the commit that built each one.
 
 ## Decision needed
 
-- **D1: expose the class B probes over MCP?** These are `diagnose latency-matrix` (it exists),
-  the gateway probes (`gateway ping`, `traceroute`, `dns`, `http`, `flows`; they exist, CLI
-  only), `diagnose client-connectivity` and AP-health sampling with client pings (`diagnose
-  ap-health --ping-clients`; they exist, CLI only), and an on-demand `vlan-traffic sample`
-  (it exists, CLI only; the MCP tools read stored results only). Recommendation: **not by
+- **D1: expose the class B probes over MCP?** These are `diagnose latency-matrix` (it existed
+  before the port), the gateway probes (`gateway ping`, `traceroute`, `dns`, `http`, `flows`;
+  CLI only, `3a86d86`), `diagnose client-connectivity` and AP-health sampling with client
+  pings (`diagnose ap-health --ping-clients`; CLI only, `3525478`), and an on-demand
+  `vlan-traffic sample` (CLI only, `4875b15`; the MCP tools `get_vlan_traffic_report` and
+  `list_vlan_traffic_periods` read stored results only). Recommendation: **not by
   default, and not before issue [038](038-ssh-host-key-verification-disabled.md) is
   fixed**: an MCP-triggered probe would send the gateway's root SSH password to a host whose
   key is not verified. If wanted after 038, add an `active_probe: true` manifest key that
@@ -48,7 +48,8 @@ plan, kept outside the repo), and the port's last update records the commit for 
   body, CLI only (`backup list`), never MCP. A GET, if one is found and verified read-only on
   a live controller, replaces the POST. It is the safer first user of the body-aware policy,
   because the command reads.
-- **D4: long-running MCP jobs** (the July job registry, AP-health sampling over MCP)?
+- **D4: long-running MCP jobs** (the July job registry, AP-health sampling over MCP; the
+  sampling exists as the CLI-only `diagnose ap-health`, `3525478`)?
   Recommendation: wait for SDK v2 tasks (issue [008](008-mcp-sdk-v2-migration.md)) rather
   than an in-process registry outside the tool runner, which escaped its concurrency cap,
   timeout and cancellation (issue [012](012-mcp-default-tool-deadline.md)).
