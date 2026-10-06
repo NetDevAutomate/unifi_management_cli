@@ -53,3 +53,16 @@ and a strict BSON walk that stops at the first failure. A client that retries af
 timeout starts another worker while the first still runs; only the default executor's
 thread limit bounds them. Recommended fix: a stop flag the handler sets when its task is
 cancelled, checked between the backup's stages and between event pages.
+
+## `get_ap_retry_rates` can outlast the clients' 300 s limit (found in the July port's review)
+
+`get_ap_retry_rates` pauses `interval_seconds` (10-240 s) between two device reads. Each read
+opens its own `UniFiClient` and has no deadline of its own: only httpx's per-request timeouts
+(30 s, connect 10 s) bound it. At the 240 s maximum, two reads at their 30 s request bound
+alone reach 300 s, the guide's client limit (kiro-cli `"timeout": 300000`, Codex
+`tool_timeout_sec = 300`), and a connect or a slower read goes past it, so the client gives up
+first and `[TIMEOUT]` never arrives. The tool's docstring already says to keep the interval
+short over MCP. Recommended fix, with D11: bound each read as `diagnose ap-health` does (45 s,
+`SAMPLE_READ_TIMEOUT`), and cap `interval_seconds` so the interval plus both read bounds stays
+under the client limit (or raise the client timeouts, as above). Breaks fresh clones, CI or
+prod: no.
