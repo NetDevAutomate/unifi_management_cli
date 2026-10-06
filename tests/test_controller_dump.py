@@ -7,6 +7,7 @@ argument handling run: every step it runs needs a controller.
 """
 
 import json
+import os
 import pytest
 import shlex
 import stat
@@ -165,11 +166,56 @@ def test_a_write_never_follows_or_truncates_an_existing_path(mod: Any, tmp_path:
     link, plain = tmp_path / 'link.json', tmp_path / 'plain.json'
     link.symlink_to(victim)
     plain.write_text('old\n', encoding='utf-8')
-    for path in (link, plain):
-        with pytest.raises(FileExistsError):
-            mod._write_private(path, {'a': 1})
+    dir_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for name in ('link.json', 'plain.json'):
+            with pytest.raises(FileExistsError):
+                mod._write_private(dir_fd, name, {'a': 1})
+    finally:
+        os.close(dir_fd)
     assert victim.read_text(encoding='utf-8') == 'keep me\n'
     assert plain.read_text(encoding='utf-8') == 'old\n'
+
+
+def test_a_symlinked_output_directory_is_refused(
+    mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """M4 council BF-004: the checks followed a link to an empty private directory."""
+    target = tmp_path / 'elsewhere'
+    target.mkdir(mode=0o700)
+    link = tmp_path / 'out'
+    link.symlink_to(target, target_is_directory=True)
+    attempts = _no_login(mod, monkeypatch)
+    assert mod.main(['--output', str(link)]) == 2 and attempts == []
+    assert 'symbolic link' in capsys.readouterr().err
+    assert list(target.iterdir()) == []
+
+
+def test_a_dump_writes_only_into_the_directory_it_opened(mod: Any, tmp_path: Path) -> None:
+    """A directory swapped for a link after the checks is refused when the dump opens it."""
+    target = tmp_path / 'elsewhere'
+    target.mkdir(mode=0o700)
+    link = tmp_path / 'out'
+    link.symlink_to(target, target_is_directory=True)
+    with pytest.raises(OSError):
+        mod.dump(fake_client(_session()), 'default', link, ['wlanconf'])
+    assert list(target.iterdir()) == []
+
+
+def test_an_output_directory_that_cannot_be_checked_is_refused(
+    mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """M4 council NBF-002: an unreadable directory ended in a traceback, not one line."""
+    output = tmp_path / 'out'
+    output.mkdir(mode=0o700)
+    output.chmod(0o300)  # no read bit: listing it fails
+    attempts = _no_login(mod, monkeypatch)
+    try:
+        assert mod.main(['--output', str(output)]) == 2 and attempts == []
+    finally:
+        output.chmod(0o700)
+    err = capsys.readouterr().err
+    assert err.count('\n') == 1 and 'cannot check --output' in err
 
 
 @pytest.mark.parametrize('mode', [0o770, 0o707, 0o777], ids=['group', 'other', 'everyone'])
