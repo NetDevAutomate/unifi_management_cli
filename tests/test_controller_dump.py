@@ -85,6 +85,21 @@ def test_the_dump_writes_stripped_payloads_and_the_manifest(mod: Any, tmp_path: 
     assert saved['endpoints'] == manifest['endpoints']
 
 
+def test_an_endpoint_error_is_redacted_in_the_manifest_and_on_stderr(
+    mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """M4 council NBF-001: the error text is redacted where it is made (diagnostic_reads)."""
+    body = 'upstream said password=FAKE-DUMP-HTTP-BODY-PW'  # pragma: allowlist secret
+    session = FakeSession({('GET', rf'^{API_RE}/stat/sta$'): (500, body)})
+    monkeypatch.setattr(mod, '_login', lambda _path: (fake_client(session), 'default'))
+    output = tmp_path / 'out'
+    assert mod.main(['--output', str(output), '--endpoint', 'sta']) == 1
+    err = capsys.readouterr().err
+    manifest = (output / 'manifest.json').read_text(encoding='utf-8')
+    assert 'FAKE-DUMP-HTTP-BODY-PW' not in err and 'FAKE-DUMP-HTTP-BODY-PW' not in manifest
+    assert 'sta: GET' in err and '***redacted***' in err and 'HTTP 500' in manifest
+
+
 def test_the_table_is_the_designs_and_reads_only(mod: Any) -> None:
     assert set(mod.ENDPOINTS) == {
         'wlanconf',

@@ -187,6 +187,18 @@ async def test_a_script_that_fails_is_an_error_and_stores_nothing(
     assert not path.exists()
 
 
+async def test_the_failed_scripts_stderr_line_is_redacted(ssh: FakeSSH, tmp_path: Path) -> None:
+    """M4 council NBF-003: the failure cases held no secret-like text, so they would pass
+    with the redaction removed; this one fails then."""
+    stderr = 'fatal: login password=FAKE-VLAN-STDERR-PW'  # pragma: allowlist secret
+    ssh.replies = {'sh': ('', stderr, 1)}
+    async with serving(_controller()):
+        with pytest.raises(ToolError) as caught:
+            await sample_vlan_traffic(tmp_path / 'store.sqlite3')
+    assert 'FAKE-VLAN-STDERR-PW' not in caught.value.message
+    assert caught.value.message.endswith('fatal: login password=***redacted***')
+
+
 async def test_a_script_without_the_address_list_is_an_error(ssh: FakeSSH, tmp_path: Path) -> None:
     ssh.replies = {'sh': 'br0 1000 2000\nbr7 500 700\n'}
     path = tmp_path / 'store.sqlite3'
