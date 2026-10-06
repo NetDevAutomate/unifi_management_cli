@@ -60,6 +60,9 @@ DNS_TIMEOUT = 20
 # result, while 126 and 127 mean the shell could not run it.
 PING_RESULT_CODES = (0, 1)
 NSLOOKUP_RESULT_CODES = (0, 1)
+# Some traceroute builds exit 1 when the trace did not reach the target: a result, but only
+# when it printed hops (a traceroute that could not run prints none).
+TRACEROUTE_RESULT_CODES = (0, 1)
 CURL_RESULT_CODES = range(126)
 FLOWS_TIMEOUT = 60  # July's 30 s, raised for busy tables
 INTERFACES_TIMEOUT = 15
@@ -426,7 +429,8 @@ async def gateway_traceroute(target: str, max_hops: int = 20) -> dict[str, Any]:
     argv = ['traceroute', '-m', str(max_hops), '-w', '2', probe_ip]
     async with gateway_session() as conn:
         result = await run_gateway_command(conn, argv, timeout=max_hops * 6 + 15)
-    hops = parse_traceroute_output(check_exit_status(result, 'traceroute').stdout)
+    hops = parse_traceroute_output(result.stdout)
+    check_exit_status(result, 'traceroute', TRACEROUTE_RESULT_CODES if hops else (0,))
     last = hops[-1] if hops else None
     reached = (
         last is not None

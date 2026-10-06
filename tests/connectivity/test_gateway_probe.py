@@ -553,6 +553,11 @@ FAKE_STDERR_PW = 'FAKE-STDERR-PASSWORD'  # pragma: allowlist secret
             lambda: gateway_traceroute('192.0.2.50'),
         ),
         (
+            'traceroute',
+            ('', 'traceroute: socket: Operation not permitted', 1),
+            lambda: gateway_traceroute('192.0.2.50'),
+        ),
+        (
             'nslookup',
             ('', 'sh: nslookup: not found', 127),
             lambda: gateway_dns_check('www.example.com'),
@@ -569,7 +574,15 @@ FAKE_STDERR_PW = 'FAKE-STDERR-PASSWORD'  # pragma: allowlist secret
         ),
         ('conntrack', ('', f'error password={FAKE_STDERR_PW}', 1), lambda: get_active_flows()),
     ],
-    ids=['ping 2', 'traceroute 127', 'nslookup 127', 'curl 127', 'conntrack 1', 'redacted'],
+    ids=[
+        'ping 2',
+        'traceroute 127',
+        'traceroute 1, no hops',
+        'nslookup 127',
+        'curl 127',
+        'conntrack 1',
+        'redacted',
+    ],
 )
 async def test_a_probe_that_could_not_run_is_an_api_error(
     monkeypatch: pytest.MonkeyPatch, program: str, reply: tuple[str, str, int], call: Any
@@ -621,8 +634,20 @@ async def test_a_vlan_whose_interfaces_cannot_be_read_is_an_api_error(
             'ok',
             False,
         ),
+        (
+            'traceroute',
+            (TRACEROUTE_OUT_OF_HOPS, '', 1),
+            lambda: gateway_traceroute('203.0.113.53', max_hops=2),
+            'reached',
+            False,
+        ),
     ],
-    ids=['ping: no reply is exit 1', 'nslookup: NXDOMAIN is exit 1', 'curl: a timeout is 28'],
+    ids=[
+        'ping: no reply is exit 1',
+        'nslookup: NXDOMAIN is exit 1',
+        'curl: a timeout is 28',
+        'traceroute: hops printed, then exit 1',
+    ],
 )
 async def test_a_result_code_is_still_a_result(
     monkeypatch: pytest.MonkeyPatch,

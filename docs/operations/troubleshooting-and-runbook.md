@@ -244,7 +244,10 @@ local variables). A probe whose program can't run on the gateway (missing, or no
 for a non-root `UNIFI_SSH_USERNAME`) is `[API_ERROR] <program> could not run on the gateway
 (exit status N): <its last stderr line>`, never an empty answer such as "no flows" or 100%
 loss; `diagnose client-connectivity` reports that layer as could not run, and `diagnose
-ap-health --ping-clients` records it as that ping's error.
+ap-health --ping-clients` records it as that ping's error. The exit statuses that are a
+result, not a failure: 1 from `ping` (no reply) and `nslookup` (no answer), curl's own codes
+(6, 7, 28 and the like), and 1 from a `traceroute` that printed hops (some builds exit 1 when
+the target was not reached; that is "Not reached").
 
 **Resolution**:
 
