@@ -1180,7 +1180,9 @@ Connect to a UniFi Protect controller, enumerate cameras and devices, subscribe 
   not support API tokens). The MCP Protect tools haven't been verified against a live console
   yet ([issue 034](../issues/034-protect-has-no-live-account.md)).
 - For MQTT bridge: a running MQTT broker (e.g., Mosquitto)
-- Python `aiomqtt` package for MQTT bridge: `uv add aiomqtt`
+- Python `aiomqtt` package for MQTT bridge, which the project does not declare yet
+  ([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md)): `uv add aiomqtt`, or
+  `uv run --with aiomqtt` for one run
 
 ### Step-by-Step Instructions
 

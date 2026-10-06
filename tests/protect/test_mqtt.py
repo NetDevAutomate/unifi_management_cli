@@ -676,14 +676,19 @@ class TestMQTTBridgeLifecycle:
 
     @pytest.mark.asyncio
     async def test_start_without_aiomqtt_raises(self) -> None:
-        """Test that start raises ImportError without aiomqtt."""
+        """Test that start raises ImportError without aiomqtt, naming the uv command.
+
+        Review AGG-3: the hint said pip install in a project that uses uv only.
+        """
         client = create_mock_client()
         config = MQTTConfig()
         bridge = MQTTBridge(client, config)
 
         with patch.dict('sys.modules', {'aiomqtt': None}):
-            with pytest.raises(ImportError, match='aiomqtt is required'):
+            with pytest.raises(ImportError, match='aiomqtt is required') as raised:
                 await bridge.start()
+        assert 'uv add aiomqtt' in str(raised.value)
+        assert 'pip' not in str(raised.value)
 
     @pytest.mark.asyncio
     async def test_stop_when_not_running(self) -> None:

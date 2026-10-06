@@ -964,6 +964,12 @@ async with UniFiProtectClient(config) as client:
 
 ### MQTT Bridge for Home Assistant
 
+The bridge needs the `aiomqtt` package, which the project does not declare yet
+([issue 074](docs/issues/074-mqtt-needs-an-undeclared-dependency.md)), so `uv sync` leaves it
+out and `bridge.start()` raises `ImportError`. Add it to your project with `uv add aiomqtt`,
+or run a script with `uv run --with aiomqtt python your_script.py`, which changes no
+project file.
+
 ```python
 from unifi_mapper.protect import MQTTBridge, MQTTConfig
 
