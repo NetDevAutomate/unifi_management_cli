@@ -81,7 +81,9 @@ _TIER_METHODOLOGY: dict[str, dict[str, Any]] = {
         'interval_s': None,
         'caveats': [
             'Raw samples (the store keeps 8 days of them); averages and peaks are exact within '
-            'the sampled window.'
+            'the sampled window. The first sample in the window is paired with the one before.',
+            'A VLAN at 0% coverage had no measured interval (a first sample, or a counter '
+            'reset), so its zero rates are not a measurement.',
         ],
     },
     'hourly': {
@@ -621,8 +623,24 @@ def _empty_aggregate(name: str) -> dict[str, Any]:
 
 
 def _raw_rates(conn: sqlite3.Connection, since: int, until: int) -> dict[int, dict[str, Any]]:
-    """Aggregate raw samples in ``[since, until]`` into per-VLAN averages and peaks."""
-    prev_by_vlan: dict[int, dict[str, Any]] = {}
+    """Aggregate raw samples in ``[since, until]`` into per-VLAN averages and peaks.
+
+    Each VLAN's first sample in the window is paired with its newest sample before the window,
+    so the window's first interval counts (at a 5-minute cadence, ``now`` holds one sample).
+    """
+    prev_by_vlan: dict[int, dict[str, Any]] = {
+        row['vlan_id']: {
+            'ts_utc': row['ts_utc'],
+            'rx_bytes': row['rx_bytes'],
+            'tx_bytes': row['tx_bytes'],
+        }
+        for row in conn.execute(
+            'SELECT r.ts_utc, r.vlan_id, r.rx_bytes, r.tx_bytes FROM raw_samples AS r '
+            'JOIN (SELECT vlan_id, MAX(ts_utc) AS ts FROM raw_samples WHERE ts_utc < ? '
+            'GROUP BY vlan_id) AS p ON r.vlan_id = p.vlan_id AND r.ts_utc = p.ts',
+            (since,),
+        )
+    }
     result: dict[int, dict[str, Any]] = {}
     for row in conn.execute(
         'SELECT ts_utc, vlan_id, network_name, rx_bytes, tx_bytes FROM raw_samples '
