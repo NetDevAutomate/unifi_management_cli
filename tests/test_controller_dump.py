@@ -350,6 +350,56 @@ def test_a_relative_xdg_state_home_is_ignored_for_the_default_output(tmp_path: P
     assert f'Reports: {audits}/' in result.stdout
 
 
+def _run_audit(tmp_path: Path, *args: str, cwd: Path | None = None) -> Any:
+    return subprocess.run(
+        ['bash', str(AUDIT), *args],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=_fake_uv_env(tmp_path),
+        cwd=cwd,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ('prepare', 'message'),
+    [
+        (lambda d: (d.mkdir(mode=0o700), (d / 'audit.log').write_text('x\n')), 'new or empty'),
+        (lambda d: (d.mkdir(), d.chmod(0o770)), 'writable by other users'),
+        (lambda d: (d.mkdir(), d.chmod(0o703)), 'writable by other users'),
+        (
+            lambda d: (
+                d.with_name('target').mkdir(mode=0o700),
+                d.symlink_to(d.with_name('target'), target_is_directory=True),
+            ),
+            'symbolic link',
+        ),
+        (lambda d: d.write_text('x\n'), 'not a directory'),
+    ],
+    ids=['not empty', 'group-writable', 'other-writable', 'a symlink', 'a file'],
+)
+def test_an_unsafe_existing_output_dir_is_refused_before_any_step(
+    tmp_path: Path, prepare: Any, message: str
+) -> None:
+    """M4 council BF-002: the reports and audit.log went into whatever directory was given,
+    appending to a log already there; nothing planted there may receive them."""
+    out = tmp_path / 'audit'
+    prepare(out)
+    result = _run_audit(tmp_path, '--output-dir', str(out))
+    assert result.returncode == 2 and message in result.stderr
+    assert not (tmp_path / 'uv.log').exists()  # no step ran
+
+
+def test_an_empty_private_output_dir_is_used(tmp_path: Path) -> None:
+    out = tmp_path / 'audit'
+    out.mkdir(mode=0o700)
+    result = _run_audit(tmp_path, '--output-dir', str(out))
+    assert result.returncode == 0, result.stderr
+    assert (out / 'audit.log').exists()
+    assert stat.S_IMODE((out / 'audit.log').stat().st_mode) == 0o600
+
+
 def test_the_printed_apply_commands_carry_the_audits_own_config(tmp_path: Path) -> None:
     """Review B6: pasted with --apply, a bare command acted on the default config's controller."""
     config = tmp_path / 'site a.env'  # a space: the printed command must quote it

@@ -18,8 +18,10 @@
 #
 #   --config PATH         env file, passed as unifi-mapper's --config (default: its own
 #                         search, UNIFI_CONFIG first)
-#   --output-dir DIR      where the reports and audit.log go (default:
-#                         ${XDG_STATE_HOME:-$HOME/.local/state}/unifi_mapper/audits/<UTC stamp>)
+#   --output-dir DIR      where the reports and audit.log go: a new directory, or an empty
+#                         one of yours that no other user can write to and is not a link
+#                         (default: ${XDG_STATE_HOME:-$HOME/.local/state}/unifi_mapper/audits/
+#                         <UTC stamp>; a relative XDG_STATE_HOME is ignored)
 #   --planned-switches N  also check 10G uplink readiness for N planned switches
 #
 # Example:
@@ -88,7 +90,20 @@ if [[ -z "${OUTPUT_DIR}" ]]; then
     [[ "${STATE_HOME}" == /* ]] || STATE_HOME="${HOME}/.local/state"
     OUTPUT_DIR="${STATE_HOME}/unifi_mapper/audits/${STAMP}"
 fi
-[[ -e "${OUTPUT_DIR}" && ! -d "${OUTPUT_DIR}" ]] && die "--output-dir ${OUTPUT_DIR} is not a directory"
+# The reports and audit.log describe the site: an existing --output-dir must be the user's
+# own, writable by no one else, empty and not a symbolic link, so nothing planted there can
+# receive them (a new directory is created private).
+if [[ -L "${OUTPUT_DIR}" ]]; then
+    die "--output-dir ${OUTPUT_DIR} is a symbolic link"
+fi
+if [[ -e "${OUTPUT_DIR}" ]]; then
+    [[ -d "${OUTPUT_DIR}" ]] || die "--output-dir ${OUTPUT_DIR} is not a directory"
+    [[ -O "${OUTPUT_DIR}" ]] || die "--output-dir ${OUTPUT_DIR} is not your directory"
+    if [[ -n "$(find "${OUTPUT_DIR}" -maxdepth 0 \( -perm -020 -o -perm -002 \) -print)" ]]; then
+        die "--output-dir ${OUTPUT_DIR} is writable by other users"
+    fi
+    [[ -z "$(ls -A "${OUTPUT_DIR}")" ]] || die "--output-dir ${OUTPUT_DIR} must be a new or empty directory"
+fi
 mkdir -p "${OUTPUT_DIR}"
 LOG_FILE="${OUTPUT_DIR}/audit.log"
 
