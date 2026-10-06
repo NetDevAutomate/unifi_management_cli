@@ -933,7 +933,8 @@ uv run unifi-mapper vlan-traffic coverage
 ```
 
 Rates come from the difference between two samples, so take them regularly (every minute or
-so) for honest averages and peaks. A sample whose script fails on the gateway, or that stores
+so) for honest averages and peaks. A sample whose script fails on the gateway (a bridge
+counter it could not read included: nothing is stored, never a partial sample), or that stores
 nothing because no VLAN matched an interface with byte counters, exits 1. `1m` and `1y` show
 what `rollup` has rolled: an hour or a day counts once it ended twice the sampling interval
 ago (at least 5 minutes), and each run recomputes the newest two hours and the newest day, so

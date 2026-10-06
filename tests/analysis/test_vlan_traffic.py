@@ -52,14 +52,60 @@ STDOUT = 'br0 1000 2000\nbr7 500 700\nbr9 300 400\n===ADDR===\n' + json.dumps(AD
 # --- the parsers (July's) ------------------------------------------------------------------
 
 
-def test_bridge_counters_parse_and_skip_malformed_lines() -> None:
+def test_bridge_counters_parse() -> None:
     assert parse_bridge_counters('br0 1000 2000\nbr10 500 600\n') == {
         'br0': {'rx_bytes': 1000, 'tx_bytes': 2000},
         'br10': {'rx_bytes': 500, 'tx_bytes': 600},
     }
-    text = 'br0 1000 2000\ngarbage line here\nbr10 not-a-number 5\n'
-    assert parse_bridge_counters(text) == {'br0': {'rx_bytes': 1000, 'tx_bytes': 2000}}
     assert parse_bridge_counters('') == {}
+
+
+SECRET_FIELD = 'password=FAKE-BRIDGE-LINE-PW'  # pragma: allowlist secret
+
+
+@pytest.mark.parametrize(
+    'line',
+    [
+        'br10 500 ',
+        'br10  ',
+        'br10 not-a-number 5',
+        'br10 500 6x',
+        'br10 -500 600',
+        'br10 500 600 700',
+        'garbage line here',
+        f'br10 {SECRET_FIELD} 5',
+    ],
+    ids=[
+        'empty tx field',
+        'both fields empty',
+        'non-numeric rx field',
+        'non-numeric tx field',
+        'negative',
+        'four fields',
+        'garbage',
+        'secret-shaped field',
+    ],
+)
+def test_a_bridge_line_without_two_integer_counters_is_an_error(line: str) -> None:
+    """Final council F4: the script exits with ``ip``'s status, so a ``cat`` that failed
+    printed an empty counter, and the line was skipped: a partial sample, exit 0."""
+    with pytest.raises(ToolError) as caught:
+        parse_bridge_counters(f'br0 1000 2000\n{line}\nbr9 300 400\n')
+    assert caught.value.error_code == ErrorCodes.API_ERROR
+    assert 'without two integer counters' in caught.value.message
+    assert 'FAKE-BRIDGE-LINE-PW' not in caught.value.message
+    assert 'FAKE-BRIDGE-LINE-PW' not in (caught.value.suggestion or '')
+
+
+def test_a_refused_bridge_line_is_redacted_in_the_message() -> None:
+    with pytest.raises(ToolError) as caught:
+        parse_bridge_counters(f'br10 {SECRET_FIELD} 5\n')
+    assert 'FAKE-BRIDGE-LINE-PW' not in caught.value.message
+    assert 'password=***redacted***' in caught.value.message
+
+
+def test_blank_lines_hold_no_bridge() -> None:
+    assert parse_bridge_counters('\nbr0 1 2\n  \n') == {'br0': {'rx_bytes': 1, 'tx_bytes': 2}}
 
 
 @pytest.mark.parametrize(
@@ -162,6 +208,23 @@ async def test_a_resolved_interface_with_no_counters_is_skipped(
         result = await sample_vlan_traffic(path)
     assert [row['vlan_id'] for row in result['sampled']] == [30]
     assert {s['iface'] for s in result['skipped']} == {'br0', 'br9'}
+
+
+async def test_a_bridge_whose_counter_could_not_be_read_fails_the_sample(
+    ssh: FakeSSH, tmp_path: Path
+) -> None:
+    """Final council F4: a failed ``cat`` leaves an empty field under exit status 0; the
+    sample is an error and stores nothing, never the other bridges' partial sample."""
+    ssh.replies = {
+        'sh': 'br0 1000 2000\nbr7 500 \nbr9 300 400\n===ADDR===\n' + json.dumps(ADDRESSES)
+    }
+    path = tmp_path / 'store.sqlite3'
+    async with serving(_controller()):
+        with pytest.raises(ToolError) as caught:
+            await sample_vlan_traffic(path)
+    assert caught.value.error_code == ErrorCodes.API_ERROR
+    assert 'without two integer counters' in caught.value.message
+    assert not path.exists()
 
 
 @pytest.mark.parametrize(
@@ -273,6 +336,19 @@ def test_sample_exits_1_when_the_script_fails(
     assert result.exit_code == 1, result.output
     assert result.stdout == ''
     assert 'could not run on the gateway' in ' '.join(result.stderr.split())
+    assert not path.exists()
+
+
+def test_sample_exits_1_when_a_bridge_counter_is_missing(
+    cli: FakeController, ssh: FakeSSH, tmp_path: Path
+) -> None:
+    """Final council F4: before, the other bridges were stored and the run exited 0."""
+    ssh.replies = {'sh': 'br0 1000 2000\nbr7  \n===ADDR===\n' + json.dumps(ADDRESSES)}
+    path = tmp_path / 'store.sqlite3'
+    result = runner.invoke(app, ['vlan-traffic', 'sample', '--db', str(path)])
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ''
+    assert 'without two integer counters' in ' '.join(result.stderr.split())
     assert not path.exists()
 
 

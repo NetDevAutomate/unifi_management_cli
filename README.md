@@ -285,7 +285,8 @@ network for the HTTP probe) is not run, so the verdict is inconclusive rather th
 `vlan-traffic sample` is the only `vlan-traffic` command that reaches anything: it reads the
 controller's network list (read-only) and runs one fixed script on the gateway over SSH, then
 stores a row per VLAN in `$XDG_STATE_HOME/unifi_mapper/vlan-traffic.sqlite3` (never the working
-directory; `--db` names another store). A script that fails, and a run that stores nothing
+directory; `--db` names another store). A script that fails (a bridge counter it could not
+read included: nothing is stored, never a partial sample), and a run that stores nothing
 because no VLAN matched a gateway interface with byte counters, exit 1, so a schedule of your
 own notices. `rollup`, `report` and `coverage` work on the store
 alone. `report now`, `1d` and `1w` read the raw samples (kept 8 days); `1m` reads hourly rows

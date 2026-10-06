@@ -302,6 +302,7 @@ problems as one line; `vlan-traffic sample` reports a failed gateway script the 
 | `cannot write the VLAN traffic store …` (`sample`, `rollup`) | The store or its directory is not writable | Fix the permissions, or name another store with `--db` |
 | `the VLAN sample script could not run on the gateway (exit status N): …` (`sample`, exit 1) | The SSH user may not run `ip -4 -j addr show` or read `/sys/class/net` on the gateway | Check `UNIFI_SSH_USERNAME`; nothing was stored |
 | `the VLAN sample script printed no address list` (or one that is not a JSON list) (`sample`, exit 1) | The script's output was cut short, or the gateway's `ip` does not support `-j` | Run it again; nothing was stored |
+| `the VLAN sample script printed a bridge line without two integer counters: '…'` (`sample`, exit 1) | A bridge's byte counter under `/sys/class/net/<bridge>/statistics` could not be read (the SSH user may not read it, or the bridge went away during the run); the script's exit status is `ip`'s, so only the empty counter shows it | Check that `UNIFI_SSH_USERNAME` may read `/sys/class/net` on the gateway, then run it again; nothing was stored |
 | `Nothing was stored: no VLAN matched a gateway interface with byte counters` (`sample`, exit 1) | No VLAN's subnet holds the address of a gateway interface, or the interfaces that matched are not `br*` bridges, whose counters are the only ones read (the line before it counts both) | Check the networks' subnets against the gateway's interfaces; nothing was stored |
 
 ---
