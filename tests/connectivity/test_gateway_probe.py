@@ -264,7 +264,8 @@ def _hop(
     }
 
 
-# One hop line each, documentation values only (the orchestrator's corpus for SR6-1).
+# One hop line each, documentation values only (the orchestrator's corpus for SR6-1). A time
+# is '10.5 ms' (two tokens) or, from GNU inetutils, '0.351ms' with the unit glued on.
 HOP_LINES: dict[str, tuple[str, dict[str, Any]]] = {
     'a .ms label': (
         ' 2  core.ms.example.net (192.0.2.1)  10.5 ms  10.2 ms  10.1 ms',
@@ -623,7 +624,7 @@ async def test_every_value_is_checked_before_any_ssh(ssh: FakeSSH, call: Any, co
         await call()
     assert caught.value.error_code == code
     assert ssh.connects == []
-    assert 'secret' not in caught.value.message  # the URL is never echoed
+    assert FAKE_URL_PW not in caught.value.message  # the URL is never echoed
 
 
 async def test_traceroute_dns_and_flows_argv_and_parsing(ssh: FakeSSH) -> None:

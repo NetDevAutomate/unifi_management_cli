@@ -1,6 +1,6 @@
 """``scripts/controller_dump.py`` and ``scripts/network-audit.sh`` (design section 4.13).
 
-The dump reads through the real read-only guard over the house fake session (no socket),
+The dump reads through the real read-only guard over the shared fake session (no socket),
 writes only stripped payloads and a manifest with the guard's request audit, and refuses an
 ``--output`` inside the repository. The audit script is only syntax-checked and its
 argument handling run: every step it runs needs a controller.

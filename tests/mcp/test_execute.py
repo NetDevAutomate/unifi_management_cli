@@ -69,7 +69,7 @@ def test_shipped_manifests_flag_exactly_the_controller_writers() -> None:
 # A tool whose name says it changes the controller must declare ``mutates: true`` (issue 019's
 # rule: CLI only, dry run first, never over MCP). ``trigger_*`` is left out: an on-demand
 # probe is decision D1 in issue 060 (an active_probe flag), not a write.
-WRITER_PREFIXES = ('apply_', 'restore_', 'set_', 'power_cycle_')
+WRITER_PREFIXES = ('apply_', 'restore_', 'set_', 'power_cycle_', 'delete_')
 
 
 def _names_a_write(name: str) -> bool:
@@ -88,6 +88,7 @@ def test_the_writer_naming_rule_catches_set_power_cycle_and_speedtest_names(
     for name in (
         'set_wlan_option',
         'power_cycle_poe_port',
+        'delete_firewall_rule',
         'run_wan_speedtest',
         'trigger_vlan_traffic_sample',
         'get_wan_health',
@@ -100,7 +101,12 @@ def test_the_writer_naming_rule_catches_set_power_cycle_and_speedtest_names(
         ]
     (tmp_path / 'test.yaml').write_text('\n'.join(lines) + '\n')
     found = _unflagged_writers(ToolRegistry(tmp_path))
-    assert found == ['power_cycle_poe_port', 'run_wan_speedtest', 'set_wlan_option']
+    assert found == [
+        'delete_firewall_rule',
+        'power_cycle_poe_port',
+        'run_wan_speedtest',
+        'set_wlan_option',
+    ]
 
 
 # The July work's MCP tools that the port did not put on MCP (issue 059 says why; issue 060

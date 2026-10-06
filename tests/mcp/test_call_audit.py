@@ -448,7 +448,7 @@ async def test_the_server_runner_logs_by_default(fresh_server: None) -> None:
     assert [line['tool'] for line in _lines()] == [UNREGISTERED]
 
 
-async def test_logging_runs_shielded_in_a_worker_thread(
+async def test_logging_runs_in_a_worker_thread(
     make_runner: Callable[..., ToolRunner], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen: list[bool] = []

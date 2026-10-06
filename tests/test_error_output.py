@@ -128,6 +128,12 @@ def test_the_typer_scan_sees_an_alias_and_a_from_import(tmp_path: Path) -> None:
     ]
 
 
+def test_the_typer_scan_sees_a_wildcard_import(tmp_path: Path) -> None:
+    sample = tmp_path / 'sample.py'
+    sample.write_text('from typer import *\napp = Typer()\n')
+    assert _typer_apps(sample, tmp_path) == [('sample.py:2', False)]
+
+
 def test_no_debug_path_prints_frame_locals() -> None:
     offenders = [
         f'{path.relative_to(PACKAGE)}:{call.lineno}'

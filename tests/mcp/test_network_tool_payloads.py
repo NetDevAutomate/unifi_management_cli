@@ -148,6 +148,10 @@ async def test_acl_and_dns_tools_read_the_served_paths(
 # --- get_clients paging (design 4.11) -------------------------------------------------------
 
 
+# The fake's page size for a request that names no limit (the tool always names one).
+FAKE_DEFAULT_PAGE = 200
+
+
 class PagedClients(httpx.MockTransport):
     """The connected-clients list served in pages by its ``offset`` and ``limit`` parameters."""
 
@@ -161,7 +165,7 @@ class PagedClients(httpx.MockTransport):
         if request.url.path != f'{INTEGRATION}/clients':
             return httpx.Response(404, json={'statusCode': 404, 'statusName': 'NOT_FOUND'})
         offset = int(request.url.params.get('offset', 0))
-        limit = int(request.url.params.get('limit', 200))
+        limit = int(request.url.params.get('limit', FAKE_DEFAULT_PAGE))
         data = self._clients[offset : offset + limit]
         page = {'offset': offset, 'limit': limit, 'count': len(data)}
         return httpx.Response(200, json={**page, 'totalCount': len(self._clients), 'data': data})

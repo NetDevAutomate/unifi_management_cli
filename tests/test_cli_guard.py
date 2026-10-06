@@ -36,7 +36,7 @@ REPO = Path(__file__).resolve().parents[1]
 PACKAGE = REPO / 'src' / 'unifi_mapper'
 TYPER_CLI = PACKAGE / 'typer_cli.py'
 GUARD_HELPERS = frozenset({'_run_analysis', '_run_gateway_ssh'})
-DIRECT_ASYNCIO_RUN_SITES = 47  # issue 064: lower this as each command group moves
+DIRECT_ASYNCIO_RUN_SITES = 47  # issue 064: lower it as each command group moves; never raise it
 API = '/proxy/network/api/s/default'
 
 

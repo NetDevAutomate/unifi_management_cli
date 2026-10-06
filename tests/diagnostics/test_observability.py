@@ -447,7 +447,7 @@ def test_ap_retries_waits_its_interval_and_prints_json(
         ['controller', 'config-changes', '--since-hours', '0'],
     ],
 )
-def test_out_of_range_options_are_usage_errors(
+def test_out_of_range_or_unknown_options_are_usage_errors(
     controller: FakeController, args: list[str]
 ) -> None:
     result = runner.invoke(app, args)
