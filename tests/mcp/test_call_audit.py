@@ -275,6 +275,50 @@ async def test_no_home_directory_leaves_the_result_and_warns_once(
     assert len([w for w in warned if 'call log disabled' in w]) == 1
 
 
+def _record(log: CallAuditLog) -> None:
+    log.record(
+        tool='find_device',
+        registered=True,
+        surface='direct',
+        arg_keys=['query'],
+        known_keys={'query'},
+        duration_ms=1.0,
+        outcome='ok',
+    )
+
+
+def test_a_permissive_call_log_and_directory_are_made_private() -> None:
+    """Final council F6: 0o600 and 0o700 applied on creation only, so a call log or state
+    directory that already existed group- or world-readable stayed so."""
+    path = state_dir() / CALL_AUDIT_FILENAME
+    path.parent.mkdir(parents=True)
+    os.chmod(path.parent, 0o755)
+    path.write_text('', encoding='utf-8')
+    os.chmod(path, 0o644)
+    _record(CallAuditLog(CallAuditSetting('default')))
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert [line['tool'] for line in _lines(path)] == ['find_device']
+
+
+def test_a_call_log_owned_by_another_user_turns_the_log_off_with_one_warning(
+    monkeypatch: pytest.MonkeyPatch, warned: list[str]
+) -> None:
+    path = state_dir() / CALL_AUDIT_FILENAME
+    path.parent.mkdir(parents=True)
+    os.chmod(path.parent, 0o755)
+    me = os.geteuid()
+    log = CallAuditLog(CallAuditSetting('default'))
+    with monkeypatch.context() as patched:
+        patched.setattr(os, 'geteuid', lambda: me + 1)  # the state directory is someone else's
+        _record(log)
+        _record(log)
+    assert log.enabled is False
+    (warning,) = [w for w in warned if 'call log disabled' in w]
+    assert 'owned by another user' in warning
+    assert not path.exists() and stat.S_IMODE(path.parent.stat().st_mode) == 0o755
+
+
 # --- request lines -------------------------------------------------------------------------
 
 

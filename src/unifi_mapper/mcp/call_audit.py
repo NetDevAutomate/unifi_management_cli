@@ -20,11 +20,14 @@ then one ``request_overflow`` line with the count), so the async transport never
 file. Request lines carry no call id: with concurrent calls they belong to a time window.
 
 Writes go through ``core/utils/jsonl.append_capped_jsonl`` (a lock file, torn-line repair,
-compaction to 80% of :data:`DEFAULT_MAX_BYTES`), the file ``0o600`` and a missing directory
-``0o700``. The runner records in a worker thread inside a shielded cancel scope, so a
-contended lock never blocks the event loop and a cancelled call is still logged. Any
-failure to write (an unwritable path, a read-only home, no ``HOME``) logs one warning and
-turns the log off for the process; a tool's result is never affected.
+compaction to 80% of :data:`DEFAULT_MAX_BYTES`) with ``enforce_modes``: on every write the
+file is kept ``0o600`` and its directory ``0o700``, so a file or directory of the user's
+with group or other bits (one made before, or by another tool) is set private again, and a
+file or directory owned by another user is never written (the log turns off, fail closed).
+The runner records in a worker thread inside a shielded cancel scope, so a contended lock
+never blocks the event loop and a cancelled call is still logged. Any failure to write (an
+unwritable path, a read-only home, no ``HOME``, another user's file or directory) logs one
+warning and turns the log off for the process; a tool's result is never affected.
 """
 
 import errno
@@ -38,7 +41,7 @@ from datetime import UTC, datetime
 from loguru import logger
 from pathlib import Path
 from typing import Literal
-from unifi_mapper.core.utils.jsonl import append_capped_jsonl, epoch_field
+from unifi_mapper.core.utils.jsonl import NotOwnedError, append_capped_jsonl, epoch_field
 
 
 CALL_AUDIT_ENV = 'UNIFI_MCP_CALL_AUDIT'
@@ -289,6 +292,7 @@ class CallAuditLog:
                 epoch_of=_EPOCH_OF,
                 file_mode=0o600,
                 dir_mode=0o700,
+                enforce_modes=True,
             )
         except Exception as e:  # noqa: BLE001 - the call log must never affect a tool call
             self._disabled = True
@@ -296,5 +300,5 @@ class CallAuditLog:
             logger.warning(
                 'MCP call log disabled for this process: cannot write {}: {}',
                 where,
-                _error_name(e),
+                str(e) if isinstance(e, NotOwnedError) else _error_name(e),
             )

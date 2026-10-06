@@ -14,6 +14,7 @@ import stat
 import threading
 import time
 from pathlib import Path
+from unifi_mapper.core.utils import jsonl
 from unifi_mapper.core.utils.jsonl import (
     COMPACT_LOW_WATER_RATIO,
     CappedWriteResult,
@@ -254,6 +255,85 @@ def test_compaction_never_loosens_an_existing_file(tmp_path: Path) -> None:
     append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH, file_mode=0o644)
     assert _epochs(path) == [1]
     assert _mode(path) == 0o600  # the stricter of the existing mode and file_mode
+
+
+def _private(path: Path, line: str) -> None:
+    """One append that enforces 0o600 and 0o700 on every open (the MCP call log's)."""
+    append_capped_jsonl(
+        path,
+        [line],
+        max_bytes=10_000,
+        epoch_of=EPOCH,
+        file_mode=0o600,
+        dir_mode=0o700,
+        enforce_modes=True,
+    )
+
+
+def test_enforced_modes_tighten_an_existing_file_and_directory(tmp_path: Path) -> None:
+    """Final council F6: the modes applied on creation only, so a file or directory that
+    already existed with group or other bits stayed readable by other local users."""
+    directory = tmp_path / 'state'
+    directory.mkdir()
+    os.chmod(directory, 0o755)
+    path = directory / 'h.jsonl'
+    path.write_text(_line(1), encoding='utf-8')
+    os.chmod(path, 0o644)
+    _private(path, _line(2))
+    assert (_mode(directory), _mode(path)) == (0o700, 0o600)
+    assert _epochs(path) == [1, 2]
+
+
+def test_enforced_modes_tighten_on_every_append(tmp_path: Path) -> None:
+    path = tmp_path / 'state' / 'h.jsonl'
+    _private(path, _line(1))
+    os.chmod(path.parent, 0o750)
+    os.chmod(path, 0o640)
+    _private(path, _line(2))
+    assert (_mode(path.parent), _mode(path)) == (0o700, 0o600)
+
+
+def test_enforced_modes_refuse_a_directory_owned_by_another_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = tmp_path / 'state'
+    directory.mkdir()
+    os.chmod(directory, 0o755)
+    me = os.geteuid()
+    monkeypatch.setattr(os, 'geteuid', lambda: me + 1)  # everything here is someone else's
+    with pytest.raises(jsonl.NotOwnedError, match='directory is owned by another user'):
+        _private(directory / 'h.jsonl', _line(1))
+    assert list(directory.iterdir()) == [] and _mode(directory) == 0o755
+
+
+def test_enforced_modes_refuse_a_file_owned_by_another_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / 'state' / 'h.jsonl'
+    _private(path, _line(1))
+    os.chmod(path, 0o644)
+    real_fstat = os.fstat
+
+    def someone_elses(fd: int) -> os.stat_result:
+        st = real_fstat(fd)
+        fields = list(st[:10])
+        fields[stat.ST_UID] = st.st_uid + 1
+        return os.stat_result(fields)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(os, 'fstat', someone_elses)
+        with pytest.raises(jsonl.NotOwnedError, match='file is owned by another user'):
+            _private(path, _line(2))
+    assert _epochs(path) == [1] and _mode(path) == 0o644
+
+
+def test_without_enforcement_an_existing_file_keeps_its_mode(tmp_path: Path) -> None:
+    """The other histories (no ``enforce_modes``) still set a mode on creation only."""
+    path = tmp_path / 'h.jsonl'
+    path.write_text(_line(1), encoding='utf-8')
+    os.chmod(path, 0o644)
+    append_capped_jsonl(path, [_line(2)], max_bytes=10_000, epoch_of=EPOCH, file_mode=0o600)
+    assert _mode(path) == 0o644
 
 
 # --- readers ------------------------------------------------------------------------------

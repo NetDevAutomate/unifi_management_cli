@@ -16,6 +16,10 @@ skip a line that does not parse; ``read_port_history`` and ``read_speedtest_hist
 
 A line is valid when the caller's ``epoch_of(line)`` returns a number; :func:`epoch_field`
 builds that function for a top-level numeric field.
+
+With ``enforce_modes`` (the MCP call log), the file and directory modes hold on every append,
+not only on creation: a file or directory of the current user's with any group or other bit
+is changed to the mode, and one owned by another user raises :class:`NotOwnedError`.
 """
 
 import fcntl
@@ -34,6 +38,12 @@ from pathlib import Path
 COMPACT_LOW_WATER_RATIO = 0.8
 
 EpochOf = Callable[[str], float | None]
+# The permission bits a private file or directory must not have.
+_GROUP_OTHER_BITS = 0o077
+
+
+class NotOwnedError(PermissionError):
+    """A file or directory that must stay private is owned by another user."""
 
 
 @dataclass
@@ -167,21 +177,41 @@ def _ends_with_newline(path: Path) -> bool:
         return file.read(1) == b'\n'
 
 
-def _ensure_parent(parent: Path, dir_mode: int | None) -> None:
+def _loosened(st: os.stat_result, kind: str) -> bool:
+    """Whether a private ``kind`` needs its mode set again: it has group or other bits.
+
+    Raises:
+        NotOwnedError: When another user owns it, so its mode is not this process's to set.
+    """
+    if st.st_uid != os.geteuid():
+        raise NotOwnedError(f'the {kind} is owned by another user')
+    return bool(stat.S_IMODE(st.st_mode) & _GROUP_OTHER_BITS)
+
+
+def _ensure_parent(parent: Path, dir_mode: int | None, enforce: bool = False) -> None:
     if dir_mode is not None and not parent.exists():
         parent.mkdir(parents=True, exist_ok=True, mode=dir_mode)
         os.chmod(parent, dir_mode)  # mkdir's mode is masked by the umask
     else:
         parent.mkdir(parents=True, exist_ok=True)
+    if enforce and dir_mode is not None and _loosened(os.stat(parent), 'directory'):
+        os.chmod(parent, dir_mode)
 
 
-def _open_for_append(path: Path, file_mode: int | None) -> int:
+def _open_for_append(path: Path, file_mode: int | None, enforce: bool = False) -> int:
     existed = path.exists()
     fd = os.open(
         path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o666 if file_mode is None else file_mode
     )
-    if file_mode is not None and not existed:
-        os.fchmod(fd, file_mode)  # the umask masks os.open's mode too
+    try:
+        if file_mode is not None and not existed:
+            os.fchmod(fd, file_mode)  # the umask masks os.open's mode too
+        # The open file itself is checked (fstat), so a swap after the check can't escape it.
+        if enforce and file_mode is not None and _loosened(os.fstat(fd), 'file'):
+            os.fchmod(fd, file_mode)
+    except BaseException:
+        os.close(fd)
+        raise
     return fd
 
 
@@ -196,6 +226,7 @@ def append_capped_jsonl(
     dedup_key: Callable[[str], str | None] | None = None,
     file_mode: int | None = None,
     dir_mode: int | None = None,
+    enforce_modes: bool = False,
 ) -> CappedWriteResult:
     """Append ``lines`` to ``path`` under its lock, then enforce the size and age caps.
 
@@ -210,7 +241,8 @@ def append_capped_jsonl(
     lines at or after the cutoff, then drops the oldest down to
     :data:`COMPACT_LOW_WATER_RATIO` of ``max_bytes``; its temporary file is 0o600, or the
     stricter of ``file_mode`` and the file's current mode when a mode is given, so
-    compaction never loosens a file.
+    compaction never loosens a file. With ``enforce_modes``, the modes also hold for an
+    existing directory and file, on every append.
 
     Args:
         path: The JSON Lines file.
@@ -223,17 +255,22 @@ def append_capped_jsonl(
         file_mode: Mode for a newly created file; a compacted file keeps the stricter of
             this and its current mode.
         dir_mode: Mode for a newly created directory.
+        enforce_modes: Also on every append, before a line is written: an existing
+            directory or file of the current user's with any group or other bit is set to
+            ``dir_mode`` or ``file_mode``, and one owned by another user is refused.
 
     Returns:
         What was written and what compaction removed.
 
     Raises:
         ValueError: ``max_bytes`` is below 1.
+        NotOwnedError: With ``enforce_modes``, the directory or the file is owned by another
+            user; nothing is appended.
         OSError: The file or its directory cannot be written.
     """
     if max_bytes < 1:
         raise ValueError(f'max_bytes must be at least 1, got {max_bytes}')
-    _ensure_parent(path.parent, dir_mode)
+    _ensure_parent(path.parent, dir_mode, enforce_modes)
     incoming = [_with_newline(line) for line in lines]
     result = CappedWriteResult(path=str(path), lines_written=0)
     lock_path = path.with_name(path.name + '.lock')
@@ -256,7 +293,8 @@ def append_capped_jsonl(
                     fresh.append(line)
                 incoming = fresh
             prefix = '' if _ends_with_newline(path) else '\n'
-            with os.fdopen(_open_for_append(path, file_mode), 'a', encoding='utf-8') as out:
+            fd = _open_for_append(path, file_mode, enforce_modes)
+            with os.fdopen(fd, 'a', encoding='utf-8') as out:
                 out.write(prefix)
                 out.writelines(incoming)
             result.lines_written = len(incoming)

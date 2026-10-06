@@ -229,10 +229,13 @@ surface) to `$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl`, on by default
   cancelled (still logged, still cancelled).
 - The meta-tools (`search_tools`, `get_tool_info`, `list_categories`) aren't logged.
 
-The file is `0o600` (a new directory `0o700`), capped at 16 MiB (compacted to 80%, oldest
-lines first) and locked per write, so several server processes can share it. A write that
-fails (an unwritable path, no home directory) logs one warning and turns the log off for that
-process; no tool result ever changes. `unifi-mcp --check` shows the path in `call_audit`.
+The file is kept `0o600` and its directory `0o700` on every write, not only when they are
+created: a file or directory of yours with group or other permissions is made private again
+(so give a path of your own a directory of its own), and one owned by another user is never
+written. The log is capped at 16 MiB (compacted to 80%, oldest lines first) and locked per
+write, so several server processes can share it. A write that fails (an unwritable path, no
+home directory, another user's file or directory) logs one warning and turns the log off for
+that process; no tool result ever changes. `unifi-mcp --check` shows the path in `call_audit`.
 
 ### Request lines
 
