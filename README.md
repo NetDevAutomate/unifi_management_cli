@@ -592,7 +592,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `diagnose latency-matrix` | SSH to the gateway and ping every device |
 | `diagnose bandwidth` | iperf3 throughput test via the gateway |
 | `gateway ping` | Ping one target from the gateway over SSH (loss, round trips) |
-| `gateway traceroute` | The gateway's real forwarding path to a target, over SSH (reached only when the last hop is the target and answered without an ICMP unreachable, `!H`, `!N`, `!X` and the like; with `--json`, each such hop is marked `unreachable`) |
+| `gateway traceroute` | The gateway's real forwarding path to a target, over SSH (reached only when the last hop is the target and answered without an ICMP unreachable, `!H`, `!N`, `!X` and the like; the table and `--json` mark each such hop `unreachable`) |
 | `gateway dns` | Resolve a hostname on the gateway over SSH (nslookup) |
 | `gateway http` | Fetch a URL from the gateway over SSH, from a VLAN's interface if asked |
 | `gateway flows` | The gateway's conntrack flows over SSH, filtered by address or state |

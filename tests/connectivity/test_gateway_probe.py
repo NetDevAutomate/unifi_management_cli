@@ -762,6 +762,20 @@ def test_a_trace_that_runs_out_of_hops_says_not_reached(
     assert 'Not reached' in result.stdout and 'Reached the target' not in result.stdout
 
 
+def test_the_table_marks_a_hop_that_answered_unreachable(
+    monkeypatch: pytest.MonkeyPatch, controller: FakeController
+) -> None:
+    """M4 council NF-002: a !H hop looked like any other hop in the text table."""
+    fake = FakeSSH({**REPLIES, 'traceroute': TRACEROUTE_HOST_UNREACHABLE})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    route_cli(monkeypatch, controller)
+    result = runner.invoke(app, ['gateway', 'traceroute', '203.0.113.53'])
+    assert result.exit_code == 0, result.output
+    rows = [line for line in result.stdout.splitlines() if '198.51.100.1' in line]
+    assert len(rows) == 1 and 'unreachable' in rows[0]
+    assert 'Not reached: hop 2 answered with an ICMP unreachable' in result.stdout
+
+
 @pytest.mark.parametrize(
     'args',
     [

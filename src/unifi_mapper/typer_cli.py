@@ -5039,7 +5039,8 @@ def gateway_traceroute_command(
 
     Runs traceroute on the gateway as the SSH user; the gateway's host key is not verified.
     "Reached the target" only when the last hop is the target itself and answered without an
-    ICMP unreachable. With --json each hop also has "timeout" (no reply) and "unreachable":
+    ICMP unreachable; the table marks a hop that answered with one "(unreachable)". With
+    --json each hop also has "timeout" (no reply) and "unreachable":
     the hop answered with traceroute's !H (host), !N (network), !P (protocol), !S (source
     route), !F (fragmentation needed), !X, !V or !C (prohibited) or !<code> annotation.
     """
@@ -5054,9 +5055,19 @@ def gateway_traceroute_command(
         table.add_column(column)
     for hop in result['hops']:
         rtts = ', '.join(f'{rtt:g}' for rtt in hop['rtt_ms']) or '*'
+        if hop['unreachable']:
+            rtts += ' (unreachable)'
         table.add_row(str(hop['hop']), _cell(hop['host']), _cell(hop['ip']), escape(rtts))
     console.print(table)
-    console.print('Reached the target.' if result['reached'] else '[yellow]Not reached.[/]')
+    last = result['hops'][-1] if result['hops'] else None
+    if result['reached']:
+        console.print('Reached the target.')
+    elif last is not None and last['unreachable']:
+        console.print(
+            f'[yellow]Not reached: hop {last["hop"]} answered with an ICMP unreachable.[/]'
+        )
+    else:
+        console.print('[yellow]Not reached.[/]')
 
 
 @gateway_app.command('dns')
