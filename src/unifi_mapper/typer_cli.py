@@ -5480,8 +5480,9 @@ def vlan_traffic_report(
 
     now, 1d and 1w read raw samples (kept 8 days); 1m reads hourly rollups and 1y daily
     rollups (smoothed peaks), each up to the newest complete hour or day `vlan-traffic
-    rollup` has rolled. A missing store exits 1 with a hint to sample first. Contacts
-    nothing.
+    rollup` has rolled. Valid samples is the share of the window's samples that gave a
+    rate, not time coverage: `vlan-traffic coverage` shows the time each tier covers. A
+    missing store exits 1 with a hint to sample first. Contacts nothing.
     """
     from .analysis.vlan_traffic_store import read_vlan_traffic_report
 
@@ -5492,7 +5493,8 @@ def vlan_traffic_report(
         _emit_json(report)
         return
     table = Table(title=f'📊 VLAN traffic, {period.value} ({report["methodology"]["tier_used"]})')
-    for column in ('VLAN', 'Network', 'Avg rx', 'Avg tx', 'Peak rx', 'Peak tx', 'Coverage'):
+    columns = ('VLAN', 'Network', 'Avg rx', 'Avg tx', 'Peak rx', 'Peak tx', 'Valid samples')
+    for column in columns:
         table.add_column(column)
     for vlan in report['vlans']:
         table.add_row(
@@ -5502,7 +5504,7 @@ def vlan_traffic_report(
             _bps(vlan['avg_tx_bps']),
             _bps(vlan['peak_rx_bps']),
             _bps(vlan['peak_tx_bps']),
-            f'{vlan["coverage_pct"]}%',
+            f'{vlan["valid_sample_pct"]}%',
         )
     console.print(table)
     _print_dim_notes(report['methodology']['caveats'])

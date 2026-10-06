@@ -267,7 +267,8 @@ def test_the_raw_tier_computes_rates_from_bytes(
         _insert_raw(conn, FAR_FUTURE, 10, 'LAN', 1_000_000, 500_000)
     (vlan,) = read_vlan_traffic_report('now', path)['vlans']
     assert vlan['vlan_id'] == 10 and vlan['avg_rx_bps'] > 0
-    assert (vlan['samples'], vlan['coverage_pct']) == (2, 50.0)
+    assert (vlan['samples'], vlan['valid_sample_pct']) == (2, 50.0)
+    assert 'coverage_pct' not in vlan  # final council F5: a share of samples, not of time
 
 
 def test_a_raw_window_pairs_its_first_sample_with_the_one_before(tmp_path: Path) -> None:
@@ -280,16 +281,17 @@ def test_a_raw_window_pairs_its_first_sample_with_the_one_before(tmp_path: Path)
             _insert_raw(conn, ts, 10, 'LAN', i * 37_500_000, 0)
     now = last + 100  # a report 100 s after the last sample: 'now' holds just that one
     (latest,) = read_vlan_traffic_report('now', path, now=now)['vlans']
-    assert (latest['samples'], latest['coverage_pct']) == (1, 100.0)
+    assert (latest['samples'], latest['valid_sample_pct']) == (1, 100.0)
     assert latest['avg_rx_bps'] == latest['peak_rx_bps'] == 1_000_000.0
     (day,) = read_vlan_traffic_report('1d', path, now=now)['vlans']
-    assert (day['samples'], day['coverage_pct']) == (13, 92.3)  # the oldest has none before
+    assert (day['samples'], day['valid_sample_pct']) == (13, 92.3)  # the oldest: none before
     with _writable(path) as conn:  # one more VLAN with a single sample ever: nothing measured
         _insert_raw(conn, last, 20, 'IoT', 5_000, 0)
     second = read_vlan_traffic_report('now', path, now=now)['vlans'][1]
-    assert (second['vlan_id'], second['samples'], second['coverage_pct']) == (20, 1, 0.0)
+    assert (second['vlan_id'], second['samples'], second['valid_sample_pct']) == (20, 1, 0.0)
     caption = read_vlan_traffic_report('now', path, now=now)['methodology']['caveats']
-    assert any('0% coverage' in line for line in caption)
+    assert any('0% valid samples' in line for line in caption)
+    assert not any('coverage' in line for line in caption)
 
 
 def test_the_hourly_and_daily_tiers_fold_rollups(

@@ -420,6 +420,9 @@ def test_report_and_coverage_print_json_and_tables(cli: FakeController, tmp_path
     assert json.loads(coverage.stdout)['raw']['count'] == 1
     table = runner.invoke(app, ['vlan-traffic', 'report', '1d', '--db', str(path)])
     assert table.exit_code == 0 and 'IoT' in table.stdout
+    # Final council F5: the column is the share of samples that gave a rate, not coverage.
+    assert 'Valid samples' in table.stdout and 'Coverage' not in table.stdout
+    assert {v['valid_sample_pct'] for v in data['vlans']} == {0.0}  # one sample each
     assert runner.invoke(app, ['vlan-traffic', 'coverage', '--db', str(path)]).exit_code == 0
 
 

@@ -84,8 +84,8 @@ _TIER_METHODOLOGY: dict[str, dict[str, Any]] = {
         'caveats': [
             'Raw samples (the store keeps 8 days of them); averages and peaks are exact within '
             'the sampled window. The first sample in the window is paired with the one before.',
-            'A VLAN at 0% coverage had no measured interval (a first sample, or a counter '
-            'reset), so its zero rates are not a measurement.',
+            'A VLAN at 0% valid samples had no measured interval (a first sample, or a '
+            'counter reset), so its zero rates are not a measurement.',
         ],
     },
     'hourly': {
@@ -719,7 +719,12 @@ def read_vlan_traffic_report(
 
     Returns:
         ``period``, ``vlans`` (``network_name``, ``vlan_id``, the averages and peaks in bits
-        per second, ``samples``, ``coverage_pct``) and ``methodology``.
+        per second, ``samples``, ``valid_sample_pct``) and ``methodology``.
+        ``valid_sample_pct`` is the share of the VLAN's samples (or rollup rows) in the
+        period that gave a rate, ``100 * valid / samples``: a first sample with none before
+        it and one after a counter reset give none. It is not time coverage; for the time
+        each tier covers, and its gaps, see :func:`read_vlan_traffic_periods`
+        (``vlan-traffic coverage``).
 
     Raises:
         ToolError: ``CONFIG_INVALID`` for an unknown period, ``NO_DATA`` for a missing
@@ -746,7 +751,7 @@ def read_vlan_traffic_report(
                 'peak_rx_bps': round(agg['peak_rx_bps'], 1),
                 'peak_tx_bps': round(agg['peak_tx_bps'], 1),
                 'samples': agg['samples'],
-                'coverage_pct': round(100.0 * valid / agg['samples'], 1)
+                'valid_sample_pct': round(100.0 * valid / agg['samples'], 1)
                 if agg['samples']
                 else 0.0,
             }
@@ -826,7 +831,8 @@ async def get_vlan_traffic_report(
         period: now, 1d, 1w, 1m or 1y.
 
     Returns:
-        period, vlans and methodology.
+        period, vlans (each with valid_sample_pct, the share of its samples that gave a
+        rate, which is not time coverage: see list_vlan_traffic_periods) and methodology.
 
     Raises:
         ToolError: NO_DATA when there is no store yet; API_ERROR when it is busy, needs

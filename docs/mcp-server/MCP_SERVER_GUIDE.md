@@ -332,7 +332,11 @@ repeats the CPU, memory, load and uptime that `find_device` reports, and one AP'
 `get_vlan_traffic_report` reads a local store that only the CLI fills (`vlan-traffic sample`
 over SSH, `vlan-traffic rollup` offline). `now`, `1d` and `1w` read its raw samples (kept 8
 days); `1m` and `1y` read the hourly and daily rows `rollup` writes for every complete hour and
-day, so they are as current as its last run. As ported from the July work the tool's `1w` was
+day, so they are as current as its last run. Each VLAN's `valid_sample_pct` is the share of
+its samples (or rollup rows) in the period that gave a rate (a first sample with none before
+it, or one after a counter reset, gives none), not the share of the period that was sampled:
+`list_vlan_traffic_periods` gives each tier's earliest and latest time and its gaps. As
+ported from the July work the tool's `1w` was
 always empty and `1m` and `1y` left out the newest 8 and about 61 days ([issue
 069](../issues/069-vlan-reports-read-tiers-without-recent-data.md)).
 
