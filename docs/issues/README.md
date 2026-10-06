@@ -84,3 +84,4 @@ the reasoning stays next to the code it explains.
 | [071](071-late-vlan-samples-never-reach-the-rollups.md) | A VLAN traffic sample written more than two hours late never reaches the hourly or daily rollups | open |
 | [072](072-vlan-intervals-span-a-sampler-outage.md) | A VLAN traffic interval can span a sampler outage, so one fresh sample reports days of traffic as current | open, decision needed |
 | [073](073-gateway-ping-step-duplicated.md) | The gateway ping step is written twice, in gateway ping and in AP-health's client pings | open |
+| [074](074-mqtt-needs-an-undeclared-dependency.md) | MQTT support needs aiomqtt, which the project does not declare, and its error says pip install | open, decision needed |
