@@ -79,6 +79,9 @@ Install the tool, create the XDG-compliant configuration directory, write your c
 ### Prerequisites
 
 - Python 3.12+ with `uv` installed
+- Graphviz's `dot` program, which `discover` and `diagram` use for PNG (the default) and SVG
+  diagrams: `brew install graphviz` (macOS) or `sudo apt install graphviz` (Debian or
+  Ubuntu). `uv sync` does not install it; `--format html` needs none
 - Access to a UniFi controller (Network Application or Dream Machine)
 - An API token (preferred) or admin username/password
 - The controller URL, including port (443 for UniFi OS, 8443 for legacy Network Application)
@@ -235,6 +238,8 @@ Discover the full network topology using LLDP data, propose switch port names fr
 ### Prerequisites
 
 - Configuration file with valid credentials (see Section 1)
+- Graphviz's `dot` for PNG (the default) and SVG diagrams (see Section 1); `--format html`
+  draws without it
 - LLDP enabled on switches (enabled by default in UniFi)
 - Write access to the controller, for `--apply` only (the default preview and `diagram` only read)
 
@@ -355,7 +360,7 @@ Verified: 11/12
 | Port names revert after update | API cache returns stale data | Use `--verify-updates` flag |
 | Device shown with no LLDP | Device type does not support LLDP (e.g., UAP) | Expected - APs do not generate LLDP |
 | Port naming rejected by API | Firmware limitation on certain models | Check `unifi-mapper capabilities` for device-specific limits |
-| `graphviz` not found | Missing system dependency for PNG/SVG | Install with `brew install graphviz` (macOS) or `apt install graphviz` |
+| `failed to execute PosixPath('dot')`, exit 1 | Graphviz's `dot` program is missing: PNG and SVG need it, and `discover` then writes no report ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)) | Install it with `brew install graphviz` (macOS) or `sudo apt install graphviz`, or use `--format html` |
 
 ---
 
@@ -687,7 +692,9 @@ first (`ports refresh`, then `--apply`; `stp apply --plan <dir>/stp-plan.json`, 
 `--no-dry-run`). They carry the audit's own `--config` and `--project` as absolute paths,
 quoted for bash or zsh, so a pasted command acts on the controller the audit read, from any
 directory. A step
-that fails is reported and the others still run; the exit status is 1 if any failed. The
+that fails is reported and the others still run; the exit status is 1 if any failed. Without
+Graphviz's `dot` (Section 1), the port-name step fails at its PNG diagram and leaves the
+diagram's DOT source in the output directory. The
 reports are created private (`umask 077`), and an existing `--output-dir` must be empty,
 yours, not writable by other users and not a symbolic link (exit 2 otherwise), so nothing
 planted there receives them.

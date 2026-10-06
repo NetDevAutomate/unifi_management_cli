@@ -85,4 +85,4 @@ the reasoning stays next to the code it explains.
 | [072](072-vlan-intervals-span-a-sampler-outage.md) | A VLAN traffic interval can span a sampler outage, so one fresh sample reports days of traffic as current | open, decision needed |
 | [073](073-gateway-ping-step-duplicated.md) | The gateway ping step is written twice, in gateway ping and in AP-health's client pings | open |
 | [074](074-mqtt-needs-an-undeclared-dependency.md) | MQTT support needs aiomqtt, which the project does not declare, and its error says pip install | open, decision needed |
-| [075](075-discover-needs-graphviz-dot-undocumented.md) | `discover` needs Graphviz's `dot` program for its PNG and SVG diagrams, undocumented, and exits 1 without it | open |
+| [075](075-discover-needs-graphviz-dot-undocumented.md) | `discover` needs Graphviz's `dot` program for its PNG and SVG diagrams and exits 1 without it, writing no report (the docs now name it) | open |

@@ -25,6 +25,13 @@ uv run unifi-mapper install-completions bash
 uv run unifi-mapper --install-completion
 ```
 
+`discover` and `diagram` draw PNG (the default) and SVG diagrams with Graphviz's `dot`
+program, which `uv sync` does not install: without it they exit 1 after reading the
+controller, and `discover` writes no report
+([issue 075](docs/issues/075-discover-needs-graphviz-dot-undocumented.md)). Install it with
+`brew install graphviz` (macOS) or `sudo apt install graphviz` (Debian or Ubuntu), or draw
+with `--format html`, which needs no Graphviz.
+
 ### Entry points
 
 | Command | What it is | Config file |

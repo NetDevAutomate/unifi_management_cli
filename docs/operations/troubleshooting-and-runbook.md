@@ -71,6 +71,8 @@ The project uses `uv` exclusively. Running `pip install` directly or forgetting 
 ```bash
 # Step 1: Install all dependencies
 uv sync
+# PNG and SVG diagrams (discover's default output) also need Graphviz's dot program
+brew install graphviz          # macOS; on Debian or Ubuntu: sudo apt install graphviz
 
 # Step 2: Run any command through uv run
 uv run unifi-mapper --help
@@ -134,6 +136,27 @@ before any subcommand, `discover` included, so a write is never requested by acc
 
 **Resolution**: put a subcommand's own flags after it: `unifi-mapper discover --apply`,
 `unifi-mapper ports refresh --apply`, `unifi-mapper discover --connected-devices`.
+
+#### `discover` or `diagram` Exits 1: Graphviz's `dot` Not Found
+
+**Symptom**: `discover` (or `diagram`) reads the controller, then stops with exit status 1
+and:
+
+```text
+❌ Error: failed to execute PosixPath('dot'), make sure the Graphviz executables are on your systems' PATH
+```
+
+**Cause**: PNG (the default) and SVG diagrams are drawn by Graphviz's `dot` program. The
+`graphviz` Python package that `uv sync` installs only drives it, so without Graphviz the
+render fails. `discover` draws the diagram before it writes the `-o` report, so the report
+is not written either, and the diagram's DOT source, which names the site's devices, is left
+at the diagram path minus its extension: `./diagrams/network_diagram` by default, which
+`.gitignore` covers ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)).
+
+**Resolution**: install Graphviz, `brew install graphviz` (macOS) or `sudo apt install
+graphviz` (Debian or Ubuntu), and run the command again, or draw an interactive diagram with
+`--format html`, which needs no Graphviz. Delete the leftover DOT source once you no longer
+need it.
 
 ---
 
@@ -1449,7 +1472,7 @@ Root options (before any subcommand):
 | `--apply` / `--dry-run` | Write port names to the controller; `--dry-run` previews | Preview |
 | `--connected-devices` | Include non-UniFi connected devices | Off |
 | `--verify-updates` | Verify that port name updates persist | Off |
-| `--format FORMAT` | Diagram format: `png`, `svg`, `html`, `mermaid`, `dot`. `mermaid` and `dot` currently write a one-line placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)) | `png` |
+| `--format FORMAT` | Diagram format: `png`, `svg`, `html`, `mermaid`, `dot`. `png` and `svg` need Graphviz's `dot` program (`brew install graphviz`); `html` needs none. `mermaid` and `dot` currently write a one-line placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)) | `png` |
 | `--output PATH`, `-o` | Markdown report path | `./reports/port_mapping_report.md` |
 | `--diagram PATH`, `-d` | Diagram path | `./diagrams/network_diagram.<format>` |
 

@@ -1,5 +1,5 @@
 ---
-title: "discover needs Graphviz's dot program for its PNG and SVG diagrams, undocumented, and exits 1 without it"
+title: "discover needs Graphviz's dot program for its PNG and SVG diagrams and exits 1 without it, writing no report"
 date: 2026-10-06
 status: open
 severity: low
@@ -7,19 +7,27 @@ components: [enhanced_network_topology, run_methods, README]
 found_by: July port build loop, iteration 7 (live read-only run)
 ---
 
-# discover needs Graphviz's dot program for its PNG and SVG diagrams, undocumented, and exits 1 without it
+# discover needs Graphviz's dot program for its PNG and SVG diagrams and exits 1 without it, writing no report
 
 ## Problem
 
 `discover` (and the legacy entry points that run it) draws its topology diagram as a PNG by
 default, through `NetworkTopology.generate_png_diagram` (or `generate_svg_diagram`) in
-`enhanced_network_topology.py`. The `graphviz` Python package is a declared dependency, but it
-only drives Graphviz's `dot` program, which nothing installs and neither the README nor the
-runbook names as a prerequisite. Without `dot` on `PATH` the render raises graphviz's
-`ExecutableNotFound` ("failed to execute ... dot, make sure the Graphviz executables are on
-your systems' PATH"); the method logs it and re-raises, so the command exits 1 after the dry
-run has already run and printed its plan. The `ImportError` branch beside it (the Python
-package missing) writes a placeholder file and a warning instead.
+`enhanced_network_topology.py`; `diagram` does the same. The `graphviz` Python package is a
+declared dependency, but it only drives Graphviz's `dot` program, which nothing installs.
+Without `dot` on `PATH` the render raises graphviz's `ExecutableNotFound` ("failed to
+execute PosixPath('dot'), make sure the Graphviz executables are on your systems' PATH");
+the method logs it and re-raises, so the command exits 1 after the dry run has already run
+and printed its plan. The `ImportError` branch beside it (the Python package missing) writes
+a placeholder file and a warning instead.
+
+A failed render costs two more things:
+
+- **The `-o` report is never written.** `run_port_mapper` (`run_methods.py`) draws the
+  diagram before it writes the port-mapping report, so the error ends the run first.
+- **The DOT source is left behind.** graphviz saves the source at the diagram path minus its
+  extension (the method strips `.png` or `.svg`) and deletes it only after `dot` succeeds,
+  so it stays there, with the site's device names: `./diagrams/network_diagram` by default.
 
 Found when the host's Graphviz install went away between two read-only live runs: the four
 live cases that run `discover` passed at one HEAD and exited 1 at the next, with the same
@@ -27,18 +35,27 @@ GET-only requests, while every other case passed.
 
 ## Impact
 
-On a machine without Graphviz, `discover` fails at its last step with an error that names
-neither the command to install it nor the way round it (`--format html` draws without
-`dot`). Breaks fresh clones, CI or prod: a fresh clone without Graphviz, yes, for
-`discover`'s default PNG output; the tests fake the render.
+On a machine without Graphviz, `discover` fails at its last step, writes no report, and
+leaves the DOT source in `./diagrams/` (or beside the `-d` path). Its error names neither
+the command to install Graphviz nor the way round it (`--format html` draws without `dot`).
+Breaks fresh clones, CI or prod: a fresh clone without Graphviz, yes, for `discover`'s
+default PNG output; the tests fake the render.
+
+Already done: `.gitignore` ignores everything under `diagrams/` but `.gitkeep`, so the left
+source can't be staged; `scripts/network-audit.sh` passes `discover` a `-d` in its own
+private output directory; and the README, the use-cases guide and the runbook name Graphviz
+(`brew install graphviz`, `sudo apt install graphviz`) as the prerequisite for PNG and SVG
+diagrams, say that `--format html` needs none, and describe the failure.
 
 ## Recommended fix
 
-1. Docs: name Graphviz (`brew install graphviz`, `apt install graphviz`) as the prerequisite
-   for PNG and SVG diagrams in the README's install section and the runbook, and say that
-   `--format html` needs none.
-2. Code: treat `graphviz.ExecutableNotFound` as the `ImportError` branch does, a warning that
-   names the install and a placeholder, so the dry run's exit status stays 0; or check for
-   `dot` before the run and refuse with that message. Either changes what `discover` does
-   without Graphviz, so it needs sign-off as a user-visible change. Test both formats with
-   `shutil.which('dot')` faked to None.
+The code half, still open: treat `graphviz.ExecutableNotFound` as the `ImportError` branch
+does, a warning that names the install and a placeholder, and write the report anyway, so
+the dry run's exit status stays 0; or check for `dot` before the run and refuse with that
+message. Either changes what `discover` does without Graphviz, so it needs sign-off as a
+user-visible change. Test both formats with `shutil.which('dot')` faked to None, and remove
+the DOT source a failed render leaves.
+
+While there: both methods strip the extension with `str.replace`, which removes `.png` (or
+`.svg`) anywhere in the path, so a `-d` under a directory such as `site.png.d/` renders into
+`site.d/` instead. Strip the suffix only (`Path.with_suffix('')` when the suffix matches).
