@@ -1,5 +1,5 @@
 ---
-title: "A VLAN traffic sample written more than two hours late never reaches the hourly or daily rollups"
+title: "A VLAN traffic sample written two hours or more late, into an hour already rolled, never reaches the hourly or daily rollups"
 date: 2026-10-06
 status: open
 severity: low
@@ -7,7 +7,7 @@ components: [analysis/vlan_traffic_store]
 found_by: July port build-loop council, iteration 6 (CF-002, one reviewer)
 ---
 
-# A VLAN traffic sample written more than two hours late never reaches the hourly or daily rollups
+# A VLAN traffic sample written two hours or more late, into an hour already rolled, never reaches the hourly or daily rollups
 
 ## Problem
 
@@ -15,17 +15,23 @@ found_by: July port build-loop council, iteration 6 (CF-002, one reviewer)
 high-water mark and recomputes only a trailing window behind it: the newest `TRAILING_HOURS`
 (2) complete hours and the newest `TRAILING_DAYS` (1) complete day. A bucket is complete once
 it ended at least the grace ago (twice the sampling interval, at least 5 minutes). So a run
-recomputes an hour only while it is one of the newest two complete hours: a raw sample written
-into an hour that became complete two hours or more before the next run is never folded into
-that hour's row, nor into the daily row built from the hourly rows.
+recomputes an hour only while it is one of the newest two complete hours.
+
+The omission is narrow: it needs an hour that a run has already rolled and that has left the
+trailing window. A raw sample written into such an hour is folded into its row only by a run
+less than two hours after the hour became complete; once a run comes two hours or more after
+that (the boundary `tests/analysis/test_vlan_traffic_store.py` pins, at exactly
+`TRAILING_HOURS` hours not counted), the sample never reaches that hour's row, nor the daily
+row built from the hourly rows.
 
 The raw sample itself is kept, so the `now`, `1d` and `1w` reports, which read raw samples,
 count it until it is pruned at 8 days; the `1m` and `1y` reports never do.
 
 `vlan-traffic sample` stamps each sample when it reads the counters and writes it at once, so
 a sample is this late only if it was written into the store some other way, or by a sampler
-that stalled for over two hours between its read and its write. No such case has been seen.
-Every sample written before its hour is first rolled is counted, whatever the rollup cadence.
+that stalled for two hours or more between its read and its write. No such case has been
+seen. Every sample written before its hour is first rolled is counted, whatever the rollup
+cadence.
 
 The docs said a late sample is counted, and `run_rollups`' docstring that any cadence gives
 the same result. Both now state the trailing-window guarantee, and
