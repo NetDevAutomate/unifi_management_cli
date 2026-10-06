@@ -184,9 +184,12 @@ def test_a_partial_report_says_so() -> None:
     assert 'Partial' in render_markdown(report)
 
 
-def test_the_expected_duration_is_up_to_ten_hours() -> None:
-    assert expected_duration_seconds(60, 600) == 36_000
-    assert expected_duration_seconds(1, 30) == 30
+def test_the_expected_duration_counts_the_pauses_between_samples() -> None:
+    # The first sample is taken at once; the capture pauses only before each later one.
+    assert expected_duration_seconds(60, 600) == 35_400  # 9 h 50 min at the bounds
+    assert expected_duration_seconds(2, 30) == 30
+    assert expected_duration_seconds(1, 30) == 0
+    assert expected_duration_seconds(0, 30) == 0  # never negative
 
 
 def test_there_is_no_ssid_default_and_no_power_cycle_path() -> None:
@@ -424,7 +427,8 @@ def test_the_command_prints_json_and_the_expected_duration(
     assert result.exit_code == 0, result.output
     data = json.loads(result.stdout)
     assert data['partial'] is False and data['samples_taken'] == {'target': 2}
-    assert 'Expected duration: about 1 min' in result.stderr
+    assert pauses == [30]  # one pause, between the two samples
+    assert 'Expected duration: about 30 s\n' in result.stderr  # no ping note without pings
     assert 'host key' not in result.stderr and ssh.connects == []  # no SSH without pings
 
 
@@ -434,6 +438,8 @@ def test_ping_clients_routes_through_ssh_and_prints_the_notice_once(
     args = ['diagnose', 'ap-health', 'AP 1', '--samples', '1', '--interval', '30']
     result = runner.invoke(app, [*args, '--ping-clients'])
     assert result.exit_code == 0, result.output
+    note = 'plus up to 4 pings per AP per sample, about 3 s each'
+    assert f'Expected duration: about 0 s, {note}' in ' '.join(result.stderr.split())
     assert result.stderr.count('host key') == 1 and len(ssh.connects) == 1
     assert '# AP Health Report — AP 1' in result.stdout
 

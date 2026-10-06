@@ -5307,9 +5307,9 @@ def diagnose_ap_health(
 ):
     """📶 Sample an AP's 2.4 GHz radio, retry and load counters over time, for a ticket.
 
-    Takes --samples reads --interval seconds apart (at most 60 x 600 s, 10 h; the expected
-    duration is printed first) and reports each sample and the mean interval retry rate,
-    beside a --reference AP when given. A sample whose read times out or fails is recorded
+    Takes --samples reads --interval seconds apart (60 reads 600 s apart take about 10 h; the
+    expected duration is printed first) and reports each sample and the mean interval retry
+    rate, beside a --reference AP when given. A sample whose read times out or fails is recorded
     as missing. Read-only, with no power-cycle step. --ping-clients also pings up to 4 of each
     AP's wireless clients from the gateway over SSH: those on 2.4 GHz, the radio the report
     measures, and those whose radio the controller doesn't report (5 and 6 GHz clients are
@@ -5320,6 +5320,9 @@ def diagnose_ap_health(
     """
     import asyncio
     from .analysis.ap_health import (
+        MAX_PINGED_CLIENTS,
+        PING_COUNT,
+        PING_INTERVAL,
         ApHealthCapture,
         build_report,
         expected_duration_seconds,
@@ -5331,6 +5334,11 @@ def diagnose_ap_health(
     if output is not None:
         _prepare_output(output, '--output')
     expected = _duration_text(expected_duration_seconds(samples, interval))
+    if ping_clients:  # each ping adds its own time to the pauses
+        expected += (
+            f', plus up to {MAX_PINGED_CLIENTS} pings per AP per sample, '
+            f'about {PING_COUNT * PING_INTERVAL:g} s each'
+        )
     err_console.print(f'Expected duration: about {expected}', style='dim')
     capture = ApHealthCapture()
 

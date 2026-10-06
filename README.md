@@ -264,8 +264,8 @@ object does not appear; `controller events` shows the edits, in the admin-activi
 
 `diagnose ap-health` and `diagnose client-connectivity` are CLI only (no MCP tool: a run is
 too long for one MCP call, and the probes use SSH). `ap-health` takes 1-60 samples 30-600 s
-apart (at most 10 h; it prints the expected duration first), reports a retry rate only over
-a real interval, records a sample whose read times out or fails as missing, and has no
+apart (up to about 10 h; it prints the expected duration first), reports a retry rate only
+over a real interval, records a sample whose read times out or fails as missing, and has no
 power-cycle step; without `--essid` it tracks the busiest 2.4 GHz SSID. It checks `--output`
 before the first sample and writes it after printing the report; Ctrl-C (exit 130), or a
 failure that ends the run (exit 1), still prints and writes the samples taken.

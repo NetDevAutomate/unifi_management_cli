@@ -2,11 +2,11 @@
 
 An AP's 2.4 GHz radio, VAP retry and load counters (and a known-good reference AP's, when
 given) are read every ``interval`` seconds, ``samples`` times, and reported per sample and as
-mean interval retry rates, in markdown and JSON. CLI only: a run lasts at most 60 x 600 s (10 h),
-far beyond one MCP call; an MCP form waits for decision D4 (issue 060), and the MCP read side
-is ``get_device_stats`` with ``get_ap_retry_rates``. The controller reads borrow the read-only
-holder the CLI installs. Client pings (class B) run only with ``ping_clients=True``, in one
-gateway SSH session through ``analysis/gateway_ssh.py``.
+mean interval retry rates, in markdown and JSON. CLI only: a run can last about 10 h (60
+samples 600 s apart), far beyond one MCP call; an MCP form waits for decision D4 (issue 060),
+and the MCP read side is ``get_device_stats`` with ``get_ap_retry_rates``. The controller reads
+borrow the read-only holder the CLI installs. Client pings (class B) run only with
+``ping_clients=True``, in one gateway SSH session through ``analysis/gateway_ssh.py``.
 
 Each sample's read is bounded (:data:`SAMPLE_READ_TIMEOUT`); a sample whose read times out or
 fails with any error is recorded as missing with its reason, and a ping that fails records
@@ -438,8 +438,13 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def expected_duration_seconds(samples: int, interval: int) -> int:
-    """About how long a capture runs: one interval per sample (up to 10 h at the bounds)."""
-    return samples * interval
+    """About how long a capture runs: its pauses, ``interval`` before each sample but the first.
+
+    At the bounds, 60 samples 600 s apart pause 9 h 50 min. Each sample's reads add a second
+    or two; with ``ping_clients``, each sample also pings up to :data:`MAX_PINGED_CLIENTS`
+    clients per AP, ``PING_COUNT`` pings ``PING_INTERVAL`` s apart (about 3 s) each.
+    """
+    return max(samples - 1, 0) * interval
 
 
 def _not_found(message: str) -> ToolError:
