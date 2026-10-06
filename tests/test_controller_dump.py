@@ -251,6 +251,29 @@ def test_an_empty_private_output_directory_is_used(
     assert {p.name for p in output.iterdir()} == {'wlanconf.json', 'manifest.json'}
 
 
+def test_a_failed_logout_is_one_redacted_line_never_a_traceback(
+    mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """M4 council BF-001: the logout ran in a bare finally, outside the redacted paths."""
+    client = fake_client(_session())
+
+    def _logout() -> bool:
+        raise RuntimeError(
+            'logout failed password=FAKE-DUMP-LOGOUT-PW'
+        )  # pragma: allowlist secret
+
+    monkeypatch.setattr(client, 'logout', _logout)
+    monkeypatch.setattr(mod, '_login', lambda _path: (client, 'default'))
+    output = tmp_path / 'out'
+    assert mod.main(['--output', str(output), '--endpoint', 'wlanconf']) == 0
+    err = capsys.readouterr().err
+    assert 'FAKE-DUMP-LOGOUT-PW' not in err and 'Traceback' not in err
+    assert [line for line in err.splitlines() if 'logout' in line] == [
+        'controller_dump: logout failed (the dump is complete): logout failed '
+        'password=***redacted***'
+    ]
+
+
 # --- scripts/network-audit.sh ---------------------------------------------------------------
 
 

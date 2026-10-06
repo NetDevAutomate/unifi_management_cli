@@ -30,7 +30,7 @@ Usage:
 
 The config is ``--config``, else ``UNIFI_CONFIG``, else ``unifi-mapper``'s default search.
 Exit codes: 0 every endpoint read, 1 a failed login or endpoint, 2 a bad argument or
-``--output``.
+``--output``. A failed logout afterwards is one redacted warning line; the exit code stands.
 """
 
 import argparse
@@ -213,6 +213,17 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _logout(client: Any) -> None:
+    """Log out; a failure is one redacted warning line, and the dump's exit code stands."""
+    try:
+        client.logout()
+    except Exception as e:  # noqa: BLE001 - never a traceback, which could print a secret
+        print(
+            f'controller_dump: logout failed (the dump is complete): {redact_text(e)}',
+            file=sys.stderr,
+        )
+
+
 def _login(path: Path) -> tuple[Any, str]:
     """A logged-in ``UnifiApiClient`` from the env file at ``path``, and its site."""
     from unifi_mapper.api_client import UnifiApiClient
@@ -262,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f'controller_dump: {redact_text(e)}', file=sys.stderr)
         return 1
     finally:
-        client.logout()
+        _logout(client)
     failed = 0
     for name, entry in manifest['endpoints'].items():
         if 'error' in entry:
