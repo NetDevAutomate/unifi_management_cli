@@ -42,7 +42,12 @@ from pydantic import BaseModel, ValidationError
 from typing import Any, Literal
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.readonly import ReadOnlyViolation
-from unifi_mapper.core.utils.redact import mask_secret_values, mask_secrets, mcp_secret_values
+from unifi_mapper.core.utils.redact import (
+    mask_secret_values,
+    mask_secrets,
+    mcp_secret_values,
+    redact_traceback,
+)
 
 
 Surface = Literal['execute_tool', 'direct']
@@ -212,6 +217,30 @@ class _Failure(Exception):
         )
 
 
+def _log_tool_failure(name: str, exc: BaseException) -> None:
+    """Log a failed tool call on stderr, its secrets masked (final council F7).
+
+    ERROR names the tool and the exception's type, and its text with every MCP secret value
+    from the environment and every secret-shaped pair masked (:func:`mask_secret_values`,
+    which ends in ``redact_text``); the traceback is rendered at DEBUG only, through
+    :func:`redact_traceback` with the same values. ``logger.exception`` printed ``str(exc)``
+    and the traceback as they were, to the stderr an MCP client keeps in its own logs.
+
+    Args:
+        name: The tool the call named.
+        exc: What it failed with.
+    """
+    secrets = mcp_secret_values(os.environ)
+    text = mask_secret_values(str(exc), secrets)
+    kind = type(exc).__name__
+    logger.error('MCP tool {} failed: {}', name, f'{kind}: {text}' if text else kind)
+    logger.opt(lazy=True).debug(
+        'MCP tool {} failed; its traceback, secrets masked:\n{}',
+        lambda: name,
+        lambda: redact_traceback(exc, secret_values=secrets).rstrip('\n'),
+    )
+
+
 class ToolRunner:
     """Validate, gate, run, mask and package one catalog tool call."""
 
@@ -282,7 +311,7 @@ class ToolRunner:
             outcome = CANCELLED
             raise
         except Exception as e:  # noqa: BLE001 - the runner never raises out of a tool call
-            logger.exception('MCP tool {} failed while packaging its result', name)
+            _log_tool_failure(name, e)
             return self._failure(_Failure.tool_failed(e), mcp_secret_values(os.environ), surface)
         finally:
             if self.call_audit is not None:
@@ -358,7 +387,7 @@ class ToolRunner:
                 input_schema=e.input_schema or tool.parameters,
             ) from None
 
-        await self._gate(meta.credentials)
+        await self._gate(name, meta.credentials)
         return tool, kwargs
 
     @staticmethod
@@ -400,8 +429,8 @@ class ToolRunner:
             ) from e
         return parsed.model_dump_one_level()
 
-    async def _gate(self, family: str) -> None:
-        """Check the tool's credential family is ready (step 7)."""
+    async def _gate(self, name: str, family: str) -> None:
+        """Check tool ``name``'s credential family is ready (step 7)."""
         if family == 'none':
             return
         config = self._config()
@@ -425,7 +454,7 @@ class ToolRunner:
         except ToolError as e:
             raise _Failure.from_tool_error(e) from None
         except Exception as e:  # noqa: BLE001 - a broken credential chain is a tool failure
-            logger.exception('credential check failed')
+            _log_tool_failure(name, e)
             raise _Failure.tool_failed(e) from None
 
     # --- steps 8-9 --------------------------------------------------------------------
@@ -459,10 +488,10 @@ class ToolRunner:
                     f'{name} did not finish within {timeout:g}s (UNIFI_MCP_TOOL_TIMEOUT)',
                     TIMEOUT_SUGGESTION,
                 ) from None
-            logger.exception('MCP tool {} failed', name)
+            _log_tool_failure(name, e)
             raise _Failure.tool_failed(e) from None
         except Exception as e:  # noqa: BLE001 - surface any tool failure, don't crash the server
-            logger.exception('MCP tool {} failed', name)
+            _log_tool_failure(name, e)
             raise _Failure.tool_failed(e) from None
 
     @staticmethod

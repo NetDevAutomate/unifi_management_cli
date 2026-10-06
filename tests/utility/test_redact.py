@@ -344,3 +344,17 @@ def test_redact_traceback_masks_causes_notes_and_groups() -> None:
     assert 'The above exception was the direct cause' in chained
     assert 'token=***redacted***' in chained and 'api_key=***redacted***' in chained
     assert 'secret=***redacted***' in redact_traceback(_caught(_grouped))
+
+
+def test_redact_traceback_masks_known_values_before_it_cuts_a_line() -> None:
+    """Final council F7: the MCP server's DEBUG traceback masks its secret values too; each
+    is replaced on the whole line, so one across the 4000-character cut leaves no fragment."""
+    padding = 'x' * (4000 - len(FAKE) // 2 - len('RuntimeError: '))
+
+    def _long() -> None:
+        raise RuntimeError(f'{padding}{FAKE} and plain {FAKE}')
+
+    error = _caught(_long)
+    text = redact_traceback(error, secret_values=frozenset({FAKE}))
+    assert 'Traceback' in text and FAKE[: len(FAKE) // 2] not in text
+    assert FAKE[:8] in redact_traceback(error)  # without the values, a fragment survives

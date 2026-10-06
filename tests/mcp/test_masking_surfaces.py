@@ -7,11 +7,13 @@ raw substring search), on the execute_tool surface and on the direct surface.
 import json
 import jsonschema
 import pytest
+from loguru import logger
 from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import CallToolResult
 from pathlib import Path
 from tests.mcp import fakes
-from typing import Any
+from typing import Any, NoReturn
+from unifi_mapper.mcp import runner as runner_module
 from unifi_mapper.mcp import server
 from unifi_mapper.mcp.config import ServerSettings
 from unifi_mapper.mcp.runner import ExecuteResult, ToolRunner
@@ -92,6 +94,60 @@ async def test_secret_written_after_the_runner_was_built_is_masked(runner, monke
     monkeypatch.setenv('UNIFI_API_TOKEN', late)  # as apply_credentials_to_env would
     out = await runner.run('raise_exc', {'kind': 'RuntimeError', 'text': late}, 'execute_tool')
     assert late not in json.dumps(out.model_dump(mode='json'))
+
+
+# ---------------------------------------------------------------------------
+# The server's stderr log (final council F7)
+# ---------------------------------------------------------------------------
+
+LOG_SENTINEL = 'FAKE-STDERR-LOG-SENTINEL-55aa'  # pragma: allowlist secret
+# An environment secret (masked by value) and a secret-shaped pair (masked by pattern).
+FAILURE_TEXT = f'connect failed for {fakes.SECRET_API_KEY}, password={LOG_SENTINEL}'
+
+
+@pytest.mark.parametrize('level', ['INFO', 'DEBUG'])
+@pytest.mark.parametrize('site', ['tool', 'tool TimeoutError', 'credential check', 'packaging'])
+async def test_a_tool_failure_logs_no_secret_on_stderr(
+    runner: ToolRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    level: str,
+    site: str,
+) -> None:
+    """Final council F7: each of the runner's four ``logger.exception`` sites printed
+    ``str(e)``, and the traceback that repeats it, to the stderr an MCP client keeps."""
+    kind = 'TimeoutError' if site == 'tool TimeoutError' else 'RuntimeError'
+    name, params = 'raise_exc', {'kind': kind, 'text': FAILURE_TEXT}
+    if site == 'credential check':
+
+        async def broken(timeout: float, tried: Any = ()) -> NoReturn:
+            raise RuntimeError(FAILURE_TEXT)
+
+        monkeypatch.setattr(runner_module, 'ensure_controller_credentials', broken)
+        registry = fakes.fake_registry(tmp_path, credentials='controller')
+        runner = ToolRunner(registry, settings=ServerSettings())
+        name, params = 'no_params', {}
+    elif site == 'packaging':
+
+        def unpackable(*_: Any) -> NoReturn:
+            raise RuntimeError(FAILURE_TEXT)
+
+        monkeypatch.setattr(ToolRunner, '_success', staticmethod(unpackable))
+        name, params = 'no_params', {}
+    seen: list[str] = []
+    handler = logger.add(seen.append, level=level, diagnose=False)  # as the server's stderr
+    try:
+        out = await runner.run(name, params, 'execute_tool')
+    finally:
+        logger.remove(handler)
+    _assert_clean(out)
+    assert out.isError is True
+    text = ''.join(seen)
+    assert f'MCP tool {name} failed: {kind}: connect failed for {REDACTED}' in text
+    assert f'password={REDACTED}' in text
+    for secret in (*SECRETS, LOG_SENTINEL):
+        assert secret not in text
+    assert ('Traceback (most recent call last)' in text) == (level == 'DEBUG')
 
 
 # ---------------------------------------------------------------------------

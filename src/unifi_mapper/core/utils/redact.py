@@ -161,14 +161,17 @@ def redact_text(text: object, limit: int = DEFAULT_TEXT_LIMIT) -> str:
 TRACEBACK_LINE_LIMIT = 4000
 
 
-def redact_traceback(error: BaseException) -> str:
+def redact_traceback(error: BaseException, *, secret_values: frozenset[str] = frozenset()) -> str:
     """Format an exception's traceback with every line passed through :func:`redact_text`.
 
     Chained causes, exception groups and notes appear as :mod:`traceback` prints them; frame
-    locals never do. For the ``--debug`` output of the argparse CLIs.
+    locals never do. For the ``--debug`` output of the argparse CLIs, and (with
+    ``secret_values``) the MCP server's DEBUG log of a failed tool.
 
     Args:
         error: The exception being reported, usually the one an ``except`` caught.
+        secret_values: Known secret values to replace in each whole line first, so one
+            across the line cut leaves no fragment (the MCP server's).
 
     Returns:
         The traceback text, one redacted line per line (each at most
@@ -176,9 +179,11 @@ def redact_traceback(error: BaseException) -> str:
     """
     import traceback
 
+    ordered = _ordered(secret_values)
     text = ''.join(traceback.format_exception(error))
     return ''.join(
-        redact_text(line, limit=TRACEBACK_LINE_LIMIT) + '\n' for line in text.splitlines()
+        redact_text(_replace_values(line, ordered), limit=TRACEBACK_LINE_LIMIT) + '\n'
+        for line in text.splitlines()
     )
 
 

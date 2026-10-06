@@ -370,7 +370,10 @@ failed call. On the direct surface a failure is a single text block,
 
 Results and error text are masked: the value of any secret-looking `UNIFI_*`/`PROTECT_*`
 variable is replaced wherever it appears, and values under secret-named keys are redacted.
-Error messages are capped at 2,000 characters (`TOOL_FAILED` at 500). The Network and Protect
+Error messages are capped at 2,000 characters (`TOOL_FAILED` at 500). A `TOOL_FAILED` call
+(and an unexpected error in the credential check) is also logged on stderr as one ERROR
+line, the tool, the exception's type and its text masked the same way; its traceback,
+masked too, only at `UNIFI_MCP_LOG_LEVEL=DEBUG`. The Network and Protect
 wrappers still return `{"error": …}` inside an `ok: true` result on failure; issue 011 tracks
 turning that into `TOOL_FAILED`. A write their read-only guard refuses is the exception: it is
 reported as `READ_ONLY_VIOLATION`.

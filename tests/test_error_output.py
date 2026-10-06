@@ -353,6 +353,75 @@ def test_every_traceback_in_src_goes_through_redact_traceback() -> None:
     )
 
 
+def _loguru_traceback_uses(path: Path, base: Path = PACKAGE) -> list[str]:
+    """path:line of every loguru call that renders a traceback as it is.
+
+    ``logger.exception(...)`` and ``logger.opt(exception=...)``, through a chain
+    (``logger.opt(lazy=True).exception(...)``) or a ``from loguru import logger as <alias>``.
+    The path is relative to ``base`` (the package).
+    """
+    where = path.relative_to(base)
+    tree = ast.parse(path.read_text(encoding='utf-8'))
+    names = {'logger'} | {
+        alias.asname
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == 'loguru'
+        for alias in node.names
+        if alias.name == 'logger' and alias.asname
+    }
+
+    def on_logger(node: ast.expr) -> bool:
+        while isinstance(node, ast.Attribute | ast.Call):
+            node = node.value if isinstance(node, ast.Attribute) else node.func
+        return isinstance(node, ast.Name) and node.id in names
+
+    def renders(call: ast.Call, attr: str) -> bool:
+        if attr == 'exception':
+            return True
+        return attr == 'opt' and any(
+            k.arg == 'exception'
+            and not (isinstance(k.value, ast.Constant) and k.value.value in (None, False))
+            for k in call.keywords
+        )
+
+    return [
+        f'{where}:{node.lineno}'
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and on_logger(node.func.value)
+        and renders(node, node.func.attr)
+    ]
+
+
+def test_no_mcp_module_logs_an_unredacted_traceback() -> None:
+    """Final council F7: ``logger.exception`` printed ``str(e)`` and its traceback, as they
+    were, to the stderr an MCP client keeps; ``mcp/runner.py`` logs a failed call through
+    ``_log_tool_failure`` instead."""
+    mcp = sorted((PACKAGE / 'mcp').rglob('*.py'))
+    assert len(mcp) > 5, 'the scan found no MCP module: it is not looking where it should'
+    assert [hit for path in mcp for hit in _loguru_traceback_uses(path)] == []
+
+
+def test_the_loguru_traceback_scan_sees_a_chain_and_an_alias(tmp_path: Path) -> None:
+    sample = tmp_path / 'sample.py'
+    sample.write_text(
+        'from loguru import logger\n'
+        'from loguru import logger as log\n'
+        "logger.exception('a')\n"
+        "log.opt(lazy=True).exception('b')\n"
+        "logger.opt(exception=True).error('c')\n"
+        "logger.opt(exception=None).error('d')\n"
+        "logger.error('e')\n"
+        'task.exception()\n'
+    )
+    assert _loguru_traceback_uses(sample, tmp_path) == [
+        'sample.py:3',
+        'sample.py:4',
+        'sample.py:5',
+    ]
+
+
 def test_the_traceback_scan_sees_an_alias_and_a_from_import(tmp_path: Path) -> None:
     sample = tmp_path / 'sample.py'
     sample.write_text(
