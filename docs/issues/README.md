@@ -86,3 +86,4 @@ the reasoning stays next to the code it explains.
 | [073](073-gateway-ping-step-duplicated.md) | The gateway ping step is written twice, in gateway ping and in AP-health's client pings | open |
 | [074](074-mqtt-needs-an-undeclared-dependency.md) | MQTT support needs aiomqtt, which the project does not declare (its hint and the README now name `uv add aiomqtt`) | open, decision needed |
 | [075](075-discover-needs-graphviz-dot-undocumented.md) | `discover` needs Graphviz's `dot` program for its PNG and SVG diagrams and exits 1 without it, writing no report (the docs now name it) | open |
+| [076](076-july-port-final-review-follow-ups.md) | Follow-ups from the July port's final review that were not fixed on the branch | open, decision needed |
