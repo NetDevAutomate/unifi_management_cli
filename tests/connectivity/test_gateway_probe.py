@@ -342,6 +342,29 @@ HOP_LINES: dict[str, tuple[str, dict[str, Any]]] = {
     ),
     'a dot before ms': (' 9  . ms  2.0 ms', _hop(9, None, None, [2.0])),
     'a number that is not a time': (' 9  1.2.3 ms', _hop(9, None, None, [])),
+    # GNU inetutils glues the unit to the time and prints a resolved name after the address,
+    # in parentheses (review AGG-7).
+    'GNU inetutils (numeric)': (
+        '  1   192.0.2.1  0.351ms  0.247ms  0.230ms ',
+        _hop(1, '192.0.2.1', '192.0.2.1', [0.351, 0.247, 0.23]),
+    ),
+    'GNU inetutils, a lost probe': (
+        '  2   198.51.100.1  1.234ms  *  1.111ms ',
+        _hop(2, '198.51.100.1', '198.51.100.1', [1.234, 1.111]),
+    ),
+    'GNU inetutils, a name after the address': (
+        '  3   203.0.113.9 (edge-100ms.example.net)  2.500ms  2.400ms ',
+        _hop(3, '203.0.113.9', '203.0.113.9', [2.5, 2.4]),
+    ),
+    'GNU inetutils, unreachable': (
+        '  4   203.0.113.53  9.000ms !H  9.100ms !H ',
+        _hop(4, '203.0.113.53', '203.0.113.53', [9.0, 9.1], unreachable=True),
+    ),
+    'a name that reads like a glued time': (
+        ' 3  100ms (198.51.100.4)  2.0ms',
+        _hop(3, '100ms', '198.51.100.4', [2.0]),
+    ),
+    'a glued number that is not a time': (' 9  1.2.3ms', _hop(9, None, None, [])),
 }
 
 
@@ -349,7 +372,8 @@ HOP_LINES: dict[str, tuple[str, dict[str, Any]]] = {
 def test_traceroute_times_are_read_by_token_never_from_a_name(
     line: str, expected: dict[str, Any]
 ) -> None:
-    """Review SR6-1: a time is a number token then an "ms" token; names are never read."""
+    """Review SR6-1: a time is a number token then an "ms" token, or (review AGG-7, GNU
+    inetutils) one number token with "ms" glued on; names are never read."""
     assert parse_traceroute_output(line) == [expected]
 
 

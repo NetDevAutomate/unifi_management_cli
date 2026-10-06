@@ -75,6 +75,8 @@ INTERFACES_TIMEOUT = 15
 _HOP_NUMBER_RE = re.compile(r'[0-9]{1,3}')
 # A probe's time is this token followed by the token "ms" (traceroute prints "0.512 ms").
 _HOP_TIME_RE = re.compile(r'[0-9]+(?:\.[0-9]+)?')
+# Or one token with the unit glued on, as GNU inetutils' traceroute prints it ("0.351ms").
+_HOP_GLUED_TIME_RE = re.compile(r'[0-9]+(?:\.[0-9]+)?ms')
 # traceroute's annotation for an ICMP unreachable reply, one token: !H host, !N network, !P
 # protocol, !S source route, !F (or !F-<mtu>) fragmentation needed, !X, !V, !C prohibited or
 # precedence, !<n> (or !n) another code.
@@ -102,8 +104,10 @@ def _read_hop(tokens: list[str]) -> tuple[str | None, str | None, list[float], b
     ``*`` is a lost probe; an annotation token (:data:`_HOP_UNREACHABLE_RE`) marks the hop
     unreachable; ``name (address)`` and a bare address are responders, each taken whole and
     never read for a time, so a name such as ``r1.ms.example.net`` or ``edge-100ms`` adds
-    none; a number token followed by an ``ms`` token is a probe's time. Any other token is
-    skipped.
+    none; a number token followed by an ``ms`` token is a probe's time, and so, after those
+    checks, is one number token with ``ms`` glued on (GNU inetutils prints ``0.351ms``, and
+    a resolved name after the address, in parentheses, which is skipped). Any other token
+    is skipped.
 
     Args:
         tokens: The hop line's whitespace-separated tokens, its number left out.
@@ -136,13 +140,16 @@ def _read_hop(tokens: list[str]) -> tuple[str | None, str | None, list[float], b
         elif following == 'ms' and _HOP_TIME_RE.fullmatch(token):
             times.append(float(token))
             i += 2
+        elif _HOP_GLUED_TIME_RE.fullmatch(token):
+            times.append(float(token[:-2]))
+            i += 1
         else:
             i += 1
     return host, ip, times, unreachable
 
 
 def parse_traceroute_output(output: str) -> list[dict[str, Any]]:
-    """Parse traceroute output (GNU or BusyBox, IPv4 or IPv6) into hops.
+    """Parse traceroute output (Linux, BusyBox or GNU inetutils; IPv4 or IPv6) into hops.
 
     A hop line is one whose first token is a number; the rest is read by :func:`_read_hop`.
     A hop with several responders reports the first one's name and address and every time.
