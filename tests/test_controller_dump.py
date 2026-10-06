@@ -295,12 +295,6 @@ def test_a_failed_logout_is_one_redacted_line_never_a_traceback(
 AUDIT = SCRIPTS / 'network-audit.sh'
 
 
-def _audit(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ['bash', str(AUDIT), *args], capture_output=True, text=True, timeout=30, check=False
-    )
-
-
 def test_the_audit_script_parses_and_has_no_apply_step() -> None:
     assert subprocess.run(['bash', '-n', str(AUDIT)], check=False).returncode == 0
     text = AUDIT.read_text(encoding='utf-8')
@@ -315,14 +309,17 @@ def test_the_audit_script_parses_and_has_no_apply_step() -> None:
     [['--planned-switches', '0'], ['--planned-switches', 'x'], ['--bogus'], ['--config']],
     ids=['zero switches', 'not a number', 'unknown', 'no config value'],
 )
-def test_the_audit_script_refuses_bad_arguments_with_exit_2(args: list[str]) -> None:
-    result = _audit(*args)
+def test_the_audit_script_refuses_bad_arguments_with_exit_2(
+    tmp_path: Path, args: list[str]
+) -> None:
+    result = _run_audit(tmp_path, *args)
     assert result.returncode == 2 and result.stderr.startswith('network-audit:')
+    assert not (tmp_path / 'uv.log').exists()  # refused before any step
 
 
-def test_the_audit_script_has_help() -> None:
-    result = _audit('--help')
-    assert result.returncode == 0
+def test_the_audit_script_has_help(tmp_path: Path) -> None:
+    result = _run_audit(tmp_path, '--help')
+    assert result.returncode == 0 and not (tmp_path / 'uv.log').exists()
     for flag in ('--config', '--output-dir', '--planned-switches'):
         assert flag in result.stdout
     flat = ' '.join(result.stdout.split())
@@ -366,6 +363,11 @@ def test_a_relative_xdg_state_home_is_ignored_for_the_default_output(tmp_path: P
 
 
 def _run_audit(tmp_path: Path, *args: str, cwd: Path | None = None) -> Any:
+    """Run the audit script with a fake ``uv`` (``_fake_uv_env``), never the real one.
+
+    Review SR6-S1: every case runs through this, so no case inherits the developer's PATH,
+    HOME or UNIFI_* variables, which could reach the live controller.
+    """
     return subprocess.run(
         ['bash', str(AUDIT), *args],
         capture_output=True,
