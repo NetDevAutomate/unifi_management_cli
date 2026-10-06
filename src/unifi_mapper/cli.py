@@ -178,7 +178,7 @@ def main():
         from .core.utils.redact import redact_text
 
         log.error(f'Import error: {redact_text(e)}')
-        log.error("Make sure you've installed the package: uv pip install -e .")
+        log.error("Make sure the project's dependencies are installed: uv sync")
         sys.exit(1)
 
     # Create config from environment

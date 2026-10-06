@@ -592,7 +592,7 @@ classDiagram
 | `DeviceCapability` (dataclass) | Per-device record: known issues, workarounds, max name length |
 | `DeviceCapabilityDetector` | Lookup class with `detect_capabilities`, `should_attempt_port_naming`, `get_recommended_strategy` |
 
-`analyze_network_capabilities.py` (`python -m unifi_mapper.analyze_network_capabilities`) runs the detector over the live device list and prints the compatibility report; `unifi-mapper capabilities` does the same through the Typer CLI.
+`analyze_network_capabilities.py` (`uv run python -m unifi_mapper.analyze_network_capabilities`) runs the detector over the live device list and prints the compatibility report; `unifi-mapper capabilities` does the same through the Typer CLI.
 
 **Dependencies.** Standard library only.
 
@@ -1288,7 +1288,7 @@ Each call opens its own guarded client: the network wrappers build `UniFiNetwork
 
 ### `protect_monitor.py`
 
-**Purpose.** Long-running synchronous monitoring daemon for UniFi Protect devices. Polls the Protect API at configurable intervals and detects state changes in AI Ports, cameras, smart detection events, and stream health. Intended for standalone execution (`python -m unifi_mapper.monitors.protect_monitor`).
+**Purpose.** Long-running synchronous monitoring daemon for UniFi Protect devices. Polls the Protect API at configurable intervals and detects state changes in AI Ports, cameras, smart detection events, and stream health. Intended for standalone execution (`uv run python -m unifi_mapper.monitors.protect_monitor`).
 
 **Key class.** `ProtectMonitor`
 
@@ -1296,7 +1296,7 @@ Uses `requests` (synchronous) rather than `uiprotect`, making it independent of 
 
 ### `backup/poc_decrypt.py` and `backup/verify.py`
 
-**Purpose.** `poc_decrypt.py` is a proof of concept that decrypts a UniFi controller backup (`.unf`) with the controller's fixed AES key and IV (module constants, not settings), extracts the database and parses its BSON collections (`decrypt_backup`, `extract_db_gz`, `decompress_db`, `iter_bson_documents`, `parse_bson_documents`). Run it as `python -m unifi_mapper.backup.poc_decrypt BACKUP.unf`. Its stages never print (a debug log line instead), `decompress_db` follows `gzip.decompress`' member rules with optional output and member caps, reading the stream through a `memoryview` in 64 KiB slices so its work is linear however many members the stream holds, and a missing dependency raises `ImportError` instead of printing and exiting.
+**Purpose.** `poc_decrypt.py` is a proof of concept that decrypts a UniFi controller backup (`.unf`) with the controller's fixed AES key and IV (module constants, not settings), extracts the database and parses its BSON collections (`decrypt_backup`, `extract_db_gz`, `decompress_db`, `iter_bson_documents`, `parse_bson_documents`). Run it as `uv run python -m unifi_mapper.backup.poc_decrypt BACKUP.unf`. Its stages never print (a debug log line instead), `decompress_db` follows `gzip.decompress`' member rules with optional output and member caps, reading the stream through a `memoryview` in 64 KiB slices so its work is linear however many members the stream holds, and a missing dependency raises `ImportError` instead of printing and exiting.
 
 `verify.py` (`verify_backup_bytes`, `check_backup_path`, `verify_config_backup`; `backup verify`, MCP `verify_config_backup`, `credentials: none`) runs those stages offline, the extracted member and the decompressed database each capped at 1 GiB (an oversized member is refused by its declared size before it is inflated) and the database at 64 gzip members, and counts each collection's documents without keeping any, so the result holds structure only. The walk is strict: it stops at the first document that fails to decode, and that, or bytes left after the last whole document, makes the backup invalid (`corrupt_document` or `truncated`). Only checked strings leave the backup: a collection name from `KNOWN_COLLECTIONS` (any other counted as `other`) and a version that is a version number (else `<unrecognised>`). The path is checked before the file is opened: the `.unf` suffix first, then absolute (MCP); then it is resolved (a symlink's target must end in `.unf` too) and must be a regular file of at most 512 MiB. `read_backup` opens it once, without following a link or blocking on a FIFO, checks the open descriptor again (`fstat`) and reads at most one byte more than the size it reports, so a file that changed after the check is refused.
 

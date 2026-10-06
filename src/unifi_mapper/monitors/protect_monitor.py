@@ -16,7 +16,7 @@ Usage:
     monitor.run()
 
     # As CLI (from project root)
-    python -m unifi_mapper.monitors.protect_monitor --help
+    uv run python -m unifi_mapper.monitors.protect_monitor --help
 """
 
 import argparse
@@ -589,19 +589,19 @@ def main():
         epilog="""
 Examples:
   # Basic monitoring (3 second interval)
-  python -m unifi_mapper.monitors.protect_monitor
+  uv run python -m unifi_mapper.monitors.protect_monitor
 
   # Fast polling (1 second)
-  python -m unifi_mapper.monitors.protect_monitor -i 1
+  uv run python -m unifi_mapper.monitors.protect_monitor -i 1
 
   # Log to file
-  python -m unifi_mapper.monitors.protect_monitor -l /tmp/protect.log
+  uv run python -m unifi_mapper.monitors.protect_monitor -l /tmp/protect.log
 
   # Quiet mode (only show changes)
-  python -m unifi_mapper.monitors.protect_monitor -q
+  uv run python -m unifi_mapper.monitors.protect_monitor -q
 
   # Custom credentials
-  python -m unifi_mapper.monitors.protect_monitor \\
+  uv run python -m unifi_mapper.monitors.protect_monitor \\
     --url https://192.0.2.1 \\
     --user admin \\
     --password <password>

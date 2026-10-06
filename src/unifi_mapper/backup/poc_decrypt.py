@@ -4,7 +4,7 @@ This script decrypts UniFi backup files (.unf) and dumps their BSON contents
 to help understand the backup structure before building the full feature.
 
 Usage:
-    python -m unifi_mapper.backup.poc_decrypt /path/to/backup.unf
+    uv run python -m unifi_mapper.backup.poc_decrypt /path/to/backup.unf
 
 Requirements:
     pycryptodome and pymongo (for ``bson``), both project dependencies: run ``uv sync``.
@@ -427,16 +427,16 @@ def main():
         epilog="""
 Examples:
   # Basic decrypt and show summary
-  python -m unifi_mapper.backup.poc_decrypt backup.unf
+  uv run python -m unifi_mapper.backup.poc_decrypt backup.unf
 
   # Show specific collection details
-  python -m unifi_mapper.backup.poc_decrypt backup.unf -c setting
+  uv run python -m unifi_mapper.backup.poc_decrypt backup.unf -c setting
 
   # Export collection to JSON
-  python -m unifi_mapper.backup.poc_decrypt backup.unf -c networkconf -o networks.json
+  uv run python -m unifi_mapper.backup.poc_decrypt backup.unf -c networkconf -o networks.json
 
   # Show all collections with full docs
-  python -m unifi_mapper.backup.poc_decrypt backup.unf --all --max-docs 10
+  uv run python -m unifi_mapper.backup.poc_decrypt backup.unf --all --max-docs 10
         """,
     )
     parser.add_argument('backup_file', type=Path, help='Path to .unf backup file')

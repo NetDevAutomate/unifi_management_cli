@@ -23,16 +23,17 @@ def create_verification_parser():
         epilog="""
 Examples:
   # Verify specific device
-  python -m unifi_mapper.verify_cli --device "US 8 60W" --port 1 --expected "Dream Machine Pro Max"
+  uv run python -m unifi_mapper.verify_cli --device "US 8 60W" --port 1 \\
+    --expected "Dream Machine Pro Max"
 
   # Verify all recent changes
-  python -m unifi_mapper.verify_cli --verify-all
+  uv run python -m unifi_mapper.verify_cli --verify-all
 
   # Use browser verification (most reliable)
-  python -m unifi_mapper.verify_cli --browser --username <username> --password '<password>'
+  uv run python -m unifi_mapper.verify_cli --browser --username <username> --password '<password>'
 
   # Multi-read consistency check
-  python -m unifi_mapper.verify_cli --consistency-check --reads 10
+  uv run python -m unifi_mapper.verify_cli --consistency-check --reads 10
         """,
     )
 

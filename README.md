@@ -788,10 +788,10 @@ not a bare list as before the July port: a script that iterated its result must 
 
 ```bash
 # Ground truth verification with consistency checking
-python -m unifi_mapper.verify_cli --verify-all --consistency-check
+uv run python -m unifi_mapper.verify_cli --verify-all --consistency-check
 
 # Device capability analysis
-python -m unifi_mapper.analyze_network_capabilities
+uv run python -m unifi_mapper.analyze_network_capabilities
 ```
 
 ## Architecture
@@ -1054,7 +1054,7 @@ Older devices (NVR S3008, speakers, legacy cameras) continue to work with full a
 > For step-by-step workflow guides, see [Use Cases and How-To](docs/guides/use-cases-and-howto.md).
 
 **Port names not persisting:**
-1. Check device compatibility with `python -m unifi_mapper.analyze_network_capabilities`
+1. Check device compatibility with `uv run python -m unifi_mapper.analyze_network_capabilities`
 2. Use verification: `unifi-mapper --verify-updates --apply`
 3. Upgrade to UniFi Network Application 10.0.162+
 
@@ -1064,7 +1064,7 @@ Older devices (NVR S3008, speakers, legacy cameras) continue to work with full a
 3. Ensure local controller account (not UniFi Cloud account)
 
 **Verification failures:**
-1. Use ground truth verification: `python -m unifi_mapper.verify_cli --consistency-check`
+1. Use ground truth verification: `uv run python -m unifi_mapper.verify_cli --consistency-check`
 2. Check for device auto-reset behavior
 3. Consider manual UI configuration for problematic devices
 

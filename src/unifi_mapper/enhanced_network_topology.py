@@ -423,12 +423,10 @@ class NetworkTopology:
             log.info(f'Generated PNG diagram ({layout_style} layout): {output_path}')
 
         except ImportError:
-            log.error('graphviz package not installed. Install with: uv pip install graphviz')
+            log.error('graphviz package not installed. Install it with: uv sync')
             # Create placeholder
             with open(output_path, 'w') as f:
-                f.write(
-                    "PNG generation requires 'graphviz' package. Install with: uv pip install graphviz"
-                )
+                f.write("PNG generation requires 'graphviz' package. Install it with: uv sync")
         except Exception as e:
             log.error(f'Error generating PNG diagram: {e}')
             raise
@@ -454,11 +452,9 @@ class NetworkTopology:
             log.info(f'Generated SVG diagram ({layout_style} layout): {output_path}')
 
         except ImportError:
-            log.error('graphviz package not installed. Install with: uv pip install graphviz')
+            log.error('graphviz package not installed. Install it with: uv sync')
             with open(output_path, 'w') as f:
-                f.write(
-                    "SVG generation requires 'graphviz' package. Install with: uv pip install graphviz"
-                )
+                f.write("SVG generation requires 'graphviz' package. Install it with: uv sync")
         except Exception as e:
             log.error(f'Error generating SVG diagram: {e}')
             raise
