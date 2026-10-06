@@ -56,12 +56,13 @@ make. References in brackets are the council bundle and finding (`04/F1`) or the
    `enforce_modes`, so an existing history or directory with group or other bits stays
    readable, the gap the MCP call log had. Fix: pass `enforce_modes=True`; decide what a file
    or directory owned by another user does there (the recording command would then fail).
-8. **A call log path's own directory is made private, whatever it is** (found with final
-   council F6). With `UNIFI_MCP_CALL_AUDIT` set to a path, its directory is set to `0o700` on
-   every write, so `~/mcp-audit.jsonl` would change the home directory's mode. The MCP guide
-   says to give such a path a directory of its own. Fix: limit the change to the default
-   state directory, and for a given path turn the log off with one warning when its
-   directory has group or other write bits, instead of changing it.
+8. **Fixed on the branch: a call log path's own directory was made private, whatever it was**
+   (found with final council F6; the final-fix review's FFA-1). With `UNIFI_MCP_CALL_AUDIT`
+   set to a path, its directory was set to `0o700` on every write, so `~/mcp-audit.jsonl`
+   changed the home directory's mode. Now only the default state directory is kept `0o700`.
+   A given path's existing directory is never changed: when another user owns it, or it has
+   a group or other write bit, the log turns off with one warning and writes nothing. The
+   file is still kept `0o600`, and `tests/mcp/test_call_audit.py` pins each case.
 9. **`get_wan_speedtest_history`'s description lacks the CLI pointer its siblings have**
    (06/N4). Fix: compare it with the other WAN tools' descriptions and add the matching
    `unifi-mapper diagnose wan-history` reference; regenerate the MCP guide's tool row and
@@ -146,13 +147,13 @@ make. References in brackets are the council bundle and finding (`04/F1`) or the
 ## Impact
 
 Items 1 to 4 report wrong or misleading figures in rare cases (a wrong SSID, a note, a
-caveat's wording, a ping that could not run); 5 to 8 leave a warning, a secret spelling or a
+caveat's wording, a ping that could not run); 5 to 7 leave a warning, a secret spelling or a
 file mode short of what is intended; the rest are test strength, stale line numbers and
 style. Nothing is written to the controller, and no secret is printed today. Breaks fresh
 clones, CI or prod: no.
 
 ## Recommended fix
 
-As listed for each item. Items 1 to 9 change what a command or tool reports or does, so each
-needs sign-off first; items 10 to 29 can land as they are, test first where they change a
-test's behaviour.
+As listed for each item. Items 1 to 7 and 9 change what a command or tool reports or does,
+so each needs sign-off first (item 8 is fixed); items 10 to 29 can land as they are, test
+first where they change a test's behaviour.

@@ -17,9 +17,10 @@ skip a line that does not parse; ``read_port_history`` and ``read_speedtest_hist
 A line is valid when the caller's ``epoch_of(line)`` returns a number; :func:`epoch_field`
 builds that function for a top-level numeric field.
 
-With ``enforce_modes`` (the MCP call log), the file and directory modes hold on every append,
-not only on creation: a file or directory of the current user's with any group or other bit
-is changed to the mode, and one owned by another user raises :class:`NotOwnedError`.
+With ``enforce_modes`` (the MCP call log), the file and directory modes that are given hold
+on every append, not only on creation: a file or directory of the current user's with any
+group or other bit is changed to the mode, and one owned by another user raises
+:class:`NotOwnedError`.
 """
 
 import fcntl
@@ -257,15 +258,17 @@ def append_capped_jsonl(
         dir_mode: Mode for a newly created directory.
         enforce_modes: Also on every append, before a line is written: an existing
             directory or file of the current user's with any group or other bit is set to
-            ``dir_mode`` or ``file_mode``, and one owned by another user is refused.
+            ``dir_mode`` or ``file_mode``, and one owned by another user is refused; each
+            only when its mode is given (the MCP call log gives none for an existing
+            directory the user named).
 
     Returns:
         What was written and what compaction removed.
 
     Raises:
         ValueError: ``max_bytes`` is below 1.
-        NotOwnedError: With ``enforce_modes``, the directory or the file is owned by another
-            user; nothing is appended.
+        NotOwnedError: With ``enforce_modes``, the file, or the directory when ``dir_mode``
+            is given, is owned by another user; nothing is appended.
         OSError: The file or its directory cannot be written.
     """
     if max_bytes < 1:

@@ -21,18 +21,23 @@ file. Request lines carry no call id: with concurrent calls they belong to a tim
 
 Writes go through ``core/utils/jsonl.append_capped_jsonl`` (a lock file, torn-line repair,
 compaction to 80% of :data:`DEFAULT_MAX_BYTES`) with ``enforce_modes``: on every write the
-file is kept ``0o600`` and its directory ``0o700``, so a file or directory of the user's
-with group or other bits (one made before, or by another tool) is set private again, and a
-file or directory owned by another user is never written (the log turns off, fail closed).
+file is kept ``0o600``, so a file of the user's with group or other bits (one made before,
+or by another tool) is set private again, and a file owned by another user is never written
+(the log turns off, fail closed). The default directory, the tool's own, is kept ``0o700``
+the same way. A given path's directory is the user's and is never changed: one the log
+creates is made ``0o700``, and an existing one owned by another user, or with a group or
+other write bit, turns the log off before anything (the file or its lock) is written.
 The runner records in a worker thread inside a shielded cancel scope, so a contended lock
 never blocks the event loop and a cancelled call is still logged. Any failure to write (an
-unwritable path, a read-only home, no ``HOME``, another user's file or directory) logs one
-warning and turns the log off for the process; a tool's result is never affected.
+unwritable path, a read-only home, no ``HOME``, another user's file or directory, a given
+directory others can write to) logs one warning and turns the log off for the process; a
+tool's result is never affected.
 """
 
 import errno
 import json
 import os
+import stat
 import threading
 import time
 from collections.abc import Callable, Collection, Iterable
@@ -57,6 +62,12 @@ MAX_KEY_LENGTH = 64
 _ON = frozenset({'on', 'true', '1'})
 _OFF = frozenset({'off', 'false', '0', 'none'})
 _EPOCH_OF = epoch_field('epoch')
+# A given path's directory with either bit lets another user swap the file or its lock.
+_GROUP_OTHER_WRITE = 0o022
+
+
+class SharedDirectoryError(PermissionError):
+    """A given call-log path's directory has a group or other write bit, so it isn't written."""
 
 
 def default_call_audit_path() -> Path:
@@ -150,6 +161,30 @@ def _error_name(error: BaseException) -> str:
     code = getattr(error, 'errno', None)
     name = errno.errorcode.get(code, '') if isinstance(code, int) else ''
     return f'{type(error).__name__} ({name})' if name else type(error).__name__
+
+
+def _given_directory_exists(directory: Path) -> bool:
+    """Check the directory of a path ``UNIFI_MCP_CALL_AUDIT`` gives; its mode is never changed.
+
+    Args:
+        directory: The given path's directory.
+
+    Returns:
+        Whether it exists; when it doesn't, the writer creates it ``0o700``.
+
+    Raises:
+        NotOwnedError: Another user owns it.
+        SharedDirectoryError: It has a group or other write bit.
+    """
+    try:
+        st = os.stat(directory)
+    except FileNotFoundError:
+        return False
+    if st.st_uid != os.geteuid():
+        raise NotOwnedError('the directory is owned by another user')
+    if stat.S_IMODE(st.st_mode) & _GROUP_OTHER_WRITE:
+        raise SharedDirectoryError('the directory has group or other write permission')
+    return True
 
 
 class CallAuditLog:
@@ -285,13 +320,16 @@ class CallAuditLog:
             target = self.target()
             if target is None:
                 return
+            # The default directory is the tool's own: kept 0o700 on every write. A given
+            # path's existing directory is the user's: checked first, never changed.
+            keep_dir = self.setting.mode == 'path' and _given_directory_exists(target.parent)
             append_capped_jsonl(
                 target,
                 lines,
                 max_bytes=self.max_bytes,
                 epoch_of=_EPOCH_OF,
                 file_mode=0o600,
-                dir_mode=0o700,
+                dir_mode=None if keep_dir else 0o700,
                 enforce_modes=True,
             )
         except Exception as e:  # noqa: BLE001 - the call log must never affect a tool call
@@ -300,5 +338,5 @@ class CallAuditLog:
             logger.warning(
                 'MCP call log disabled for this process: cannot write {}: {}',
                 where,
-                str(e) if isinstance(e, NotOwnedError) else _error_name(e),
+                str(e) if isinstance(e, NotOwnedError | SharedDirectoryError) else _error_name(e),
             )

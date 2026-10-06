@@ -319,6 +319,89 @@ def test_a_call_log_owned_by_another_user_turns_the_log_off_with_one_warning(
     assert not path.exists() and stat.S_IMODE(path.parent.stat().st_mode) == 0o755
 
 
+# --- a given path: its directory is the user's, never changed (final-fix FFA-1) ------------
+
+
+def _given(directory: Path) -> CallAuditLog:
+    """A call log at a path the user gives (``UNIFI_MCP_CALL_AUDIT``) in ``directory``."""
+    return CallAuditLog(CallAuditSetting('path', directory / CALL_AUDIT_FILENAME))
+
+
+@pytest.mark.parametrize('mode', [0o755, 0o750], ids=oct)
+def test_a_given_path_under_home_leaves_the_home_directory_mode_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: int
+) -> None:
+    """Final-fix review FFA-1: with ``~/mcp-audit.jsonl``, every call set the home
+    directory to 0o700."""
+    home = tmp_path / 'home'
+    home.mkdir()
+    os.chmod(home, mode)
+    monkeypatch.setenv('HOME', str(home))
+    _record(CallAuditLog(parse_call_audit('~/mcp-audit.jsonl', pytest.fail)))
+    path = home / 'mcp-audit.jsonl'
+    assert (stat.S_IMODE(home.stat().st_mode), stat.S_IMODE(path.stat().st_mode)) == (mode, 0o600)
+    assert [line['tool'] for line in _lines(path)] == ['find_device']
+
+
+@pytest.mark.parametrize('mode', [0o777, 0o775], ids=oct)
+def test_a_given_directory_others_can_write_turns_the_log_off_with_one_warning(
+    tmp_path: Path, warned: list[str], mode: int
+) -> None:
+    directory = tmp_path / 'shared'
+    directory.mkdir()
+    os.chmod(directory, mode)
+    log = _given(directory)
+    _record(log)
+    _record(log)
+    assert log.enabled is False
+    (warning,) = [w for w in warned if 'call log disabled' in w]
+    assert 'group or other write permission' in warning
+    assert list(directory.iterdir()) == []  # no file and no lock file
+    assert stat.S_IMODE(directory.stat().st_mode) == mode
+
+
+def test_a_given_directory_owned_by_another_user_turns_the_log_off_with_one_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, warned: list[str]
+) -> None:
+    directory = tmp_path / 'theirs'
+    directory.mkdir()
+    os.chmod(directory, 0o755)
+    me = os.geteuid()
+    log = _given(directory)
+    with monkeypatch.context() as patched:
+        patched.setattr(os, 'geteuid', lambda: me + 1)  # the given directory is someone else's
+        _record(log)
+        _record(log)
+    assert log.enabled is False
+    (warning,) = [w for w in warned if 'call log disabled' in w]
+    assert 'owned by another user' in warning
+    assert list(directory.iterdir()) == [] and stat.S_IMODE(directory.stat().st_mode) == 0o755
+
+
+def test_a_permissive_given_call_log_is_made_private_in_a_directory_left_alone(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / 'logs'
+    directory.mkdir()
+    os.chmod(directory, 0o755)
+    path = directory / CALL_AUDIT_FILENAME
+    path.write_text('', encoding='utf-8')
+    os.chmod(path, 0o644)
+    _record(_given(directory))
+    assert (stat.S_IMODE(directory.stat().st_mode), stat.S_IMODE(path.stat().st_mode)) == (
+        0o755,
+        0o600,
+    )
+    assert [line['tool'] for line in _lines(path)] == ['find_device']
+
+
+def test_a_given_paths_missing_directory_is_created_private(tmp_path: Path) -> None:
+    directory = tmp_path / 'new' / 'logs'
+    _record(_given(directory))
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    assert stat.S_IMODE((directory / CALL_AUDIT_FILENAME).stat().st_mode) == 0o600
+
+
 # --- request lines -------------------------------------------------------------------------
 
 
