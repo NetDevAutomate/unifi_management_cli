@@ -11,6 +11,7 @@
 #   6. unifi-mapper stp report -o <dir>/stp-report.md
 #   7. unifi-mapper stp validate-10g --planned-switches N   (only with --planned-switches)
 # then prints the apply commands, each previewing first, with this run's --config and --project.
+# They are quoted for bash or zsh (printf %q), with absolute paths, so they paste anywhere.
 # A failed step is reported and the others still run; the exit status is 1 if any failed.
 #
 # Usage:
@@ -84,6 +85,10 @@ command -v uv >/dev/null 2>&1 || die "uv is not installed"
 if [[ -n "${CONFIG_PATH}" && ! -r "${CONFIG_PATH}" ]]; then
     die "--config ${CONFIG_PATH} is missing or unreadable"
 fi
+if [[ -n "${CONFIG_PATH}" ]]; then
+    # Absolute, so the commands printed at the end read this file from any directory.
+    CONFIG_PATH="$(cd "$(dirname -- "${CONFIG_PATH}")" && pwd -P)/$(basename -- "${CONFIG_PATH}")"
+fi
 if [[ -z "${OUTPUT_DIR}" ]]; then
     # A relative XDG_STATE_HOME is ignored, as the XDG spec says (it would be the cwd).
     STATE_HOME="${XDG_STATE_HOME:-}"
@@ -105,6 +110,7 @@ if [[ -e "${OUTPUT_DIR}" ]]; then
     [[ -z "$(ls -A "${OUTPUT_DIR}")" ]] || die "--output-dir ${OUTPUT_DIR} must be a new or empty directory"
 fi
 mkdir -p "${OUTPUT_DIR}"
+OUTPUT_DIR="$(cd "${OUTPUT_DIR}" && pwd -P)"  # absolute, for the printed --plan path
 LOG_FILE="${OUTPUT_DIR}/audit.log"
 
 MAPPER=(uv run --project "${PROJECT_ROOT}" unifi-mapper)

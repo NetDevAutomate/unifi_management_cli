@@ -422,3 +422,17 @@ def test_the_printed_apply_commands_carry_the_audits_own_config(tmp_path: Path) 
     ran = (tmp_path / 'uv.log').read_text(encoding='utf-8').splitlines()
     assert len(ran) == 6 and all(f'--config {config}' in line for line in ran)
     assert not any('--apply' in line or '--no-dry-run' in line for line in ran)
+
+
+def test_relative_paths_are_printed_absolute(tmp_path: Path) -> None:
+    """M4 council BF-003: a relative --config was printed as given, so the pasted command
+    read another file from another directory; the guide says it works from any directory."""
+    run_dir = tmp_path / 'run'
+    run_dir.mkdir()
+    (run_dir / 'site.env').write_text('UNIFI_URL=https://192.0.2.1\n', encoding='utf-8')
+    result = _run_audit(tmp_path, '--config', 'site.env', '--output-dir', 'out', cwd=run_dir)
+    assert result.returncode == 0, result.stderr
+    printed = [shlex.split(line) for line in result.stdout.splitlines() if line.startswith('  ')]
+    assert [argv[6] for argv in printed] == [str(run_dir / 'site.env')] * 2
+    assert printed[1][-1] == str(run_dir / 'out' / 'stp-plan.json')
+    assert f'Reports: {run_dir / "out"}' in result.stdout

@@ -683,8 +683,9 @@ The report includes:
 The script runs only previews and reads: it has no apply step and asks for no confirmation.
 It ends by printing the commands that apply what you agree with, each of which previews
 first (`ports refresh`, then `--apply`; `stp apply --plan <dir>/stp-plan.json`, then
-`--no-dry-run`). They carry the audit's own `--config` and `--project`, shell-quoted, so a
-pasted command acts on the controller the audit read, from any directory. A step
+`--no-dry-run`). They carry the audit's own `--config` and `--project` as absolute paths,
+quoted for bash or zsh, so a pasted command acts on the controller the audit read, from any
+directory. A step
 that fails is reported and the others still run; the exit status is 1 if any failed. The
 reports are created private (`umask 077`), and an existing `--output-dir` must be empty,
 yours, not writable by other users and not a symbolic link (exit 2 otherwise), so nothing
