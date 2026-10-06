@@ -22,7 +22,7 @@ import ast
 import asyncio
 import asyncssh
 import pytest
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from tests.fake_ssh import FakeConnection, FakeSSH
 from tests.fixtures_unifi import FAKE_PW, FAKE_TOKEN
@@ -403,7 +403,9 @@ SRC = Path(__file__).resolve().parents[2] / 'src' / 'unifi_mapper'
 class _Completed:
     """An ``SSHCompletedProcess`` with chosen output and exit status."""
 
-    def __init__(self, stdout: object = '', stderr: object = '', exit_status: int | None = 0):
+    def __init__(
+        self, stdout: object = '', stderr: object = '', exit_status: int | None = 0
+    ) -> None:
         self.stdout, self.stderr, self.exit_status = stdout, stderr, exit_status
 
 
@@ -582,7 +584,9 @@ async def test_run_gateway_command_refuses_a_string_for_argv(argv: object) -> No
 # --- each caller's bound and error mapping -----------------------------------------------
 
 
-def _recording_runner(calls: list[tuple[list[str], float]], error: ToolError | None = None):
+def _recording_runner(
+    calls: list[tuple[list[str], float]], error: ToolError | None = None
+) -> Callable[..., Awaitable[GatewayResult]]:
     async def _run(conn: object, argv: list[str], *, timeout: float) -> GatewayResult:
         calls.append((list(argv), timeout))
         if error is not None:

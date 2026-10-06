@@ -67,7 +67,9 @@ def test_state_dir_defaults_to_local_state(monkeypatch):
 
 
 @pytest.mark.parametrize('value', ['state', './state', '~/state', ''])
-def test_a_relative_or_empty_xdg_state_home_is_ignored(monkeypatch, value):
+def test_a_relative_or_empty_xdg_state_home_is_ignored(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
     """The XDG spec: a relative path in these variables is invalid and must be ignored.
 
     Honoured, it would put every state file (the call log, the VLAN store, the baselines)

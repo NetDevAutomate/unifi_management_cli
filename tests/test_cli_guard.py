@@ -14,6 +14,7 @@ import ast
 import asyncssh
 import httpx
 import pytest
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from tests.fixtures_unifi import FAKE_TOKEN
 from typer.testing import CliRunner
@@ -70,7 +71,7 @@ def transport(monkeypatch: pytest.MonkeyPatch) -> LoginOnlyTransport:
     return mock
 
 
-def _put_through_a_fresh_client(seen: list[BaseException]):
+def _put_through_a_fresh_client(seen: list[BaseException]) -> Callable[..., Awaitable[Any]]:
     async def _write(*_args: object, **_kwargs: object) -> Any:
         async with UniFiClient() as client:
             try:

@@ -175,7 +175,9 @@ async def test_counter_tools_report_the_recorded_history_and_write_nothing(fake_
     assert _state(state) == before
 
 
-async def test_the_call_log_appears_in_the_state_directory_by_default(fake_controller):
+async def test_the_call_log_appears_in_the_state_directory_by_default(
+    fake_controller: tuple[object, FakeSession],
+) -> None:
     from unifi_mapper.analysis.port_counter_baseline import state_dir
     from unifi_mapper.mcp.call_audit import CALL_AUDIT_FILENAME
 

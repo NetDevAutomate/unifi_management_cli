@@ -2,6 +2,7 @@
 
 import json
 import pytest
+from collections.abc import Callable
 from unifi_mapper.core.utils.redact import (
     REDACTED,
     is_secret_key,
@@ -81,7 +82,7 @@ def test_values_are_not_scanned():
 
 
 @pytest.mark.parametrize('field', ['key', 'name'])
-def test_a_pair_that_names_a_secret_loses_its_value(field):
+def test_a_pair_that_names_a_secret_loses_its_value(field: str) -> None:
     """A ``{key|name: <secret name>, value: ...}`` pair holds its secret under ``value``."""
     pair = {field: 'api_token', 'value': FAKE, 'enabled': True}
     clean, removed = strip_secrets([pair], 'setting')
@@ -102,7 +103,7 @@ def test_a_pair_that_names_a_secret_loses_its_value(field):
     ],
     ids=['ordinary name', 'event record', 'no value', 'not a string', 'no name'],
 )
-def test_a_pair_that_names_no_secret_keeps_its_value(pair):
+def test_a_pair_that_names_no_secret_keeps_its_value(pair: dict[str, object]) -> None:
     assert strip_secrets(pair) == (pair, [])
     assert mask_secrets(pair, frozenset()) == pair
 
@@ -262,7 +263,7 @@ SUFFIX_KEYS = [
 
 
 @pytest.mark.parametrize('key', SUFFIX_KEYS)
-def test_suffix_secret_keys_are_stripped_and_masked_in_any_case(key):
+def test_suffix_secret_keys_are_stripped_and_masked_in_any_case(key: str) -> None:
     clean, removed = strip_secrets({'snmp': {key: FAKE, 'enabled': True}}, 'setting[0]')
     assert clean == {'snmp': {'enabled': True}}
     assert removed == [f'setting[0].snmp.{key}']
@@ -271,7 +272,7 @@ def test_suffix_secret_keys_are_stripped_and_masked_in_any_case(key):
 
 
 @pytest.mark.parametrize('key', ['community_id', 'syslog_key_id', 'lcm_tracker_seed_version'])
-def test_suffix_keys_must_end_the_key(key):
+def test_suffix_keys_must_end_the_key(key: str) -> None:
     assert is_secret_key(key) is False
     assert strip_secrets({key: 'value'}) == ({key: 'value'}, [])
 
@@ -286,12 +287,12 @@ def test_suffix_keys_must_end_the_key(key):
         f'{{\'lcm_tracker_seed\': "{FAKE}"}}',
     ],
 )
-def test_syslog_keys_and_the_lcm_seed_are_masked_in_free_text(text):
+def test_syslog_keys_and_the_lcm_seed_are_masked_in_free_text(text: str) -> None:
     assert FAKE not in redact_text(text)
     assert REDACTED in redact_text(text)
 
 
-def test_a_key_that_only_starts_with_a_suffix_name_is_not_masked_in_free_text():
+def test_a_key_that_only_starts_with_a_suffix_name_is_not_masked_in_free_text() -> None:
     text = 'syslog_key_id=5 lcm_tracker_seed_version=2'
     assert redact_text(text) == text
 
@@ -299,23 +300,23 @@ def test_a_key_that_only_starts_with_a_suffix_name_is_not_masked_in_free_text():
 @pytest.mark.parametrize(
     'key', ['preshared_key', 'wireguard_preshared_key', 'PreShared', 'x_preshared']
 )
-def test_preshared_keys_are_stripped(key):
+def test_preshared_keys_are_stripped(key: str) -> None:
     assert is_secret_key(key) is True
     assert strip_secrets({key: FAKE}) == ({}, [key])
 
 
-def test_preshared_values_are_masked_in_free_text():
+def test_preshared_values_are_masked_in_free_text() -> None:
     text = f'tunnel failed: preshared_key={FAKE} peer=203.0.113.9'
     assert FAKE not in redact_text(text)
     assert 'peer=203.0.113.9' in redact_text(text)
 
 
-def test_community_is_an_ordinary_word_in_free_text():
+def test_community_is_an_ordinary_word_in_free_text() -> None:
     text = 'see community.ui.com for the release notes; community=public'
     assert redact_text(text) == text
 
 
-def _caught(raiser) -> BaseException:
+def _caught(raiser: Callable[[], object]) -> BaseException:
     try:
         raiser()
     except BaseException as error:  # noqa: BLE001 - the test wants whatever was raised
@@ -323,7 +324,7 @@ def _caught(raiser) -> BaseException:
     raise AssertionError('expected an exception')
 
 
-def test_redact_traceback_masks_causes_notes_and_groups():
+def test_redact_traceback_masks_causes_notes_and_groups() -> None:
     def _chained() -> None:
         try:
             raise KeyError(f'password={FAKE}')

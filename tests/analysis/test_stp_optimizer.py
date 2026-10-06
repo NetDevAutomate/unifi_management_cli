@@ -1104,7 +1104,9 @@ class TestGatewayIsNeverPlanned:
     """The gateway's bridge priority is not managed here: never proposed, never the root."""
 
     @staticmethod
-    def _switch(device_id: str, name: str, model: str, *, tier: int, **over: object):
+    def _switch(
+        device_id: str, name: str, model: str, *, tier: int, **over: object
+    ) -> SwitchSTPConfig:
         return SwitchSTPConfig(
             device_id=device_id,
             name=name,

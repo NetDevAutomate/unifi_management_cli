@@ -7,6 +7,7 @@ over the same in-memory controller (``tests/fixtures_unifi``) through a real
 
 import json
 import pytest
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from tests.fixtures_unifi import (
@@ -25,7 +26,11 @@ from unifi_mapper.diagnostics import port_diagnostics_tools
 from unifi_mapper.mcp.config import ServerSettings
 from unifi_mapper.mcp.registry import ToolRegistry, default_manifests_dir
 from unifi_mapper.mcp.runner import ToolRunner
-from unifi_mapper.port_history import collect_recent_events, validate_recent_window
+from unifi_mapper.port_history import (
+    RecentEvents,
+    collect_recent_events,
+    validate_recent_window,
+)
 from unifi_mapper.typer_cli import app
 
 
@@ -42,7 +47,7 @@ def _guarded_client(**routes: Any) -> tuple[Any, FakeSession]:
     return client, session
 
 
-def _recent(client: Any, **kwargs: Any):
+def _recent(client: Any, **kwargs: Any) -> RecentEvents:
     return collect_recent_events(client, SITE, now=lambda: NOW, **kwargs)
 
 
@@ -174,7 +179,7 @@ def sync_client(monkeypatch: pytest.MonkeyPatch) -> FakeSession:
     client, session = _guarded_client()
 
     @contextmanager
-    def _fake():
+    def _fake() -> Iterator[tuple[Any, str]]:
         yield client, SITE
 
     monkeypatch.setattr(port_diagnostics_tools, '_readonly_sync_client', _fake)
@@ -209,7 +214,7 @@ def cli(monkeypatch: pytest.MonkeyPatch) -> FakeSession:
     client, session = _guarded_client()
 
     @contextmanager
-    def _fake():
+    def _fake() -> Iterator[tuple[Any, str]]:
         yield client, SITE
 
     monkeypatch.setattr(typer_cli, '_readonly_client', _fake)
@@ -239,7 +244,7 @@ def test_bad_bounds_exit_2_before_connecting(
     opened: list[bool] = []
 
     @contextmanager
-    def _never():
+    def _never() -> Iterator[tuple[None, str]]:
         opened.append(True)
         yield None, SITE
 

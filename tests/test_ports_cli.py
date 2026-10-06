@@ -23,6 +23,7 @@ from tests.fixtures_unifi import (
 )
 from typer.testing import CliRunner
 from types import SimpleNamespace
+from typing import NoReturn
 from unifi_mapper import typer_cli
 from unifi_mapper.api_client import UnifiApiClient
 from unifi_mapper.core.utils.readonly import ReadOnlySession, install_read_only_guard
@@ -409,7 +410,7 @@ def test_readonly_client_exits_1_when_login_fails(real_wrapper):
 
 
 @pytest.fixture
-def password_wrapper(real_wrapper, monkeypatch):
+def password_wrapper(real_wrapper: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """The real _readonly_client on a username-and-password config holding FAKE_PW."""
     # UnifiConfig.from_env exports every key it reads; setting both login keys first makes
     # monkeypatch remove them when the test ends, so no fake login outlives the test.
@@ -422,13 +423,15 @@ def password_wrapper(real_wrapper, monkeypatch):
     return real_wrapper
 
 
-def test_the_password_config_exports_no_login_past_the_test(password_wrapper):
+def test_the_password_config_exports_no_login_past_the_test(password_wrapper: Path) -> None:
     # The keys monkeypatch set before the CLI runs are the ones it removes afterwards.
     assert os.environ['UNIFI_USERNAME'] == os.environ['UNIFI_PASSWORD'] == 'placeholder'
 
 
-def test_an_unexpected_read_error_is_one_redacted_line(monkeypatch, password_wrapper):
-    def _boom(*_args, **_kwargs):
+def test_an_unexpected_read_error_is_one_redacted_line(
+    monkeypatch: pytest.MonkeyPatch, password_wrapper: Path
+) -> None:
+    def _boom(*_args: object, **_kwargs: object) -> NoReturn:
         raise RuntimeError(f'boom, password={FAKE_PW}')
 
     monkeypatch.setattr('unifi_mapper.port_diagnostics.list_switch_ports', _boom)
@@ -439,7 +442,7 @@ def test_an_unexpected_read_error_is_one_redacted_line(monkeypatch, password_wra
     assert FAKE_PW not in result.output
 
 
-def test_a_login_failure_keeps_its_own_message_and_exits_once(password_wrapper):
+def test_a_login_failure_keeps_its_own_message_and_exits_once(password_wrapper: Path) -> None:
     _LoginClient.login_result = False
     result = runner.invoke(app, ['--config', str(password_wrapper), 'ports', 'list', SWITCH_NAME])
     assert result.exit_code == 1
