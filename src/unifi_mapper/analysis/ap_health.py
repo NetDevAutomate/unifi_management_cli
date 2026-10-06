@@ -152,6 +152,10 @@ def sample_device(dev: dict[str, Any], role: str, ts: float) -> ApSample:
         dev: One ``stat/device`` record (already through ``strip_secrets``).
         role: ``target`` or ``reference``.
         ts: The sample's Unix time.
+
+    Returns:
+        The sample: uptime, CPU, memory and load, the 2.4 GHz radio's channel use,
+        channel, power and client count, and the counters of its VAPs.
     """
     system_stats, sys_stats = _as_dict(dev.get('system-stats')), _as_dict(dev.get('sys_stats'))
     radio = _radio_ng_row(dev.get('radio_table_stats'))
@@ -443,6 +447,13 @@ def expected_duration_seconds(samples: int, interval: int) -> int:
     At the bounds, 60 samples 600 s apart pause 9 h 50 min. Each sample's reads add a second
     or two; with ``ping_clients``, each sample also pings up to :data:`MAX_PINGED_CLIENTS`
     clients per AP, ``PING_COUNT`` pings ``PING_INTERVAL`` s apart (about 3 s) each.
+
+    Args:
+        samples: The samples the capture takes.
+        interval: Seconds between them.
+
+    Returns:
+        The pauses' total in seconds: ``(samples - 1) * interval``, and 0 for one sample.
     """
     return max(samples - 1, 0) * interval
 

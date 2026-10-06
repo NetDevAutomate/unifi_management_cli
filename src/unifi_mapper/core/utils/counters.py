@@ -11,8 +11,7 @@ The honest per-radio health metric is the per-interval retry percentage (delta
 airtime), so the retry percentage is preferred for fault detection.
 
 Pure: no I/O. Used by ``get_ap_retry_rates`` and ``diagnose ap-retries``
-(``diagnostics/observability``); the AP health sampling the July port also rebuilds (issue
-059) will read it too.
+(``diagnostics/observability``), and by ``diagnose ap-health`` (``analysis/ap_health``).
 """
 
 from dataclasses import dataclass
