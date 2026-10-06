@@ -151,7 +151,7 @@ and:
 render fails. `discover` draws the diagram before it writes the `-o` report, so the report
 is not written either, and the diagram's DOT source, which names the site's devices, is left
 at the diagram path minus its extension: `./diagrams/network_diagram` by default, which
-`.gitignore` covers ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)).
+`.gitignore` covers when you run from the repository root, where its rules are anchored ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)).
 
 **Resolution**: install Graphviz, `brew install graphviz` (macOS) or `sudo apt install
 graphviz` (Debian or Ubuntu), and run the command again, or draw an interactive diagram with
@@ -1434,7 +1434,7 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_SSH_USERNAME` | No | `root` | String | Gateway SSH user. |
 | `UNIFI_STP_OVERRIDES` | No | `~/.config/unifi_management_cli/stp_overrides.yaml` | File path | Root-eligible and forced-access switch MACs for the STP optimiser. |
 | `XDG_CONFIG_HOME` | No | `~/.config` | Directory path | Overrides XDG config base directory. |
-| `XDG_STATE_HOME` | No | `~/.local/state` | Absolute directory path (a relative one is ignored, as the XDG spec says) | Base of `unifi_mapper/`, where the link-error baselines and counter history live. |
+| `XDG_STATE_HOME` | No | `~/.local/state` | Absolute directory path (a relative one is ignored, as the XDG spec says) | Base of `unifi_mapper/`, where the link-error baselines, the counter and speedtest histories, the MCP call log and the VLAN traffic store live. |
 
 The `network_api` family (`UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and
 `UNIFI_NETWORK_SITE_ID`, all three required) and the MCP server's `UNIFI_MCP_*` settings are

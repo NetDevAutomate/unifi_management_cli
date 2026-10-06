@@ -41,10 +41,10 @@ C4Component
 
     Container_Boundary(classic_async, "Async Classic API Path") {
         Component(async_client, "core/utils/client.py / UniFiClient", "httpx.AsyncClient", "Async controller client; an MCP server process, and each CLI analysis or SSH command, shares one behind ReadOnlyAsyncTransport")
-        Component(analysis, "analysis/*.py", "Python", "STP, VLAN, MTU, SFP, LAG, QoS, capacity, firmware, radio, MAC, and traffic matrix analysis")
+        Component(analysis, "analysis/*.py", "Python", "STP, VLAN, MTU, SFP, LAG, QoS, capacity, firmware, radio, MAC, and traffic matrix analysis; AP health sampling and the per-VLAN traffic sampler and store (CLI)")
         Component(diagnostics, "diagnostics/*.py", "Python", "Network health, performance, security, connectivity analysis and the port-diagnostics tools")
         Component(discovery, "discovery/*.py", "Python", "Find device, IP, MAC, and client trace")
-        Component(connectivity, "connectivity/*.py", "Python", "Firewall checks, path analysis, traceroute, and inter-VLAN routing checks")
+        Component(connectivity, "connectivity/*.py", "Python", "Firewall checks, path analysis, traceroute, inter-VLAN routing checks, and the gateway probes over SSH (CLI only)")
     }
 
     Container_Boundary(modern, "Async Integration API Path") {

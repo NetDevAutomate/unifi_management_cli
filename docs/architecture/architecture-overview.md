@@ -145,7 +145,7 @@ graph LR
         CMD_DISCOVER["discover\nLLDP topology + port naming"]
         CMD_FIND["find\nDevice / IP / MAC / client"]
         CMD_ANALYZE["analyze\nLink quality / VLANs / STP / QoS\nlink-errors / roaming / config-drift / neighbours"]
-        CMD_DIAGNOSE["diagnose\nHealth / perf / connectivity\nall / latency-matrix / bandwidth\ndevice-stats / ap-retries\nwan / wan-history"]
+        CMD_DIAGNOSE["diagnose\nHealth / perf / connectivity\nall / latency-matrix / bandwidth\ndevice-stats / ap-retries\nwan / wan-history\nap-health / client-connectivity"]
         CMD_PORTS["ports\nPort labels and read-only\nport diagnostics"]
         CMD_CTRL["controller\nconfig / config-changes / events"]
         CMD_BACKUP["backup\nverify (offline)"]
@@ -582,7 +582,7 @@ graph TD
         O7["get_recent_events\n(the same sources, site-wide)"]
         O2["get_port_counter_rates"]
         O3["get_device_stats"]
-        O4["get_ap_retry_rates\n(two reads, blocks up to 240 s)"]
+        O4["get_ap_retry_rates\n(two reads 10-240 s apart;\ncan pass 300 s, issue 012)"]
         O5["get_config_object\n(secrets removed)"]
         O6["find_recent_config_changes"]
     end
@@ -977,7 +977,7 @@ graph TD
 
 **Why SSH?** The UniFi REST API provides no endpoint for active probing (ping, traceroute, iperf3). SSH to the gateway is the only way to measure real latency and throughput from the network's vantage point — analogous to running `show ip route` or `ping` from a router's CLI in traditional networking.
 
-**Connection pattern**: Every SSH tool opens one session per run (each `gateway` probe its own) with `gateway_ssh.gateway_session()`, the only caller of `asyncssh.connect()` in `src/` (a test scans for any other). It connects with `known_hosts=None` (the `GATEWAY_KNOWN_HOSTS` constant), which turns off SSH host-key verification (see [issue 038](../issues/038-ssh-host-key-verification-disabled.md); TLS certificates are a separate setting), and `preferred_auth='keyboard-interactive,password'`. The login comes from `gateway_ssh.ssh_login()`: the username from `UNIFI_SSH_USERNAME` (default `root`) and the password only from `UNIFI_SSH_PASSWORD`. Without it each tool stops with `CONFIG_MISSING` before any request (a `gateway` probe checks it before it looks a name up); `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH, because it isn't the console's SSH password and a wrong password leaves failed root logins on the gateway. A failed connect is `CONTROLLER_UNREACHABLE`, "SSH connection to {host} failed: …", with the exception text redacted; the connect, handshake and login together are bounded at 30 s (`SSH_CONNECT_TIMEOUT`), so a stalled gateway ends as "SSH connection to {host} timed out after 30s".
+**Connection pattern**: Every SSH tool opens one session per run (each `gateway` probe its own, so `diagnose client-connectivity`, which runs several, opens one per probe) with `gateway_ssh.gateway_session()`, the only caller of `asyncssh.connect()` in `src/` (a test scans for any other). It connects with `known_hosts=None` (the `GATEWAY_KNOWN_HOSTS` constant), which turns off SSH host-key verification (see [issue 038](../issues/038-ssh-host-key-verification-disabled.md); TLS certificates are a separate setting), and `preferred_auth='keyboard-interactive,password'`. The login comes from `gateway_ssh.ssh_login()`: the username from `UNIFI_SSH_USERNAME` (default `root`) and the password only from `UNIFI_SSH_PASSWORD`. Without it each tool stops with `CONFIG_MISSING` before any request (a `gateway` probe checks it before it looks a name up); `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH, because it isn't the console's SSH password and a wrong password leaves failed root logins on the gateway. A failed connect is `CONTROLLER_UNREACHABLE`, "SSH connection to {host} failed: …", with the exception text redacted; the connect, handshake and login together are bounded at 30 s (`SSH_CONNECT_TIMEOUT`), so a stalled gateway ends as "SSH connection to {host} timed out after 30s".
 
 **Command lines**: every value is checked before it goes on a command line run on the gateway, normally as root (`analysis/gateway_ssh.py`). Each address must parse with `ipaddress` and carry no IPv6 zone id (`ipaddress` accepts any text after `%`); `--count` must be 1–100, `--timeout` 1–60 s, `--duration` 1–86400 s and `--parallel` 1–128 (iperf3's own limits). Each command is an argv list that `run_gateway_command()` joins with `shlex.join`, under a timeout the caller must state (`count × timeout + 5` s per ping, `duration + 15` s for iperf3); a timeout is `TIMEOUT`, naming the program and the bound only. The `gateway` probes bound their own values the same way (ping count 1–100 and interval 0.2–5.0 s, traceroute 1–30 hops, curl `--max-time` 1–60 s, at most 5000 flows; a hostname, URL with no user name or password (its query string is passed as given, so the help says to put no secret in it), or interface name each has its own check) and their timeouts follow their arguments (`count × interval + 12` s for ping, `hops × 6 + 15` s for traceroute, 20 s for nslookup, `--max-time + 10` s for curl, 60 s for conntrack).
 

@@ -1,12 +1,13 @@
 """The only door to the gateway over SSH: sessions, commands and checks on their values.
 
-``diagnose latency-matrix`` and ``diagnose bandwidth`` run ``ping`` and ``iperf3`` on the
-gateway, normally as root, with addresses the controller reports or the user types. Every SSH
-session opens here (``gateway_session``) and every command runs here
-(``run_gateway_command``): an argv list, shell-quoted with ``shlex.join``, bounded by a timeout
-the caller must state. Every value is checked here before it goes on a command line, so no
-value can add a shell command, or an option, of its own. The SSH login (``ssh_login``) comes
-only from ``UNIFI_SSH_USERNAME`` and ``UNIFI_SSH_PASSWORD``.
+Every gateway SSH command (``diagnose latency-matrix``, ``bandwidth``, ``client-connectivity``
+and ``ap-health --ping-clients``, ``vlan-traffic sample`` and the ``gateway`` probes) runs
+``ping``, ``iperf3`` and the like on the gateway, normally as root, with addresses the
+controller reports or the user types. Every SSH session opens here (``gateway_session``) and
+every command runs here (``run_gateway_command``): an argv list, shell-quoted with
+``shlex.join``, bounded by a timeout the caller must state. Every value is checked here before
+it goes on a command line, so no value can add a shell command, or an option, of its own. The
+SSH login (``ssh_login``) comes only from ``UNIFI_SSH_USERNAME`` and ``UNIFI_SSH_PASSWORD``.
 
 The gateway's host key is not verified: ``GATEWAY_KNOWN_HOSTS`` is the one constant issue 038
 changes. ``asyncssh.connect`` is called nowhere else in ``src/`` (a test scans for it).

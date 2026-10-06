@@ -907,9 +907,9 @@ uv run unifi-mapper diagnose ap-health "AP 1" --ping-clients --samples 10 --inte
 ```
 
 The command prints its expected duration first: the pauses between samples (9 h 50 min at
-60 samples 600 s apart), plus a note of the pings' time with `--ping-clients`. It reads the
-controller only; there is no power-cycle step. Without `--essid` it tracks the
-busiest 2.4 GHz SSID. A retry rate is computed only between two samples that both read; a
+60 samples 600 s apart), plus a note of the pings' time with `--ping-clients`. Without
+`--ping-clients` it reads the controller only; there is no power-cycle step. Without
+`--essid` it tracks the busiest 2.4 GHz SSID. A retry rate is computed only between two samples that both read; a
 sample whose read times out or fails is recorded as missing, and a failed client ping
 records its error. `--output` is checked before the first sample (a directory, or a path
 that can't be written, exits 2) and written after the report is printed. Ctrl-C ends the

@@ -79,6 +79,7 @@ reports/*/
 !reports/.gitkeep
 # Everything under diagrams/: a PNG or SVG render that fails (no Graphviz dot) leaves its
 # DOT source, which names the site's devices, at the diagram path minus its extension.
+# These and the reports/ rules are anchored at the root: a run from a subdirectory isn't.
 diagrams/*
 !diagrams/.gitkeep
 

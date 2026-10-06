@@ -17,8 +17,9 @@ does: an SSH probe triggered from an MCP call, a controller command, or a contro
 Each needs a user decision. What was not ported and why is listed in issue
 [059](059-july-work-not-ported.md).
 
-This issue was filed at the start of the July port. Every command or tool it names now exists;
-the port's last update added the commit that built each one.
+This issue was filed at the start of the July port. Every command or tool it names as rebuilt
+now exists, and the port's last update added the commit that built each one; the W6-W10
+proposals below stay unbuilt until they are decided.
 
 ## Decision needed
 

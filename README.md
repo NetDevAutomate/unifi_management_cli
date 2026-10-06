@@ -27,7 +27,8 @@ uv run unifi-mapper --install-completion
 
 `discover` and `diagram` draw PNG (the default) and SVG diagrams with Graphviz's `dot`
 program, which `uv sync` does not install: without it they exit 1 after reading the
-controller, and `discover` writes no report
+controller, leaving the diagram's DOT source at its path minus the extension, and `discover`
+writes no report
 ([issue 075](docs/issues/075-discover-needs-graphviz-dot-undocumented.md)). Install it with
 `brew install graphviz` (macOS) or `sudo apt install graphviz` (Debian or Ubuntu), or draw
 with `--format html`, which needs no Graphviz.
@@ -265,7 +266,7 @@ unifi-mapper controller events --since-hours 1 --category security --max-events 
 
 `diagnose device-stats`, `diagnose ap-retries` and the `controller` commands read the
 controller through the same read-only transport as the MCP server, so a write would be refused
-before it left the machine. Secret keys never reach their output: `controller config --json`
+before it left the machine. Secret values never reach their output: `controller config --json`
 lists what it removed by key path in `sanitised_paths`, never by value. `controller
 config-changes` dates each object by the creation time its ID records, so an edit to an older
 object does not appear; `controller events` shows the edits, in the admin-activity system log.
@@ -648,8 +649,8 @@ Exit codes, across the commands:
 | 2 | A usage error, before anything is read: an unknown option, a value outside an option's stated range, a file option naming a directory, an `--output` that can't be written; or an invalid path or value given to a command that contacts nothing (`backup verify`, `diagnose wan-history`, the `vlan-traffic` readers) or to `controller events`' window. Also a check that failed: the validating commands (`analyze port-profiles`, `mtu`, `vlan-coverage`, `uplink-transparency`, `power-budget`, `link-speeds` and `port-profile-usage`, `diagnose all` and `inter-vlan`, `stp drift` and `validate-10g`) exit 2 when their validation fails, `stp apply` and `stp rollback` when a change failed, and `diagnose ap-health` when the printed report could not be written to `--output` |
 | 130 | Interrupted with Ctrl-C after a partial report was printed (`diagnose ap-health`) |
 
-> Invoke commands through the installed `unifi-mapper` script. `python -m unifi_mapper.typer_cli`
-> also works, and a test asserts both paths expose the same command set.
+> Invoke commands through the installed `unifi-mapper` script. `uv run python -m
+> unifi_mapper.typer_cli` also works, and a test asserts both paths expose the same command set.
 
 ### Scheduled Audits
 

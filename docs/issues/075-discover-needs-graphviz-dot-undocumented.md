@@ -41,8 +41,10 @@ the command to install Graphviz nor the way round it (`--format html` draws with
 Breaks fresh clones, CI or prod: a fresh clone without Graphviz, yes, for `discover`'s
 default PNG output; the tests fake the render.
 
-Already done: `.gitignore` ignores everything under `diagrams/` but `.gitkeep`, so the left
-source can't be staged; `scripts/network-audit.sh` passes `discover` a `-d` in its own
+Already done: `.gitignore` ignores everything under the repository root's `diagrams/` but
+`.gitkeep`, so an ordinary `git add` doesn't stage a source left there (the rules, like the
+`reports/` ones, are anchored at the root: a run from a subdirectory writes where none
+applies, which issue 010's working-directory decision covers, and `git add -f` still can); `scripts/network-audit.sh` passes `discover` a `-d` in its own
 private output directory; and the README, the use-cases guide and the runbook name Graphviz
 (`brew install graphviz`, `sudo apt install graphviz`) as the prerequisite for PNG and SVG
 diagrams, say that `--format html` needs none, and describe the failure.
