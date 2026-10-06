@@ -80,3 +80,4 @@ the reasoning stays next to the code it explains.
 | [067](067-mcp-tool-failure-helper-duplicated.md) | The network and Protect tools each carry a copy of the redacted-failure helper | open |
 | [068](068-relative-xdg-config-home-is-honoured.md) | The config searches honour a relative `XDG_CONFIG_HOME`, so they can read a file under the working directory | open, decision needed |
 | [069](069-vlan-reports-read-tiers-without-recent-data.md) | VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty | resolved |
+| [070](070-untagged-networks-share-vlan-1-in-the-traffic-store.md) | Two networks without a VLAN ID both sample as VLAN 1, so one overwrites the other in the traffic store | open |
