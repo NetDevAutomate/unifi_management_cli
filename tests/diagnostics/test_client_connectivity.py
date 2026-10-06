@@ -444,3 +444,4 @@ def test_the_command_has_help() -> None:
     assert result.exit_code == 0
     flat = ' '.join(result.output.split())
     assert 'SSH' in flat and 'host key is not verified' in flat and '120' in flat
+    assert 'UNIFI_SSH_PASSWORD' in flat  # M4 council NF-005: what it needs before it runs

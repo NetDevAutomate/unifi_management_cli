@@ -5201,8 +5201,9 @@ def diagnose_client_connectivity_command(
     from the gateway over SSH, pings it, resolves the probe URL's host, fetches the URL from
     the client's VLAN and lists the client's conntrack flows. Each layer is bounded and the
     whole run capped at 120 s; a failing layer is reported and the others still run. Exits 1
-    when a fault is found or a layer did not complete. Runs on the gateway as the SSH user;
-    the gateway's host key is not verified.
+    when a fault is found or a layer did not complete. Needs SSH enabled on the gateway and
+    UNIFI_SSH_PASSWORD (and UNIFI_SSH_USERNAME if not root) in the config; runs on the
+    gateway as the SSH user; the gateway's host key is not verified.
     """
     from .diagnostics.client_connectivity import (
         CAPTIVE_PROBE_URL,

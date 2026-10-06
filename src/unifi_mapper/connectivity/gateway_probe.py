@@ -2,10 +2,12 @@
 
 Class B (CLI only, ``unifi-mapper gateway ...``; no MCP tool, decision D1 in issue 060): each
 probe opens one session through ``analysis/gateway_ssh.py`` and runs one argv with its own
-bound, every value checked by that module's validators first, so nothing a user types or the
-controller reports can add a command or an option. The gateway's host key is not verified
-(issue 038). A device or client name is resolved to its address through ``UniFiClient()``,
-which borrows the read-only holder the CLI installs, so those reads can't write.
+bound (``gateway http --vlan`` runs two: ``ip -j addr show`` to find the VLAN's interface,
+then ``curl``), every value checked by that module's validators first, so nothing a user
+types or the controller reports can add a command or an option. The gateway's host key is
+not verified (issue 038). A device or client name is resolved to its address through
+``UniFiClient()``, which borrows the read-only holder the CLI installs, so those reads can't
+write.
 
 Ported from the July work (a local archive, not in the repo): the pure parsers are July's,
 logic unchanged; the handlers are rebuilt on argv lists (July built shell strings and piped
