@@ -316,10 +316,12 @@ def require_http_url(value: object) -> str:
     """Return ``value`` unchanged if it is an http(s) URL that is safe on a command line.
 
     The scheme is ``http`` or ``https``; there is no user name or password (an ``@`` in the
-    host part is refused, so no credential lands in the gateway's process list); the host is
+    host part is refused, so neither lands in the gateway's process list); the host is
     a hostname (``require_hostname``) or an address (``require_ip``, IPv6 in brackets); a
     port, if given, is 1 to 65535; and there is no whitespace or control character, in at
-    most 2048 characters. The URL is never echoed in the error.
+    most 2048 characters. The URL is never echoed in the error. A query string is kept as
+    given: it goes on the gateway's command line and into the probe's result, so the CLI's
+    help says to put no secret in it.
 
     Args:
         value: The URL.

@@ -10,9 +10,11 @@ the real read-only guard.
 
 import asyncio
 import asyncssh
+import click
 import json
 import pytest
 import shlex
+import typer
 from tests.fake_controller import API, FakeController, legacy, route_cli, serving
 from tests.fake_ssh import FakeSSH
 from tests.fixtures_unifi import FAKE_TOKEN
@@ -445,3 +447,11 @@ def test_the_command_has_help() -> None:
     flat = ' '.join(result.output.split())
     assert 'SSH' in flat and 'host key is not verified' in flat and '120' in flat
     assert 'UNIFI_SSH_PASSWORD' in flat  # M4 council NF-005: what it needs before it runs
+    root = typer.main.get_command(app)
+    assert isinstance(root, click.Group)
+    group = root.commands['diagnose']
+    assert isinstance(group, click.Group)
+    params = group.commands['client-connectivity'].params
+    option = next(p for p in params if p.name == 'probe_url')
+    # M4 council A: the query is run as given, on the gateway's command line.
+    assert 'no secret in its query' in (getattr(option, 'help', None) or '')

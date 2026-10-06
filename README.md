@@ -208,7 +208,8 @@ unifi-mapper diagnose bandwidth 192.0.2.50 --bidir --duration 10
 unifi-mapper diagnose bandwidth 192.0.2.50 --reverse --parallel 4
 
 # Live probes run on the gateway over SSH (CLI only); a name resolves through the
-# read-only controller client, --vlan to the interface whose address is in its subnet
+# read-only controller client, --vlan to the interface whose address is in its subnet.
+# gateway http runs its URL as given on the gateway's command line: put no secret in it
 unifi-mapper gateway ping "Phone A" --count 5
 unifi-mapper gateway traceroute 203.0.113.53 --max-hops 15
 unifi-mapper gateway dns www.example.com --server 203.0.113.53

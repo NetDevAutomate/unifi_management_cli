@@ -9,9 +9,11 @@ controller is the fake behind the real read-only guard.
 """
 
 import asyncssh
+import click
 import json
 import pytest
 import shlex
+import typer
 from tests.fake_controller import API, FakeController, legacy, route_cli, serving
 from tests.fake_ssh import FakeSSH
 from tests.fixtures_unifi import FAKE_TOKEN
@@ -826,3 +828,13 @@ def test_every_command_has_help(command: str) -> None:
     assert 'SSH' in flat and 'host key is not verified' in flat
     if command == 'traceroute':  # review M3 (council N2): the JSON hop fields are described
         assert '"unreachable"' in flat and '!H (host)' in flat and '"timeout" (no reply)' in flat
+
+
+def test_the_url_help_says_to_put_no_secret_in_the_query() -> None:
+    """M4 council A: a query string is run as given, on the gateway's command line."""
+    root = typer.main.get_command(app)
+    assert isinstance(root, click.Group)
+    group = root.commands['gateway']
+    assert isinstance(group, click.Group)
+    url = next(p for p in group.commands['http'].params if p.name == 'url')
+    assert 'no secret in its query' in (getattr(url, 'help', None) or '')

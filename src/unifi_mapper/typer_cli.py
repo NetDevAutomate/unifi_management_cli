@@ -5096,7 +5096,13 @@ def gateway_dns_command(
 
 @gateway_app.command('http')
 def gateway_http_command(
-    url: str = typer.Argument(..., help='The http(s) URL to fetch (no user name or password)'),
+    url: str = typer.Argument(
+        ...,
+        help=(
+            'The http(s) URL to fetch: no user name or password, and no secret in its query '
+            "(it is run as given, on the gateway's command line)"
+        ),
+    ),
     vlan: Optional[int] = typer.Option(
         None, '--vlan', min=1, max=4094, help="Fetch from this VLAN's gateway interface"
     ),
@@ -5191,7 +5197,10 @@ def diagnose_client_connectivity_command(
     probe_url: Optional[str] = typer.Option(
         None,
         '--probe-url',
-        help="The http(s) URL to fetch from the client's VLAN (default a captive-portal check)",
+        help=(
+            "The http(s) URL to fetch from the client's VLAN (default a captive-portal check): "
+            'no user name or password, and no secret in its query'
+        ),
     ),
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of text'),
 ):
