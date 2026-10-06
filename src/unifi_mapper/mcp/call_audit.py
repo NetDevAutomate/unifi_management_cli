@@ -59,6 +59,9 @@ _EPOCH_OF = epoch_field('epoch')
 def default_call_audit_path() -> Path:
     """``state_dir() / CALL_AUDIT_FILENAME``, read at call time; nothing is created.
 
+    Returns:
+        The call log's default path under the XDG state directory.
+
     Raises:
         RuntimeError: When ``XDG_STATE_HOME`` is unset and there is no home directory.
     """
@@ -170,6 +173,9 @@ class CallAuditLog:
 
     def target(self) -> Path | None:
         """The file to write now: the default resolved at call time, the given path, or None.
+
+        Returns:
+            The path the next line goes to, or None once the log is off or disabled.
 
         Raises:
             RuntimeError: For the default path when there is no home directory.
