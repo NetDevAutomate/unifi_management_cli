@@ -108,7 +108,7 @@ if [[ -e "${OUTPUT_DIR}" ]]; then
     if [[ -n "$(find "${OUTPUT_DIR}" -maxdepth 0 \( -perm -020 -o -perm -002 \) -print)" ]]; then
         die "--output-dir ${OUTPUT_DIR} is writable by other users"
     fi
-    [[ -z "$(ls -A "${OUTPUT_DIR}")" ]] || die "--output-dir ${OUTPUT_DIR} must be a new or empty directory"
+    [[ -z "$(find "${OUTPUT_DIR}" -mindepth 1 -print -quit)" ]] || die "--output-dir ${OUTPUT_DIR} must be a new or empty directory"
 fi
 mkdir -p "${OUTPUT_DIR}"
 OUTPUT_DIR="$(cd "${OUTPUT_DIR}" && pwd -P)"  # absolute, for the printed --plan path

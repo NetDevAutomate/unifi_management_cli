@@ -383,6 +383,7 @@ def _run_audit(tmp_path: Path, *args: str, cwd: Path | None = None) -> Any:
     ('prepare', 'message'),
     [
         (lambda d: (d.mkdir(mode=0o700), (d / 'audit.log').write_text('x\n')), 'new or empty'),
+        (lambda d: (d.mkdir(mode=0o700), (d / '.planted').write_text('x\n')), 'new or empty'),
         (lambda d: (d.mkdir(), d.chmod(0o770)), 'writable by other users'),
         (lambda d: (d.mkdir(), d.chmod(0o703)), 'writable by other users'),
         (
@@ -394,7 +395,7 @@ def _run_audit(tmp_path: Path, *args: str, cwd: Path | None = None) -> Any:
         ),
         (lambda d: d.write_text('x\n'), 'not a directory'),
     ],
-    ids=['not empty', 'group-writable', 'other-writable', 'a symlink', 'a file'],
+    ids=['not empty', 'only a dotfile', 'group-writable', 'other-writable', 'a symlink', 'a file'],
 )
 def test_an_unsafe_existing_output_dir_is_refused_before_any_step(
     tmp_path: Path, prepare: Any, message: str
