@@ -4,6 +4,7 @@
 #
 # Runs, each a preview or a read (this script has no apply path):
 #   1. unifi-mapper discover --dry-run --connected-devices -o <dir>/port-mapping.md
+#        -d <dir>/network-diagram.png
 #   2. unifi-mapper stp snapshot -o <dir>/stp-snapshot.json
 #   3. unifi-mapper stp analyze
 #   4. unifi-mapper stp optimize --dry-run --plan <dir>/stp-plan.json
@@ -134,7 +135,10 @@ step() {
 }
 
 echo "Reports: ${OUTPUT_DIR}"
-step "Port names (preview)" discover --dry-run --connected-devices -o "${OUTPUT_DIR}/port-mapping.md"
+# discover's diagram defaults to ./diagrams/ under the caller's directory, and without
+# Graphviz's dot its DOT source, which names the site's devices, stays there: keep both here.
+step "Port names (preview)" discover --dry-run --connected-devices \
+    -o "${OUTPUT_DIR}/port-mapping.md" -d "${OUTPUT_DIR}/network-diagram.png"
 step "STP snapshot" stp snapshot -o "${OUTPUT_DIR}/stp-snapshot.json"
 step "STP analysis" stp analyze
 step "STP plan (preview)" stp optimize --dry-run --plan "${OUTPUT_DIR}/stp-plan.json"

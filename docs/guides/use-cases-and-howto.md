@@ -673,8 +673,9 @@ The report includes:
 **All of the above in one read-only run: `scripts/network-audit.sh`**
 
 ```bash
-# Port-name preview, STP snapshot, analysis, plan (preview), guards and report, into
-# ${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/audits/<UTC stamp>/ with an audit.log
+# Port-name preview and topology diagram, STP snapshot, analysis, plan (preview), guards and
+# report, into ${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/audits/<UTC stamp>/ with an
+# audit.log
 ./scripts/network-audit.sh
 ./scripts/network-audit.sh --config ~/.config/unifi_management_cli/prod.env \
   --output-dir ~/tmp/audit --planned-switches 2   # also the 10G readiness check

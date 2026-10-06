@@ -686,8 +686,9 @@ Schedules: the link-error history (`analyze link-errors --record`) and roaming s
 uv run python scripts/controller_dump.py --output ~/tmp/controller-dump [--endpoint NAME]...
 ```
 
-- `scripts/network-audit.sh` runs `discover --dry-run`, `stp snapshot`, `stp analyze`,
-  `stp optimize --dry-run --plan`, `stp guard` and `stp report` (and `stp validate-10g` only
+- `scripts/network-audit.sh` runs `discover --dry-run` (its port-name report and topology
+  diagram), `stp snapshot`, `stp analyze`, `stp optimize --dry-run --plan`, `stp guard` and
+  `stp report` (and `stp validate-10g` only
   with `--planned-switches`) into `${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/audits/`
   (a relative `XDG_STATE_HOME` is ignored), or into an `--output-dir` that is new, or empty,
   yours, not writable by others and not a link (exit 2 otherwise),

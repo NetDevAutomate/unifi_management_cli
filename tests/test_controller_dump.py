@@ -453,3 +453,62 @@ def test_relative_paths_are_printed_absolute(tmp_path: Path) -> None:
     assert [argv[6] for argv in printed] == [str(run_dir / 'site.env')] * 2
     assert printed[1][-1] == str(run_dir / 'out' / 'stp-plan.json')
     assert f'Reports: {run_dir / "out"}' in result.stdout
+
+
+# A uv that records its arguments as _fake_uv_env's does, and whose discover step then writes
+# the files `unifi-mapper discover` writes: the report's and the diagram's directories first
+# (./reports/ and ./diagrams/ without -o and -d), then the DOT source at the diagram path
+# minus .png, which graphviz replaces with the PNG only once Graphviz's dot has drawn it, and
+# then the report. With dot missing it exits 1, the DOT source left behind.
+FAKE_DISCOVER_UV = """#!/bin/sh
+printf "%s\\n" "$*" >> "$FAKE_UV_LOG"
+case " $* " in *" discover "*) ;; *) exit 0 ;; esac
+diagram="$PWD/diagrams/network_diagram.png"
+report="$PWD/reports/port_mapping_report.md"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -d | --diagram) diagram="$2"; shift 2 ;;
+        -o | --output) report="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+mkdir -p "$(dirname "$report")" "$(dirname "$diagram")"
+printf 'digraph {}\\n' > "${diagram%.png}"
+[ "$FAKE_DOT" = present ] || exit 1
+mv "${diagram%.png}" "$diagram"
+printf 'report\\n' > "$report"
+"""
+
+
+@pytest.mark.parametrize('dot', ['present', 'missing'], ids=['dot present', 'dot missing'])
+def test_the_audit_draws_its_diagram_in_its_output_dir_never_the_cwd(
+    tmp_path: Path, dot: str
+) -> None:
+    """Review AGG-1: step 1 ran discover with no -d, so its diagram, or without Graphviz's
+    dot the DOT source naming the site's devices, landed in the caller's directory."""
+    env = _fake_uv_env(tmp_path)
+    (tmp_path / 'bin' / 'uv').write_text(FAKE_DISCOVER_UV, encoding='utf-8')
+    cwd = tmp_path / 'cwd'
+    cwd.mkdir()
+    out = tmp_path / 'out'
+    result = subprocess.run(
+        ['bash', str(AUDIT), '--output-dir', str(out)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**env, 'FAKE_DOT': dot},
+        cwd=cwd,
+        check=False,
+    )
+    assert list(cwd.iterdir()) == []
+    ran = (tmp_path / 'uv.log').read_text(encoding='utf-8').splitlines()
+    discover = [line.split() for line in ran if ' discover ' in line]
+    assert len(discover) == 1
+    assert discover[0][discover[0].index('-d') + 1] == str(out / 'network-diagram.png')
+    if dot == 'present':
+        assert result.returncode == 0, result.stderr
+        assert {'network-diagram.png', 'port-mapping.md'} <= {p.name for p in out.iterdir()}
+    else:
+        assert result.returncode == 1
+        assert '-- Port names (preview): FAILED' in result.stdout
+        assert (out / 'network-diagram').is_file()  # the DOT source stays in the private dir
