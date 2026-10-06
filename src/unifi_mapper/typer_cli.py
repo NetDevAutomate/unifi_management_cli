@@ -5527,7 +5527,7 @@ def vlan_traffic_coverage(
         _emit_json(periods)
         return
 
-    def when(ts: int | None) -> str:
+    def when(ts: Optional[int]) -> str:
         return '—' if ts is None else datetime.fromtimestamp(ts, tz=UTC).isoformat()
 
     table = Table(title='🗓️ VLAN traffic store coverage')

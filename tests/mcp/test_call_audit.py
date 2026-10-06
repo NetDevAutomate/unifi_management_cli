@@ -111,7 +111,9 @@ def test_the_switch_families_are_shared() -> None:
 # --- lines ---------------------------------------------------------------------------------
 
 
-async def test_unset_writes_a_call_line_at_the_default_path(make_runner) -> None:
+async def test_unset_writes_a_call_line_at_the_default_path(
+    make_runner: Callable[..., ToolRunner],
+) -> None:
     runner = make_runner(parse_call_audit(None, pytest.fail))
     out = await runner.run('str_param', {'s': FAKE_VALUE})
     assert out.isError is False
@@ -131,14 +133,16 @@ async def test_unset_writes_a_call_line_at_the_default_path(make_runner) -> None
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
 
 
-async def test_off_writes_no_file(make_runner) -> None:
+async def test_off_writes_no_file(make_runner: Callable[..., ToolRunner]) -> None:
     runner = make_runner(CallAuditSetting('off'))
     assert (await runner.run('no_params', {})).isError is False
     assert not (state_dir() / CALL_AUDIT_FILENAME).exists()
     assert runner.call_audit is not None and runner.call_audit.target() is None
 
 
-async def test_an_absolute_path_is_written(make_runner, tmp_path: Path) -> None:
+async def test_an_absolute_path_is_written(
+    make_runner: Callable[..., ToolRunner], tmp_path: Path
+) -> None:
     path = tmp_path / 'logs' / 'calls.jsonl'
     runner = make_runner(CallAuditSetting('path', path))
     await runner.run('no_params', {}, surface='direct')
@@ -146,7 +150,9 @@ async def test_an_absolute_path_is_written(make_runner, tmp_path: Path) -> None:
     assert not (state_dir() / CALL_AUDIT_FILENAME).exists()
 
 
-async def test_an_unregistered_tool_is_written_by_length_only(make_runner) -> None:
+async def test_an_unregistered_tool_is_written_by_length_only(
+    make_runner: Callable[..., ToolRunner],
+) -> None:
     runner = make_runner()
     out = await runner.run(FAKE_TOOL_NAME, {FAKE_KEY: FAKE_VALUE})
     assert out.structuredContent is not None
@@ -159,7 +165,9 @@ async def test_an_unregistered_tool_is_written_by_length_only(make_runner) -> No
         assert leaked not in text
 
 
-async def test_unknown_keys_are_a_count_never_a_name(make_runner) -> None:
+async def test_unknown_keys_are_a_count_never_a_name(
+    make_runner: Callable[..., ToolRunner],
+) -> None:
     out = await make_runner().run('int_param', {'n': 1, FAKE_KEY: FAKE_VALUE})
     assert out.structuredContent is not None
     assert out.structuredContent['error_code'] == 'INVALID_PARAMETERS'
@@ -185,14 +193,18 @@ def test_names_past_the_cap_are_not_counted_as_unknown() -> None:
     assert len(line['arg_keys']) == MAX_LOGGED_KEYS and line['unknown_keys'] == 1
 
 
-async def test_a_secret_named_parameter_logs_its_key_never_its_value(make_runner) -> None:
+async def test_a_secret_named_parameter_logs_its_key_never_its_value(
+    make_runner: Callable[..., ToolRunner],
+) -> None:
     await make_runner().run('api_key_param', {'api_key': FAKE_VALUE})
     (line,) = _lines()
     assert line['arg_keys'] == ['api_key'] and line['outcome'] == 'INVALID_PARAMETERS'
     assert FAKE_VALUE not in (state_dir() / CALL_AUDIT_FILENAME).read_text(encoding='utf-8')
 
 
-async def test_refusals_are_logged(make_runner, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_refusals_are_logged(
+    make_runner: Callable[..., ToolRunner], monkeypatch: pytest.MonkeyPatch
+) -> None:
     async def missing(timeout: float, tried: Any = ()) -> None:
         raise CredentialsMissingError('no controller credentials', tried=())
 
@@ -210,7 +222,9 @@ async def test_refusals_are_logged(make_runner, monkeypatch: pytest.MonkeyPatch)
     ]
 
 
-async def test_a_cancelled_call_is_logged_and_still_cancelled(make_runner) -> None:
+async def test_a_cancelled_call_is_logged_and_still_cancelled(
+    make_runner: Callable[..., ToolRunner],
+) -> None:
     runner = make_runner()
     task = asyncio.create_task(runner.run('sleeper', {'seconds': 30}))
     await asyncio.sleep(0.05)
@@ -221,7 +235,9 @@ async def test_a_cancelled_call_is_logged_and_still_cancelled(make_runner) -> No
     assert (line['tool'], line['outcome']) == ('sleeper', 'CANCELLED')
 
 
-async def test_the_file_is_compacted_at_its_cap(make_runner, tmp_path: Path) -> None:
+async def test_the_file_is_compacted_at_its_cap(
+    make_runner: Callable[..., ToolRunner], tmp_path: Path
+) -> None:
     path = tmp_path / 'calls.jsonl'
     runner = make_runner(CallAuditSetting('path', path), max_bytes=4000)
     for n in range(60):
@@ -232,7 +248,7 @@ async def test_the_file_is_compacted_at_its_cap(make_runner, tmp_path: Path) -> 
 
 
 async def test_an_unwritable_path_leaves_the_result_and_warns_once(
-    make_runner, tmp_path: Path, warned: list[str]
+    make_runner: Callable[..., ToolRunner], tmp_path: Path, warned: list[str]
 ) -> None:
     blocker = tmp_path / 'a-file'
     blocker.write_text('x', encoding='utf-8')
@@ -245,7 +261,7 @@ async def test_an_unwritable_path_leaves_the_result_and_warns_once(
 
 
 async def test_no_home_directory_leaves_the_result_and_warns_once(
-    make_runner, monkeypatch: pytest.MonkeyPatch, warned: list[str]
+    make_runner: Callable[..., ToolRunner], monkeypatch: pytest.MonkeyPatch, warned: list[str]
 ) -> None:
     def _no_home() -> Path:
         raise RuntimeError('Could not determine home directory')
@@ -389,7 +405,7 @@ async def test_the_server_runner_logs_by_default(fresh_server: None) -> None:
 
 
 async def test_logging_runs_shielded_in_a_worker_thread(
-    make_runner, monkeypatch: pytest.MonkeyPatch
+    make_runner: Callable[..., ToolRunner], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen: list[bool] = []
     real = anyio.to_thread.run_sync
