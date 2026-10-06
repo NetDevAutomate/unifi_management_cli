@@ -239,6 +239,143 @@ async def test_an_ipv6_trace_that_ends_at_the_target_is_reached(
     assert trace['reached'] is True  # the same address, however it is written
 
 
+# Review SR6-1: July's time pattern ran over the whole hop line, so a host name holding "ms"
+# crashed the parse (a ".ms" label) or added a time never measured (digits before "ms").
+TRACEROUTE_MS_NAMES = """\
+traceroute to 203.0.113.53 (203.0.113.53), 20 hops max, 60 byte packets
+ 1  gateway (192.0.2.1)  0.512 ms  0.401 ms  0.398 ms
+ 2  core.ms.example.net (198.51.100.1)  10.5 ms  10.2 ms  10.1 ms
+ 3  edge-100ms.example.net (198.51.100.4)  * 2.0 ms *
+ 4  dns.example.net (203.0.113.53)  12.345 ms  12.100 ms  11.987 ms
+"""
+
+
+def _hop(
+    hop: int, host: str | None, ip: str | None, rtt_ms: list[float], *, unreachable: bool = False
+) -> dict[str, Any]:
+    """One hop as parse_traceroute_output returns it."""
+    return {
+        'hop': hop,
+        'host': host,
+        'ip': ip,
+        'rtt_ms': rtt_ms,
+        'timeout': not rtt_ms,
+        'unreachable': unreachable,
+    }
+
+
+# One hop line each, documentation values only (the orchestrator's corpus for SR6-1).
+HOP_LINES: dict[str, tuple[str, dict[str, Any]]] = {
+    'a .ms label': (
+        ' 2  core.ms.example.net (192.0.2.1)  10.5 ms  10.2 ms  10.1 ms',
+        _hop(2, 'core.ms.example.net', '192.0.2.1', [10.5, 10.2, 10.1]),
+    ),
+    'a .ms label after a digit': (
+        ' 2  r1.ms.example.net (192.0.2.1)  10.5 ms',
+        _hop(2, 'r1.ms.example.net', '192.0.2.1', [10.5]),
+    ),
+    'an ms. label': (
+        ' 2  ms.example.net (192.0.2.1)  10.5 ms',
+        _hop(2, 'ms.example.net', '192.0.2.1', [10.5]),
+    ),
+    'digits before ms in a label': (
+        ' 3  edge-100ms.example.net (198.51.100.4)  2.0 ms  2.1 ms',
+        _hop(3, 'edge-100ms.example.net', '198.51.100.4', [2.0, 2.1]),
+    ),
+    'a name that reads like a time': (
+        ' 3  100ms (198.51.100.4)  2.0 ms',
+        _hop(3, '100ms', '198.51.100.4', [2.0]),
+    ),
+    'numeric output (-n)': (
+        ' 4  198.51.100.1  8.221 ms  8.105 ms  7.990 ms',
+        _hop(4, '198.51.100.1', '198.51.100.1', [8.221, 8.105, 7.99]),
+    ),
+    'an IPv6 hop': (
+        ' 5  gw.ms.example.net (2001:db8::1)  0.512 ms  0.401 ms',
+        _hop(5, 'gw.ms.example.net', '2001:db8::1', [0.512, 0.401]),
+    ),
+    'an IPv6 hop (-n)': (
+        ' 5  2001:db8:100::1  8.221 ms  8.105 ms',
+        _hop(5, '2001:db8:100::1', '2001:db8:100::1', [8.221, 8.105]),
+    ),
+    'lost probes beside a time': (
+        ' 6  * edge-100ms.example.net (198.51.100.4)  2.0 ms *',
+        _hop(6, 'edge-100ms.example.net', '198.51.100.4', [2.0]),
+    ),
+    'every probe lost': (' 6  * * *', _hop(6, None, None, [])),
+    '!H': (
+        ' 7  198.51.100.1 (198.51.100.1)  8.221 ms !H  8.105 ms !H',
+        _hop(7, '198.51.100.1', '198.51.100.1', [8.221, 8.105], unreachable=True),
+    ),
+    '!N': (
+        ' 7  r1.ms.example.net (198.51.100.1)  8.2 ms !N',
+        _hop(7, 'r1.ms.example.net', '198.51.100.1', [8.2], unreachable=True),
+    ),
+    '!P': (
+        ' 7  203.0.113.53 (203.0.113.53)  9.0 ms !P',
+        _hop(7, '203.0.113.53', '203.0.113.53', [9.0], unreachable=True),
+    ),
+    '!X': (
+        ' 7  203.0.113.53 (203.0.113.53)  9.0 ms !X  9.1 ms !X',
+        _hop(7, '203.0.113.53', '203.0.113.53', [9.0, 9.1], unreachable=True),
+    ),
+    '!<n>': (
+        ' 7  203.0.113.53 (203.0.113.53)  9.0 ms !<10>',
+        _hop(7, '203.0.113.53', '203.0.113.53', [9.0], unreachable=True),
+    ),
+    '!F with its MTU': (
+        ' 7  198.51.100.1 (198.51.100.1)  8.2 ms !F-1500',
+        _hop(7, '198.51.100.1', '198.51.100.1', [8.2], unreachable=True),
+    ),
+    'several responders': (
+        ' 8  a.example.net (203.0.113.1)  10.0 ms '
+        'b.ms.example.net (203.0.113.2)  11.0 ms  10.5 ms',
+        _hop(8, 'a.example.net', '203.0.113.1', [10.0, 11.0, 10.5]),
+    ),
+    'several responders (-n)': (
+        ' 8  203.0.113.1  10.0 ms 203.0.113.2  11.0 ms',
+        _hop(8, '203.0.113.1', '203.0.113.1', [10.0, 11.0]),
+    ),
+    'times but no host': (
+        ' 9  10.5 ms  10.2 ms  10.1 ms',
+        _hop(9, None, None, [10.5, 10.2, 10.1]),
+    ),
+    'a dot before ms': (' 9  . ms  2.0 ms', _hop(9, None, None, [2.0])),
+    'a number that is not a time': (' 9  1.2.3 ms', _hop(9, None, None, [])),
+}
+
+
+@pytest.mark.parametrize(('line', 'expected'), list(HOP_LINES.values()), ids=list(HOP_LINES))
+def test_traceroute_times_are_read_by_token_never_from_a_name(
+    line: str, expected: dict[str, Any]
+) -> None:
+    """Review SR6-1: a time is a number token then an "ms" token; names are never read."""
+    assert parse_traceroute_output(line) == [expected]
+
+
+async def test_a_trace_through_names_holding_ms_is_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeSSH({**REPLIES, 'traceroute': TRACEROUTE_MS_NAMES})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    trace = await gateway_traceroute('203.0.113.53', max_hops=20)
+    assert trace['reached'] is True
+    assert [hop['rtt_ms'] for hop in trace['hops'][1:3]] == [[10.5, 10.2, 10.1], [2.0]]
+
+
+def test_the_cli_reads_a_trace_through_names_holding_ms(
+    monkeypatch: pytest.MonkeyPatch, controller: FakeController
+) -> None:
+    """Review SR6-1: `gateway traceroute` exited 1 on a hop named under a '.ms' label."""
+    monkeypatch.setattr(
+        asyncssh, 'connect', FakeSSH({**REPLIES, 'traceroute': TRACEROUTE_MS_NAMES})
+    )
+    route_cli(monkeypatch, controller)
+    result = runner.invoke(app, ['gateway', 'traceroute', '203.0.113.53'])
+    assert result.exit_code == 0, result.output
+    assert 'Reached the target' in result.stdout
+
+
 def test_conntrack_flows_and_filters() -> None:
     flows = parse_conntrack_output(CONNTRACK_OUTPUT)
     assert len(flows) == 3

@@ -9,8 +9,10 @@ not verified (issue 038). A device or client name is resolved to its address thr
 ``UniFiClient()``, which borrows the read-only holder the CLI installs, so those reads can't
 write.
 
-Ported from the July work (a local archive, not in the repo): the pure parsers are July's,
-logic unchanged; the handlers are rebuilt on argv lists (July built shell strings and piped
+Ported from the July work (a local archive, not in the repo): the conntrack, nslookup and
+curl parsers are July's, logic unchanged; the traceroute parser reads each hop line token by
+token (July's pattern took a time from any digits or dots before ``ms``, host names
+included). The handlers are rebuilt on argv lists (July built shell strings and piped
 conntrack through ``grep``), ``--globoff`` keeps curl from expanding ``[]`` and ``{}`` in a
 URL, and a VLAN resolves to the interface whose address is in its subnet. July's spectrum
 scan (a controller command) is not ported.
@@ -69,13 +71,14 @@ CURL_RESULT_CODES = range(126)
 FLOWS_TIMEOUT = 60  # July's 30 s, raised for busy tables
 INTERFACES_TIMEOUT = 15
 
-_TRACEROUTE_HOP_RE = re.compile(r'^\s*(\d+)\s+(.*)$')
-# A hop's "name (address)" pair; the address IPv4 or IPv6. A bare address is found by token.
-_HOP_HOST_RE = re.compile(r'([^\s()]+)\s+\(([0-9A-Fa-f:.]+)\)')
-_HOP_TIME_RE = re.compile(r'([\d.]+)\s*ms')
-# traceroute's annotation for an ICMP unreachable reply: !H host, !N network, !P protocol,
-# !S source route, !F fragmentation needed, !X, !V, !C prohibited or precedence, !<n> a code.
-_HOP_UNREACHABLE_RE = re.compile(r'(?<!\S)!(?:[HNPSFXVC]|\d+)(?!\S)')
+# A hop line's first token is its number (traceroute probes at most 255 hops).
+_HOP_NUMBER_RE = re.compile(r'[0-9]{1,3}')
+# A probe's time is this token followed by the token "ms" (traceroute prints "0.512 ms").
+_HOP_TIME_RE = re.compile(r'[0-9]+(?:\.[0-9]+)?')
+# traceroute's annotation for an ICMP unreachable reply, one token: !H host, !N network, !P
+# protocol, !S source route, !F (or !F-<mtu>) fragmentation needed, !X, !V, !C prohibited or
+# precedence, !<n> (or !n) another code.
+_HOP_UNREACHABLE_RE = re.compile(r'!(?:[HNPSFXVC]|F-[0-9]+|<[0-9]+>|[0-9]+)')
 _CONNTRACK_KV_RE = re.compile(r'(\w+)=(\S+)')
 _CONNTRACK_FLAG_RE = re.compile(r'\[(\w+)\]')
 _NSLOOKUP_ADDR_RE = re.compile(r'^Address(?:\s+\d+)?:\s*(\S+)', re.M)
@@ -83,11 +86,66 @@ _NSLOOKUP_NAME_RE = re.compile(r'^Name:\s*(\S+)', re.M)
 _DNS_FAILURE_MARKERS = ("can't resolve", "server can't find", 'NXDOMAIN', 'no servers could')
 
 
-# --- pure parsers (July's, unchanged in logic) ---------------------------------------------
+# --- pure parsers (July's, but traceroute's: it reads each hop line token by token) -------
+
+
+def _paren_address(token: str) -> str | None:
+    """The address in a ``(address)`` token, or None for any other token."""
+    if token.startswith('(') and token.endswith(')') and is_ip_address(token[1:-1]):
+        return token[1:-1]
+    return None
+
+
+def _read_hop(tokens: list[str]) -> tuple[str | None, str | None, list[float], bool]:
+    """Read one hop line's tokens after its number. Pure.
+
+    ``*`` is a lost probe; an annotation token (:data:`_HOP_UNREACHABLE_RE`) marks the hop
+    unreachable; ``name (address)`` and a bare address are responders, each taken whole and
+    never read for a time, so a name such as ``r1.ms.example.net`` or ``edge-100ms`` adds
+    none; a number token followed by an ``ms`` token is a probe's time. Any other token is
+    skipped.
+
+    Args:
+        tokens: The hop line's whitespace-separated tokens, its number left out.
+
+    Returns:
+        ``(host, ip, times, unreachable)``: the first responder's name and address (None
+        without one), every probe's time in ms, and whether any probe was annotated.
+    """
+    host: str | None = None
+    ip: str | None = None
+    times: list[float] = []
+    unreachable = False
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        following = tokens[i + 1] if i + 1 < len(tokens) else ''
+        address = _paren_address(following)
+        if token == '*':
+            i += 1
+        elif _HOP_UNREACHABLE_RE.fullmatch(token):
+            unreachable, i = True, i + 1
+        elif address is not None:  # "name (address)"
+            if ip is None:
+                host, ip = token, address
+            i += 2
+        elif is_ip_address(token):  # a bare address: numeric output, or no reverse name
+            if ip is None:
+                host = ip = token
+            i += 1
+        elif following == 'ms' and _HOP_TIME_RE.fullmatch(token):
+            times.append(float(token))
+            i += 2
+        else:
+            i += 1
+    return host, ip, times, unreachable
 
 
 def parse_traceroute_output(output: str) -> list[dict[str, Any]]:
     """Parse traceroute output (GNU or BusyBox, IPv4 or IPv6) into hops.
+
+    A hop line is one whose first token is a number; the rest is read by :func:`_read_hop`.
+    A hop with several responders reports the first one's name and address and every time.
 
     Args:
         output: Raw traceroute stdout.
@@ -99,38 +157,18 @@ def parse_traceroute_output(output: str) -> list[dict[str, Any]]:
     """
     hops: list[dict[str, Any]] = []
     for line in output.splitlines():
-        match = _TRACEROUTE_HOP_RE.match(line)
-        if not match:
+        tokens = line.split()
+        if not tokens or not _HOP_NUMBER_RE.fullmatch(tokens[0]):
             continue
-        hop_no, rest = int(match.group(1)), match.group(2)
-        if rest.strip().replace('*', '').strip() == '':
-            hops.append(
-                {
-                    'hop': hop_no,
-                    'host': None,
-                    'ip': None,
-                    'rtt_ms': [],
-                    'timeout': True,
-                    'unreachable': False,
-                }
-            )
-            continue
-        host: str | None = None
-        ip: str | None = None
-        host_match = _HOP_HOST_RE.search(rest)
-        if host_match and is_ip_address(host_match.group(2)):
-            host, ip = host_match.group(1), host_match.group(2)
-        else:  # a bare address (numeric output, or no reverse name)
-            host = ip = next((token for token in rest.split() if is_ip_address(token)), None)
-        times = [float(t) for t in _HOP_TIME_RE.findall(rest)]
+        host, ip, times, unreachable = _read_hop(tokens[1:])
         hops.append(
             {
-                'hop': hop_no,
+                'hop': int(tokens[0]),
                 'host': host,
                 'ip': ip,
                 'rtt_ms': times,
                 'timeout': not times,
-                'unreachable': bool(_HOP_UNREACHABLE_RE.search(rest)),
+                'unreachable': unreachable,
             }
         )
     return hops
