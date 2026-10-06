@@ -55,7 +55,8 @@ HOURLY_RETENTION_SECONDS = 60 * 24 * 3600
 # and never less than this, so a sample written just after the bucket's end is counted.
 MIN_GRACE_SECONDS = 300
 # Every run also recomputes the newest complete hours and day, so a sample written late into
-# one of them still counts; one written into an older bucket never does (issue 071).
+# one of them still counts; one written into an older bucket that a run has already rolled
+# never does (issue 071).
 TRAILING_HOURS = 2
 TRAILING_DAYS = 1
 # The newest raw timestamps the sampling interval (their median gap) is measured over.
