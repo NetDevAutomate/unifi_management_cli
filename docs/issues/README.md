@@ -82,3 +82,5 @@ the reasoning stays next to the code it explains.
 | [069](069-vlan-reports-read-tiers-without-recent-data.md) | VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty | resolved (`56567fd`) |
 | [070](070-untagged-networks-share-vlan-1-in-the-traffic-store.md) | Two networks without a VLAN ID both sample as VLAN 1, so one overwrites the other in the traffic store | open |
 | [071](071-late-vlan-samples-never-reach-the-rollups.md) | A VLAN traffic sample written more than two hours late never reaches the hourly or daily rollups | open |
+| [072](072-vlan-intervals-span-a-sampler-outage.md) | A VLAN traffic interval can span a sampler outage, so one fresh sample reports days of traffic as current | open, decision needed |
+| [073](073-gateway-ping-step-duplicated.md) | The gateway ping step is written twice, in gateway ping and in AP-health's client pings | open |
