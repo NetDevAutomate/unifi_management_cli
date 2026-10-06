@@ -14,6 +14,7 @@ URL, and a VLAN resolves to the interface whose address is in its subnet. July's
 scan (a controller command) is not ported.
 """
 
+import ipaddress
 import json
 import re
 from typing import Any
@@ -64,7 +65,8 @@ FLOWS_TIMEOUT = 60  # July's 30 s, raised for busy tables
 INTERFACES_TIMEOUT = 15
 
 _TRACEROUTE_HOP_RE = re.compile(r'^\s*(\d+)\s+(.*)$')
-_HOP_HOST_RE = re.compile(r'([A-Za-z0-9._\-]+)\s+\(([\d.]+)\)|^([\d.]+)')
+# A hop's "name (address)" pair; the address IPv4 or IPv6. A bare address is found by token.
+_HOP_HOST_RE = re.compile(r'([^\s()]+)\s+\(([0-9A-Fa-f:.]+)\)')
 _HOP_TIME_RE = re.compile(r'([\d.]+)\s*ms')
 # traceroute's annotation for an ICMP unreachable reply: !H host, !N network, !P protocol,
 # !S source route, !F fragmentation needed, !X, !V, !C prohibited or precedence, !<n> a code.
@@ -80,7 +82,7 @@ _DNS_FAILURE_MARKERS = ("can't resolve", "server can't find", 'NXDOMAIN', 'no se
 
 
 def parse_traceroute_output(output: str) -> list[dict[str, Any]]:
-    """Parse traceroute output (GNU or BusyBox) into hops.
+    """Parse traceroute output (GNU or BusyBox, IPv4 or IPv6) into hops.
 
     Args:
         output: Raw traceroute stdout.
@@ -111,11 +113,10 @@ def parse_traceroute_output(output: str) -> list[dict[str, Any]]:
         host: str | None = None
         ip: str | None = None
         host_match = _HOP_HOST_RE.search(rest)
-        if host_match:
-            if host_match.group(3):
-                host = ip = host_match.group(3)
-            else:
-                host, ip = host_match.group(1), host_match.group(2)
+        if host_match and is_ip_address(host_match.group(2)):
+            host, ip = host_match.group(1), host_match.group(2)
+        else:  # a bare address (numeric output, or no reverse name)
+            host = ip = next((token for token in rest.split() if is_ip_address(token)), None)
         times = [float(t) for t in _HOP_TIME_RE.findall(rest)]
         hops.append(
             {
@@ -241,6 +242,16 @@ def parse_curl_writeout(output: str) -> dict[str, Any]:
 
 
 # --- target resolution --------------------------------------------------------------------
+
+
+def _same_address(printed: str | None, target: str) -> bool:
+    """Whether a hop's printed address is the target's, however either is written."""
+    if printed is None:
+        return False
+    try:
+        return ipaddress.ip_address(printed) == ipaddress.ip_address(target.strip())
+    except ValueError:
+        return False
 
 
 def _not_found(message: str) -> ToolError:
@@ -419,7 +430,7 @@ async def gateway_traceroute(target: str, max_hops: int = 20) -> dict[str, Any]:
     last = hops[-1] if hops else None
     reached = (
         last is not None
-        and last['ip'] == probe_ip
+        and _same_address(last['ip'], probe_ip)
         and not last['timeout']
         and not last['unreachable']
     )

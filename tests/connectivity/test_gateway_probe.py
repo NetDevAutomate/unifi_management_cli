@@ -205,6 +205,38 @@ async def test_traceroute_reaches_only_when_the_last_hop_is_the_target(
         assert trace['hops'][-1]['unreachable'] is True
 
 
+TRACEROUTE_V6 = """\
+traceroute to 2001:db8:53::53 (2001:db8:53::53), 20 hops max, 80 byte packets
+ 1  gateway.example.net (2001:db8::1)  0.512 ms  0.401 ms  0.398 ms
+ 2  2001:db8:100::1  8.221 ms  8.105 ms  7.990 ms
+ 3  * 2001:db8:200::1  9.100 ms *
+ 4  2001:db8:53::53 (2001:db8:53::53)  12.345 ms  12.100 ms  11.987 ms
+"""
+
+
+def test_traceroute_reads_ipv6_hops() -> None:
+    """Council M4 CF-001: the hop pattern took only the digits before an IPv6 address's
+    first colon, so a successful IPv6 trace never matched its target."""
+    hops = parse_traceroute_output(TRACEROUTE_V6)
+    assert [(h['host'], h['ip']) for h in hops] == [
+        ('gateway.example.net', '2001:db8::1'),
+        ('2001:db8:100::1', '2001:db8:100::1'),
+        ('2001:db8:200::1', '2001:db8:200::1'),
+        ('2001:db8:53::53', '2001:db8:53::53'),
+    ]
+    assert hops[2]['rtt_ms'] == [9.1]
+
+
+@pytest.mark.parametrize('target', ['2001:db8:53::53', '2001:DB8:53:0:0:0:0:53'])
+async def test_an_ipv6_trace_that_ends_at_the_target_is_reached(
+    monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    fake = FakeSSH({**REPLIES, 'traceroute': TRACEROUTE_V6})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    trace = await gateway_traceroute(target, max_hops=20)
+    assert trace['reached'] is True  # the same address, however it is written
+
+
 def test_conntrack_flows_and_filters() -> None:
     flows = parse_conntrack_output(CONNTRACK_OUTPUT)
     assert len(flows) == 3
