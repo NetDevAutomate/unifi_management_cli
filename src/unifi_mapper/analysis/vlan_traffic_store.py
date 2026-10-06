@@ -54,7 +54,8 @@ HOURLY_RETENTION_SECONDS = 60 * 24 * 3600
 # A bucket is complete, and rolled, once it ended at least twice the sampling interval ago,
 # and never less than this, so a sample written just after the bucket's end is counted.
 MIN_GRACE_SECONDS = 300
-# Every run recomputes the newest complete hours and day, so a sample written late counts.
+# Every run also recomputes the newest complete hours and day, so a sample written late into
+# one of them still counts; one written into an older bucket never does (issue 071).
 TRAILING_HOURS = 2
 TRAILING_DAYS = 1
 # The newest raw timestamps the sampling interval (their median gap) is measured over.
@@ -569,12 +570,16 @@ def run_rollups(path: Path | None = None, *, now: int | None = None) -> dict[str
     twice the sampling interval, at least 5 minutes). Each run computes every complete bucket
     after a tier's high-water mark (``rollup_state``) and recomputes the newest
     :data:`TRAILING_HOURS` hours and :data:`TRAILING_DAYS` day as well, each row in full from
-    the tier below and written with ``INSERT OR REPLACE``, so a late sample is counted, two
-    runs give identical rows and any cadence gives the same result. A store the July code
-    left (hours rolled only once 8 days old) upgrades in place on its first run: no schema
-    change, every hour after its mark is rolled from raw, so none is skipped. Opening the
-    store writable also rolls back a hot journal a crashed sampler left, so this recovers a
-    store a read reported as needing recovery.
+    the tier below and written with ``INSERT OR REPLACE``, so two runs give identical rows,
+    and every sample written before its hour is first rolled is counted whatever the
+    cadence. A sample written after that is counted only by a run less than
+    :data:`TRAILING_HOURS` hours after its hour became complete (its day's row follows); a
+    later one stays in the raw tier, which ``now``, ``1d`` and ``1w`` read, but never reaches
+    the hourly or daily rows (issue 071). A store the July code left (hours rolled only once
+    8 days old) upgrades in place on its first run: no schema change, every hour after its
+    mark is rolled from raw, so none is skipped. Opening the store writable also rolls back a
+    hot journal a crashed sampler left, so this recovers a store a read reported as needing
+    recovery.
 
     Args:
         path: The store (default :func:`default_db_path`).

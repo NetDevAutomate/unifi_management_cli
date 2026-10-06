@@ -44,7 +44,9 @@ outside the repo):
   sampling interval ago (the median gap between the newest samples), and at least 5 minutes.
 - Each row is recomputed in full from the tier below and written with `INSERT OR REPLACE`,
   and every run also recomputes the newest 2 complete hours and the newest complete day, so
-  a late sample is counted and two runs give identical rows.
+  two runs give identical rows and a sample written late is counted by a run less than 2
+  hours after its hour is complete; a later one never reaches the rollups
+  ([issue 071](071-late-vlan-samples-never-reach-the-rollups.md)).
 - Raw samples are pruned after 8 days and hourly rows after 60, and never before their hour
   or day has been rolled.
 - A store the July code made upgrades in place on its first run: no schema change, every hour

@@ -478,6 +478,38 @@ def test_a_late_sample_is_counted_on_the_next_run(tmp_path: Path) -> None:
     assert day_after == 1_800_000.0
 
 
+@pytest.mark.parametrize(
+    ('delay', 'counted'),
+    [(store.TRAILING_HOURS * 3600 - 1, True), (store.TRAILING_HOURS * 3600, False)],
+    ids=['inside the trailing window', 'past it'],
+)
+def test_a_late_sample_counts_only_inside_the_trailing_window(
+    tmp_path: Path, delay: int, counted: bool
+) -> None:
+    """Council CF-002: a run recomputes only the newest TRAILING_HOURS complete hours, so a
+    sample written into an hour that became complete that long before the run never reaches
+    the hourly tier (issue 071); the raw tier keeps it for now, 1d and 1w."""
+    path = tmp_path / 'store.sqlite3'
+    end = _seed_hours(path, hours=3)
+    newest = end - 3600
+    completed = end + GRACE  # the newest hour, [end - 1 h, end), is complete and rolled here
+    run_rollups(path, now=completed)
+    before = {hour: count for hour, count, _ in _hourly(path)}
+    late = newest + 630  # between the samples at +600 and +660, half a minute's bytes on
+    counter = 10_000 + (late - START_HOUR) // 60 * 7_500_000 + 3_750_000  # as _seed_hours
+    with _writable(path) as conn:
+        _insert_raw(conn, late, 20, 'IoT', counter, counter * 2)
+    run_rollups(path, now=completed + delay)
+    after = {hour: count for hour, count, _ in _hourly(path)}
+    assert after[newest] == before[newest] + (1 if counted else 0)  # one interval split
+    assert {h: c for h, c in after.items() if h != newest} == {
+        h: c for h, c in before.items() if h != newest
+    }
+    with sqlite3.connect(path) as conn:
+        kept = conn.execute('SELECT COUNT(*) FROM raw_samples WHERE ts_utc = ?', (late,))
+        assert kept.fetchone()[0] == 1
+
+
 def test_raw_keeps_8_days_and_hourly_60_once_rolled(tmp_path: Path) -> None:
     path = tmp_path / 'store.sqlite3'
     now = START_HOUR + 70 * 86400

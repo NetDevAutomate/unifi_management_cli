@@ -81,3 +81,4 @@ the reasoning stays next to the code it explains.
 | [068](068-relative-xdg-config-home-is-honoured.md) | The config searches honour a relative `XDG_CONFIG_HOME`, so they can read a file under the working directory | open, decision needed |
 | [069](069-vlan-reports-read-tiers-without-recent-data.md) | VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty | resolved (`56567fd`) |
 | [070](070-untagged-networks-share-vlan-1-in-the-traffic-store.md) | Two networks without a VLAN ID both sample as VLAN 1, so one overwrites the other in the traffic store | open |
+| [071](071-late-vlan-samples-never-reach-the-rollups.md) | A VLAN traffic sample written more than two hours late never reaches the hourly or daily rollups | open |
