@@ -15,7 +15,8 @@ The final council's 89 non-blocking findings, the iteration-8 review's and the s
 review's SR8-S1 were triaged in the final-fix run. The ones whose fix was a few lines were
 fixed on the branch; findings already fixed by the final-fix commits, or contradicted by the
 code, are recorded in the port's verification record. These remain, each with the fix to
-make. References in brackets are the council bundle and finding (`04/F1`) or the review id.
+make; items 30 and 31 came from the final-fix review. References in brackets are the council
+bundle and finding (`04/F1`) or the review id.
 
 ### Behaviour: each changes what a command reports, so each needs sign-off
 
@@ -68,6 +69,18 @@ make. References in brackets are the council bundle and finding (`04/F1`) or the
    `unifi-mapper diagnose wan-history` reference; regenerate the MCP guide's tool row and
    recheck the tools/list size test.
 
+Filed by the final-fix review:
+
+30. **A gateway with no `br*` interface fails the VLAN sample with a misleading message**
+    (FFA-3, SR-FF-2). `SAMPLE_SCRIPT` (`analysis/vlan_traffic.py:47-52`) loops over
+    `/sys/class/net/br*`. With no match, POSIX `sh` keeps the literal glob, so the script
+    prints a `br*` line with empty counters, and `parse_bridge_counters` fails the sample
+    with "printed a bridge line without two integer counters" and the read-access
+    suggestion, where "no bridge interfaces" is meant. The exit status (1) and "nothing
+    stored" are right; only the message misleads, and every UniFi OS gateway has `br0`. Fix,
+    test first: add `[ -e "$i" ] || continue` to the loop (a change to the script the
+    gateway runs, so it needs sign-off), or treat a literal `br*` line as no bridges.
+
 ### Tests and guards
 
 10. **The SSH "only door" scan misses aliases** (08/NB-1). The AST scan in
@@ -108,6 +121,15 @@ make. References in brackets are the council bundle and finding (`04/F1`) or the
     `test_the_password_config_exports_no_login_past_the_test` in `tests/test_ports_cli.py`).
     Fix: rename it for what it checks, or assert the keys are gone in a fixture finalizer.
 
+Filed by the final-fix review:
+
+31. **Nothing pins the codemap's command total** (FFA-4, SR-FF-3, delta council FF-3).
+    `docs/architecture/codemap.md` says "80 commands in all" for `typer_cli.py`. A script
+    kept outside the repository derived it from `typer.main.get_command(app)`, and the
+    figure has gone stale before (it said 68). Fix: pin the "N commands in all" figure in
+    `tests/test_docs_consistency.py` against a walk of `typer.main.get_command(app)`, the
+    way that module's prose tool-count guard (issue 053) pins the README's tool counts.
+
 ### Issue line references the branch moved
 
 23. Line references filed against `main` that the branch's code changes moved (found by
@@ -146,14 +168,16 @@ make. References in brackets are the council bundle and finding (`04/F1`) or the
 
 ## Impact
 
-Items 1 to 4 report wrong or misleading figures in rare cases (a wrong SSID, a note, a
-caveat's wording, a ping that could not run); 5 to 7 leave a warning, a secret spelling or a
-file mode short of what is intended; the rest are test strength, stale line numbers and
-style. Nothing is written to the controller, and no secret is printed today. Breaks fresh
-clones, CI or prod: no.
+Items 1 to 4 and 30 report wrong or misleading figures or messages in rare cases (a wrong
+SSID, a note, a caveat's wording, a ping that could not run, a gateway without bridges); 5 to
+7 leave a warning, a secret spelling or a file mode short of what is intended; the rest are
+test strength, stale line numbers and style. Nothing is written to the controller, and no
+known path prints a secret today: UniFi's own pre-shared key fields start with `x_` and are
+always masked, but free text that spells it `pre-shared`, `pre_shared` or `pre shared` is
+not (item 6). Breaks fresh clones, CI or prod: no.
 
 ## Recommended fix
 
-As listed for each item. Items 1 to 7 and 9 change what a command or tool reports or does,
-so each needs sign-off first (item 8 is fixed); items 10 to 29 can land as they are, test
-first where they change a test's behaviour.
+As listed for each item. Items 1 to 7, 9 and 30 change what a command or tool reports or
+does, so each needs sign-off first (item 8 is fixed); items 10 to 29 and 31 can land as they
+are, test first where they change a test's behaviour.
