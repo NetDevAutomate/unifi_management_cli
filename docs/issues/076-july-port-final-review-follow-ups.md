@@ -15,9 +15,10 @@ The final council's 89 non-blocking findings, the iteration-8 review's and the s
 review's SR8-S1 were triaged in the final-fix run. The ones whose fix was a few lines were
 fixed on the branch; findings already fixed by the final-fix commits, or contradicted by the
 code, are recorded in the port's verification record. These remain, each with the fix to
-make; item 8 was fixed on the branch after it was filed and keeps its number, and items 30
-and 31 came from the final-fix review. References in brackets are the council bundle and
-finding (`04/F1`) or the review id.
+make; item 8 was fixed on the branch after it was filed and keeps its number, items 30
+and 31 came from the final-fix review, and items 32 to 34 from the review of the FQ-5 fix
+on `main` (the MCP call log's lock made private, with a bounded wait). References in
+brackets are the council bundle and finding (`04/F1`) or the review id.
 
 ### Behaviour: each changes what a command reports, so each needs sign-off
 
@@ -82,6 +83,38 @@ Filed by the final-fix review:
     test first: add `[ -e "$i" ] || continue` to the loop (a change to the script the
     gateway runs, so it needs sign-off), or treat a literal `br*` line as no bridges.
 
+Filed by the review of the FQ-5 fix on `main`:
+
+32. **A lock another account holds stalls the CLI's recording commands** (SR-FQ5-2). By
+    design the CLI histories wait for their lock with no limit.
+    `analyze link-errors --record` writes the port counter history
+    (`analysis/counter_history.py:274`) with no `file_mode`, so its file and lock keep the
+    umask mode (`0o644` under umask 022). The state directory gets the umask mode too when
+    the writer creates it with no `dir_mode` (the port counter history does) or
+    `analysis/port_counter_baseline.py:175` creates it; the speedtest history creates it
+    `0o700` but never tightens it, and only the MCP call log, whose default path is in the
+    same directory, keeps it at `0o700`. So where other accounts can search that directory,
+    another account can hold `port-counter-history.jsonl.lock` and stall the command.
+    `scripts/unifi-cron.sh:35` runs it every 300 s: under crontab (Linux) the stalled runs
+    pile up, and under launchd (macOS), which skips an interval while the job still runs,
+    the recording stops. `diagnose wan --record` (`diagnostics/wan_history.py:86`, scheduled
+    at `unifi-cron.sh:40`) can be stalled the same way through a speedtest lock made before
+    the FQ-5 fix, which keeps its `0o644` (that history has no `enforce_modes`). Fix: give
+    the CLI writers a bounded wait that fails the run with a clear message, or document that
+    a held lock blocks them. Also decide the counter history's file, lock and directory
+    modes, together with item 7.
+33. **A call-log lock that is never released costs every MCP call up to 5 s, without a
+    trace** (SR-FQ5-3, FQ5-02). If the call log's lock is never released, every MCP call
+    waits up to 5 s for it. After the first warning, each dropped line leaves no trace: the
+    log still reports itself on (`CallAuditLog.enabled`), and the file holds no gap marker.
+    The writes (`mcp/runner.py:351-352`) share anyio's default worker-thread limiter (40
+    tokens) with the SDK's stdio transport, so with about 40 or more writes in flight a call
+    can wait longer than 5 s. Holding the lock for good needs root, the same user, or a
+    descriptor opened on a `0o644` lock from before the FQ-5 fix. Options: a cool-down after
+    a timeout that skips the lock attempt for N s; a `lock_timeout` line with the number of
+    dropped lines on the next successful write, as `request_overflow` does; a small
+    `CapacityLimiter` just for the writes.
+
 ### Tests and guards
 
 10. **The SSH "only door" scan misses aliases** (08/NB-1). The AST scan in
@@ -131,6 +164,18 @@ Filed by the final-fix review:
     `tests/test_docs_consistency.py` against a walk of `typer.main.get_command(app)`, the
     way that module's prose tool-count guard (issue 053) pins the README's tool counts.
 
+Filed by the review of the FQ-5 fix on `main`:
+
+34. **An owner test now passes on the lock's check, not the file's** (SR-FQ5-6).
+    `test_enforced_modes_refuse_a_file_owned_by_another_user`
+    (`tests/utility/test_jsonl.py:311-329`) fakes the owner of every descriptor and matches
+    `'file is owned by another user'` without anchors. The lock is now checked first, so the
+    test passes on the lock's message (`the lock file is owned by another user`) and no
+    longer tests the file's check. Fix: fake only the log's descriptor and anchor the match,
+    or remove the test, because
+    `test_enforced_modes_refuse_a_lock_or_file_owned_by_another_user[file]` already checks
+    the file.
+
 ### Issue line references the branch moved
 
 23. Line references filed against `main` that the branch's code changes moved (found by
@@ -171,14 +216,17 @@ Filed by the final-fix review:
 
 Items 1 to 4 and 30 report wrong or misleading figures or messages in rare cases (a wrong
 SSID, a note, a caveat's wording, a ping that could not run, a gateway without bridges); 5 to
-7 leave a warning, a secret spelling or a file mode short of what is intended; the rest are
-test strength, stale line numbers and style. Nothing is written to the controller, and no
-known path prints a secret today: UniFi's own pre-shared key fields start with `x_` and are
-always masked, but free text that spells it `pre-shared`, `pre_shared` or `pre shared` is
-not (item 6). Breaks fresh clones, CI or prod: no.
+7 leave a warning, a secret spelling or a file mode short of what is intended; 32 and 33 let
+another account, or a stale descriptor, hold up a CLI run or an MCP call by holding a lock
+(holding it exposes and writes nothing), and 32 leaves the counter history's modes to decide
+with 7; the rest, 34 among them, are test strength, stale line numbers and style. Nothing is
+written to the controller, and no known path prints a secret today: UniFi's own pre-shared
+key fields start with `x_` and are always masked, but free text that spells it
+`pre-shared`, `pre_shared` or `pre shared` is not (item 6). Breaks fresh clones, CI or prod:
+no.
 
 ## Recommended fix
 
-As listed for each item. Items 1 to 7, 9 and 30 change what a command or tool reports or
-does, so each needs sign-off first (item 8 is fixed); items 10 to 29 and 31 can land as they
-are, test first where they change a test's behaviour.
+As listed for each item. Items 1 to 7, 9, 30, 32 and 33 change what a command or tool
+reports or does, so each needs sign-off first (item 8 is fixed); items 10 to 29, 31 and 34
+can land as they are, test first where they change a test's behaviour.
