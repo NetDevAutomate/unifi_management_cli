@@ -245,7 +245,7 @@ once the lock is free. The 5 s covers only that wait, so it is not a limit on a 
 time: the append and any compaction after the lock is taken, a wait for a worker thread when
 many calls run at once, and the last write of buffered request lines when the server exits
 (which waits for the lock the same way) are outside it. A lock that is never released costs
-every call up to 5 s, and after the first warning the dropped lines leave no trace.
+every logged call up to 5 s, and after the first warning the dropped lines leave no trace.
 
 Any other write that fails (an unwritable path, no home directory, another user's file, lock
 or directory, a symbolic link, a given directory others can write to) logs one warning and

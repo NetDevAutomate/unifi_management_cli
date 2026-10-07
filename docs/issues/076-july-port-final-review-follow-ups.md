@@ -103,10 +103,12 @@ Filed by the review of the FQ-5 fix on `main`:
     the CLI writers a bounded wait that fails the run with a clear message, or document that
     a held lock blocks them. Also decide the counter history's file, lock and directory
     modes, together with item 7.
-33. **A call-log lock that is never released costs every MCP call up to 5 s, without a
-    trace** (SR-FQ5-3, FQ5-02). If the call log's lock is never released, every MCP call
-    waits up to 5 s for it. After the first warning, each dropped line leaves no trace: the
-    log still reports itself on (`CallAuditLog.enabled`), and the file holds no gap marker.
+33. **A call-log lock that is never released costs every logged call up to 5 s, without a
+    trace** (SR-FQ5-3, FQ5-02). If the call log's lock is never released, every logged call
+    waits up to 5 s for it; the meta-tools (`search_tools`, `get_tool_info`,
+    `list_categories`) aren't logged, so they never wait. After the first warning, each
+    dropped line leaves no trace: the log still reports itself on (`CallAuditLog.enabled`),
+    and the file holds no gap marker.
     The writes (`mcp/runner.py:351-352`) share anyio's default worker-thread limiter (40
     tokens) with the SDK's stdio transport, so with about 40 or more writes in flight a call
     can wait longer than 5 s. Holding the lock for good needs root, the same user, or a
