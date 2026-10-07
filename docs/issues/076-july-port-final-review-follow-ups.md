@@ -15,8 +15,9 @@ The final council's 89 non-blocking findings, the iteration-8 review's and the s
 review's SR8-S1 were triaged in the final-fix run. The ones whose fix was a few lines were
 fixed on the branch; findings already fixed by the final-fix commits, or contradicted by the
 code, are recorded in the port's verification record. These remain, each with the fix to
-make; items 30 and 31 came from the final-fix review. References in brackets are the council
-bundle and finding (`04/F1`) or the review id.
+make; item 8 was fixed on the branch after it was filed and keeps its number, and items 30
+and 31 came from the final-fix review. References in brackets are the council bundle and
+finding (`04/F1`) or the review id.
 
 ### Behaviour: each changes what a command reports, so each needs sign-off
 
