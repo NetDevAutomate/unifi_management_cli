@@ -16,7 +16,7 @@ review's SR8-S1 were triaged in the final-fix run. The ones whose fix was a few 
 fixed on the branch; findings already fixed by the final-fix commits, or contradicted by the
 code, are recorded in the port's verification record. These remain, each with the fix to
 make; item 8 was fixed on the branch after it was filed and keeps its number, items 30
-and 31 came from the final-fix review, and items 32 to 34 from the review of the FQ-5 fix
+and 31 came from the final-fix review, and items 32 to 36 from the review of the FQ-5 fix
 on `main` (the MCP call log's lock made private, with a bounded wait). References in
 brackets are the council bundle and finding (`04/F1`) or the review id.
 
@@ -116,6 +116,35 @@ Filed by the review of the FQ-5 fix on `main`:
     a timeout that skips the lock attempt for N s; a `lock_timeout` line with the number of
     dropped lines on the next successful write, as `request_overflow` does; a small
     `CapacityLimiter` just for the writes.
+35. **Two call-log writes that fail together, for a reason other than a lock timeout, can
+    each warn** (AGG-FQ5-12, council FQ5-NB-2). `CallAuditLog._write`
+    (`mcp/call_audit.py:333-334`) checks `_disabled` without holding `self._lock`, and its
+    generic handler (`mcp/call_audit.py:365-372`) sets `_disabled` and warns with no guard.
+    The runner records in worker threads (`mcp/runner.py:352`), so two writes already past
+    that check can both fail and both warn: the documented one warning isn't guaranteed
+    under concurrency. This predates the FQ-5 fix (a second write blocked on `flock` failed
+    and warned the same way), and the `LockTimeoutError` handler beside it
+    (`mcp/call_audit.py:354-364`) already sets its own flag under `self._lock`. The effect
+    is a repeated stderr line that names only the path and a fixed reason or an error class;
+    the log still turns off. Fix: in the generic handler, take `self._lock`, set
+    `first = not self._disabled` and then `self._disabled = True`, release the lock, and
+    warn only when `first` is true; leave the warning's text and the `LockTimeoutError`
+    path as they are. Test first: patch `call_audit_module.append_capped_jsonl` with a
+    function that waits on a `threading.Barrier(2, timeout=5)` and then raises
+    `OSError(errno.EACCES)`; run two `record()` calls on one `CallAuditLog` with a given
+    path, each in a thread with a join timeout; assert exactly one `MCP call log disabled`
+    warning and that `enabled` is False. Save the failing run (two warnings) against the
+    current src before changing it.
+36. **A link in the lock's place gives a warning that names the log, not the lock**
+    (SR-FQ5-12, AGG-FQ5-16). With a symbolic link where the call log's lock should be, the
+    lock's `O_NOFOLLOW` open fails with `ELOOP` (`core/utils/jsonl.py:222-223`, reached from
+    line 330), and the generic handler (`mcp/call_audit.py:365-372`) warns
+    `MCP call log disabled for this process: cannot write <log path>: OSError (ELOOP)`.
+    That names the log, which may not exist, and not the lock. Fix: when the `OSError`'s
+    `filename` is a file other than the log, add that file's base name (for example,
+    `mcp-audit.jsonl.lock`) to the warning; it shows no more than the path the warning
+    already prints. Test first: a link in the lock's place gives a warning that names the
+    lock's base name, and a link in the log's place still gives today's warning.
 
 ### Tests and guards
 
@@ -221,14 +250,16 @@ SSID, a note, a caveat's wording, a ping that could not run, a gateway without b
 7 leave a warning, a secret spelling or a file mode short of what is intended; 32 and 33 let
 another account, or a stale descriptor, hold up a CLI run or an MCP call by holding a lock
 (holding it exposes and writes nothing), and 32 leaves the counter history's modes to decide
-with 7; the rest, 34 among them, are test strength, stale line numbers and style. Nothing is
-written to the controller, and no known path prints a secret today: UniFi's own pre-shared
-key fields start with `x_` and are always masked, but free text that spells it
-`pre-shared`, `pre_shared` or `pre shared` is not (item 6). Breaks fresh clones, CI or prod:
-no.
+with 7; 35 can repeat the call log's one warning when two writes fail at once, and 36's
+warning names the log, not the lock, when a link sits in the lock's place (either warning
+holds only the path and a fixed reason or an error class); the rest, 34 among them, are test
+strength, stale line numbers and style. Nothing is written to the controller, and no known
+path prints a secret today: UniFi's own pre-shared key fields start with `x_` and are always
+masked, but free text that spells it `pre-shared`, `pre_shared` or `pre shared` is not
+(item 6). Breaks fresh clones, CI or prod: no.
 
 ## Recommended fix
 
-As listed for each item. Items 1 to 7, 9, 30, 32 and 33 change what a command or tool
-reports or does, so each needs sign-off first (item 8 is fixed); items 10 to 29, 31 and 34
-can land as they are, test first where they change a test's behaviour.
+As listed for each item. Items 1 to 7, 9, 30, 32, 33, 35 and 36 change what a command or
+tool reports or does, so each needs sign-off first (item 8 is fixed); items 10 to 29, 31 and
+34 can land as they are, test first where they change a test's behaviour.
