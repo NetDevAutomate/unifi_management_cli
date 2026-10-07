@@ -36,7 +36,7 @@ on, so later calls are logged once the lock is free. The limit covers that wait 
 append and any compaction after the lock is taken, a wait for a worker thread, and
 :meth:`CallAuditLog.flush` at the lifespan's exit (which waits the same way, on the event
 loop thread) are outside it, so it is not a limit on a call's total time. A lock that is
-never released costs every call up to the limit, and after the first warning the dropped
+never released costs every logged call up to the limit, and after the first warning the dropped
 lines leave no trace. Any other failure to write (an unwritable path, a read-only home, no
 ``HOME``, another user's file, lock or directory, a symbolic link, a given directory others
 can write to) logs one warning and turns the log off for the process; a tool's result is
