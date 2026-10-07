@@ -229,20 +229,28 @@ surface) to `$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl`, on by default
   cancelled (still logged, still cancelled).
 - The meta-tools (`search_tools`, `get_tool_info`, `list_categories`) aren't logged.
 
-The file and its lock, `mcp-audit.jsonl.lock` beside it, are kept `0o600` on every write,
-not only when they are created: one of yours with group or other permissions is made
-private again, and one owned by another user, or a symbolic link in the place of either, is
-never written. The default directory, `$XDG_STATE_HOME/unifi_mapper`, is kept `0o700` the
-same way. The directory of a path you give in `UNIFI_MCP_CALL_AUDIT` is never changed (one
-the log creates is made `0o700`): when another user owns it, or it has group or other write
-permission, the log turns off with one warning and writes nothing there. The log is capped
-at 16 MiB (compacted to 80%, oldest lines first) and locked per write, so several server
-processes can share it. A write waits at most 5 s for the lock, so a lock held elsewhere
-delays a call by at most that; the write's lines are then dropped with one warning (once per
-process), and the log stays on. Any other write that fails (an unwritable path, no home
-directory, another user's file, lock or directory, a symbolic link, a given directory others
-can write to) logs one warning and turns the log off for that process; no tool result ever
-changes. `unifi-mcp --check` shows the path in `call_audit`.
+The file and its lock, `<file>.lock` beside it (`mcp-audit.jsonl.lock` by default), are kept
+`0o600` on every write, not only when they are created: one of yours with group or other
+permissions is made private again, and one owned by another user, or a symbolic link in the
+place of either, is never written. The default directory, `$XDG_STATE_HOME/unifi_mapper`, is
+kept `0o700` the same way. The directory of a path you give in `UNIFI_MCP_CALL_AUDIT` is never
+changed (one the log creates is made `0o700`): when another user owns it, or it has group or
+other write permission, the log turns off with one warning and writes nothing there.
+
+The log is capped at 16 MiB (compacted to 80%, oldest lines first) and locked per write, so
+several server processes can share it. A write waits at most 5 s to take the lock. If the lock
+is still held then, that write's lines (the call line and any buffered request lines) are
+dropped with one warning (once per process), and the log stays on, so later calls are written
+once the lock is free. The 5 s covers only that wait, so it is not a limit on a call's total
+time: the append and any compaction after the lock is taken, a wait for a worker thread when
+many calls run at once, and the last write of buffered request lines when the server exits
+(which waits for the lock the same way) are outside it. A lock that is never released costs
+every call up to 5 s, and after the first warning the dropped lines leave no trace.
+
+Any other write that fails (an unwritable path, no home directory, another user's file, lock
+or directory, a symbolic link, a given directory others can write to) logs one warning and
+turns the log off for that process; no tool result ever changes. `unifi-mcp --check` shows the
+path in `call_audit`.
 
 ### Request lines
 

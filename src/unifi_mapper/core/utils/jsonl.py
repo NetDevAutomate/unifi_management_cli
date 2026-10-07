@@ -26,7 +26,8 @@ symbolic link, so a link in the place of either is refused.
 The lock file is created with the file's mode when one is given. ``lock_timeout_s`` bounds
 the wait for the lock: an append that cannot take it in time raises
 :class:`LockTimeoutError` and appends nothing, so a descriptor that holds the lock (any
-account that can read the lock file can hold it) never stalls the caller for longer.
+account that can read the lock file can hold it) never keeps the caller waiting for the lock
+for longer. The append and any compaction after the lock is taken are outside that limit.
 """
 
 import fcntl
