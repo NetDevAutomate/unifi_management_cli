@@ -21,17 +21,21 @@ file. Request lines carry no call id: with concurrent calls they belong to a tim
 
 Writes go through ``core/utils/jsonl.append_capped_jsonl`` (a lock file, torn-line repair,
 compaction to 80% of :data:`DEFAULT_MAX_BYTES`) with ``enforce_modes``: on every write the
-file is kept ``0o600``, so a file of the user's with group or other bits (one made before,
-or by another tool) is set private again, and a file owned by another user is never written
-(the log turns off, fail closed). The default directory, the tool's own, is kept ``0o700``
-the same way. A given path's directory is the user's and is never changed: one the log
-creates is made ``0o700``, and an existing one owned by another user, or with a group or
-other write bit, turns the log off before anything (the file or its lock) is written.
+file and its lock file (``<file>.lock``) are kept ``0o600``, so one of the user's with group
+or other bits (made before, or by another tool) is set private again, and one owned by
+another user, or a symbolic link in the place of either, is never written (the log turns
+off, fail closed). The default directory, the tool's own, is kept ``0o700`` the same way. A
+given path's directory is the user's and is never changed: one the log creates is made
+``0o700``, and an existing one owned by another user, or with a group or other write bit,
+turns the log off before anything (the file or its lock) is written.
 The runner records in a worker thread inside a shielded cancel scope, so a contended lock
-never blocks the event loop and a cancelled call is still logged. Any failure to write (an
-unwritable path, a read-only home, no ``HOME``, another user's file or directory, a given
-directory others can write to) logs one warning and turns the log off for the process; a
-tool's result is never affected.
+never blocks the event loop and a cancelled call is still logged. A write waits at most
+:data:`LOCK_TIMEOUT_S` (5 s) for the lock, so a lock held elsewhere delays a tool's result
+by at most that: the write's lines are dropped with one warning per process, and the log
+stays on. Any other failure to write (an unwritable path, a read-only home, no ``HOME``,
+another user's file, lock or directory, a symbolic link, a given directory others can write
+to) logs one warning and turns the log off for the process; a tool's result is never
+affected.
 """
 
 import errno
@@ -46,13 +50,21 @@ from datetime import UTC, datetime
 from loguru import logger
 from pathlib import Path
 from typing import Literal
-from unifi_mapper.core.utils.jsonl import NotOwnedError, append_capped_jsonl, epoch_field
+from unifi_mapper.core.utils.jsonl import (
+    LockTimeoutError,
+    NotOwnedError,
+    append_capped_jsonl,
+    epoch_field,
+)
 
 
 CALL_AUDIT_ENV = 'UNIFI_MCP_CALL_AUDIT'
 CALL_AUDIT_FILENAME = 'mcp-audit.jsonl'
 DEFAULT_MAX_BYTES = 16 * 1024 * 1024
 MAX_PENDING_REQUESTS = 1000
+# The longest one write waits for the lock (seconds): well past what another writer's
+# compaction of a full file takes. A write still locked out then drops its lines.
+LOCK_TIMEOUT_S = 5.0
 UNREGISTERED = '<unregistered>'
 CANCELLED = 'CANCELLED'
 # Backstops: keys are the tool's own parameter names, so these never bind in practice.
@@ -203,6 +215,7 @@ class CallAuditLog:
         self._pending: list[str] = []
         self._dropped = 0
         self._disabled = setting.mode == 'off'
+        self._lock_timeout_warned = False
 
     @property
     def enabled(self) -> bool:
@@ -331,7 +344,19 @@ class CallAuditLog:
                 file_mode=0o600,
                 dir_mode=None if keep_dir else 0o700,
                 enforce_modes=True,
+                lock_timeout_s=LOCK_TIMEOUT_S,
             )
+        except LockTimeoutError:
+            # Another descriptor holds the lock: these lines are dropped, the log stays on.
+            with self._lock:
+                first, self._lock_timeout_warned = not self._lock_timeout_warned, True
+            if first:
+                logger.warning(
+                    'MCP call log: lines not written to {}: its lock was held for over {:g} s; '
+                    'the log stays on (this warning is shown once)',
+                    target,
+                    LOCK_TIMEOUT_S,
+                )
         except Exception as e:  # noqa: BLE001 - the call log must never affect a tool call
             self._disabled = True
             where = str(target) if target is not None else 'the default path'

@@ -18,9 +18,15 @@ A line is valid when the caller's ``epoch_of(line)`` returns a number; :func:`ep
 builds that function for a top-level numeric field.
 
 With ``enforce_modes`` (the MCP call log), the file and directory modes that are given hold
-on every append, not only on creation: a file or directory of the current user's with any
-group or other bit is changed to the mode, and one owned by another user raises
-:class:`NotOwnedError`.
+on every append, not only on creation: a file, lock file or directory of the current user's
+with any group or other bit is changed to the mode, and one owned by another user raises
+:class:`NotOwnedError`. The file and its lock are then also opened without following a
+symbolic link, so a link in the place of either is refused.
+
+The lock file is created with the file's mode when one is given. ``lock_timeout_s`` bounds
+the wait for the lock: an append that cannot take it in time raises
+:class:`LockTimeoutError` and appends nothing, so a descriptor that holds the lock (any
+account that can read the lock file can hold it) never stalls the caller for longer.
 """
 
 import fcntl
@@ -29,6 +35,7 @@ import math
 import os
 import stat
 import tempfile
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,10 +48,16 @@ COMPACT_LOW_WATER_RATIO = 0.8
 EpochOf = Callable[[str], float | None]
 # The permission bits a private file or directory must not have.
 _GROUP_OTHER_BITS = 0o077
+# How often a bounded wait tries a held lock again (seconds).
+_LOCK_RETRY_S = 0.02
 
 
 class NotOwnedError(PermissionError):
     """A file or directory that must stay private is owned by another user."""
+
+
+class LockTimeoutError(OSError):
+    """The lock beside a capped file stayed held past ``lock_timeout_s``; nothing was appended."""
 
 
 @dataclass
@@ -199,21 +212,47 @@ def _ensure_parent(parent: Path, dir_mode: int | None, enforce: bool = False) ->
         os.chmod(parent, dir_mode)
 
 
-def _open_for_append(path: Path, file_mode: int | None, enforce: bool = False) -> int:
+def _open_for_append(
+    path: Path, file_mode: int | None, enforce: bool = False, kind: str = 'file'
+) -> int:
     existed = path.exists()
-    fd = os.open(
-        path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o666 if file_mode is None else file_mode
-    )
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    if enforce:
+        flags |= os.O_NOFOLLOW  # a symbolic link in the file's place fails (ELOOP)
+    fd = os.open(path, flags, 0o666 if file_mode is None else file_mode)
     try:
         if file_mode is not None and not existed:
             os.fchmod(fd, file_mode)  # the umask masks os.open's mode too
         # The open file itself is checked (fstat), so a swap after the check can't escape it.
-        if enforce and file_mode is not None and _loosened(os.fstat(fd), 'file'):
+        if enforce and file_mode is not None and _loosened(os.fstat(fd), kind):
             os.fchmod(fd, file_mode)
     except BaseException:
         os.close(fd)
         raise
     return fd
+
+
+def _lock_exclusively(fd: int, timeout_s: float | None) -> None:
+    """Take ``LOCK_EX`` on ``fd``: wait as long as it takes, or at most ``timeout_s``.
+
+    Raises:
+        LockTimeoutError: The lock was still held when ``timeout_s`` ran out.
+    """
+    if timeout_s is None:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        return
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            remaining = deadline - time.monotonic()
+            if not remaining > 0:
+                raise LockTimeoutError(
+                    f'the lock was held for more than {timeout_s:g} s'
+                ) from None
+            time.sleep(min(_LOCK_RETRY_S, remaining))
 
 
 def append_capped_jsonl(
@@ -228,22 +267,25 @@ def append_capped_jsonl(
     file_mode: int | None = None,
     dir_mode: int | None = None,
     enforce_modes: bool = False,
+    lock_timeout_s: float | None = None,
 ) -> CappedWriteResult:
     """Append ``lines`` to ``path`` under its lock, then enforce the size and age caps.
 
     Creates the directory (with ``dir_mode`` when it is missing and a mode is given; an
-    existing directory keeps its mode), holds an exclusive ``flock`` on ``<file>.lock`` for
-    the whole append-and-compact, prefixes a newline when the last line is torn, drops
-    incoming lines whose ``dedup_key`` is already in the file (the file is read only when a
-    ``dedup_key`` is given), and appends (creating the file with ``file_mode`` when given).
-    It then rewrites the file (temporary file plus ``os.replace``) only when the file is
-    larger than ``max_bytes``, its first line is invalid, or, with ``cutoff_epoch``, its
-    oldest line is more than ``age_grace_s`` older than the cutoff. A rewrite keeps the valid
-    lines at or after the cutoff, then drops the oldest down to
-    :data:`COMPACT_LOW_WATER_RATIO` of ``max_bytes``; its temporary file is 0o600, or the
-    stricter of ``file_mode`` and the file's current mode when a mode is given, so
-    compaction never loosens a file. With ``enforce_modes``, the modes also hold for an
-    existing directory and file, on every append.
+    existing directory keeps its mode), holds an exclusive ``flock`` on ``<file>.lock`` (a
+    new lock file gets ``file_mode`` when it is given) for the whole append-and-compact,
+    waiting at most ``lock_timeout_s`` for it when that is given, prefixes a newline when
+    the last line is torn, drops incoming lines whose ``dedup_key`` is already in the file
+    (the file is read only when a ``dedup_key`` is given), and appends (creating the file
+    with ``file_mode`` when given). It then rewrites the file (temporary file plus
+    ``os.replace``) only when the file is larger than ``max_bytes``, its first line is
+    invalid, or, with ``cutoff_epoch``, its oldest line is more than ``age_grace_s`` older
+    than the cutoff. A rewrite keeps the valid lines at or after the cutoff, then drops the
+    oldest down to :data:`COMPACT_LOW_WATER_RATIO` of ``max_bytes``; its temporary file is
+    0o600, or the stricter of ``file_mode`` and the file's current mode when a mode is
+    given, so compaction never loosens a file. With ``enforce_modes``, the modes also hold
+    for an existing directory, file and lock file, on every append, and neither the file nor
+    its lock is opened through a symbolic link.
 
     Args:
         path: The JSON Lines file.
@@ -253,23 +295,30 @@ def append_capped_jsonl(
         cutoff_epoch: Drop lines older than this when compacting; None keeps every age.
         age_grace_s: How far past the cutoff the oldest line may be before an age rewrite.
         dedup_key: A line's identity, or None for a line that is never a duplicate.
-        file_mode: Mode for a newly created file; a compacted file keeps the stricter of
-            this and its current mode.
+        file_mode: Mode for a newly created file and lock file; a compacted file keeps the
+            stricter of this and its current mode.
         dir_mode: Mode for a newly created directory.
         enforce_modes: Also on every append, before a line is written: an existing
-            directory or file of the current user's with any group or other bit is set to
-            ``dir_mode`` or ``file_mode``, and one owned by another user is refused; each
-            only when its mode is given (the MCP call log gives none for an existing
-            directory the user named).
+            directory, lock file or file of the current user's with any group or other bit
+            is set to ``dir_mode`` or ``file_mode``, and one owned by another user is
+            refused; each only when its mode is given (the MCP call log gives none for an
+            existing directory the user named). The lock file and the file are opened
+            without following a symbolic link (``O_NOFOLLOW``), so a link in the place of
+            either is refused.
+        lock_timeout_s: None waits for the lock as long as it takes (the histories); a
+            number of seconds is the longest wait, after which nothing is appended.
 
     Returns:
         What was written and what compaction removed.
 
     Raises:
         ValueError: ``max_bytes`` is below 1.
-        NotOwnedError: With ``enforce_modes``, the file, or the directory when ``dir_mode``
-            is given, is owned by another user; nothing is appended.
-        OSError: The file or its directory cannot be written.
+        LockTimeoutError: With ``lock_timeout_s``, another descriptor held the lock for
+            longer; nothing is appended.
+        NotOwnedError: With ``enforce_modes``, the file or its lock file, or the directory
+            when ``dir_mode`` is given, is owned by another user; nothing is appended.
+        OSError: The file or its directory cannot be written, or, with ``enforce_modes``,
+            the file or its lock file is a symbolic link (``ELOOP``).
     """
     if max_bytes < 1:
         raise ValueError(f'max_bytes must be at least 1, got {max_bytes}')
@@ -277,8 +326,9 @@ def append_capped_jsonl(
     incoming = [_with_newline(line) for line in lines]
     result = CappedWriteResult(path=str(path), lines_written=0)
     lock_path = path.with_name(path.name + '.lock')
-    with lock_path.open('a') as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    lock_fd = _open_for_append(lock_path, file_mode, enforce_modes, 'lock file')
+    with os.fdopen(lock_fd, 'ab') as lock:
+        _lock_exclusively(lock.fileno(), lock_timeout_s)
         try:
             if dedup_key is not None:
                 seen: set[str] = set()

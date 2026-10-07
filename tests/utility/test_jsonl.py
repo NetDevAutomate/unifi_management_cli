@@ -5,6 +5,7 @@ these tests pin the generic parts the newer histories use: deduplication under t
 modes, and ``epoch_field``.
 """
 
+import errno
 import fcntl
 import json
 import math
@@ -14,6 +15,7 @@ import stat
 import threading
 import time
 from pathlib import Path
+from tests.lock_helpers import held_read_only, run_bounded, umask
 from unifi_mapper.core.utils import jsonl
 from unifi_mapper.core.utils.jsonl import (
     COMPACT_LOW_WATER_RATIO,
@@ -334,6 +336,106 @@ def test_without_enforcement_an_existing_file_keeps_its_mode(tmp_path: Path) -> 
     os.chmod(path, 0o644)
     append_capped_jsonl(path, [_line(2)], max_bytes=10_000, epoch_of=EPOCH, file_mode=0o600)
     assert _mode(path) == 0o644
+
+
+# --- the lock: its mode and a bounded wait (final-fix VS-1) -------------------------------
+
+
+def _lock_of(path: Path) -> Path:
+    return path.with_name(path.name + '.lock')
+
+
+def test_the_lock_is_created_with_the_file_mode(tmp_path: Path) -> None:
+    """VS-1: the lock was created 0o644 under umask 022, so in a directory other accounts can
+    search, any of them could open it and hold its flock."""
+    directory = tmp_path / 'state'
+    directory.mkdir()
+    os.chmod(directory, 0o755)
+    path = directory / 'h.jsonl'
+    with umask(0o022):
+        append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH, file_mode=0o600)
+    assert (_mode(directory), _mode(path), _mode(_lock_of(path))) == (0o755, 0o600, 0o600)
+
+
+def test_without_a_file_mode_the_lock_keeps_the_umask_mode(tmp_path: Path) -> None:
+    """The port counter history gives no mode: its lock is created as before."""
+    path = tmp_path / 'h.jsonl'
+    with umask(0o022):
+        append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
+    assert _mode(_lock_of(path)) == 0o644
+
+
+def test_enforced_modes_tighten_an_existing_lock(tmp_path: Path) -> None:
+    path = tmp_path / 'state' / 'h.jsonl'
+    _private(path, _line(1))
+    os.chmod(_lock_of(path), 0o644)
+    _private(path, _line(2))
+    assert (_mode(_lock_of(path)), _mode(path)) == (0o600, 0o600)
+    assert _epochs(path) == [1, 2]
+
+
+@pytest.mark.parametrize('kind', ['lock file', 'file'])
+def test_enforced_modes_refuse_a_lock_or_file_owned_by_another_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """Only the one descriptor is someone else's: the lock, or (a pin) the file itself."""
+    path = tmp_path / 'state' / 'h.jsonl'
+    _private(path, _line(1))
+    theirs = os.stat(_lock_of(path) if kind == 'lock file' else path)
+    real_fstat = os.fstat
+
+    def someone_elses(fd: int) -> os.stat_result:
+        st = real_fstat(fd)
+        if (st.st_dev, st.st_ino) != (theirs.st_dev, theirs.st_ino):
+            return st
+        fields = list(st[:10])
+        fields[stat.ST_UID] = st.st_uid + 1
+        return os.stat_result(fields)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(os, 'fstat', someone_elses)
+        with pytest.raises(jsonl.NotOwnedError, match=f'^the {kind} is owned by another user$'):
+            _private(path, _line(2))
+    assert _epochs(path) == [1]
+
+
+@pytest.mark.parametrize('link', ['file', 'lock'])
+def test_enforced_modes_refuse_a_symbolic_link_in_place_of_the_file_or_its_lock(
+    tmp_path: Path, link: str
+) -> None:
+    directory = tmp_path / 'state'
+    directory.mkdir(mode=0o700)
+    path = directory / 'h.jsonl'
+    target = tmp_path / 'elsewhere.jsonl'
+    target.write_text(_line(9), encoding='utf-8')
+    (path if link == 'file' else _lock_of(path)).symlink_to(target)
+    with pytest.raises(OSError) as raised:
+        _private(path, _line(1))
+    assert raised.value.errno == errno.ELOOP
+    assert target.read_text(encoding='utf-8') == _line(9)  # nothing written through the link
+    if link == 'lock':
+        assert not path.exists()
+
+
+def test_a_bounded_wait_gives_up_on_a_held_lock_and_appends_nothing(tmp_path: Path) -> None:
+    """VS-1's probe: LOCK_EX on an O_RDONLY descriptor kept every writer waiting."""
+    path = tmp_path / 'h.jsonl'
+    append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
+
+    def _append() -> object:
+        return append_capped_jsonl(
+            path, [_line(2)], max_bytes=10_000, epoch_of=EPOCH, lock_timeout_s=0.2
+        )
+
+    with held_read_only(_lock_of(path)):
+        held = run_bounded(_append, join_s=5)
+    assert held.done, 'the append waited on the held lock past its limit'
+    assert isinstance(held.error, jsonl.LockTimeoutError) and isinstance(held.error, OSError)
+    assert 0.2 <= held.elapsed < 1.0
+    assert _epochs(path) == [1]
+    released = run_bounded(_append, join_s=5)
+    assert released.done and released.error is None
+    assert _epochs(path) == [1, 2]
 
 
 # --- readers ------------------------------------------------------------------------------

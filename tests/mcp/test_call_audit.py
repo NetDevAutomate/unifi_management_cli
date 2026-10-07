@@ -15,10 +15,12 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from loguru import logger
 from pathlib import Path
+from tests.lock_helpers import held_read_only, run_bounded, umask
 from tests.mcp import fakes
 from typing import Any
 from unifi_mapper.analysis.port_counter_baseline import state_dir
 from unifi_mapper.core.utils.readonly import audit_request, configure_request_audit
+from unifi_mapper.mcp import call_audit as call_audit_module
 from unifi_mapper.mcp import runner as runner_module
 from unifi_mapper.mcp import server
 from unifi_mapper.mcp.call_audit import (
@@ -400,6 +402,69 @@ def test_a_given_paths_missing_directory_is_created_private(tmp_path: Path) -> N
     _record(_given(directory))
     assert stat.S_IMODE(directory.stat().st_mode) == 0o700
     assert stat.S_IMODE((directory / CALL_AUDIT_FILENAME).stat().st_mode) == 0o600
+
+
+# --- the lock: private, and never waited on past its limit (final-fix VS-1) ----------------
+
+# How much longer than the patched limit a write may take before a test calls it a stall.
+LOCK_SLACK_S = 1.0
+
+
+def _lock_warnings(warned: list[str]) -> list[str]:
+    return [w for w in warned if 'its lock was held' in w]
+
+
+def test_a_given_path_in_a_searchable_directory_leaves_a_private_lock(tmp_path: Path) -> None:
+    """VS-1: the lock beside a given path was 0o644 under umask 022, so in a directory other
+    accounts can search (a 0o755 home), any of them could open it and hold its flock."""
+    directory = tmp_path / 'logs'
+    directory.mkdir()
+    os.chmod(directory, 0o755)
+    with umask(0o022):
+        _record(_given(directory))
+    path = directory / CALL_AUDIT_FILENAME
+    modes = [stat.S_IMODE(p.stat().st_mode) for p in (directory, path, Path(f'{path}.lock'))]
+    assert modes == [0o755, 0o600, 0o600]
+
+
+def test_a_held_lock_drops_the_write_with_one_warning_and_keeps_the_log_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, warned: list[str]
+) -> None:
+    monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2, raising=False)
+    directory = tmp_path / 'logs'
+    directory.mkdir()
+    os.chmod(directory, 0o755)
+    log = _given(directory)
+    path = directory / CALL_AUDIT_FILENAME
+    with held_read_only(Path(f'{path}.lock')):
+        for _ in range(2):  # the second drop logs no second warning
+            held = run_bounded(lambda: _record(log), join_s=5)
+            assert held.done, 'record() waited on the held lock past its limit'
+            assert held.error is None and held.elapsed < 0.2 + LOCK_SLACK_S
+    assert log.enabled is True and not path.exists()
+    assert len(_lock_warnings(warned)) == 1
+    _record(log)  # the lock is free again: the next call is written
+    assert [line['tool'] for line in _lines(path)] == ['find_device']
+    assert len(_lock_warnings(warned)) == 1
+    assert not [w for w in warned if 'call log disabled' in w]
+
+
+def test_a_held_lock_never_holds_a_tool_result_past_the_limit(
+    make_runner: Callable[..., ToolRunner], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """VS-1: the runner awaits the write, shielded, in ``finally``, so the held lock held
+    the tool's result too."""
+    monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2, raising=False)
+    path = tmp_path / 'logs' / CALL_AUDIT_FILENAME
+    path.parent.mkdir()
+    os.chmod(path.parent, 0o755)
+    runner = make_runner(CallAuditSetting('path', path))
+    with held_read_only(Path(f'{path}.lock')):
+        held = run_bounded(lambda: asyncio.run(runner.run('no_params', {})), join_s=5)
+    assert held.done, 'the tool call waited on the held lock past its limit'
+    assert held.error is None and held.elapsed < 0.2 + LOCK_SLACK_S
+    assert getattr(held.result, 'structuredContent', None) == {'ok': True, 'result': {'ok': True}}
+    assert runner.call_audit is not None and runner.call_audit.enabled is True
 
 
 # --- request lines -------------------------------------------------------------------------
