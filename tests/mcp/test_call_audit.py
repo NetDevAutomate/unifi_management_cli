@@ -430,7 +430,7 @@ def test_a_given_path_in_a_searchable_directory_leaves_a_private_lock(tmp_path: 
 def test_a_held_lock_drops_the_write_with_one_warning_and_keeps_the_log_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, warned: list[str]
 ) -> None:
-    monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2, raising=False)
+    monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2)
     directory = tmp_path / 'logs'
     directory.mkdir()
     os.chmod(directory, 0o755)
@@ -454,7 +454,7 @@ def test_a_held_lock_never_holds_a_tool_result_past_the_limit(
 ) -> None:
     """VS-1: the runner awaits the write, shielded, in ``finally``, so the held lock held
     the tool's result too."""
-    monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2, raising=False)
+    monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2)
     path = tmp_path / 'logs' / CALL_AUDIT_FILENAME
     path.parent.mkdir()
     os.chmod(path.parent, 0o755)

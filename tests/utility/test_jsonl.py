@@ -438,6 +438,76 @@ def test_a_bounded_wait_gives_up_on_a_held_lock_and_appends_nothing(tmp_path: Pa
     assert _epochs(path) == [1, 2]
 
 
+def test_a_bounded_wait_takes_a_lock_released_during_the_wait(tmp_path: Path) -> None:
+    """SR-FQ5-1: the contention the call log stays on for. A loop that slept out the whole
+    limit would fail on the time, and a write that took the lock without appending on the
+    lines."""
+    path = tmp_path / 'h.jsonl'
+    append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
+    fd = os.open(_lock_of(path), os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        release = threading.Timer(0.1, fcntl.flock, args=(fd, fcntl.LOCK_UN))
+        release.start()
+        try:
+            took = run_bounded(
+                lambda: append_capped_jsonl(
+                    path, [_line(2)], max_bytes=10_000, epoch_of=EPOCH, lock_timeout_s=2
+                ),
+                join_s=5,
+            )
+        finally:
+            release.cancel()
+            release.join()
+    finally:
+        os.close(fd)  # also releases the lock if the timer did not
+    assert took.done, 'the append waited on the released lock past its limit'
+    assert took.error is None
+    assert took.elapsed < 1.0, 'the append slept past the release'
+    assert _epochs(path) == [1, 2]
+
+
+def _open_descriptors() -> int | None:
+    """How many descriptors this process has open, or None where ``/dev/fd`` isn't there."""
+    try:
+        return len(os.listdir('/dev/fd'))
+    except OSError:
+        return None
+
+
+@pytest.mark.parametrize('limit', [0, -0.1, math.nan])
+def test_a_limit_of_zero_or_less_or_nan_gives_up_at_once_on_a_held_lock(
+    tmp_path: Path, limit: float
+) -> None:
+    """Council FQ5-04: the deadline check raises on each of these; none of them loops."""
+    path = tmp_path / 'h.jsonl'
+    append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
+
+    def _append() -> object:
+        return append_capped_jsonl(
+            path, [_line(2)], max_bytes=10_000, epoch_of=EPOCH, lock_timeout_s=limit
+        )
+
+    with held_read_only(_lock_of(path)):
+        before = _open_descriptors()
+        held = run_bounded(_append, join_s=5)
+        after = _open_descriptors()
+    assert held.done, f'a limit of {limit} waited on the held lock'
+    assert isinstance(held.error, jsonl.LockTimeoutError)
+    assert held.elapsed < 0.5
+    assert _epochs(path) == [1]
+    if before is not None:
+        assert after == before, 'the timed-out append left a descriptor open'
+
+
+def test_a_limit_of_zero_still_appends_when_the_lock_is_free(tmp_path: Path) -> None:
+    """The first ``LOCK_NB`` attempt comes before the deadline check, so a free lock is taken."""
+    path = tmp_path / 'h.jsonl'
+    append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
+    append_capped_jsonl(path, [_line(2)], max_bytes=10_000, epoch_of=EPOCH, lock_timeout_s=0)
+    assert _epochs(path) == [1, 2]
+
+
 # --- readers ------------------------------------------------------------------------------
 
 
