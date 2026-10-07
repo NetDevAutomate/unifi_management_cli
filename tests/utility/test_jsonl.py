@@ -438,12 +438,34 @@ def test_a_bounded_wait_gives_up_on_a_held_lock_and_appends_nothing(tmp_path: Pa
     assert _epochs(path) == [1, 2]
 
 
-def test_a_bounded_wait_takes_a_lock_released_during_the_wait(tmp_path: Path) -> None:
+class _CountingFcntl:
+    """``jsonl``'s ``fcntl`` for one test: the real ``flock``, counting each refusal."""
+
+    LOCK_EX = fcntl.LOCK_EX
+    LOCK_NB = fcntl.LOCK_NB
+    LOCK_UN = fcntl.LOCK_UN
+
+    def __init__(self) -> None:
+        self.blocked = 0
+
+    def flock(self, fd: int, operation: int) -> None:
+        try:
+            fcntl.flock(fd, operation)
+        except BlockingIOError:
+            self.blocked += 1
+            raise
+
+
+def test_a_bounded_wait_takes_a_lock_released_during_the_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """SR-FQ5-1: the contention the call log stays on for. A loop that slept out the whole
-    limit would fail on the time, and a write that took the lock without appending on the
-    lines."""
+    limit would fail on the time, a write that took the lock without appending on the lines,
+    and a writer that found the lock already free on the refusals (SR-FQ5-13)."""
     path = tmp_path / 'h.jsonl'
     append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
+    counting = _CountingFcntl()
+    monkeypatch.setattr(jsonl, 'fcntl', counting)  # the holder and the timer keep the real one
     fd = os.open(_lock_of(path), os.O_RDONLY)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -463,6 +485,7 @@ def test_a_bounded_wait_takes_a_lock_released_during_the_wait(tmp_path: Path) ->
         os.close(fd)  # also releases the lock if the timer did not
     assert took.done, 'the append waited on the released lock past its limit'
     assert took.error is None
+    assert counting.blocked >= 1, 'the append found the lock free: it never met it held'
     assert took.elapsed < 1.0, 'the append slept past the release'
     assert _epochs(path) == [1, 2]
 
