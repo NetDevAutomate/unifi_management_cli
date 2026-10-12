@@ -135,3 +135,23 @@ def test_legacy_cli_verify_updates_previews_through_the_smart_mapper(
 def test_legacy_cli_apply_with_dry_run_is_rejected(rec: Recorder, monkeypatch) -> None:
     assert _legacy(monkeypatch, '--apply', '--dry-run') == 2
     assert rec.writes == []
+
+
+def test_unifi_config_is_honoured_without_any_default_file(
+    rec: Recorder, monkeypatch, tmp_path: Path
+) -> None:
+    """The twins read UNIFI_CONFIG even when no prod.env exists (this failed on CI, where there
+    is none, and passed locally only because the developer's own prod.env was present)."""
+    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'home' / '.config'))
+    assert _toolkit(monkeypatch, 'discover') == 0
+    assert _legacy(monkeypatch) == 0
+    assert rec.run_dry_run == [True, True]
+
+
+def test_a_wrong_unifi_config_path_is_reported_not_replaced(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    monkeypatch.setenv('UNIFI_CONFIG', str(tmp_path / 'missing.env'))
+    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+    assert _toolkit(monkeypatch, 'discover') == 1

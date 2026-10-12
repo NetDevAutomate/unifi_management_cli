@@ -1,13 +1,20 @@
 """Simplified pytest configuration for foundation testing."""
 
-import asyncssh
-import httpx
 import os
-import pytest
-import requests
-import socket
-from pathlib import Path
-from typing import NoReturn
+
+
+# Typer renders --help through Rich and FORCES a terminal (ANSI styles) when GITHUB_ACTIONS,
+# FORCE_COLOR or PY_COLORS is set, at import time of typer.rich_utils. The help-text tests read
+# plain text, so disable that before any test module imports typer. Typer's own switch:
+os.environ.setdefault('_TYPER_FORCE_DISABLE_TERMINAL', '1')
+
+import asyncssh  # noqa: E402
+import httpx  # noqa: E402
+import pytest  # noqa: E402
+import requests  # noqa: E402
+import socket  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import NoReturn  # noqa: E402
 
 
 pytest_plugins = ['pytester']  # T13. Only this top-level conftest may define pytest_plugins.

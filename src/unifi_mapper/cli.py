@@ -73,11 +73,16 @@ def load_env_from_config(config_path: str) -> None:
 def default_config_candidates() -> list[Path]:
     """The config files the CLI looks for when none is given, in search order.
 
+    0. the file named by ``UNIFI_CONFIG``, when that variable is set (it is then the only
+       candidate: a wrong path is reported, not silently replaced by another file)
     1. ``prod.env`` in ``$XDG_CONFIG_HOME/unifi_management_cli/``, or in
        ``~/.config/unifi_management_cli/`` when ``XDG_CONFIG_HOME`` is unset
     2. ``default.env`` in that same directory
     3. ``.env`` in the current directory (legacy fallback), as an absolute path
     """
+    explicit = os.environ.get('UNIFI_CONFIG')
+    if explicit:
+        return [Path(explicit).expanduser()]
     xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
     if xdg_config_home:
         config_dir = Path(xdg_config_home) / 'unifi_management_cli'
@@ -99,7 +104,10 @@ def get_default_config_path() -> Path:
     Returns:
         Path to default config file.
     """
-    for candidate in default_config_candidates()[:-1]:
+    candidates = default_config_candidates()
+    if len(candidates) == 1:  # UNIFI_CONFIG names the file; a missing one is reported as such
+        return candidates[0]
+    for candidate in candidates[:-1]:
         if candidate.exists():
             return candidate
 

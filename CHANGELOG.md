@@ -19,6 +19,8 @@ The current release is 0.2.0; only the latest release is supported.
   comment; a quoted value keeps everything inside the quotes and drops what follows them. A
   value that held a bare `#` without a preceding space is unchanged.
 - `unifi-mapper inventory …` honours the root `--config` and `UNIFI_CONFIG` (issue 043).
+- `unifi-network-toolkit` and `python -m unifi_mapper.cli` honour `UNIFI_CONFIG` and the same XDG
+  search as `unifi-mapper`; the toolkit's `--config` default was a hard-coded `prod.env` path.
 - `inventory update-firmware` previews by default and triggers the upgrades only with `--apply`,
   after the confirmation that `--force` skips, like every other writer. `--dry-run` is still
   accepted and means the default; both flags together exit 2; `--force` on its own previews and

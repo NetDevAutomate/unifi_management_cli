@@ -60,8 +60,8 @@ Port mapping and discovery live on the other entry point:
     parser.add_argument(
         '--config',
         '-c',
-        help='Path to .env configuration file',
-        default='~/.config/unifi_management_cli/prod.env',
+        help='Path to .env configuration file (default: UNIFI_CONFIG, then the XDG search)',
+        default=None,
     )
 
     # Add subcommands
@@ -237,8 +237,10 @@ def main():
     # Load configuration (only for commands that need UniFi access)
     try:
         # Load environment variables from config file
-        from .cli import load_env_from_config
+        from .cli import get_default_config_path, load_env_from_config
 
+        if args.config is None:  # resolved now, not at import: UNIFI_CONFIG, then the XDG search
+            args.config = str(get_default_config_path())
         load_env_from_config(args.config)
 
         # Now create config from environment
