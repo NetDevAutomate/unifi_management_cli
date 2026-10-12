@@ -1,6 +1,6 @@
 # MCP standards review
 
-As of `27ec14c` (2026-10-04). This is the committed summary of the standards review behind the
+As of `d6a4aaa` (2026-10-04). This is the committed summary of the standards review behind the
 uvx rebuild of `unifi-mcp`: what the MCP specification, the official Python SDK and the main
 hosts expect, where the server stands at that commit, and how each decision the review raised
 ended. Later changes are folded in where they settle a row (the 0.2.0 port: A14, A18, D4 and
@@ -17,7 +17,7 @@ Base Directory specification, fetched 2026-10-02 ([sources](#sources)).
 
 ✅ meets the standard · ⚠️ partly: the open part is linked · ❌ not done.
 
-| # | Criterion | Standard | Status at `27ec14c` |
+| # | Criterion | Standard | Status at `d6a4aaa` |
 | --- | --- | --- | --- |
 | A1 | SDK version | The SDK v2 line is current; projects not yet migrated should bound `mcp<2` ([S1], [S5], [S6], [S7]) | ✅ `mcp>=1.30,<1.31` in `pyproject.toml`, locked at 1.30.0. One minor only, because the runner uses FastMCP internals; `tests/mcp/test_packaging.py` resolves the bounds in isolation (`--run-slow`). The v2 migration is [issue 008](../issues/008-mcp-sdk-v2-migration.md) |
 | A2 | Protocol version | Hosts still speak 2025-11-25 and newer clients fall back to it ([S4], [S4b]) | ✅ SDK 1.30 negotiates 2024-11-05 to 2025-11-25. 2026-07-28 support comes with SDK v2 (issue 008) |
@@ -40,7 +40,7 @@ Base Directory specification, fetched 2026-10-02 ([sources](#sources)).
 | A19 | Tests | Drive the server through an in-memory client session and assert on `CallToolResult` ([S9c]) | ✅ `tests/mcp/test_protocol_contract.py` runs both surfaces in memory; `tests/mcp/test_manifest_parity.py` checks every manifest entry against its handler; `tests/mcp/test_stdio_smoke.py` runs the real entry point. All offline |
 | A20 | Packaging for uvx | uvx resolves the declared ranges, not `uv.lock`; `--from` takes a path or a `git+https…@ref` ([S24], [S25]) | ✅ Every dependency has a floor and a ceiling. `[tool.uv] cache-keys` rebuild a local checkout when any `src/**/*.py` or `src/**/*.yaml` file changes. The docs launch with `--from` only, because `unifi-mcp` on PyPI is an unrelated package. The git launch mode needs `main` pushed and tagged (D7) |
 
-## Architecture at `27ec14c`
+## Architecture at `d6a4aaa`
 
 ```mermaid
 C4Container
@@ -81,7 +81,7 @@ C4Container
 
 ## Decisions
 
-| ID | Decision raised by the review | Outcome at `27ec14c` |
+| ID | Decision raised by the review | Outcome at `d6a4aaa` |
 | --- | --- | --- |
 | D1 | Set `isError: true` on failed calls | Implemented (`ERRORS_SET_IS_ERROR`, `mcp/runner.py`) |
 | D2 | Make `direct` the default surface | Not adopted: `discovery` stays the default and `direct` is opt-in. Open: [issue 009](../issues/009-mcp-default-tool-surface.md) |
@@ -100,16 +100,16 @@ C4Container
 - Registry: 87 tools in 7 categories; 3 mutating, 11 pipeline, 73 on the direct catalog.
 - `unifi-mcp --check` (offline): `tool_count` 87; `listed_tools` 4 on `discovery`, 77 on
   `direct`. The 77 are the 73 direct catalog tools plus the 4 meta-tools.
-- Offline suite at `27ec14c`: 2964 passed, 3 skipped (the three `slow`-marked packaging tests,
+- Offline suite at `d6a4aaa`: 2964 passed, 3 skipped (the three `slow`-marked packaging tests,
   two of which are also `network`-marked). With the slow tests opted in,
   `uv run pytest --run-slow tests/mcp/test_packaging.py`: 4 passed.
-- Read-only live checks against a real controller, at `ca6869b`: 61 of 61 passed. The request
+- Read-only live checks against a real controller, at `5b1d2f2`: 61 of 61 passed. The request
   audit recorded 114 controller requests, all GET, and no refused write.
-- Re-checked offline at `57d9b51` (2026-10-04): the registry and `--check` figures are
+- Re-checked offline at `8e8d981` (2026-10-04): the registry and `--check` figures are
   unchanged, and the suite has 2996 passed, 3 skipped (the same three).
   `tests/test_docs_consistency.py` now fails when a documented MCP count stops matching the
   registry.
-- Re-checked offline at `cf1d09f` (2026-10-05), after the 0.2.0 port (A14, A18, D4 and D5 above
+- Re-checked offline at `89c000a` (2026-10-05), after the 0.2.0 port (A14, A18, D4 and D5 above
   describe it): 87 tools in 7 categories; `unifi-mcp --check` lists 4 on `discovery` and 77 on
   `direct`, and reports the call log (`call_audit`); the suite has 4084 passed, 5 skipped (the
   three `slow` packaging tests and two privacy guards that need captures, none in

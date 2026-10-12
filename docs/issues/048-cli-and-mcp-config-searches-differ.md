@@ -29,7 +29,7 @@ never reads a `.env` in the working directory; the CLI still does as its last re
 `--config` defaults to `~/.config/unifi_management_cli/prod.env`.
 
 The README describes each search as it is; the docstring of `get_default_config_path` was
-corrected to match the code in `838d902`.
+corrected to match the code in `e144067`.
 
 ## Impact
 

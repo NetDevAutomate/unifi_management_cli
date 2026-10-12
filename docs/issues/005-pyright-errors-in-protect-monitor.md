@@ -2,7 +2,7 @@
 title: "pyright reports 3 errors in `monitors/protect_monitor.py`"
 date: 2026-10-02
 status: resolved
-resolved_by: 037b60a
+resolved_by: 3368379
 severity: low
 components: [monitors/protect_monitor]
 found_by: port diagnostics verification

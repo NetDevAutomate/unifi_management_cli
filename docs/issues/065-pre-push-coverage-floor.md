@@ -2,10 +2,10 @@
 title: "The pre-push pytest hook fails the 90% coverage floor"
 date: 2026-10-05
 status: resolved
-resolved_by: 8d8739a
+resolved_by: 1a7f2d7
 severity: medium
 components: [.pre-commit-config.yaml, pyproject.toml]
-found_by: 0.2.0 port planning (baseline measured at ac9861c)
+found_by: 0.2.0 port planning (baseline measured at d091abd)
 ---
 
 # The pre-push pytest hook fails the 90% coverage floor
@@ -15,7 +15,7 @@ found_by: 0.2.0 port planning (baseline measured at ac9861c)
 `.pre-commit-config.yaml`'s pre-push `pytest` hook runs
 `uv run pytest -m "not live" --cov --cov-branch --cov-report=term-missing`. With `--cov`,
 pytest-cov reads `[tool.coverage.report] fail_under = 90` from `pyproject.toml`. The measured
-total at `ac9861c` is 57.63% branch coverage (3073 tests passed), so the hook fails on every
+total at `d091abd` is 57.63% branch coverage (3073 tests passed), so the hook fails on every
 push from a host that has the pre-commit hooks installed.
 
 ## Impact

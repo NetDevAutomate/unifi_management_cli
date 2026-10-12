@@ -2,7 +2,7 @@
 title: "The async read-only guard judges and audits a different path when the raw path starts with `//`"
 date: 2026-10-03
 status: resolved
-resolved_by: b294345
+resolved_by: b70b85d
 severity: low
 components: [core/utils/readonly]
 found_by: review follow-ups (issue 024 planning)
@@ -47,4 +47,4 @@ policies and for `ReadOnlyProtectApiClient`, including the two rows above.
 
 ## Resolution
 
-Resolved 2026-10-12 in `b294345`: `_normalised_path` refuses a raw path starting with `//` as a network-path reference, in both policies; `tests/utility/test_readonly_guard.py` pins the two reproduced requests.
+Resolved 2026-10-12 in `b70b85d`: `_normalised_path` refuses a raw path starting with `//` as a network-path reference, in both policies; `tests/utility/test_readonly_guard.py` pins the two reproduced requests.

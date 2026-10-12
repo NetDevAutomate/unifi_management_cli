@@ -25,9 +25,9 @@ proposals below stay unbuilt until they are decided.
 
 - **D1: expose the class B probes over MCP?** These are `diagnose latency-matrix` (it existed
   before the port), the gateway probes (`gateway ping`, `traceroute`, `dns`, `http`, `flows`;
-  CLI only, `8ed301f`), `diagnose client-connectivity` and AP-health sampling with client
-  pings (`diagnose ap-health --ping-clients`; CLI only, `707ea13`), and an on-demand
-  `vlan-traffic sample` (CLI only, `ad846b6`; the MCP tools `get_vlan_traffic_report` and
+  CLI only, `ed9a076`), `diagnose client-connectivity` and AP-health sampling with client
+  pings (`diagnose ap-health --ping-clients`; CLI only, `1e10f19`), and an on-demand
+  `vlan-traffic sample` (CLI only, `65c7a6e`; the MCP tools `get_vlan_traffic_report` and
   `list_vlan_traffic_periods` read stored results only). Recommendation: **not by
   default, and not before issue [038](038-ssh-host-key-verification-disabled.md) is
   fixed**: an MCP-triggered probe would send the gateway's root SSH password to a host whose
@@ -41,7 +41,7 @@ proposals below stay unbuilt until they are decided.
   (`diagnose wan --speedtest`, with a confirmation), a body-aware guard policy admitting
   exactly `{cmd: speedtest}` and `{cmd: speedtest-status}` on `cmd/devmgr`, and a test pinning
   both bodies; never MCP. The controller's scheduled result needs no command: reading it is
-  `get_wan_health` and `diagnose wan` (landed in `b46a8db`).
+  `get_wan_health` and `diagnose wan` (landed in `4e41505`).
 - **D3: read the controller's backup list?** The only known call is
   `POST cmd/backup {cmd: list-backups}`. Recommendation: **not now**. If wanted: D2's
   body-aware policy admitting exactly that body on `cmd/backup` (no other `cmd/backup` body,
@@ -50,7 +50,7 @@ proposals below stay unbuilt until they are decided.
   a live controller, replaces the POST. It is the safer first user of the body-aware policy,
   because the command reads.
 - **D4: long-running MCP jobs** (the prototype's job registry, AP-health sampling over MCP; the
-  sampling exists as the CLI-only `diagnose ap-health`, `707ea13`)?
+  sampling exists as the CLI-only `diagnose ap-health`, `1e10f19`)?
   Recommendation: wait for SDK v2 tasks (issue [008](008-mcp-sdk-v2-migration.md)) rather
   than an in-process registry outside the tool runner, which escaped its concurrency cap,
   timeout and cancellation (issue [012](012-mcp-default-tool-deadline.md)).

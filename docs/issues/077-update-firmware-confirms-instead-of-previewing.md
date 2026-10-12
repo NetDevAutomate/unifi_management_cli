@@ -2,7 +2,7 @@
 title: "`inventory update-firmware` writes after a confirmation prompt, not a preview"
 date: 2026-10-12
 status: resolved
-resolved_by: 40b8653
+resolved_by: 9d00ff7
 severity: medium
 components: [inventory_cli, README, SECURITY]
 found_by: pre-publication review

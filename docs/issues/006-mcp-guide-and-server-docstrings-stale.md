@@ -2,7 +2,7 @@
 title: "The MCP guide and server docstrings miss the observability category and new counts"
 date: 2026-10-02
 status: resolved
-resolved_by: b249104
+resolved_by: ab32faa
 severity: low
 components: [mcp/server, docs/mcp-server/MCP_SERVER_GUIDE.md]
 found_by: port diagnostics review

@@ -36,7 +36,7 @@ drops data or would fail validation:
 
 - The reference: Ubiquiti's Network API OpenAPI document for v10.6.102, downloaded from
   developer.ui.com (kept locally, not in the repo).
-- Live, in the read-only live checks and the device-statistics probe recorded at `d6d013f`
+- Live, in the read-only live checks and the device-statistics probe recorded at `85551d1`
   (local evidence, not in the repo): the port diagnostics' Integration API device details
   carry `state: ONLINE` and `features` and `interfaces` as objects; the device list's
   `features` for an access point is `["accessPoint"]`.

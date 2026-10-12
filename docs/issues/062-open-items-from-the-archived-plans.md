@@ -26,9 +26,9 @@ the STP MCP tools, counter-reset detection, neighbour-aware channel scoring, the
 strategy work, and MCP tools for link errors, roaming, config drift and neighbours (issues
 [010](010-cwd-relative-state-files.md) and [018](018-read-only-tool-proposals.md)). The 0.2.0
 port adds two more: a one-shot STP priority audit (`stp audit-priorities`, landed in
-`c82d52c`) and the VLAN traffic collector (`vlan-traffic sample`, `rollup`, `report` and
+`1860ab5`) and the VLAN traffic collector (`vlan-traffic sample`, `rollup`, `report` and
 `coverage`, with the MCP readers `get_vlan_traffic_report` and `list_vlan_traffic_periods`,
-landed in `ad846b6`).
+landed in `65c7a6e`).
 The 2026-07-22 notes' other items were site operations, not repository work; its code
 item was the 0.2.0 port itself. An unattended weekly `radio auto-channel --apply` is decision
 W10 in issue [060](060-decisions-from-the-0.2.0-port.md).
@@ -41,7 +41,7 @@ From the STP and tooling plan:
   utilisation (the traffic matrix), not link count alone.
 - **A fixture-based LAG integration test**: run `find_lag_candidates_from_data` over a
   fleet-sized fixture and pin the proposals. The anonymised 17-switch fleet,
-  `tests/fixtures/fleet_17_switch_anonymised.json` (landed in `2b2f8aa`), can serve.
+  `tests/fixtures/fleet_17_switch_anonymised.json` (landed in `befd632`), can serve.
 - **Mixed STP mode detection**: report switches whose `stp_mode` differs (RSTP, MSTP, STP).
 - **Edge-port audit**: flag a port with only client neighbours that is not an edge port, and
   an edge port that sees BPDUs or topology changes (`stp guard` covers Root Guard and TCNs
@@ -75,12 +75,12 @@ From the improvement plan:
 From the 2026-07-24 notes:
 
 - **Directional VLAN A to B traffic** (best effort, from sampled conntrack subnet pairs),
-  beside the per-VLAN aggregates the collector records (`vlan-traffic sample`, `ad846b6`).
+  beside the per-VLAN aggregates the collector records (`vlan-traffic sample`, `65c7a6e`).
 - **Per-period Mermaid diagrams** for the VLAN traffic report.
 - **Per-client retry and loss trend** over time.
 - **An incident-window composite** correlating recent config changes and events with a
   given time window (`find_recent_config_changes` and `get_recent_events`, landed in
-  `27f765c` and `709fdd7`, are the raw material).
+  `90e6616` and `16d7d82`, are the raw material).
 
 ## Recommendation
 

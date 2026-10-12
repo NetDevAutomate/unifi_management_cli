@@ -25,7 +25,7 @@ v10.6.102:
 A read-only probe on Network 10.6.106 (GET only, through `ReadOnlyAsyncTransport` with the
 GET-only policy and the request audit on; one access point, not the held `USW Flex XG`):
 `/statistics` answered 404 and `/statistics/latest` answered 200 (4 audited GETs, 0
-violations; local evidence recorded at `d6d013f`, not in the repo). The port
+violations; local evidence recorded at `85551d1`, not in the repo). The port
 action is a write, so it was not probed; the reference is the only evidence for it. The
 port diagnostics' own Integration API reads already use `/statistics/latest`.
 

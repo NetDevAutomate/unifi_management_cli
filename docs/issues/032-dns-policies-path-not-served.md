@@ -2,10 +2,10 @@
 title: "`get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served"
 date: 2026-10-03
 status: resolved
-resolved_by: d1b36f0
+resolved_by: 6fd892c
 severity: medium
 components: [network/client]
-found_by: review follow-ups, live checks at d6d013f
+found_by: review follow-ups, live checks at 85551d1
 ---
 
 # `get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served
@@ -23,7 +23,7 @@ surfaces.
 
 ## Evidence
 
-- Local evidence, not in the repo (the read-only live checks recorded at `d6d013f`, finding
+- Local evidence, not in the repo (the read-only live checks recorded at `85551d1`, finding
   L2): the `get_dns_policies` results on both surfaces hold the 404 payload and the audited
   GET.
 - Ubiquiti's Network API reference for v10.6.102 lists the resource as
@@ -55,5 +55,5 @@ returns a reference-shaped policy through the tool. All of them failed on the ol
 
 Live after the fix: `get_dns_policies` returned `[]` with no error; 11 audited GETs for the
 site lookup and the six tools, 0 violations. Local evidence, not in the repo: a path probe
-(recorded at `d6d013f`) and the six tools' results (at `a43d39f`), both with the fix applied
-before it landed as `d1b36f0`.
+(recorded at `85551d1`) and the six tools' results (at `8828255`), both with the fix applied
+before it landed as `6fd892c`.

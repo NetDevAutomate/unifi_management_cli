@@ -2,7 +2,7 @@
 title: "`validate_port_profiles` and three other analyses resolve a port's profile without the override precedence"
 date: 2026-10-03
 status: resolved
-resolved_by: 87386bd
+resolved_by: 71083e4
 severity: medium
 components: [analysis/port_profile_validation, analysis/foreign_bridges, analysis/uplink_transparency, analysis/vlan_coverage, analysis/link_settings]
 found_by: MCP uvx standards work
@@ -84,4 +84,4 @@ port table's (port 5 on `USW Flex XG` included), and no port used the dropped ke
 verdict PASS with no changed finding or aggregate, and no live change either. The fix
 therefore changes nothing on today's network; it matters while an override's profile hasn't
 been applied, as in the fixtures. Evidence: the replay diff, kept locally and not in the
-repo (recorded at `20236cc`).
+repo (recorded at `e8050fe`).

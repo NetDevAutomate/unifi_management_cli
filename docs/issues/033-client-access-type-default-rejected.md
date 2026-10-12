@@ -2,10 +2,10 @@
 title: "`get_clients` returns no clients: `access.type: DEFAULT` fails validation"
 date: 2026-10-03
 status: resolved
-resolved_by: a43d39f
+resolved_by: 8828255
 severity: medium
 components: [network/models]
-found_by: review follow-ups, live checks at d6d013f
+found_by: review follow-ups, live checks at 85551d1
 ---
 
 # `get_clients` returns no clients: `access.type: DEFAULT` fails validation
@@ -22,7 +22,7 @@ issue 011).
 
 ## Evidence
 
-- Local evidence, not in the repo (the read-only live checks recorded at `d6d013f`, finding
+- Local evidence, not in the repo (the read-only live checks recorded at `85551d1`, finding
   L3): the `get_clients` results on both surfaces carry
   `access.type: Input should be 'GUEST', 'USER' or 'HOTSPOT' [input_value='DEFAULT']`.
 
@@ -60,8 +60,8 @@ Live (read-only: the `get_clients` tool in-process, behind its GET-only guard, r
 audit on): 98 clients returned (31 wired, 67 wireless), every `access.type` the `DEFAULT`
 member, and no other `ClientInfo` field rejected a live value; 11 audited GETs (the site
 lookup and the six network tools), 0 violations. Local evidence, not in the repo: the six
-tools' results, recorded on top of `d6d013f` with the fix applied before it landed as
-`a43d39f`.
+tools' results, recorded on top of `85551d1` with the fix applied before it landed as
+`8828255`.
 
 Follow-up: `ClientInfo.type` had the same failure mode. Ubiquiti's reference documents
 `TELEPORT` clients, which `ClientType` (`WIRED`, `WIRELESS`, `VPN`) would have rejected, again

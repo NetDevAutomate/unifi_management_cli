@@ -13,8 +13,8 @@ found_by: docs and repo hygiene review (C4 provider docs, verify_cli)
 
 The browser-verification example in the `--help` epilog of
 `python -m unifi_mapper.verify_cli` (`src/unifi_mapper/verify_cli.py`) showed a username and
-a 20-character password that is not a placeholder. It came in with `067d0e6` (2025-12-30)
-and stayed in every revision until `85c937d` removed it, the `origin/main` tip included, so
+a 20-character password that is not a placeholder. It came in with `d437beb` (2025-12-30)
+and stayed in every revision until `3ea7243` removed it, the `origin/main` tip included, so
 it has been on GitHub since then. No other tracked file holds it.
 
 Nothing caught it. detect-secrets' keyword plugin doesn't read the `--password VALUE`
@@ -24,7 +24,7 @@ it, the value matches none of them, so it isn't the controller UI login, the con
 token or the SSH password. Given the username, it is most likely the password of a local
 UniFi OS account used by UnPoller. The repository is public.
 
-`85c937d` replaced the example's username and password with `<username>` and `<password>`.
+`3ea7243` replaced the example's username and password with `<username>` and `<password>`.
 
 ## Impact
 
@@ -43,7 +43,7 @@ What is left, in this order:
 2. The history rewrite: the user has asked for the history to be rewritten to remove this
    value, and the camera password in
    [issue 041](041-onvif-scripts-hard-code-cameras.md) with it. That runs separately, after
-   this review. It rewrites every commit since `067d0e6`, its force-push needs the user's
+   this review. It rewrites every commit since `d437beb`, its force-push needs the user's
    explicit confirmation, and every clone has to be re-made afterwards. The user has
    approved removing the network details in the unpushed commits
    ([issue 040](040-real-identifiers-in-tests.md),
@@ -51,7 +51,7 @@ What is left, in this order:
    identifiers in the pushed history are still to decide. The maintainer sets the exact
    commit list.
 
-A guard is already in place: `tests/test_example_credentials.py` (`85c937d`) reads every
+A guard is already in place: `tests/test_example_credentials.py` (`3ea7243`) reads every
 string literal under `src/` and fails on a password option or argument whose value isn't a
 `<placeholder>`, a `$VARIABLE` or a `{template}` field. Running `detect-secrets audit` on the
 baseline would also confirm that no other entry is a real credential.

@@ -2,7 +2,7 @@
 title: "`find device`, `analyze link-quality` and `diagnose health` are stubs"
 date: 2026-10-02
 status: resolved
-resolved_by: c42bf59
+resolved_by: 4195f49
 severity: low
 components: [typer_cli]
 found_by: port diagnostics gap analysis

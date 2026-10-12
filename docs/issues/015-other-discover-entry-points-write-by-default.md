@@ -2,7 +2,7 @@
 title: "`unifi-network-toolkit discover` and `python -m unifi_mapper.cli` still write port names by default"
 date: 2026-10-02
 status: resolved
-resolved_by: dd2b01b
+resolved_by: 0ac8d0d
 severity: medium
 components: [network_cli, cli]
 found_by: MCP uvx standards work
@@ -29,7 +29,7 @@ other. An operator who learned the new `unifi-mapper` default can write by accid
 
 ## Resolution
 
-Resolved 2026-10-12 in `dd2b01b`: both entry points preview unless `--apply`, keep `--dry-run`
+Resolved 2026-10-12 in `0ac8d0d`: both entry points preview unless `--apply`, keep `--dry-run`
 as the accepted default and exit 2 when given both; `tests/test_argparse_discover_defaults.py`
 pins each case. The pre-publication review named the old default a blocker for a shared
 repository.

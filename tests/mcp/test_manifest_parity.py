@@ -1,7 +1,7 @@
 """T2: every shipped manifest entry agrees with its handler (design §4 rules 1-9).
 
 Parametrised over every entry of every manifest present, so new tools are covered with
-no edit here. Counts are never pinned except the a8e4e9e name set, which guards against
+no edit here. Counts are never pinned except the 7f677f4 name set, which guards against
 a tool silently disappearing.
 """
 

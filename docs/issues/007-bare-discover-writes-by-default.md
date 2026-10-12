@@ -2,7 +2,7 @@
 title: "`unifi-mapper --connected-devices` writes port names by default"
 date: 2026-10-02
 status: resolved
-resolved_by: 1abcbbb
+resolved_by: 95b822a
 severity: medium
 components: [typer_cli, run_methods, port_mapper]
 found_by: port diagnostics gap analysis
@@ -17,7 +17,7 @@ into `discover`. That runs `run_port_mapper(dry_run=False)`. When a port label d
 from LLDP or client data, `batch_update_port_names` PUTs `port_overrides` and sends
 `force-provision` to the switch. Only `--dry-run` makes the command read-only.
 
-Until commit `1ce6e53` (`docs(readme): stop calling --connected-devices read-only`), the
+Until commit `f67fbe7` (`docs(readme): stop calling --connected-devices read-only`), the
 README called the command "(read-only)".
 
 ## Impact

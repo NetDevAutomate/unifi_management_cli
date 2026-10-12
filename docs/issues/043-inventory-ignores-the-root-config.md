@@ -2,7 +2,7 @@
 title: "`unifi-mapper inventory` ignores the root `--config` and `UNIFI_CONFIG`"
 date: 2026-10-04
 status: resolved
-resolved_by: 88f6aa0
+resolved_by: 9e506f0
 severity: medium
 components: [inventory_cli, typer_cli]
 found_by: docs and repo hygiene review (config reference)
@@ -39,4 +39,4 @@ their own `--config` after the subcommand.
 
 ## Resolution
 
-Resolved 2026-10-12 in `88f6aa0`: the inventory commands read the root `--config`/`UNIFI_CONFIG` through `ctx.find_root()` when their own option is unset; `tests/test_inventory_root_config.py` pins both paths and that the sub-command option still wins.
+Resolved 2026-10-12 in `9e506f0`: the inventory commands read the root `--config`/`UNIFI_CONFIG` through `ctx.find_root()` when their own option is unset; `tests/test_inventory_root_config.py` pins both paths and that the sub-command option still wins.

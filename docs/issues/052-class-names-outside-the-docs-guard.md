@@ -21,7 +21,7 @@ The drift is real. The docs review fixed six stale class names by hand (`Statist
 `DPIManager`, `StatisticsCollector`, `TrafficMatchingManager`, `ProtectRepository` and a
 `FastMCPServer` class view), each found by a local scan the repository doesn't keep.
 
-At `7ca3700` the current docs (all but `docs/issues/` and `docs/solutions/`) hold:
+At `78241ce` the current docs (all but `docs/issues/` and `docs/solutions/`) hold:
 
 - 93 distinct backticked names with at least two capitalised parts (such as `UniFiClient`),
   260 uses. 83 are classes defined under `src/`. The other 10 are built-ins or third-party

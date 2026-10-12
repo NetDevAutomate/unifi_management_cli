@@ -56,8 +56,8 @@ explicit opt-in and an `active_probe` marker, never by default.
 ## Progress (0.2.0 port)
 
 - `get_wan_status` was built as `get_wan_health` (MCP) and `diagnose wan` (CLI), with the
-  recorded speedtest history beside it, in `b46a8db`.
+  recorded speedtest history beside it, in `4e41505`.
 - B5's priority slice was built as `audit_stp_priorities` and `stp audit-priorities` in
-  `c82d52c`, and the `plan_stp_change` prompt now runs it before and after a change; the other
+  `1860ab5`, and the `plan_stp_change` prompt now runs it before and after a change; the other
   composite STP tools are still open.
 - `server_status` (`unifi-mapper doctor`) is still open, as are the rest of the tables above.
