@@ -14,6 +14,12 @@ write to it. Read this before running it against a production network.
   keys starting with `x_` and keys containing `password`, `secret`, `token`, `authkey`, `psk`,
   `preshared`, `passphrase`, `api_key` or `private_key` are removed, and only the paths of what
   was removed are reported. Tracebacks never print local variables.
+- **Stripping is not anonymisation.** Reports, evidence bundles and MCP results still carry
+  device and client names, MAC and IP addresses, SSIDs and your topology. Treat every output
+  as sensitive and review it before posting it to a forum or a ticket.
+- **The MCP server's results go to whatever AI host you connect it to** (Claude, Codex, a
+  desktop client), under that host's data terms. It serves read-only tools; what it returns
+  is your network's data, redacted of secrets but not of identifiers.
 
 ## Defaults you should know about
 
