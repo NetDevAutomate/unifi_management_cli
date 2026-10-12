@@ -82,3 +82,29 @@ def test_version_command_matches_the_flag_and_claims_no_edition() -> None:
     assert dist_version('unifi-management-cli') in result.output
     assert 'Enterprise' not in result.output
     assert '2.0.0' not in result.output
+
+
+# --- an unquoted value ends at ` #` (the README once showed inline comments; a password may
+# hold a bare `#`, so only a `#` after whitespace starts a comment) --------------------------
+
+
+@pytest.mark.parametrize(
+    ('line', 'expected'),
+    [
+        ('UNIFI_URL=https://192.0.2.1             # UniFi controller URL', 'https://192.0.2.1'),
+        ('UNIFI_SITE=default # Site name', 'default'),
+        ('UNIFI_PASSWORD=pa#ss#word', 'pa#ss#word'),
+        ('UNIFI_PASSWORD="secret value # not a comment"', 'secret value # not a comment'),
+        ("UNIFI_PASSWORD='x # y'", 'x # y'),
+        ('UNIFI_TIMEOUT=10', '10'),
+    ],
+)
+def test_env_values_follow_the_dotenv_comment_grammar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, line: str, expected: str
+) -> None:
+    key = line.split('=', 1)[0]
+    monkeypatch.delenv(key, raising=False)
+    env = tmp_path / 'site.env'
+    env.write_text(line + '\n')
+    cli.load_env_from_config(str(env))
+    assert __import__('os').environ[key] == expected

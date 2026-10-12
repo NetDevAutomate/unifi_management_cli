@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Literal
 from unifi_mapper.core.utils import auth
 from unifi_mapper.core.utils.auth import Credentials
+from unifi_mapper.core.utils.envfile import parse_env_value
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.mcp.call_audit import CALL_AUDIT_ENV, CallAuditSetting, parse_call_audit
 
@@ -384,7 +385,7 @@ def parse_env_file(text: str) -> tuple[dict[str, str], list[int]]:
         if not sep or not key:
             bad.append(line_num)
             continue
-        values[key] = value.strip().strip('"').strip("'")
+        values[key] = parse_env_value(value)
     return values, bad
 
 

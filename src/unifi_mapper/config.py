@@ -5,6 +5,7 @@ Centralizes configuration loading and validation.
 
 import logging
 import os
+from .core.utils.envfile import parse_env_value
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -84,7 +85,7 @@ class UnifiConfig:
 
                     try:
                         key, val = line.split('=', 1)
-                        os.environ[key.strip()] = val.strip().strip('"').strip("'")
+                        os.environ[key.strip()] = parse_env_value(val)
                     except ValueError:
                         # Never echo the line: it may be a credential missing its '='.
                         log.warning(f"Invalid line in {env_file}:{line_num} (no '=' found)")

@@ -7,6 +7,7 @@ import argparse
 import logging
 import os
 import sys
+from .core.utils.envfile import parse_env_value
 from pathlib import Path
 
 
@@ -53,9 +54,7 @@ def load_env_from_config(config_path: str) -> None:
 
                 try:
                     key, value = line.split('=', 1)
-                    key = key.strip()
-                    value = value.strip().strip('"').strip("'")
-                    os.environ[key] = value
+                    os.environ[key.strip()] = parse_env_value(value)
                 except ValueError:
                     # Never echo the line: a password typed with a space instead of '='
                     # has no name=value shape for redact_text to mask.
