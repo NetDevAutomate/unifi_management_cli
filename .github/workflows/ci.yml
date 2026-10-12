@@ -35,3 +35,26 @@ jobs:
         run: uv run pytest -m "not live" --cov --cov-branch --cov-report=term
       - name: Build
         run: uv build
+      - name: Smoke-test the wheel from outside the checkout
+        run: |
+          cd "$RUNNER_TEMP"
+          uv venv smoke --python ${{ matrix.python }}
+          uv pip install --python smoke/bin/python "$GITHUB_WORKSPACE"/dist/*.whl
+          for entry in unifi-mapper unifi-mcp unifi-network-toolkit unifi-inventory; do
+            smoke/bin/$entry --version
+            smoke/bin/$entry --help > /dev/null
+          done
+          smoke/bin/unifi-mapper diagnose all --help > /dev/null
+
+  macos:
+    # The scheduler's launchd path and the shell-level tests run on macOS too.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked --python 3.12
+      - run: uv run pytest -m "not live" tests/test_unifi_cron.py tests/test_discover_defaults.py tests/test_first_run_surface.py -q
+      - name: Scheduler status in a scratch HOME
+        run: HOME="$RUNNER_TEMP" LOG_DIR="$RUNNER_TEMP/logs" bash scripts/unifi-cron.sh status

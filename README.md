@@ -38,9 +38,11 @@ Read this before pointing it at a production network.
   addresses and your topology remain in them. Review before you post one anywhere.
 - **TLS verification is off by default** (`UNIFI_VERIFY_SSL=false`), because most consoles
   present a self-signed certificate. Turn it on if yours has a trusted one.
-- **Gateway SSH host keys are not verified yet** ([issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)).
-  The SSH-based commands (`gateway *`, `diagnose latency-matrix|bandwidth|client-connectivity|ap-health`,
-  `vlan-traffic sample`) are CLI-only and run only when `UNIFI_SSH_PASSWORD` is set.
+- **Gateway SSH host keys are not verified yet** ([issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)),
+  so a device on the path between you and the gateway could impersonate it and receive the SSH
+  password. Use the SSH-based commands (`gateway *`, `diagnose latency-matrix|bandwidth|client-connectivity|ap-health`,
+  `vlan-traffic sample`) only from a trusted LAN segment; they are CLI-only and run only when
+  `UNIFI_SSH_PASSWORD` is set.
 - Tracebacks never print local variables; the config file is never written back.
 
 See [SECURITY.md](SECURITY.md) for the full data-handling contract and how to report a problem.
@@ -96,9 +98,12 @@ Then look at one switch, and preview the port names LLDP suggests (nothing is wr
 ```bash
 uv run unifi-mapper ports list "Office Switch"
 uv run unifi-mapper ports inspect "Office Switch" 7
-uv run unifi-mapper discover
-uv run unifi-mapper discover --apply      # only when the preview looks right
+uv run unifi-mapper discover --format html          # HTML needs no Graphviz
+uv run unifi-mapper discover --format html --apply  # only when the preview looks right
 ```
+
+`diagnose all` prints one line per check (`✅`, `⚠️` or `❌` with the finding), then a
+pass/warn/fail count; it exits 2 when any check fails, so it works in a script or a cron job.
 
 `unifi-mapper` finds the config at `--config PATH` or `UNIFI_CONFIG`, else
 `${XDG_CONFIG_HOME:-~/.config}/unifi_management_cli/prod.env`, then `default.env` there, then
@@ -146,8 +151,9 @@ Exit codes: 0 done, 1 an error (one line on stderr; `--debug` for a traceback), 
 error or a check that failed, 130 interrupted. The full table, with every command that exits
 2 on a failed check, is in the [command reference](docs/reference/cli.md#command-reference).
 
-`unifi-network-toolkit` and `unifi-inventory` are older entry points over the same code; use
-`unifi-mapper`, which has every command and the same preview-by-default rule.
+`unifi-network-toolkit` and `unifi-inventory` are older entry points over the same code and
+will be removed in a later release; use `unifi-mapper`, which has every command and the same
+preview-by-default rule.
 
 Scheduled audits (launchd or cron) are installed by
 [`scripts/unifi-cron.sh`](docs/reference/cli.md#scheduled-audits); the default schedule only

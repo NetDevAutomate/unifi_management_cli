@@ -32,8 +32,9 @@ write to it. Read this before running it against a production network.
   present a self-signed certificate. Set it to `true` if your console has a trusted
   certificate.
 - **The gateway SSH commands do not verify the gateway's host key yet**
-  ([issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)). They are CLI-only and
-  only run when `UNIFI_SSH_PASSWORD` is set.
+  ([issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)), so a host on the path
+  could impersonate the gateway and receive the SSH password. Run them only from a trusted LAN
+  segment. They are CLI-only and only run when `UNIFI_SSH_PASSWORD` is set.
 - **Nothing writes to the controller unless you ask.** Commands that can write preview by
   default and need `--apply` or `--no-dry-run`; the MCP server exposes read-only tools only and
   never opens SSH.

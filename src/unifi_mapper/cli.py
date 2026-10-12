@@ -4,6 +4,7 @@ Enables running from anywhere with config file specification.
 """
 
 import argparse
+import importlib.metadata
 import logging
 import os
 import sys
@@ -154,6 +155,11 @@ def main():
         help="Diagram format (default: from config file or 'png')",
     )
 
+    parser.add_argument(
+        '--version',
+        action='version',
+        version=f'%(prog)s {importlib.metadata.version("unifi-management-cli")}',
+    )
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
 
     parser.add_argument(

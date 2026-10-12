@@ -13,9 +13,10 @@ uv run pre-commit install    # installs the commit AND pre-push hooks
 uv run pytest -m "not live"  # ~80 s; needs no controller and no network
 ```
 
-Optional tools: Graphviz `dot` for PNG/SVG diagrams (`brew install graphviz`), and
-`trufflehog` for the secret-scanning hooks (`mise use -g trufflehog@3.97.6`; the hook fails
-closed with an install hint when it is missing).
+The commit and push hooks need `trufflehog` 3.97.6 or newer on `PATH`
+(`mise use -g trufflehog@3.97.6`, or `brew install trufflehog`); the hook fails closed with that
+hint when it is missing, so install it before your first commit. Graphviz `dot` is the only
+optional extra (`brew install graphviz`), for PNG and SVG diagrams.
 
 ## The gates
 

@@ -868,6 +868,31 @@ def update_firmware(
     client.logout()
 
 
+def _print_version_and_exit(value: bool) -> None:
+    """``--version``: print ``unifi-inventory <version>`` and stop."""
+    if value:
+        import importlib.metadata
+
+        console.print(f'unifi-inventory {importlib.metadata.version("unifi-management-cli")}')
+        raise typer.Exit()
+
+
+@inventory_app.callback(invoke_without_command=True)
+def _inventory_root(
+    ctx: typer.Context,
+    version: Optional[bool] = typer.Option(
+        None,
+        '--version',
+        help='Show the installed version and exit',
+        callback=_print_version_and_exit,
+        is_eager=True,
+    ),
+) -> None:
+    """Device inventory and firmware management (the same commands as `unifi-mapper inventory`)."""
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+
+
 # Standalone entry point for direct execution
 def main():
     """Standalone entry point."""

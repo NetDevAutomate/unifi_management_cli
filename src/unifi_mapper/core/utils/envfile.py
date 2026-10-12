@@ -18,8 +18,12 @@ def parse_env_value(raw: str) -> str:
     trailing comment is dropped while a bare ``#`` inside a password is kept.
     """
     value = raw.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-        return value[1:-1]
+    if value[:1] in ('"', "'"):
+        # A quoted value: everything up to the closing quote, whatever follows it (a comment,
+        # say) is dropped. Without a closing quote the text is taken as written.
+        closing = value.find(value[0], 1)
+        if closing != -1:
+            return value[1:closing]
     for i, ch in enumerate(value):
         if ch == '#' and i > 0 and value[i - 1].isspace():
             return value[:i].rstrip()

@@ -100,6 +100,9 @@ def test_version_command_matches_the_flag_and_claims_no_edition() -> None:
         ),
         ("UNIFI_PASSWORD='x # y'", 'x # y'),  # pragma: allowlist secret
         ('UNIFI_TIMEOUT=10', '10'),
+        ('UNIFI_PASSWORD="x # y" # note', 'x # y'),  # pragma: allowlist secret
+        ("UNIFI_PASSWORD='x # y'   # note", 'x # y'),  # pragma: allowlist secret
+        ('UNIFI_PASSWORD="unterminated # quote', '"unterminated'),  # pragma: allowlist secret
     ],
 )
 def test_env_values_follow_the_dotenv_comment_grammar(
@@ -111,3 +114,19 @@ def test_env_values_follow_the_dotenv_comment_grammar(
     env.write_text(line + '\n')
     cli.load_env_from_config(str(env))
     assert __import__('os').environ[key] == expected
+
+
+def test_the_argparse_entry_points_report_the_same_version(capsys) -> None:
+    """`unifi-network-toolkit --version` and `python -m unifi_mapper.cli --version` print the
+    distribution version too (the validation council found only unifi-mapper had it)."""
+    import sys
+
+    from unifi_mapper import network_cli
+
+    for main, name in ((network_cli.main, 'unifi-network-toolkit'), (cli.main, 'unifi-mapper')):
+        sys.argv = [name, '--version']
+        with pytest.raises(SystemExit) as e:
+            main()
+        assert e.value.code == 0
+        out = capsys.readouterr().out
+        assert dist_version('unifi-management-cli') in out

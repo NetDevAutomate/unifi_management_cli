@@ -4,6 +4,7 @@ Comprehensive network analysis, discovery, and troubleshooting capabilities.
 """
 
 import argparse
+import importlib.metadata
 import logging
 import sys
 from .completions import install_completions
@@ -50,6 +51,11 @@ Port mapping and discovery live on the other entry point:
     )
 
     # Global options
+    parser.add_argument(
+        '--version',
+        action='version',
+        version=f'%(prog)s {importlib.metadata.version("unifi-management-cli")}',
+    )
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     parser.add_argument(
         '--config',
