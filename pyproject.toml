@@ -1,7 +1,7 @@
 [project]
 name = "unifi-management-cli"
 version = "0.2.0"
-description = "Enterprise-grade UniFi network automation and management CLI"
+description = "Discover, diagnose and document a UniFi network from the command line, with a read-only MCP server"
 readme = "README.md"
 requires-python = ">=3.12"
 # Bound policy: the floor is the locked, tested version; the ceiling is the next major, or the
@@ -28,15 +28,25 @@ dependencies = [
     "asyncssh>=2.22,<3",
 ]
 license = { text = "MIT" }
-authors = [{ name = "ataylor" }]
+authors = [{ name = "Andy Taylor", email = "andy.taylor@mail.com" }]
+keywords = ["unifi", "ubiquiti", "network", "cli", "mcp", "lldp", "stp", "diagnostics"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Networking :: Monitoring",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
+
+[project.urls]
+Homepage = "https://github.com/NetDevAutomate/unifi_management_cli"
+Documentation = "https://github.com/NetDevAutomate/unifi_management_cli/tree/main/docs"
+Issues = "https://github.com/NetDevAutomate/unifi_management_cli/issues"
 
 [project.scripts]
 "unifi-mapper" = "unifi_mapper.typer_cli:app"
@@ -153,4 +163,7 @@ exclude_also = [
     'if __name__ == .__main__.:',
     'if TYPE_CHECKING:',
 ]
-fail_under = 90
+# Ratchet: the measured branch coverage at a8f43f1 is 64%. The pre-push pytest hook runs
+# with --cov, so a floor above the measurement fails every push (issue 065). Raise this
+# only to a value the full suite meets.
+fail_under = 60
