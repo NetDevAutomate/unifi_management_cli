@@ -28,7 +28,20 @@ def load_env_from_config(config_path: str) -> None:
     env_file = Path(config_path).expanduser().resolve()
 
     if not env_file.exists():
-        log.error(f'Configuration file not found: {env_file}')
+        if env_file == Path('.env').resolve():
+            # The legacy fallback is only reached when no config was given and none of the
+            # searched files exist, so name them all: a new user who put the file somewhere
+            # else learns where the CLI looked, not just that ./.env is missing.
+            searched = '\n'.join(f'  {p}' for p in default_config_candidates())
+            log.error(
+                'No configuration file found. Nothing was given with --config or '
+                f'UNIFI_CONFIG, and none of these exist:\n{searched}\n'
+                'Create the first one with at least UNIFI_URL and UNIFI_CONSOLE_API_TOKEN '
+                '(or UNIFI_USERNAME and UNIFI_PASSWORD); .env.example in the repository '
+                'documents every key.'
+            )
+        else:
+            log.error(f'Configuration file not found: {env_file}')
         sys.exit(1)
 
     try:
@@ -57,14 +70,28 @@ def load_env_from_config(config_path: str) -> None:
         sys.exit(1)
 
 
-def get_default_config_path() -> Path:
-    """Get default config path following XDG Base Directory specification.
+def default_config_candidates() -> list[Path]:
+    """The config files the CLI looks for when none is given, in search order.
 
-    Search order (the first file that exists wins):
     1. ``prod.env`` in ``$XDG_CONFIG_HOME/unifi_management_cli/``, or in
        ``~/.config/unifi_management_cli/`` when ``XDG_CONFIG_HOME`` is unset
     2. ``default.env`` in that same directory
-    3. ``.env`` (current directory - legacy fallback, returned even if missing)
+    3. ``.env`` in the current directory (legacy fallback), as an absolute path
+    """
+    xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
+    if xdg_config_home:
+        config_dir = Path(xdg_config_home) / 'unifi_management_cli'
+    else:
+        config_dir = Path.home() / '.config' / 'unifi_management_cli'
+    return [config_dir / 'prod.env', config_dir / 'default.env', Path('.env').resolve()]
+
+
+def get_default_config_path() -> Path:
+    """Get default config path following XDG Base Directory specification.
+
+    The first file in :func:`default_config_candidates` that exists wins; when none does,
+    the legacy ``.env`` (current directory) is returned even though it is missing, and
+    :func:`load_env_from_config` then reports the whole search.
 
     A set ``XDG_CONFIG_HOME`` replaces ``~/.config`` here; the MCP server's search
     (``mcp.config.resolve_config_path``) tries it first and then ``~/.config`` too.
@@ -72,21 +99,9 @@ def get_default_config_path() -> Path:
     Returns:
         Path to default config file.
     """
-    xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
-    if xdg_config_home:
-        config_dir = Path(xdg_config_home) / 'unifi_management_cli'
-    else:
-        config_dir = Path.home() / '.config' / 'unifi_management_cli'
-
-    # Try prod.env first (most common production use case)
-    prod_config = config_dir / 'prod.env'
-    if prod_config.exists():
-        return prod_config
-
-    # Try default.env
-    default_config = config_dir / 'default.env'
-    if default_config.exists():
-        return default_config
+    for candidate in default_config_candidates()[:-1]:
+        if candidate.exists():
+            return candidate
 
     # Fallback to .env in current directory (legacy)
     return Path('.env')

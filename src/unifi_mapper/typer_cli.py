@@ -1,5 +1,6 @@
 """Typer-based CLI for UniFi Network Mapper with automatic completions."""
 
+import importlib.metadata
 import json
 import logging
 import typer
@@ -99,11 +100,26 @@ def setup_logging(debug: bool = False):
     )
 
 
+def package_version() -> str:
+    """The installed distribution's version, or ``0+unknown`` in a bare source tree."""
+    try:
+        return importlib.metadata.version('unifi-management-cli')
+    except importlib.metadata.PackageNotFoundError:
+        return '0+unknown'
+
+
+def _print_version_and_exit(value: bool) -> None:
+    """``--version``: print ``unifi-mapper <version>`` and stop before any other option runs."""
+    if value:
+        console.print(f'unifi-mapper {package_version()}')
+        raise typer.Exit()
+
+
 # Create main Typer app
 app = typer.Typer(
     name='unifi-mapper',
-    help='🚀 Enterprise UniFi Network Automation Platform',
-    epilog='Built with systematic debugging and AI-assisted development 🤖',
+    help='Discover, diagnose and document a UniFi network from the command line.',
+    epilog='Commands that write to the controller preview by default; pass --apply to write.',
     rich_markup_mode='rich',
     invoke_without_command=True,
     # Typer < 0.23 prints each frame's locals in a traceback; a config holds credentials.
@@ -123,6 +139,15 @@ def main(
             envvar='UNIFI_CONFIG',
         ),
     ] = None,
+    version: Annotated[
+        bool,
+        typer.Option(
+            '--version',
+            help='Show the installed version and exit',
+            callback=_print_version_and_exit,
+            is_eager=True,
+        ),
+    ] = False,
     debug: Annotated[
         bool,
         typer.Option(
@@ -160,7 +185,7 @@ def main(
         ),
     ] = False,
 ):
-    """🚀 Enterprise UniFi Network Automation Platform.
+    """Discover, diagnose and document a UniFi network from the command line.
 
     Global options apply to all commands. Use --connected-devices, --verify-updates,
     --dry-run or --apply as shortcuts to run the discover command. Discover previews
@@ -2022,11 +2047,8 @@ def diagram(
 
 @app.command()
 def version():
-    """📋 Show version information."""
-    console.print('🚀 [bold cyan]UniFi Network Port Mapper[/bold cyan]')
-    console.print('Version: [green]2.0.0[/green] (Enterprise Edition)')
-    console.print('Framework: [blue]Typer + Rich + Multi-AI Analysis[/blue]')
-    console.print('Features: [dim]100% Verified Port Naming + Device Intelligence[/dim]')
+    """Show the installed version (the same as --version)."""
+    console.print(f'unifi-mapper {package_version()}')
 
 
 @app.command()
