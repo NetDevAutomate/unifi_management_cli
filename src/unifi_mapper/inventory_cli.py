@@ -96,6 +96,19 @@ def get_device_type(model: str, device_type_field: str = '') -> str:
     return 'other'
 
 
+def _config_from_root(ctx: typer.Context, own: Optional[str]) -> Optional[str]:
+    """The sub-command's own ``--config`` if given, else the root ``--config``/``UNIFI_CONFIG``.
+
+    ``inventory_app`` is mounted under ``unifi-mapper``, whose root callback takes ``--config``
+    (envvar ``UNIFI_CONFIG``). Without this, ``unifi-mapper --config site-b.env inventory
+    list`` read the default config and acted on that controller (issue 043).
+    """
+    if own is not None:
+        return own
+    root = ctx.find_root().params.get('config')
+    return str(root) if root else None
+
+
 def get_api_client(config_path: Optional[str] = None) -> tuple[UnifiApiClient, str]:
     """Create and authenticate API client."""
     if config_path is None:
@@ -364,6 +377,7 @@ def _trigger_firmware_upgrade(client: UnifiApiClient, site: str, device_mac: str
 
 @inventory_app.command('list')
 def inventory_list(
+    ctx: typer.Context,
     filter: str = typer.Option(
         'all',
         '--filter',
@@ -417,7 +431,7 @@ def inventory_list(
         transient=True,
     ) as progress:
         progress.add_task('Connecting to UniFi controller...', total=None)
-        client, site = get_api_client(config)
+        client, site = get_api_client(_config_from_root(ctx, config))
 
         progress.add_task('Fetching devices...', total=None)
         categorized = fetch_and_categorize_devices(client, site)
@@ -494,6 +508,7 @@ def inventory_list(
 
 @inventory_app.command('check-updates')
 def check_updates(
+    ctx: typer.Context,
     filter: str = typer.Option(
         'all',
         '--filter',
@@ -525,7 +540,7 @@ def check_updates(
         transient=True,
     ) as progress:
         progress.add_task('Connecting to UniFi controller...', total=None)
-        client, site = get_api_client(config)
+        client, site = get_api_client(_config_from_root(ctx, config))
 
         progress.add_task('Checking for updates...', total=None)
         categorized = fetch_and_categorize_devices(client, site)
@@ -576,6 +591,7 @@ def check_updates(
 
 @inventory_app.command('firmware-skew')
 def firmware_skew(
+    ctx: typer.Context,
     filter: str = typer.Option(
         'all',
         '--filter',
@@ -604,7 +620,7 @@ def firmware_skew(
         transient=True,
     ) as progress:
         progress.add_task('Connecting to UniFi controller...', total=None)
-        client, site = get_api_client(config)
+        client, site = get_api_client(_config_from_root(ctx, config))
 
         progress.add_task('Fetching devices...', total=None)
         categorized = fetch_and_categorize_devices(client, site)
@@ -651,6 +667,7 @@ def firmware_skew(
 
 @inventory_app.command('update-firmware')
 def update_firmware(
+    ctx: typer.Context,
     filter: str = typer.Option(
         ...,
         '--filter',
@@ -715,7 +732,7 @@ def update_firmware(
         transient=True,
     ) as progress:
         progress.add_task('Connecting to UniFi controller...', total=None)
-        client, site = get_api_client(config)
+        client, site = get_api_client(_config_from_root(ctx, config))
 
         progress.add_task('Fetching devices...', total=None)
         categorized = fetch_and_categorize_devices(client, site)
