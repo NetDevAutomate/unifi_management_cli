@@ -160,7 +160,12 @@ def main():
     parser.add_argument(
         '--dry-run',
         action='store_true',
-        help="Dry run mode (don't apply port name changes)",
+        help='Preview the port names without writing them (the default; kept for scripts)',
+    )
+    parser.add_argument(
+        '--apply',
+        action='store_true',
+        help='Write the proposed port names to the controller (previews without it)',
     )
 
     parser.add_argument(
@@ -176,6 +181,11 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Preview unless --apply (issue 015: the same default as `unifi-mapper discover`).
+    if args.apply and args.dry_run:
+        parser.exit(2, 'error: choose --apply or --dry-run, not both\n')
+    dry_run = not args.apply
 
     # Configure debug logging
     if args.debug:
@@ -257,7 +267,7 @@ def main():
             # Use smart mapper
             smart_mapper = SmartPortMapper(port_mapper.api_client)
             smart_results = smart_mapper.smart_update_ports(
-                devices_data, lldp_data, verify_updates=args.verify_updates, dry_run=args.dry_run
+                devices_data, lldp_data, verify_updates=args.verify_updates, dry_run=dry_run
             )
 
             # Generate and display smart mapping report
@@ -281,7 +291,7 @@ def main():
             devices, connections = run_port_mapper(
                 port_mapper=port_mapper,
                 site_id=config.site,
-                dry_run=args.dry_run,
+                dry_run=dry_run,
                 output_path=output_path,
                 diagram_path=diagram_path,
                 diagram_format=diagram_format,

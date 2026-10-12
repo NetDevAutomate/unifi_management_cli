@@ -9,10 +9,9 @@ tool it will run is read-only against the controller. The three tools that would
 are refused over MCP (see [Control boundary](#mcp-control-boundary)); those changes go through
 the `unifi-mapper` `stp` and `radio` commands, which preview by default and write only when
 told (`stp apply --plan … --no-dry-run`, `stp optimize --apply`, `radio optimize --apply`,
-`radio restore --apply`). Not every CLI write previews first: `unifi-network-toolkit discover`
-and `python -m unifi_mapper.cli` still write port names unless `--dry-run` is given
-([issue 015](../issues/015-other-discover-entry-points-write-by-default.md)), and
-`inventory update-firmware` asks for confirmation instead of previewing.
+`radio restore --apply`, and every `discover` entry point with `--apply`). The one CLI write
+that does not preview first is `inventory update-firmware`, which asks for confirmation
+instead.
 The [MCP standards review](MCP_STANDARDS_REVIEW.md) audits the server against the MCP
 specification and SDK guidance, and lists the decisions still open.
 

@@ -124,7 +124,14 @@ def add_discovery_args(parser):
         help='Diagram format',
     )
     parser.add_argument(
-        '--dry-run', action='store_true', help='Show what would be updated without making changes'
+        '--dry-run',
+        action='store_true',
+        help='Preview the port names without writing them (the default; kept for scripts)',
+    )
+    parser.add_argument(
+        '--apply',
+        action='store_true',
+        help='Write the proposed port names to the controller (previews without it)',
     )
     parser.add_argument(
         '--verify-updates',
@@ -292,11 +299,17 @@ def handle_discover_command(args, config):
         timeout=config.timeout,
     )
 
+    # Preview unless --apply (issue 015: the same default as `unifi-mapper discover`).
+    if args.apply and args.dry_run:
+        print('error: choose --apply or --dry-run, not both', file=sys.stderr)
+        sys.exit(2)
+    dry_run = not args.apply
+
     # Run discovery with verification
     devices, connections = run_port_mapper(
         port_mapper=port_mapper,
         site_id=config.site,
-        dry_run=args.dry_run,
+        dry_run=dry_run,
         output_path=output_path,
         diagram_path=diagram_path,
         diagram_format=args.format,

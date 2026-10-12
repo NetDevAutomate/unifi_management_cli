@@ -50,9 +50,9 @@ unifi-inventory update-firmware --filter ap --dry-run   # writes without --dry-r
 unifi-network-toolkit install-completions bash
 ```
 
-`unifi-network-toolkit discover` still writes port names unless `--dry-run` is given
-([issue 015](docs/issues/015-other-discover-entry-points-write-by-default.md)); use
-`unifi-mapper discover`, which only previews unless `--apply` is given.
+Every `discover` entry point previews by default and writes port names only with `--apply`
+(`unifi-mapper discover`, `unifi-network-toolkit discover` and `python -m unifi_mapper.cli`
+alike); `--dry-run` is still accepted and means the default.
 
 ## Configuration
 

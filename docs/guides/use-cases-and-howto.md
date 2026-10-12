@@ -295,13 +295,13 @@ uv run unifi-mapper discover \
 
 **Scenario F: Using the network toolkit (argparse-based)**
 
-`unifi-network-toolkit discover` writes port names unless `--dry-run` is given
-([issue 015](../issues/015-other-discover-entry-points-write-by-default.md)), so pass it
-explicitly:
+`unifi-network-toolkit discover` previews by default, like `unifi-mapper discover`, and writes
+port names only with `--apply` (`--dry-run` is still accepted and means the default):
 
 ```bash
-uv run unifi-network-toolkit discover --dry-run --verify-updates --connected-devices
-uv run unifi-network-toolkit discover --dry-run --format svg --diagram diagrams/network.svg
+uv run unifi-network-toolkit discover --verify-updates --connected-devices
+uv run unifi-network-toolkit discover --format svg --diagram diagrams/network.svg
+uv run unifi-network-toolkit discover --apply   # writes the proposed port names
 ```
 
 ### Sequence Diagram: LLDP Discovery and Port Naming
