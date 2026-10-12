@@ -13,7 +13,7 @@ found_by: MCP uvx standards work
 
 `ToolRegistry.search` (`mcp/registry.py`) keeps a tool only if the whole query string is a
 substring of `"<name> <description>"`, lower-cased. Measured against the 76 registered tools at
-commit `c518915`:
+commit `b249104`:
 
 | Call | Results | Why |
 | --- | ---: | --- |

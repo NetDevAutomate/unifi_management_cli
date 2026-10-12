@@ -2,10 +2,10 @@
 title: "`get_acl_rules` gets a 404: the client's `/acls` path isn't served by Network 10.6"
 date: 2026-10-03
 status: resolved
-resolved_by: fb4ff9e
+resolved_by: d1b36f0
 severity: medium
 components: [network/client]
-found_by: review follow-ups live checks at 7ef13c2 (L1)
+found_by: review follow-ups live checks at d6d013f (L1)
 ---
 
 # `get_acl_rules` gets a 404: the client's `/acls` path isn't served by Network 10.6
@@ -23,7 +23,7 @@ surface alike.
 
 ## Evidence
 
-- Local evidence, not in the repo (the read-only live checks recorded at `7ef13c2`, finding
+- Local evidence, not in the repo (the read-only live checks recorded at `d6d013f`, finding
   L1): the `get_acl_rules` results on the discovery and the direct surface hold the 404
   payload and the one audited GET.
 - Ubiquiti's Network API reference for v10.6.102 lists the resource as
@@ -59,5 +59,5 @@ returns a reference-shaped rule through the tool. All of them failed on the old 
 
 Live after the fix (the six network tools in-process, behind their guard): `get_acl_rules`
 returned `[]` with no error, and all six tools succeeded; 11 audited GETs, 0 violations.
-Local evidence, not in the repo: a path probe (recorded at `7ef13c2`) and the six tools'
-results (at `1f79d47`), both with the fix applied before it landed as `fb4ff9e`.
+Local evidence, not in the repo: a path probe (recorded at `d6d013f`) and the six tools'
+results (at `a43d39f`), both with the fix applied before it landed as `d1b36f0`.

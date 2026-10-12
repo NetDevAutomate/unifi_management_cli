@@ -36,7 +36,7 @@ console-token fallback, or the keys added to that file.
 
 ## Evidence
 
-- Local evidence, not in the repo, recorded at `06d2f6a`: for the run with
+- Local evidence, not in the repo, recorded at `f8c3c33`: for the run with
   `UNIFI_NETWORK_API_KEY` and the run with the console token in its place, the resolver
   status, the `--check` output and the six tool results.
 

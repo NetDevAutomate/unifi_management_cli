@@ -2,7 +2,7 @@
 title: "No default audit log of MCP calls, and no cap on result size"
 date: 2026-10-02
 status: resolved
-resolved_by: ec6aec9
+resolved_by: 6b4e60c
 severity: low
 components: [mcp/runner, mcp/server, core/utils/readonly]
 found_by: MCP uvx standards work

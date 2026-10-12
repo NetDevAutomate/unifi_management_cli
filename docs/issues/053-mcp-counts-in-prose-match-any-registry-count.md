@@ -23,7 +23,7 @@ So a stale total passes whenever it happens to equal another registry count. If 
 registry grew by one tool, a sentence still saying "66 tools" (today's direct listing) or
 "46 tools" (today's analysis category) would pass.
 
-At `90fda08` the current docs (all but `docs/issues/` and `docs/solutions/`) hold 72 such
+At `4e37590` the current docs (all but `docs/issues/` and `docs/solutions/`) hold 72 such
 free-text counts in 8 files: 21 equal the total, 40 a category's count and 11 another
 registry count (a surface, the meta-tools, the mutating or pipeline tools).
 

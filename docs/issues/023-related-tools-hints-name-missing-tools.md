@@ -2,7 +2,7 @@
 title: "Error hints send the model to `get_network_topology` and `vlan_info`, which don't exist"
 date: 2026-10-02
 status: resolved
-resolved_by: d487314
+resolved_by: 2c88885
 severity: low
 components: [analysis, connectivity, discovery, diagnostics/network_health, core/utils/auth]
 found_by: MCP uvx standards work

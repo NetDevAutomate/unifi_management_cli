@@ -19,11 +19,11 @@ Integration API or Protect path is checked offline only.
 The harness found real bugs that the offline suite had passed, three times:
 
 - `network_health_check` failed on the controller's string-valued system stats (fixed in
-  `b05d84e`).
+  `1cd4d77`).
 - A uvx launch from a checkout kept serving the old build after a code edit (fixed in
-  `0863d76` with `[tool.uv] cache-keys`).
+  `95b8e1c` with `[tool.uv] cache-keys`).
 - The Integration API answered 404 for the ACL-rule and DNS-policy paths (fixed in
-  `fb4ff9e`; issues 031 and 032).
+  `d1b36f0`; issues 031 and 032).
 
 It also hard-codes the site: the switch it inspects and the port it must never target are
 constants in its source.

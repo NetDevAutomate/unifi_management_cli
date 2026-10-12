@@ -4,7 +4,7 @@ date: 2026-10-03
 status: open
 severity: low
 components: [mcp/tools/protect, protect/client]
-found_by: review follow-ups live checks at 7ef13c2 (L4)
+found_by: review follow-ups live checks at d6d013f (L4)
 ---
 
 # The Protect MCP tools are unverified live: no Protect account is configured
@@ -26,7 +26,7 @@ and there was no `READ_ONLY_VIOLATION`. The second attempt built no Protect fami
 
 ## Evidence
 
-- Local evidence, not in the repo: the read-only live checks recorded at `7ef13c2` (the
+- Local evidence, not in the repo: the read-only live checks recorded at `d6d013f` (the
   `protect_guarded` check and its first MCP attempt, finding L4).
 
 ## Impact
@@ -66,7 +66,7 @@ the read-only guard: 9 audited requests (7 allowlisted system-log query POSTs an
 - The controller family still answers normally on its token: `stat/health` reports all five
   subsystems `ok` and `stat/device-basic` lists 24 devices.
 
-Local evidence, not in the repo, recorded at `06d2f6a`.
+Local evidence, not in the repo, recorded at `f8c3c33`.
 
 ## Recipe: verify Protect live with a view-only account (user action)
 

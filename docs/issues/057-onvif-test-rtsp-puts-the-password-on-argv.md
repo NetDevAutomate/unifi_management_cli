@@ -16,7 +16,7 @@ found_by: docs and repo hygiene review (M4 council)
 process's arguments are readable by other local users (`ps -o args`) for as long as ffprobe
 runs, which is up to its 10-second timeout per camera.
 
-The masking added in `1fcf726` (`_redact`) covers what the script prints: the URI line and
+The masking added in `c3609cd` (`_redact`) covers what the script prints: the URI line and
 any error text. It doesn't cover argv. The AXIS guide (section 8) documents the exposure, but
 no issue tracked it.
 

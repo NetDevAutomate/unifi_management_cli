@@ -19,10 +19,10 @@ found_by: MCP uvx standards work
 - `direct`: also lists the 62 non-mutating, non-pipeline catalog tools, each with its own
   input and output schema, title and annotations.
 
-Measured at commit `c518915` over an in-memory session: discovery 4 tools, 6,376 characters of
+Measured at commit `b249104` over an in-memory session: discovery 4 tools, 6,376 characters of
 `tools/list`; direct 66 tools, 184,713 characters (roughly 46k tokens).
 
-Verify step, commit `d6be722`, over a real `uvx --python 3.12 --refresh --from` subprocess
+Verify step, commit `ca6869b`, over a real `uvx --python 3.12 --refresh --from` subprocess
 (the built wheel and the checkout give identical figures). Tokens are estimated as
 characters / 4:
 

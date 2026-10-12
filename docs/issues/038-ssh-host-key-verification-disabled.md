@@ -44,7 +44,7 @@ entry is missing.
   normally run from a laptop on the LAN, so that is the exposure.
 - What it gets: the root SSH password, which is full control of the gateway (firewall,
   routing, VPN keys), and the ability to forge the latency and bandwidth results.
-- Since `82b4288` the password sent is always `UNIFI_SSH_PASSWORD`, never the UniFi OS
+- Since `6fd791a` the password sent is always `UNIFI_SSH_PASSWORD`, never the UniFi OS
   login, which limits what leaks but doesn't close the gap.
 - It doesn't break fresh clones, CI or the MCP server (neither command is an MCP tool).
 
@@ -73,12 +73,12 @@ every user, so it is the user's call.
 ## Since the July port
 
 - Every gateway SSH session now opens in one helper, `gateway_session()` in
-  `analysis/gateway_ssh.py` (`385e9d8`), which passes `known_hosts=GATEWAY_KNOWN_HOSTS`. That
+  `analysis/gateway_ssh.py` (`db18bfa`), which passes `known_hosts=GATEWAY_KNOWN_HOSTS`. That
   constant (`None` today) is the one line step 1 changes; the `file:line` references above
   predate the helper.
 - The port added CLI-only SSH entry points, all through that helper: `gateway ping`,
-  `traceroute`, `dns`, `http` and `flows` (`3a86d86`); `diagnose client-connectivity` and
-  `diagnose ap-health --ping-clients` (`3525478`); and `vlan-traffic sample` (`4875b15`). Each
+  `traceroute`, `dns`, `http` and `flows` (`8ed301f`); `diagnose client-connectivity` and
+  `diagnose ap-health --ping-clients` (`707ea13`); and `vlan-traffic sample` (`ad846b6`). Each
   prints the warning that the host key is not verified once per run, before it connects. None
   is an MCP tool (decision D1 in issue [060](060-decisions-from-the-july-port.md)).
 - The VLAN traffic sampler is held off every schedule: `scripts/unifi-cron.sh` has no

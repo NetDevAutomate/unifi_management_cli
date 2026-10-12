@@ -1,5 +1,5 @@
 ---
-title: "At `8d51214`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it"
+title: "At `85c937d`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it"
 date: 2026-10-04
 status: open, decision needed
 severity: low
@@ -7,13 +7,13 @@ components: [pyproject, src, tests, scripts]
 found_by: docs and repo hygiene review (line-length guard)
 ---
 
-# At `8d51214`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it
+# At `85c937d`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it
 
 ## Problem
 
 `pyproject.toml` sets ruff's `line-length = 99`, and the house style keeps `.py` and `.toml`
 lines at 99 characters or fewer. ruff can't hold that line, though: `E501` is in the
-`ignore` list, and `ruff format` doesn't split long strings or comments. At `8d51214`,
+`ignore` list, and `ruff format` doesn't split long strings or comments. At `85c937d`,
 counting characters per line (not bytes), 225 tracked lines were longer:
 
 | Area | Files | Lines over 99 characters |

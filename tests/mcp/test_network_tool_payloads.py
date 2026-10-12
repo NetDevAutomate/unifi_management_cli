@@ -1,6 +1,6 @@
 """Payloads the live Network Integration API sends, through the network_api MCP tools.
 
-The first live run of these tools (review follow-ups at 7ef13c2, Network 10.6.106) found that
+The first live run of these tools (review follow-ups at d6d013f, Network 10.6.106) found that
 one client with ``access.type: DEFAULT`` failed validation and emptied the whole
 ``get_clients`` result (issue 033), and that ``get_acl_rules`` and ``get_dns_policies`` asked
 for paths the controller doesn't serve (issues 031 and 032). These tests serve fake pages

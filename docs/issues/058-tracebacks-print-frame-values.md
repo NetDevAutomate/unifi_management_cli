@@ -2,7 +2,7 @@
 title: "Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on"
 date: 2026-10-05
 status: resolved
-resolved_by: 14488b1
+resolved_by: e017844
 severity: medium
 components: [src/unifi_mapper/mcp/server.py, src/unifi_mapper/typer_cli.py, src/unifi_mapper/inventory_cli.py, src/unifi_mapper/core/utils/logging.py]
 found_by: July-port design review (revision 5, M1 and M2)
@@ -18,7 +18,7 @@ from the env file, or passed as an argument, is one of those variables.
 - **Typer frame locals (live in both CLIs).** `pyproject.toml` pins `typer>=0.21,<0.22`, and
   0.21.0 is locked. Before 0.23.0, Typer's `pretty_exceptions_show_locals` defaults to True.
   None of the 8 `typer.Typer(...)` apps in `src/` sets it, so an unhandled exception in
-  `unifi-mapper` or `unifi-inventory` prints the frame locals. Checked at `ef150e2`: both apps
+  `unifi-mapper` or `unifi-inventory` prints the frame locals. Checked at `ec4bb4f`: both apps
   report True.
 - **loguru `diagnose` (live in the MCP server).** It annotates each traceback line with
   variable values when an exception is logged.

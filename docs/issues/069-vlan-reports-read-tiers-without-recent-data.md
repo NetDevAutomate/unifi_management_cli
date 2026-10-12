@@ -2,7 +2,7 @@
 title: "VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty"
 date: 2026-10-06
 status: resolved
-resolved_by: 56567fd
+resolved_by: dec3450
 severity: medium
 components: [analysis/vlan_traffic_store, typer_cli, mcp/manifests/analysis.yaml]
 found_by: July port review (iteration 5, semantic review and council)

@@ -13,7 +13,7 @@ password option, argument or variable whose value is not an explicit placeholder
 Allowed values: a ``<placeholder>``, an environment variable (``$VAR`` or ``${VAR}``) or a
 ``{template}`` field, quoted or not, or nothing at all (``NAME_PASSWORD=`` at the end of a
 line). Failures name a location only, never the value. ``scripts/`` has been scanned since
-its ONVIF scripts stopped holding the cameras' credentials (``15b0f60``, issue 041).
+its ONVIF scripts stopped holding the cameras' credentials (``8681571``, issue 041).
 """
 
 from __future__ import annotations

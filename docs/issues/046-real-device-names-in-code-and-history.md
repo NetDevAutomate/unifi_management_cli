@@ -13,18 +13,18 @@ found_by: docs and repo hygiene review (privacy scan)
 
 - Fixed at HEAD for `tests/`, `scripts/` and the `src/` docstrings. The repository is public,
   so this review replaced the names:
-  - `e5696b5`: the device, client and port names in 13 test files are placeholders. Each
+  - `e99e5f2`: the device, client and port names in 13 test files are placeholders. Each
     keeps its model, and each room, owner or custom word in it became one NATO word, the
     same in every file, so the tests keep their meaning.
-  - `99c3856`: the three site scripts no longer hold a target. They read their devices and
+  - `9d98dcb`: the three site scripts no longer hold a target. They read their devices and
     ports from `site-targets.json`, outside the repository, through `scripts/site_targets.py`,
     and stop with exit code 2, before they read the controller config, when the file is
     missing or malformed. The repository keeps placeholders only, in
     `scripts/site-targets.example.json` ([codemap, section 22](../architecture/codemap.md#22-scripts-directory)).
-  - `4845976`: the docs guard also reads every tracked test and script, so a captured name
+  - `d3b817e`: the docs guard also reads every tracked test and script, so a captured name
     there fails the suite. A name that equals a model the code classifies counts as generic.
-  - `f765871`: the site's room words on six docstring lines in five `src/` files are
-    placeholders. Switch names take the ones `3afa3bc` used (`Switch A`, `Switch B`), access
+  - `cbe2560`: the site's room words on six docstring lines in five `src/` files are
+    placeholders. Switch names take the ones `d379f2d` used (`Switch A`, `Switch B`), access
     points become `AP B` to `AP D`, the `_extract_location` example uses two generic words
     from that method's own location list, and the radio rule's description no longer names
     its word. No code changed.
@@ -33,23 +33,23 @@ found_by: docs and repo hygiene review (privacy scan)
 
 ## Problem
 
-As found, at `80c11fe`: a privacy scan compared the names in tracked files with the device,
+As found, at `9f04bfa`: a privacy scan compared the names in tracked files with the device,
 port, network and SSID names in local captures of the live network. The docs were cleaned in
-`e6a6aae`, but the scan had never looked at code. This file gives locations and counts only,
+`fb3e1f3`, but the scan had never looked at code. This file gives locations and counts only,
 never a name.
 
 The scan treats every captured name alike, so a few hits may be generic words rather than
 names chosen for this site.
 
 **Source docstrings** (3 names on 7 lines in 5 files): replaced with placeholder names in
-`3afa3bc`, together with two client MACs and a subnet in the same docstrings. No code or
+`d379f2d`, together with two client MACs and a subnet in the same docstrings. No code or
 test changed.
 
 `src/` also has one runtime rule written for this site: the radio optimisation plan moves any
 access point whose name contains one particular room word off channel 36
 (`src/unifi_mapper/analysis/radio_config.py:332-334`, described at `:306-307`). Six more
 docstring lines used the site's room words, in examples and in that rule's description;
-`f765871` replaced them. The runtime strings that still hold room words are listed in item 4.
+`cbe2560` replaced them. The runtime strings that still hold room words are listed in item 4.
 
 **Tests** (12 files, 57 hits):
 
@@ -68,9 +68,9 @@ docstring lines used the site's room words, in examples and in that rule's descr
 | `tests/test_port_inspect.py` | 7 |
 | `tests/test_port_naming.py` | 7 |
 
-The table is the `80c11fe` scan's. The wider scan behind the fix also found names in
-`tests/test_new_analysis_tools.py` and `tests/test_port_inspect_context.py`, so `e5696b5`
-changed 13 test files. `tests/test_apply_ap_channel_plan.py` isn't one of them: `99c3856`
+The table is the `9f04bfa` scan's. The wider scan behind the fix also found names in
+`tests/test_new_analysis_tools.py` and `tests/test_port_inspect_context.py`, so `e99e5f2`
+changed 13 test files. `tests/test_apply_ap_channel_plan.py` isn't one of them: `9d98dcb`
 rewrote it together with the scripts.
 
 **Scripts** (3 files, 30 hits). These were runtime literals: each script targeted the site's
@@ -82,10 +82,10 @@ own devices by name.
 | `scripts/apply_stp_priorities_custom.py` | 16 |
 | `scripts/remediate_stp_post_apply.py` | 4 |
 
-**Unpushed history.** Five commits after `d045079` add a line with such a name: `085bcbf`,
-`3a6e8f4`, `2f6acf4`, `79e24e7` and `ab1f32a` (tests, two source docstrings and, in
-`3a6e8f4`, the README, which `e6a6aae` cleaned). A sixth, `9d64f00`, adds a room word in a
-docstring example, which `f765871` replaced.
+**Unpushed history.** Five commits after `1c58b5d` add a line with such a name: `5049a28`,
+`c7534eb`, `7341069`, `041b427` and `f71925c` (tests, two source docstrings and, in
+`c7534eb`, the README, which `fb3e1f3` cleaned). A sixth, `b65cf1d`, adds a room word in a
+docstring example, which `cbe2560` replaced.
 
 ## Impact
 
@@ -95,8 +95,8 @@ can't be removed without rewriting published commits.
 
 ## Decision needed
 
-1. Tests: done in `e5696b5`.
-2. Scripts: done in `99c3856`. To run one, copy `scripts/site-targets.example.json` to
+1. Tests: done in `e99e5f2`.
+2. Scripts: done in `9d98dcb`. To run one, copy `scripts/site-targets.example.json` to
    `~/.config/unifi_management_cli/site-targets.json` (under `$XDG_CONFIG_HOME` when it is
    set), or pass `--targets PATH`, and fill in the site's names. Keep the file out of the
    repository.
@@ -107,19 +107,19 @@ can't be removed without rewriting published commits.
    in the pushed history are still to decide. The orchestrator sets the exact commit list.
    The copies are:
    - the six commits above, and the pushed history of the scripts' literals;
-   - the removed lines of `e5696b5` and `99c3856`, which hold the names they replaced.
-     `a78d403` also changed three lines that still held a name, which `e5696b5` then
+   - the removed lines of `e99e5f2` and `9d98dcb`, which hold the names they replaced.
+     `a91e62a` also changed three lines that still held a name, which `e99e5f2` then
      replaced;
    - the removed lines of the doc and docstring scrubs, most of them public since before
      this review:
-     - `e6a6aae`: 19 doc lines that held a captured device name or a room word, 17 of them
+     - `fb3e1f3`: 19 doc lines that held a captured device name or a room word, 17 of them
        on `origin/main`: `README.md` 4 (2 on `origin/main`),
        `docs/guides/use-cases-and-howto.md` 4,
        `docs/operations/troubleshooting-and-runbook.md` 1,
        `docs/solutions/analysis/port-label-drift.md` 9 and
        `docs/solutions/analysis/radio-wlan-write-path-correctness.md` 1;
-     - `3afa3bc`: 12 docstring lines in five `src/` files, 8 of them on `origin/main`;
-     - `f765871`: 6 docstring lines in five `src/` files, 5 of them on `origin/main`.
+     - `d379f2d`: 12 docstring lines in five `src/` files, 8 of them on `origin/main`;
+     - `cbe2560`: 6 docstring lines in five `src/` files, 5 of them on `origin/main`.
 
    A rewrite changes every later commit hash, including the `resolved_by` hashes the issue
    files record.
@@ -132,7 +132,7 @@ can't be removed without rewriting published commits.
      it, because the prefix isn't a full address. Take the prefix from an option or a config
      file instead;
    - other runtime strings and comments that hold the site's room words, counted after
-     `f765871`: 25 lines in 8 files besides the rule's own condition:
+     `cbe2560`: 25 lines in 8 files besides the rule's own condition:
      - `src/unifi_mapper/enhanced_network_topology.py`: 17 string lines and 1 comment. The
        location keyword lists of `NetworkTopology._extract_location` and
        `generate_html_diagram` hold the site's room words beside generic ones, and the

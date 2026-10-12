@@ -24,7 +24,7 @@ removed or misspelt tool still passes when the name happens to be assigned somew
 `src/`, and the negative self-test can't show it, because its made-up name is absent from
 `src/`.
 
-At `9213120`, across the 155 tracked `.py` files under `src/`:
+At `02043ea`, across the 155 tracked `.py` files under `src/`:
 
 - 76 tool-shaped names, from 56 files, are known only through that pattern;
 - by binding (a name can have several): 52 are local variables, 27 class attributes, 26
@@ -49,7 +49,7 @@ the 76. The guard would miss a stale tool name that matches one of them. The exa
    fails until step 2 lands.
 2. Harvest the names with `ast`, as `env_vars_read` already parses source: module-level
    `Assign` and `AnnAssign` targets, plus whichever other bindings a doc may name.
-3. Re-run the guard, and fix or file any doc it then reports. At `9213120` the narrowest
+3. Re-run the guard, and fix or file any doc it then reports. At `02043ea` the narrowest
    set reports none, so no doc needs triage today.
 
 The design step is the binding list in step 2. Class attributes (model and result fields)

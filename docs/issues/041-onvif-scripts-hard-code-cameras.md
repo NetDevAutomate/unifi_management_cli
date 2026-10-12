@@ -11,12 +11,12 @@ found_by: docs and repo hygiene review (privacy scan)
 
 ## Status
 
-- Fixed at HEAD by `15b0f60`. Neither script keeps a camera address, name or credential in
+- Fixed at HEAD by `8681571`. Neither script keeps a camera address, name or credential in
   the source any more. Both read `ONVIF_USERNAME`, `ONVIF_PASSWORD` and `ONVIF_CAMERAS`
   through `scripts/onvif_config.py`, and stop before they connect to any camera if one is
   unset ([AXIS guide, section 8](../guides/axis-provisioning.md#camera-list-and-credentials)).
-- The password is still in the history: every revision from `5564879` up to the parent of
-  `15b0f60`, the `origin/main` tip included. The user has asked for the history to be
+- The password is still in the history: every revision from `c4bb6f0` up to the parent of
+  `8681571`, the `origin/main` tip included. The user has asked for the history to be
   rewritten to remove it. That rewrite runs separately, after this review, and its
   force-push needs the user's explicit confirmation.
 - The user reports that the camera password has been changed everywhere it was used. The old
@@ -24,11 +24,11 @@ found_by: docs and repo hygiene review (privacy scan)
 
 ## Problem
 
-As found, at `e38e9e7`:
+As found, at `c70f5c9`:
 
 - `scripts/onvif_stream.py` defined its `CAMERAS` list in the source, and each entry carried
   the cameras' ONVIF password as a literal. It was not a placeholder. It had been in the file
-  since `5564879`, and it is on `origin/main`.
+  since `c4bb6f0`, and it is on `origin/main`.
 - `scripts/onvif_stream.py` and `scripts/onvif_probe.py` also hard-coded the cameras' real
   addresses and names.
 
@@ -49,7 +49,7 @@ What is left, in this order:
 1. Done by the user: the ONVIF account's password has been changed on the cameras and
    everywhere else it was used (the user's report; not checked here). The new value belongs
    in the file that `ONVIF_PASSWORD` comes from.
-2. Done in `15b0f60`: both scripts read their camera list and account from the environment,
+2. Done in `8681571`: both scripts read their camera list and account from the environment,
    and the repository keeps only placeholders.
 3. The history rewrite the user asked for: it purges this password and the one in
    [issue 051](051-verify-cli-help-example-held-a-password.md). Its force-push needs the

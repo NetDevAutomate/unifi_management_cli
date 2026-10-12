@@ -124,16 +124,16 @@ port's plan at filing time; "Rebuilt by the port" below records the commit that 
 The lines above that name a rebuilt command, tool or fixture, with the commit that built it:
 
 - The gateway probes as CLI-only `gateway ping`, `traceroute`, `dns`, `http` and `flows`, with
-  no hostname fallback: `3a86d86`.
+  no hostname fallback: `8ed301f`.
 - `diagnose client-connectivity` and `diagnose ap-health` (no PoE phase, no SSID or `reports/`
-  default), which replace `scripts/ap_health_test.py`: `3525478`.
+  default), which replace `scripts/ap_health_test.py`: `707ea13`.
 - `vlan-traffic sample`, `rollup`, `report` and `coverage`, with `--db` instead of
-  `UNIFI_VLAN_TRAFFIC_DB`, which replace `scripts/vlan_traffic_sample.py`: `4875b15`.
-- `get_config_object`'s `created_utc` field: `3bc3969`.
-- `get_recent_events` over the four allowlisted system-log classes: `9d21d0e`.
+  `UNIFI_VLAN_TRAFFIC_DB`, which replace `scripts/vlan_traffic_sample.py`: `ad846b6`.
+- `get_config_object`'s `created_utc` field: `27f765c`.
+- `get_recent_events` over the four allowlisted system-log classes: `709fdd7`.
 - The read-only controller dump and network audit scripts, without the 404 paths or a
-  `reports/` default: `13f05e9`.
-- The anonymised 17-switch fleet fixture and its STP audit test: `970c805`.
+  `reports/` default: `2a4331e`.
+- The anonymised 17-switch fleet fixture and its STP audit test: `2b2f8aa`.
 
 ## Recommendation
 
