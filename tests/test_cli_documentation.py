@@ -29,6 +29,9 @@ from unifi_mapper.typer_cli import app
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 README = REPO_ROOT / 'README.md'
+# The exhaustive command table and the exit-code table moved out of the README on 2026-10-12
+# (the readiness review cut it to a front door); both now live in the command reference.
+CLI_REFERENCE = REPO_ROOT / 'docs' / 'reference' / 'cli.md'
 TYPER_CLI = REPO_ROOT / 'src' / 'unifi_mapper' / 'typer_cli.py'
 
 # Entry points documented in the README that this test resolves. Only
@@ -195,28 +198,28 @@ def test_documented_groups_expose_expected_command_counts() -> None:
 
 
 def _reference_table_commands() -> set[str]:
-    """Return the command names listed in the README's Command Reference table."""
-    text = README.read_text(encoding='utf-8')
-    if '### Command Reference' not in text:
+    """Return the command names listed in the command reference's Command Reference table."""
+    text = CLI_REFERENCE.read_text(encoding='utf-8')
+    if '## Command Reference' not in text:
         return set()
-    section = text.split('### Command Reference')[1].split('\n### ')[0]
+    section = text.split('## Command Reference')[1].split('\n## ')[0]
     return {m.group(1) for m in re.finditer(r'^\| `([a-z0-9 \-]+)`', section, re.M)}
 
 
 def test_command_reference_table_lists_every_command() -> None:
-    """Every registered command appears in the README reference table."""
+    """Every registered command appears in docs/reference/cli.md's reference table."""
     missing = sorted(_registered_commands(app) - _reference_table_commands())
     assert not missing, (
-        f'{len(missing)} command(s) are missing from the README Command Reference table: {missing}'
+        f'{len(missing)} command(s) are missing from the Command Reference table in '
+        f'{CLI_REFERENCE.name}: {missing}'
     )
 
 
 def test_command_reference_table_has_no_phantom_commands() -> None:
-    """The README reference table lists nothing that does not exist."""
+    """The reference table lists nothing that does not exist."""
     phantom = sorted(_reference_table_commands() - _registered_commands(app))
     assert not phantom, (
-        f'{len(phantom)} command(s) in the README Command Reference table are not '
-        f'registered: {phantom}'
+        f'{len(phantom)} command(s) in the Command Reference table are not registered: {phantom}'
     )
 
 
@@ -282,13 +285,13 @@ def _commands_that_exit_2_on_a_check() -> set[str]:
 
 
 def test_the_exit_code_table_names_every_command_that_exits_2_on_a_failed_check() -> None:
-    """Review M1: the README's exit 2 row said "a usage error" only, while a dozen
+    """Review M1: the exit-code table's exit 2 row said "a usage error" only, while a dozen
     commands exit 2 when their check fails; every such command must be named there."""
-    lines = README.read_text(encoding='utf-8').splitlines()
+    lines = CLI_REFERENCE.read_text(encoding='utf-8').splitlines()
     row = next(line for line in lines if line.startswith('| 2 |'))
     commands = _commands_that_exit_2_on_a_check()
     assert {'analyze link-speeds', 'diagnose all', 'stp apply'} <= commands  # the scan works
     missing = sorted(
         c for c in commands if f'`{c}`' not in row and f'`{c.split(" ", 1)[1]}`' not in row
     )
-    assert missing == [], f'name these in the README exit-code table: {missing}'
+    assert missing == [], f'name these in the exit-code table of {CLI_REFERENCE.name}: {missing}'
