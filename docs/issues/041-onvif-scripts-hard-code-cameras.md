@@ -1,7 +1,8 @@
 ---
 title: "The ONVIF scripts hard-coded the site's cameras, and `onvif_stream.py` a camera password that is in pushed history"
 date: 2026-10-04
-status: open, decision needed
+status: resolved
+resolved_by: 2650809
 severity: high
 components: [scripts/onvif_stream.py, scripts/onvif_probe.py, history]
 found_by: docs and repo hygiene review (privacy scan)
@@ -57,3 +58,20 @@ What is left, in this order:
 
 Why this still needs a decision: the rewrite's force-push in step 3 needs the user's
 explicit confirmation.
+
+## Resolution
+
+Resolved on 2026-10-12 by the history rewrite. Every commit from 2025-04-25 on was rewritten
+with `git filter-repo` from a reviewed replacement list (three credentials and their hashes,
+the site's device, client and port names in every case and separator spelling, its MAC
+addresses in every notation, its addresses in four subnets mapped to RFC 5737 documentation
+addresses with the host part kept, and the removed internal document paths). The rewritten
+history was verified over every object (blob, commit, tag and tree name) before and after the
+push, reviewed by a four-model council in three passes, and force-pushed to `main` with a
+lease on the previous tip. The superseded heads (`d045079`, `fef2344`, `3a8d731`) are still
+served by GitHub by SHA until the Support purge request completes; see
+[the rewrite notice](../../CHANGELOG.md) for what a clone holding the old history must do.
+The camera password of this issue is absent from every historical revision in every form
+checked (clear, URL-encoded, SHA-1 as recorded in `.secrets.baseline`). What remains is the
+maintainer's own: the second ONVIF account's password, which also sat in a public guide, is to
+be rotated on both cameras (only the first account was rotated on 2026-10-03).

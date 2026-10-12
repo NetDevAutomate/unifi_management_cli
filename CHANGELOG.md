@@ -5,6 +5,23 @@ The current release is 0.2.0; only the latest release is supported.
 
 ## [Unreleased]
 
+### History rewrite (2026-10-12): clones made before this date must be re-cloned
+
+The whole history from 2025-04-25 on was rewritten to remove three credentials, the
+maintainer's own network identifiers (device names, MAC addresses, addresses of four subnets)
+and three internal document paths that should never have been committed. Every commit hash
+changed; the tree at the tip did not (the code is identical). `main` was force-pushed on
+2026-10-12. If you cloned or forked before then:
+
+- do not merge, rebase or pull the old history into the new one; delete the clone and clone
+  again (or `git fetch origin && git reset --hard origin/main` in a clone with no local work);
+- a fork keeps the old history until it is deleted and re-forked;
+- commit hashes cited in older issues, notes or links no longer resolve; the hashes cited in
+  this repository's own documents were remapped.
+
+The removed credentials were rotated or belong to decommissioned services. The maintainer has
+asked GitHub Support to purge the superseded commits from the server's object store and caches.
+
 ### Changed (behaviour)
 
 - `unifi-network-toolkit discover` and `python -m unifi_mapper.cli` preview by default and write

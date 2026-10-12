@@ -1,7 +1,8 @@
 ---
 title: "Test fixtures carried MAC addresses and addresses from the live network"
 date: 2026-10-04
-status: open, decision needed
+status: resolved
+resolved_by: 2650809
 severity: low
 components: [tests, history]
 found_by: docs and repo hygiene review (privacy scan)
@@ -78,3 +79,19 @@ the same rewrite as the passwords. Only the identifiers in the pushed history ar
 decide. The maintainer sets the exact commit list. A rewrite changes every later commit
 hash, including the `resolved_by` hashes the issue files record, and every clone has to be
 re-made afterwards.
+
+## Resolution
+
+Resolved on 2026-10-12 by the history rewrite. Every commit from 2025-04-25 on was rewritten
+with `git filter-repo` from a reviewed replacement list (three credentials and their hashes,
+the site's device, client and port names in every case and separator spelling, its MAC
+addresses in every notation, its addresses in four subnets mapped to RFC 5737 documentation
+addresses with the host part kept, and the removed internal document paths). The rewritten
+history was verified over every object (blob, commit, tag and tree name) before and after the
+push, reviewed by a four-model council in three passes, and force-pushed to `main` with a
+lease on the previous tip. The superseded heads (`d045079`, `fef2344`, `3a8d731`) are still
+served by GitHub by SHA until the Support purge request completes; see
+[the rewrite notice](../../CHANGELOG.md) for what a clone holding the old history must do.
+The identifiers of this issue (test-fixture MACs, serial, device ID and addresses) are gone
+from every historical revision; the positive control detected each of them in the pre-rewrite
+mirror and none in the rewritten history.

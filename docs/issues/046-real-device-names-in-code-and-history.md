@@ -1,7 +1,8 @@
 ---
 title: "Tests, scripts and docstrings carried the site's device and room names; the history still does"
 date: 2026-10-04
-status: open, decision needed
+status: resolved
+resolved_by: 2650809
 severity: medium
 components: [tests, scripts, radio_config, enhanced_network_topology, protect_monitor, history]
 found_by: docs and repo hygiene review (privacy scan)
@@ -172,3 +173,20 @@ can't be removed without rewriting published commits.
 
 Related: [issue 040](040-real-identifiers-in-tests.md) (MACs and addresses in tests),
 [issue 041](041-onvif-scripts-hard-code-cameras.md) (the ONVIF scripts).
+
+## Resolution
+
+Resolved on 2026-10-12 by the history rewrite. Every commit from 2025-04-25 on was rewritten
+with `git filter-repo` from a reviewed replacement list (three credentials and their hashes,
+the site's device, client and port names in every case and separator spelling, its MAC
+addresses in every notation, its addresses in four subnets mapped to RFC 5737 documentation
+addresses with the host part kept, and the removed internal document paths). The rewritten
+history was verified over every object (blob, commit, tag and tree name) before and after the
+push, reviewed by a four-model council in three passes, and force-pushed to `main` with a
+lease on the previous tip. The superseded heads (`d045079`, `fef2344`, `3a8d731`) are still
+served by GitHub by SHA until the Support purge request completes; see
+[the rewrite notice](../../CHANGELOG.md) for what a clone holding the old history must do.
+The names are gone from every historical revision in every case and separator spelling; the
+addresses of the site's four subnets are documentation addresses throughout the history.
+Items 4 and 5 (the hard-coded radio rule, the location keywords and the Protect monitor's
+camera prefix) were made configurable at HEAD earlier the same day.
