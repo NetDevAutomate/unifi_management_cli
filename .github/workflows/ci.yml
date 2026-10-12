@@ -1,0 +1,37 @@
+# The same gates the pre-push hook runs (.pre-commit-config.yaml), on a clean runner, so a
+# contributor without the hooks installed still gets the verdict on their pull request.
+# Live tests (-m live) are never run here: they need a controller.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install (locked)
+        run: uv sync --locked --python ${{ matrix.python }}
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Types
+        run: uv run pyright src/
+      - name: Tests (coverage floor from pyproject.toml)
+        run: uv run pytest -m "not live" --cov --cov-branch --cov-report=term
+      - name: Build
+        run: uv build
