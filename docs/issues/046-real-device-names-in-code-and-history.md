@@ -28,8 +28,8 @@ found_by: docs and repo hygiene review (privacy scan)
     points become `AP B` to `AP D`, the `_extract_location` example uses two generic words
     from that method's own location list, and the radio rule's description no longer names
     its word. No code changed.
-- Fixed at HEAD on 2026-10-12 for the site-specific rules and runtime strings in `src/` (items
-  4 and 5), so the code behaves the same on any site and the history rewrite's "HEAD tree
+- Fixed at HEAD on 2026-10-12 (`9b86bb1`) for the site-specific rules and runtime strings in `src/`
+  (items 4 and 5), so the code behaves the same on any site and the history rewrite's "HEAD tree
   unchanged" check can hold:
   - the radio rule's hard-coded channel move is gone; `radio optimize` and the MCP optimiser read
     the site's moves from `UNIFI_RADIO_CHANNEL_MOVES` (`NAME=FROM>TO`, comma-separated), none by
