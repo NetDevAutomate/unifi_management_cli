@@ -93,8 +93,16 @@ log() { echo "[$(date '+%H:%M:%S')] $*"; }
 err() { echo "[ERROR] $*" >&2; }
 
 build_command() {
+    # The command runs under `bash -c` (launchd) or the crontab shell, so the two paths are
+    # shell-quoted: a checkout under "Odd & Dir" would otherwise split or fork the line.
     local cmd="$1"
-    echo "cd $PROJECT_DIR && $UV_BIN run unifi-mapper $cmd"
+    printf 'cd %q && %q run unifi-mapper %s\n' "$PROJECT_DIR" "$UV_BIN" "$cmd"
+}
+
+# A plain install keeps an opted-in port-naming job from an earlier install, and says so.
+note_kept_port_naming() {
+    log "port-naming kept: it was installed earlier with --with-port-naming and writes port names;" \
+        "run '$0 uninstall' (or 'update' without the flag) to remove it"
 }
 
 # A plist is XML: the command holds `&&`, which must be `&amp;&amp;` or launchd refuses the
@@ -109,6 +117,9 @@ xml_escape() {
 
 install_launchd() {
     mkdir -p "$LAUNCHD_DIR" "$LOG_DIR"
+    if (( ! WITH_PORT_NAMING )) && [[ -f "${LAUNCHD_DIR}/${LAUNCHD_PREFIX}.port-naming.plist" ]]; then
+        note_kept_port_naming
+    fi
 
     for i in "${!TASKS[@]}"; do
         IFS='|' read -r name interval cmd <<< "${TASKS[$i]}"
@@ -200,9 +211,17 @@ status_launchd() {
 install_crontab() {
     mkdir -p "$LOG_DIR"
 
-    # Get existing crontab (without our entries)
-    local existing
-    existing=$(crontab -l 2>/dev/null | grep -v "$CRON_MARKER" || true)
+    # Get existing crontab (without our entries). An opted-in port-naming line is ours too,
+    # so a plain install keeps it and says so.
+    local all_existing existing kept_naming
+    all_existing=$(crontab -l 2>/dev/null || true)
+    existing=$(grep -v "$CRON_MARKER" <<< "$all_existing" || true)
+    kept_naming=$(grep "$CRON_MARKER" <<< "$all_existing" | grep -F -- "/port-naming.log" || true)
+    if (( ! WITH_PORT_NAMING )) && [[ -n "$kept_naming" ]]; then
+        note_kept_port_naming
+        existing="${existing}
+${kept_naming}"
+    fi
 
     # Build new entries
     local new_entries="$existing"

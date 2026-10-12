@@ -60,8 +60,8 @@ def _documented_commands() -> set[str]:
     """Extract unifi-mapper command paths from README fenced code blocks.
 
     Flags and positional arguments are dropped, leaving the subcommand path so
-    ``unifi-mapper ports inspect "Switch" 2`` resolves to ``ports inspect``. Only shell
-    blocks (``bash``, ``sh`` or no info string) are read.
+    ``unifi-mapper ports inspect "Switch" 2`` resolves to ``ports inspect``, and a leading
+    ``uv run`` is dropped. Only shell blocks (``bash``, ``sh`` or no info string) are read.
     """
     text = README.read_text(encoding='utf-8')
     documented: set[str] = set()
@@ -70,6 +70,8 @@ def _documented_commands() -> set[str]:
             continue
         for line in block:
             line = line.strip()
+            if line.startswith('uv run '):  # the README's in-checkout form
+                line = line[len('uv run ') :]
             if not line.startswith(f'{TYPER_ENTRY_POINT} '):
                 continue
             tokens = line.split()[1:]

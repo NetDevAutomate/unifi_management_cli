@@ -276,3 +276,70 @@ def test_run_all_applies_port_names_only_with_the_flag() -> None:
     assert all(body.index(line) > guard_index for line in naming)
     assert _port_naming_task() == 'port-naming|1800|--verify-updates --connected-devices --apply'
     assert all('port-naming' not in task for task in _bash_array('TASKS'))
+
+
+# --- pass-2 validation: shell quoting of the paths, and a kept opt-in job is reported --------
+
+
+def test_a_checkout_path_with_a_space_and_an_ampersand_is_shell_quoted(tmp_path):
+    """`bash -c` runs the plist command, so an unquoted PROJECT_DIR or UV_BIN with a space
+    or `&` would split or fork it. Both are shell-quoted before the XML escaping."""
+    import plistlib
+    import shlex
+
+    odd = tmp_path / 'Odd & Dir' / 'unifi_management_cli'
+    (odd / 'scripts').mkdir(parents=True)
+    script = odd / 'scripts' / 'unifi-cron.sh'
+    script.write_text(SCRIPT.read_text())
+    script.chmod(0o755)
+    bin_dir = _fake_bin(tmp_path, 'Darwin')
+    uv = tmp_path / 'tools & bins' / 'uv'
+    uv.parent.mkdir()
+    uv.write_text('#!/bin/sh\nexit 0\n')
+    uv.chmod(0o755)
+    env = {
+        'PATH': f'{bin_dir}:/usr/bin:/bin',
+        'HOME': str(tmp_path / 'home'),
+        'LOG_DIR': str(tmp_path / 'logs'),
+        'UV_BIN': str(uv),
+        'FAKE_LAUNCHCTL_LOG': str(tmp_path / 'launchctl.log'),
+        'FAKE_CRONTAB': str(tmp_path / 'crontab.txt'),
+    }
+    (tmp_path / 'home').mkdir()
+    result = subprocess.run(
+        ['bash', str(script), 'install'], env=env, capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    plist = (
+        tmp_path / 'home' / 'Library' / 'LaunchAgents' / 'com.unifi-management.diagnose-all.plist'
+    )
+    command = plistlib.loads(plist.read_bytes())['ProgramArguments'][2]
+    # The command splits back into exactly the words bash -c will run: cd <dir> && <uv> run …
+    words = shlex.split(command)
+    assert words[:2] == ['cd', str(odd)]
+    assert words[2] == '&&'
+    assert words[3:6] == [str(uv), 'run', 'unifi-mapper']
+    # And status reads the same encoding back without calling it stale.
+    status = subprocess.run(
+        ['bash', str(script), 'status'], env=env, capture_output=True, text=True, timeout=30
+    )
+    assert 'stale' not in status.stdout
+
+
+def test_install_without_the_flag_keeps_and_reports_an_earlier_opt_in(cron):
+    """A plain `install` adds the defaults and leaves an opted-in port-naming job in place,
+    but says so, so an upgrade from the old always-on default is not silent."""
+    run, root, _ = cron('Darwin')
+    assert run('install', '--with-port-naming').returncode == 0
+    second = run('install')
+    assert second.returncode == 0, second.stderr
+    assert 'port-naming' in second.stdout and 'kept' in second.stdout
+    assert '--with-port-naming' in second.stdout and 'uninstall' in second.stdout
+    agents = root / 'home' / 'Library' / 'LaunchAgents'
+    assert (agents / 'com.unifi-management.port-naming.plist').exists()
+
+    run, root, _ = cron('Linux')
+    assert run('install', '--with-port-naming').returncode == 0
+    second = run('install')
+    assert 'port-naming' in second.stdout and 'kept' in second.stdout
+    assert '--apply' in (root / 'crontab.txt').read_text()

@@ -15,7 +15,7 @@ What it is good at:
   priority placement, single-uplink switches, DHCP pool use.
 - **Port names from LLDP**: preview the names a switch's ports should carry, then write them
   only when you say so.
-- **An MCP server** with 87 read-only tools, so Claude, Codex or any MCP client can answer
+- **An MCP server** with 73 read-only tools, so Claude, Codex or any MCP client can answer
   "why is my phone slow?" against your own controller.
 
 ## Safety model
@@ -30,10 +30,12 @@ Read this before pointing it at a production network.
 - **The MCP server never writes** to the controller and never opens SSH. It exposes read-only
   tools only, keeps a call log of tool names and argument *keys* (never values), and strips
   secrets from every result.
-- **Secrets are stripped, not masked**, from anything the tool prints, logs or saves: device
-  `x_*` keys, passwords, tokens, pre-shared keys, RADIUS secrets. Only the paths of what was
-  removed are reported. **Reports are still sensitive**: device names, MAC and IP addresses and
-  your topology remain in them. Review before you post one anywhere.
+- **Secrets are stripped, not masked**, from anything the tool prints, logs or saves. The
+  stripping is by key name (`x_*`, and keys containing password, secret, token, authkey, psk,
+  preshared, passphrase, api_key, private_key, plus the SNMP community and syslog key); only
+  the paths of what was removed are reported. A credential typed into a free-text field under
+  some other key would not be caught. **Reports are still sensitive**: device names, MAC and IP
+  addresses and your topology remain in them. Review before you post one anywhere.
 - **TLS verification is off by default** (`UNIFI_VERIFY_SSL=false`), because most consoles
   present a self-signed certificate. Turn it on if yours has a trusted one.
 - **Gateway SSH host keys are not verified yet** ([issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)).
@@ -79,10 +81,12 @@ EOF
 chmod 600 ~/.config/unifi_management_cli/prod.env
 ```
 
-Run the health check (reads only; exit 0 when nothing is wrong, 2 when a check fails):
+Inside the checkout every command is `uv run unifi-mapper …`; `uv tool install .` installs it
+once so that `unifi-mapper …` works from any directory. Run the health check (reads only;
+exit 0 when nothing is wrong, 2 when a check fails):
 
 ```bash
-unifi-mapper diagnose all
+uv run unifi-mapper diagnose all
 ```
 
 `diagnose all` runs 15 checks: link quality, capacity planning, port profiles, MTU consistency, SFP diagnostics, radio optimisation, firmware skew, DHCP pools, PoE budget, client density, uplink redundancy, uplink VLAN transparency, device power budget, foreign bridges and telemetry freshness.
@@ -90,14 +94,11 @@ unifi-mapper diagnose all
 Then look at one switch, and preview the port names LLDP suggests (nothing is written):
 
 ```bash
-unifi-mapper ports list "Office Switch"
-unifi-mapper ports inspect "Office Switch" 7
-unifi-mapper discover
-unifi-mapper discover --apply      # only when the preview looks right
+uv run unifi-mapper ports list "Office Switch"
+uv run unifi-mapper ports inspect "Office Switch" 7
+uv run unifi-mapper discover
+uv run unifi-mapper discover --apply      # only when the preview looks right
 ```
-
-Prefix each command with `uv run` inside the checkout, or install once with `uv tool install .`
-and call `unifi-mapper` directly.
 
 `unifi-mapper` finds the config at `--config PATH` or `UNIFI_CONFIG`, else
 `${XDG_CONFIG_HOME:-~/.config}/unifi_management_cli/prod.env`, then `default.env` there, then
@@ -154,10 +155,13 @@ reads, and the port-naming write is opt-in.
 
 ## MCP server
 
-`unifi-mcp` serves 87 read-only tools over stdio: 4 discovery meta-tools by default
-(`search_tools`, `get_tool_info`, `list_categories`, `execute_tool`), or all 77 directly with
-`UNIFI_MCP_TOOL_SURFACE=direct`. It reads the same config file. Results flow to the AI host
-you connect it to, so the same "reports are sensitive" rule applies.
+`unifi-mcp` serves the tool catalog over stdio. The catalog holds 87 entries in 7 categories:
+73 are read-only tools a client can call, 11 are pipeline steps that pass in-process objects
+between those tools, and 3 are the CLI's write operations, which the server refuses to run. By
+default a client sees 4 discovery meta-tools (`search_tools`, `get_tool_info`,
+`list_categories`, `execute_tool`); with `UNIFI_MCP_TOOL_SURFACE=direct` it sees those 4 plus
+the 73 tools, 77 in all. It reads the same config file. Results flow to the AI host you connect
+it to, so the same "reports are sensitive" rule applies.
 
 > [!WARNING]
 > `unifi-mcp` on PyPI is an unrelated third-party package. Always run this one from the

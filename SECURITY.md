@@ -12,8 +12,13 @@ write to it. Read this before running it against a production network.
   dedicated read-only or view-only account is recommended for anything that does not write.
 - Controller payloads are stripped of secrets before they are printed, logged or saved:
   keys starting with `x_` and keys containing `password`, `secret`, `token`, `authkey`, `psk`,
-  `preshared`, `passphrase`, `api_key` or `private_key` are removed, and only the paths of what
-  was removed are reported. Tracebacks never print local variables.
+  `preshared`, `passphrase`, `api_key` or `private_key`, plus the SNMP
+  `community` string, `syslog_key` and `lcm_tracker_seed`, are removed, and only the paths of
+  what was removed are reported. The match is by key name: a credential someone typed into a
+  free-text field under another key (a device note, say) is not recognised, and a key spelt
+  `pre-shared` or `pre_shared` is not matched yet
+  ([issue 076, item 6](docs/issues/076-july-port-final-review-follow-ups.md)). Tracebacks never
+  print local variables.
 - **Stripping is not anonymisation.** Reports, evidence bundles and MCP results still carry
   device and client names, MAC and IP addresses, SSIDs and your topology. Treat every output
   as sensitive and review it before posting it to a forum or a ticket.
