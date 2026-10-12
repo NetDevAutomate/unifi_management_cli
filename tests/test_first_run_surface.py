@@ -93,9 +93,12 @@ def test_version_command_matches_the_flag_and_claims_no_edition() -> None:
     [
         ('UNIFI_URL=https://192.0.2.1             # UniFi controller URL', 'https://192.0.2.1'),
         ('UNIFI_SITE=default # Site name', 'default'),
-        ('UNIFI_PASSWORD=pa#ss#word', 'pa#ss#word'),
-        ('UNIFI_PASSWORD="secret value # not a comment"', 'secret value # not a comment'),
-        ("UNIFI_PASSWORD='x # y'", 'x # y'),
+        ('UNIFI_PASSWORD=pa#ss#word', 'pa#ss#word'),  # pragma: allowlist secret
+        (
+            'UNIFI_PASSWORD="secret value # not a comment"',
+            'secret value # not a comment',
+        ),  # pragma: allowlist secret
+        ("UNIFI_PASSWORD='x # y'", 'x # y'),  # pragma: allowlist secret
         ('UNIFI_TIMEOUT=10', '10'),
     ],
 )
