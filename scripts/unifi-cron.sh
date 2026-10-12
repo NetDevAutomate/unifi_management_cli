@@ -3,11 +3,15 @@
 # Supports: macOS (launchd) and Ubuntu/Linux (crontab)
 #
 # Usage:
-#   ./scripts/unifi-cron.sh install   — Install all scheduled tasks
-#   ./scripts/unifi-cron.sh uninstall — Remove all scheduled tasks
-#   ./scripts/unifi-cron.sh update    — Reinstall (uninstall + install)
-#   ./scripts/unifi-cron.sh status    — Show current scheduled tasks
-#   ./scripts/unifi-cron.sh run-all   — Run all audit tasks once (manual trigger)
+#   ./scripts/unifi-cron.sh install [--with-port-naming]  — Install the read-only audit tasks
+#   ./scripts/unifi-cron.sh uninstall                     — Remove every scheduled task
+#   ./scripts/unifi-cron.sh update [--with-port-naming]   — Reinstall (uninstall + install)
+#   ./scripts/unifi-cron.sh status                        — Show current scheduled tasks
+#   ./scripts/unifi-cron.sh run-all [--with-port-naming]  — Run every task once (manual)
+#
+# Every default task only reads the controller or records to the local state directory. The
+# port-naming task WRITES port names to the controller every 30 minutes, so it is scheduled or
+# run only with --with-port-naming (issue 025).
 
 set -euo pipefail
 
@@ -38,7 +42,6 @@ TASKS=(
     "diagnose-all|3600|diagnose all"
     "radio-report|3600|radio report -o reports/channel-report.md"
     "wan-speedtest-record|3600|diagnose wan --record"
-    "port-naming|1800|--verify-updates --connected-devices --apply"
 )
 
 # Cron expressions matching the intervals above
@@ -49,8 +52,33 @@ CRON_SCHEDULES=(
     "0 * * * *"      # every hour
     "0 * * * *"      # every hour
     "0 * * * *"      # every hour
-    "*/30 * * * *"   # every 30 min
 )
+
+# The one task that writes to the controller. Opt-in: --with-port-naming appends it to TASKS
+# for install, update and run-all; uninstall and status always know it, so an opted-in job is
+# removed and reported like the others.
+PORT_NAMING_TASK="port-naming|1800|--verify-updates --connected-devices --apply"
+PORT_NAMING_SCHEDULE="*/30 * * * *"
+WITH_PORT_NAMING=0
+for arg in "${@:2}"; do
+    case "$arg" in
+        --with-port-naming) WITH_PORT_NAMING=1 ;;
+        *) echo "[ERROR] unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
+if (( WITH_PORT_NAMING )); then
+    TASKS+=("$PORT_NAMING_TASK")
+    CRON_SCHEDULES+=("$PORT_NAMING_SCHEDULE")
+fi
+# Every task uninstall and status consider: the defaults plus the opt-in one, so an installed
+# port-naming job is removed, and reported (running, not loaded or stale), with or without the
+# flag; only a missing one is reported as opt-in.
+ALL_TASKS=("${TASKS[@]}")
+ALL_SCHEDULES=("${CRON_SCHEDULES[@]}")
+if (( ! WITH_PORT_NAMING )); then
+    ALL_TASKS+=("$PORT_NAMING_TASK")
+    ALL_SCHEDULES+=("$PORT_NAMING_SCHEDULE")
+fi
 
 LAUNCHD_PREFIX="com.unifi-management"
 LAUNCHD_DIR="$HOME/Library/LaunchAgents"
@@ -69,6 +97,14 @@ build_command() {
     echo "cd $PROJECT_DIR && $UV_BIN run unifi-mapper $cmd"
 }
 
+# A plist is XML: the command holds `&&`, which must be `&amp;&amp;` or launchd refuses the
+# whole file (issue 025). Every <string> value goes through this, install and status alike.
+xml_escape() {
+    local s="$1"
+    s="${s//&/&amp;}"; s="${s//</&lt;}"; s="${s//>/&gt;}"
+    printf '%s' "$s"
+}
+
 # ─── macOS (launchd) ─────────────────────────────────────────────────────────
 
 install_launchd() {
@@ -79,7 +115,7 @@ install_launchd() {
         local plist_name="${LAUNCHD_PREFIX}.${name}"
         local plist_path="${LAUNCHD_DIR}/${plist_name}.plist"
         local full_cmd
-        full_cmd=$(build_command "$cmd")
+        full_cmd=$(xml_escape "$(build_command "$cmd")")
 
         launchctl unload "$plist_path" 2>/dev/null || true  # so a re-install replaces the job
         cat > "$plist_path" << EOF
@@ -98,15 +134,15 @@ install_launchd() {
     <key>StartInterval</key>
     <integer>${interval}</integer>
     <key>StandardOutPath</key>
-    <string>${LOG_DIR}/${name}.log</string>
+    <string>$(xml_escape "${LOG_DIR}/${name}.log")</string>
     <key>StandardErrorPath</key>
-    <string>${LOG_DIR}/${name}.err</string>
+    <string>$(xml_escape "${LOG_DIR}/${name}.err")</string>
     <key>WorkingDirectory</key>
-    <string>${PROJECT_DIR}</string>
+    <string>$(xml_escape "${PROJECT_DIR}")</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin</string>
+        <string>$(xml_escape "/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin")</string>
     </dict>
 </dict>
 </plist>
@@ -118,8 +154,8 @@ EOF
 }
 
 uninstall_launchd() {
-    for i in "${!TASKS[@]}"; do
-        IFS='|' read -r name _ _ <<< "${TASKS[$i]}"
+    for i in "${!ALL_TASKS[@]}"; do
+        IFS='|' read -r name _ _ <<< "${ALL_TASKS[$i]}"
         local plist_name="${LAUNCHD_PREFIX}.${name}"
         local plist_path="${LAUNCHD_DIR}/${plist_name}.plist"
 
@@ -135,17 +171,21 @@ uninstall_launchd() {
 status_launchd() {
     log "Scheduled tasks (launchd):"
     local stale=0
-    for i in "${!TASKS[@]}"; do
-        IFS='|' read -r name interval cmd <<< "${TASKS[$i]}"
+    for i in "${!ALL_TASKS[@]}"; do
+        IFS='|' read -r name interval cmd <<< "${ALL_TASKS[$i]}"
         local plist_name="${LAUNCHD_PREFIX}.${name}"
         local plist_path="${LAUNCHD_DIR}/${plist_name}.plist"
+        if [[ "$name" == port-naming && ! -f "$plist_path" ]]; then
+            echo "  ➖ port-naming: not installed (writes port names; opt in with 'install --with-port-naming')"
+            continue
+        fi
         if launchctl list "$plist_name" &>/dev/null; then
             echo "  ✅ $name (every ${interval}s) — running"
         else
             echo "  ❌ $name — not loaded"
         fi
         # The command is copied into the plist at install time: flag one that predates TASKS.
-        if [[ -f "$plist_path" ]] && ! grep -qF "<string>$(build_command "$cmd")</string>" "$plist_path"; then
+        if [[ -f "$plist_path" ]] && ! grep -qF "<string>$(xml_escape "$(build_command "$cmd")")</string>" "$plist_path"; then
             echo "     ⚠️  stale: installed command differs from: unifi-mapper $cmd"
             stale=1
         fi
@@ -199,10 +239,14 @@ status_crontab() {
         # The command is copied into the crontab line at install time: flag one that
         # predates TASKS.
         local stale=0
-        for i in "${!TASKS[@]}"; do
-            IFS='|' read -r name _ cmd <<< "${TASKS[$i]}"
+        for i in "${!ALL_TASKS[@]}"; do
+            IFS='|' read -r name _ cmd <<< "${ALL_TASKS[$i]}"
+            if [[ "$name" == port-naming ]] && ! grep -qF -- "${LOG_DIR}/port-naming.log" <<< "$entries"; then
+                echo "  ➖ port-naming: not installed (writes port names; opt in with 'install --with-port-naming')"
+                continue
+            fi
             local expected
-            expected="${CRON_SCHEDULES[$i]} $(build_command "$cmd") >> ${LOG_DIR}/${name}.log 2>&1 ${CRON_MARKER}"
+            expected="${ALL_SCHEDULES[$i]} $(build_command "$cmd") >> ${LOG_DIR}/${name}.log 2>&1 ${CRON_MARKER}"
             if ! grep -qxF -- "$expected" <<< "$entries"; then
                 echo "  ⚠️  $name: stale or missing; current command: unifi-mapper $cmd"
                 stale=1
@@ -228,7 +272,11 @@ run_all() {
     $UV_BIN run unifi-mapper radio report -o reports/channel-report.md
     $UV_BIN run unifi-mapper diagnose wan --record
 
-    $UV_BIN run unifi-mapper --verify-updates --connected-devices --apply
+    if (( WITH_PORT_NAMING )); then
+        $UV_BIN run unifi-mapper --verify-updates --connected-devices --apply
+    else
+        log "port-naming skipped (writes port names; pass --with-port-naming to run it)"
+    fi
 
     log "✅ All tasks complete"
 }
@@ -260,14 +308,17 @@ case "${1:-help}" in
         run_all
         ;;
     help|--help|-h)
-        echo "Usage: $0 {install|uninstall|update|status|run-all}"
+        echo "Usage: $0 {install|uninstall|update|status|run-all} [--with-port-naming]"
         echo ""
         echo "Commands:"
-        echo "  install    Install scheduled audit tasks (launchd on macOS, cron on Linux)"
-        echo "  uninstall  Remove all scheduled audit tasks"
+        echo "  install    Install the read-only audit tasks (launchd on macOS, cron on Linux)"
+        echo "  uninstall  Remove every scheduled task, the port-naming one included"
         echo "  update     Reinstall (uninstall + install)"
         echo "  status     Show current scheduled task status"
-        echo "  run-all    Run all audit tasks once (manual trigger)"
+        echo "  run-all    Run every task once (manual trigger)"
+        echo ""
+        echo "  --with-port-naming  also schedule or run port naming, which WRITES port names"
+        echo "                      to the controller every 30 minutes (off by default)"
         echo ""
         echo "Scheduled tasks:"
         for i in "${!TASKS[@]}"; do

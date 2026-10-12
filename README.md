@@ -655,13 +655,16 @@ Exit codes, across the commands:
 ### Scheduled Audits
 
 ```bash
-# Install scheduled audit jobs (macOS launchd or Linux crontab)
+# Install the read-only audit jobs (macOS launchd or Linux crontab)
 ./scripts/unifi-cron.sh install
+
+# Also schedule port naming, which WRITES port names every 30 minutes (off by default)
+./scripts/unifi-cron.sh install --with-port-naming
 
 # Check schedule status
 ./scripts/unifi-cron.sh status
 
-# Run every task once now (port naming included, which writes port names)
+# Run every task once now (add --with-port-naming to include the write)
 ./scripts/unifi-cron.sh run-all
 
 # Update or remove schedules
@@ -669,7 +672,7 @@ Exit codes, across the commands:
 ./scripts/unifi-cron.sh uninstall
 ```
 
-Schedules: the link-error history (`analyze link-errors --record`) and roaming snapshots every 5 minutes; config drift, `diagnose all`, the radio report and the WAN speedtest record (`diagnose wan --record`, one read of the controller's last scheduled result, never a new speedtest) hourly; port naming every 30 minutes, which writes port names (`--apply`). `install` and `update` install every task: there is no way to add one task alone, so installing or updating the schedule to get the hourly WAN record also installs `port-naming --apply` ([issue 025](docs/issues/025-launchd-plists-are-invalid-xml.md)).
+Schedules: the link-error history (`analyze link-errors --record`) and roaming snapshots every 5 minutes; config drift, `diagnose all`, the radio report and the WAN speedtest record (`diagnose wan --record`, one read of the controller's last scheduled result, never a new speedtest) hourly. Every default task only reads the controller or records locally. Port naming (`--verify-updates --connected-devices --apply`, every 30 minutes) writes port names, so it is scheduled or run only with `--with-port-naming`; `uninstall` removes it with the rest, and `status` says when it is not installed.
 
 > [!IMPORTANT]
 > **Upgrading an installed schedule.** `install` copies each task's command line into the
@@ -677,13 +680,8 @@ Schedules: the link-error history (`analyze link-errors --record`) and roaming s
 > installed before 0.2.0 keeps its old commands: port naming then only previews (no
 > `--apply`), and the 5-minute link-error job keeps overwriting both baselines instead of
 > recording history. After upgrading, run `./scripts/unifi-cron.sh update` (uninstall, then
-> install). `status` flags any installed command that differs from the current task list.
-
-> [!WARNING]
-> **macOS: `install` and `update` currently load nothing.** The generated launchd plists are
-> invalid XML, so `launchctl` rejects them even though the script reports success; `status`
-> shows `❌ not loaded` for every task. Linux crontab installs are unaffected. See
-> [issue 025](docs/issues/025-launchd-plists-are-invalid-xml.md) (open, decision needed).
+> install; add `--with-port-naming` to keep that job). `status` flags any installed command
+> that differs from the current task list.
 
 ### Read-Only Scripts
 

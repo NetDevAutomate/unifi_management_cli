@@ -100,7 +100,7 @@ def test_linux_status_flags_lines_installed_before_the_current_tasks(cron):
     assert 'port-naming: stale or missing' in stale.stdout
     assert "update' to reinstall" in stale.stdout
 
-    assert run('update').returncode == 0
+    assert run('update', '--with-port-naming').returncode == 0
     crontab = (root / 'crontab.txt').read_text()
     assert 'echo unrelated' in crontab
     assert _command('analyze link-errors --record') in crontab
@@ -125,12 +125,13 @@ def test_macos_status_flags_a_stale_plist_and_install_replaces_a_loaded_job(cron
     assert f'{OLD_NAMING} --apply' in stale.stdout
     assert "update' to reinstall" in stale.stdout
 
-    install = run('install')
+    install = run('install', '--with-port-naming')
     assert install.returncode == 0, install.stderr
     calls = (root / 'launchctl.log').read_text().splitlines()
     plist_calls = [c for c in calls if c.endswith(str(plist))]
     assert plist_calls == [f'unload {plist}', f'load {plist}']  # unload before load
-    assert f'<string>{_command(f"{OLD_NAMING} --apply")}</string>' in plist.read_text()
+    escaped = _command(f'{OLD_NAMING} --apply').replace('&', '&amp;')
+    assert f'<string>{escaped}</string>' in plist.read_text()
 
     assert 'stale' not in run('status').stdout
 
@@ -170,7 +171,7 @@ def _run_all_body() -> str:
 
 def test_tasks_and_cron_schedules_are_parallel_arrays() -> None:
     tasks, schedules = _bash_array('TASKS'), _bash_array('CRON_SCHEDULES')
-    assert len(tasks) == len(schedules) >= 7
+    assert len(tasks) == len(schedules) >= 6
     names = [task.split('|')[0] for task in tasks]
     assert schedules[names.index('wan-speedtest-record')] == '0 * * * *'
 
@@ -189,4 +190,89 @@ def test_the_wan_record_task_reads_only_and_runs_before_port_naming() -> None:
     wan = body.index('unifi-mapper diagnose wan --record')
     naming = body.index('unifi-mapper --verify-updates --connected-devices --apply')
     assert wan < naming
-    assert 'port-naming|1800|--verify-updates --connected-devices --apply' in tasks  # unchanged
+    assert _port_naming_task() == 'port-naming|1800|--verify-updates --connected-devices --apply'
+
+
+# --- issue 025: valid plists, and port naming is opt-in ------------------------------------
+
+
+def _port_naming_task() -> str:
+    text = SCRIPT.read_text(encoding='utf-8')
+    return text.split('PORT_NAMING_TASK="', 1)[1].split('"', 1)[0]
+
+
+def test_every_plist_install_writes_is_valid_xml_and_keeps_the_command(cron):
+    """The command holds `&&`, which an unescaped plist cannot carry; launchd refused every
+    job (issue 025). Parse what install writes with plistlib and read the command back."""
+    import plistlib
+
+    run, root, _ = cron('Darwin')
+    assert run('install', '--with-port-naming').returncode == 0
+    plists = sorted((root / 'home' / 'Library' / 'LaunchAgents').glob('*.plist'))
+    assert len(plists) == 7
+    commands = {}
+    for path in plists:
+        data = plistlib.loads(path.read_bytes())  # raises on invalid XML
+        assert data['ProgramArguments'][:2] == ['/bin/bash', '-c']
+        commands[path.name] = data['ProgramArguments'][2]
+        assert data['StartInterval'] > 0
+    assert commands['com.unifi-management.port-naming.plist'] == _command(f'{OLD_NAMING} --apply')
+    assert commands['com.unifi-management.diagnose-all.plist'] == _command('diagnose all')
+
+
+def test_install_without_the_flag_schedules_no_write(cron):
+    """A fresh install runs read-only audits only: no port-naming job is written (macOS) or
+    added (Linux), and status says the job is opt-in rather than missing."""
+    run, root, _ = cron('Darwin')
+    assert run('install').returncode == 0
+    agents = root / 'home' / 'Library' / 'LaunchAgents'
+    assert not (agents / 'com.unifi-management.port-naming.plist').exists()
+    assert len(list(agents.glob('*.plist'))) == 6
+    status = run('status')
+    assert status.returncode == 0, status.stderr
+    assert 'port-naming: not installed' in status.stdout
+    assert '--with-port-naming' in status.stdout
+    assert 'stale' not in status.stdout
+
+    run, root, _ = cron('Linux')
+    assert run('install').returncode == 0
+    crontab = (root / 'crontab.txt').read_text()
+    assert '--apply' not in crontab
+    assert _command('diagnose all') in crontab
+    status = run('status')
+    assert 'port-naming: not installed' in status.stdout
+    assert 'stale' not in status.stdout and 'to reinstall' not in status.stdout
+
+
+def test_install_with_the_flag_schedules_port_naming_on_both_platforms(cron):
+    run, root, _ = cron('Linux')
+    assert run('install', '--with-port-naming').returncode == 0
+    crontab = (root / 'crontab.txt').read_text()
+    assert f'*/30 * * * * {_command(f"{OLD_NAMING} --apply")}' in crontab
+    status = run('status')
+    assert 'port-naming: not installed' not in status.stdout
+    assert 'stale' not in status.stdout
+
+    run, root, _ = cron('Darwin')
+    assert run('update', '--with-port-naming').returncode == 0
+    assert (
+        root / 'home' / 'Library' / 'LaunchAgents' / 'com.unifi-management.port-naming.plist'
+    ).exists()
+
+
+def test_uninstall_removes_an_opted_in_port_naming_job(cron):
+    run, root, _ = cron('Darwin')
+    assert run('install', '--with-port-naming').returncode == 0
+    assert run('uninstall').returncode == 0
+    assert not list((root / 'home' / 'Library' / 'LaunchAgents').glob('*.plist'))
+
+
+def test_run_all_applies_port_names_only_with_the_flag() -> None:
+    """`run-all` without `--with-port-naming` must not reach the `--apply` line."""
+    body = _run_all_body()
+    naming = [line for line in body.splitlines() if '--apply' in line]
+    assert naming, 'run_all lost its opt-in port-naming step'
+    guard_index = body.index('WITH_PORT_NAMING')
+    assert all(body.index(line) > guard_index for line in naming)
+    assert _port_naming_task() == 'port-naming|1800|--verify-updates --connected-devices --apply'
+    assert all('port-naming' not in task for task in _bash_array('TASKS'))
