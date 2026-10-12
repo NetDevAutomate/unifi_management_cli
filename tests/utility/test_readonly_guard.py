@@ -329,3 +329,24 @@ def test_the_real_client_is_guarded_again_after_logout_and_login(
     with pytest.raises(ReadOnlyViolation):
         client.session.put(f'{API}/rest/device/{SWITCH_ID}', json={})
     assert second.paths('PUT') == []
+
+
+# --- issue 029: a raw path starting with // is judged as sent, not after urlsplit drops a segment
+
+
+@pytest.mark.parametrize(
+    'path',
+    [
+        '//evil/proxy/network/api/s/default/stat/event',
+        '//evil/proxy/network/integrations/v1/sites',
+    ],
+)
+def test_a_network_path_reference_is_refused_not_collapsed(path):
+    from unifi_mapper.core.utils.readonly import get_only_request_allowed, request_allowed
+
+    for verb in ('POST', 'GET'):
+        allowed, detail = request_allowed(verb, path, 'default')
+        assert allowed is False
+        assert 'network-path reference' in detail
+    allowed, detail = get_only_request_allowed('GET', path)
+    assert allowed is False and 'network-path reference' in detail

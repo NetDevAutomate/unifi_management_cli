@@ -96,7 +96,13 @@ def _normalised_path(method: str, url: object) -> tuple[str, str]:
         ReadOnlyViolation: The path contains a ``.``/``..`` segment, a backslash
             or a still-encoded character after one round of decoding.
     """
-    parts = urlsplit(str(url))
+    text = str(url)
+    if text.startswith('//'):
+        # A raw path that starts with ``//`` is a network-path reference to urlsplit: it would
+        # read the first segment as a host and judge, and audit, a path that is not the one
+        # sent (issue 029). No client builds such a path, so refuse it outright.
+        raise ReadOnlyViolation(f'refused {method} {text!r}: network-path reference')
+    parts = urlsplit(text)
     path = unquote(parts.path)
     segments = path.split('/')
     if '\\' in path or '%' in path or any(seg in ('.', '..') for seg in segments):
