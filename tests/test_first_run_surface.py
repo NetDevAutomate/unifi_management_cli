@@ -120,7 +120,6 @@ def test_the_argparse_entry_points_report_the_same_version(capsys) -> None:
     """`unifi-network-toolkit --version` and `python -m unifi_mapper.cli --version` print the
     distribution version too (the validation council found only unifi-mapper had it)."""
     import sys
-
     from unifi_mapper import network_cli
 
     for main, name in ((network_cli.main, 'unifi-network-toolkit'), (cli.main, 'unifi-mapper')):
