@@ -39,7 +39,7 @@ the reasoning stays next to the code it explains.
 | [026](026-profile-precedence-outside-port-diagnostics.md) | `validate_port_profiles` and three other analyses resolve a port's profile without the override precedence | resolved (`87386bd`) |
 | [027](027-root-flags-dropped-before-a-subcommand.md) | Root `--connected-devices`, `--verify-updates` and `--dry-run` are silently dropped before a subcommand | resolved (`2fe35b9`) |
 | [028](028-tool-docstrings-name-missing-tools.md) | Tool docstrings and `path_analysis` recommendations name tools that don't exist | open |
-| [029](029-async-guard-judges-a-different-path.md) | The async read-only guard judges and audits a different path when the raw path starts with `//` | open |
+| [029](029-async-guard-judges-a-different-path.md) | The async read-only guard judges and audits a different path when the raw path starts with `//` | resolved (`b294345`) |
 | [030](030-raw-portconf-id-read-as-a-profile-name.md) | `vlan_diagnostics` and `mac_analyzer` read a raw `portconf_id` as if it were a profile name | open, decision needed |
 | [031](031-acl-rules-path-not-served.md) | `get_acl_rules` gets a 404: the client's `/acls` path isn't served by Network 10.6 | resolved (`d1b36f0`) |
 | [032](032-dns-policies-path-not-served.md) | `get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served | resolved (`d1b36f0`) |
@@ -53,7 +53,7 @@ the reasoning stays next to the code it explains.
 | [040](040-real-identifiers-in-tests.md) | Test fixtures carried MAC addresses and addresses from the live network | open, decision needed |
 | [041](041-onvif-scripts-hard-code-cameras.md) | The ONVIF scripts hard-coded the site's cameras, and `onvif_stream.py` a camera password that is in pushed history | open, decision needed |
 | [042](042-settings-with-no-effect.md) | Five documented settings have no effect on `unifi-mapper` | open, decision needed |
-| [043](043-inventory-ignores-the-root-config.md) | `unifi-mapper inventory` ignores the root `--config` and `UNIFI_CONFIG` | open |
+| [043](043-inventory-ignores-the-root-config.md) | `unifi-mapper inventory` ignores the root `--config` and `UNIFI_CONFIG` | resolved (`88f6aa0`) |
 | [044](044-discover-mermaid-and-dot-write-a-placeholder.md) | `discover --format mermaid` and `--format dot` write a placeholder, not a diagram | open, decision needed |
 | [045](045-configure-logging-is-never-called.md) | `configure_logging` is never called, so `UNIFI_MAPPER_DEBUG` does nothing | open, decision needed |
 | [046](046-real-device-names-in-code-and-history.md) | Tests, scripts and docstrings carried the site's device and room names; the history and some runtime strings still do | open, decision needed |

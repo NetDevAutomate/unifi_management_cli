@@ -1,7 +1,8 @@
 ---
 title: "The async read-only guard judges and audits a different path when the raw path starts with `//`"
 date: 2026-10-03
-status: open
+status: resolved
+resolved_by: b294345
 severity: low
 components: [core/utils/readonly]
 found_by: review follow-ups (issue 024 planning)
@@ -43,3 +44,7 @@ In `_normalised_path`, refuse a URL whose `urlsplit` has a netloc but no scheme 
 URL that parses as a network-path reference), with the same "path traversal or encoded
 path" style of message. Add tests to `tests/utility/test_readonly_guard.py` for both
 policies and for `ReadOnlyProtectApiClient`, including the two rows above.
+
+## Resolution
+
+Resolved 2026-10-12 in `b294345`: `_normalised_path` refuses a raw path starting with `//` as a network-path reference, in both policies; `tests/utility/test_readonly_guard.py` pins the two reproduced requests.
