@@ -72,6 +72,6 @@ lease on the previous tip. The superseded heads (`d045079`, `fef2344`, `3a8d731`
 served by GitHub by SHA until the Support purge request completes; see
 [the rewrite notice](../../CHANGELOG.md) for what a clone holding the old history must do.
 The camera password of this issue is absent from every historical revision in every form
-checked (clear, URL-encoded, SHA-1 as recorded in `.secrets.baseline`). What remains is the
-maintainer's own: the second ONVIF account's password, which also sat in a public guide, is to
-be rotated on both cameras (only the first account was rotated on 2026-10-03).
+checked (clear, URL-encoded, SHA-1 as recorded in `.secrets.baseline`). The second ONVIF account's
+password, which also sat in a public guide, was rotated on both cameras on 2026-10-12 (the
+maintainer's report); the first account was rotated on 2026-10-03. Nothing of this issue is open.
