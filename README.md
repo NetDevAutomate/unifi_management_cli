@@ -25,8 +25,9 @@ Read this before pointing it at a production network.
 - **Reads by default.** Every command only reads the controller unless it is one of the few
   that can write (`discover --apply`, `ports refresh --apply`, `stp apply --no-dry-run`,
   `stp rollback --no-dry-run`, `stp optimize --apply`, `radio optimize --apply`,
-  `radio restore --apply`, `inventory update-firmware`). Each of those previews first and needs
-  the explicit flag; the firmware command asks for confirmation instead.
+  `radio restore --apply`, `inventory update-firmware --apply`). Each of those previews first
+  and needs the explicit flag; the firmware command also asks for confirmation, which only
+  `--force` skips.
 - **The MCP server never writes** to the controller and never opens SSH. It exposes read-only
   tools only, keeps a call log of tool names and argument *keys* (never values), and strips
   secrets from every result.

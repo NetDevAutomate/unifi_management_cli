@@ -96,6 +96,9 @@ unifi-mapper inventory list --filter switch --show-upgrade
 
 # Check for firmware updates
 unifi-mapper inventory check-updates
+
+# Preview the upgrades for the switches; add --apply to trigger them (devices reboot)
+unifi-mapper inventory update-firmware --filter switch
 ```
 
 ## Diagnostics
@@ -516,7 +519,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `inventory list` | List devices with upgrade information |
 | `inventory check-updates` | Check for firmware updates |
 | `inventory firmware-skew` | Report firmware version skew by model |
-| `inventory update-firmware` | Update device firmware (writes) |
+| `inventory update-firmware` | Preview the firmware upgrades available (writes with `--apply`, after a confirmation `--force` skips) |
 | `stp analyze` | Current STP topology and root eligibility |
 | `stp audit-priorities` | One-shot audit: each switch's current vs recommended priority, tie and gateway warnings (read-only) |
 | `stp optimize` | Preview or plan optimal priority changes |

@@ -494,7 +494,10 @@ def inventory_list(
             console.print(
                 f'[bold yellow]⚠️  {len(upgradable_devices)} device(s) have firmware updates available[/bold yellow]'
             )
-            console.print("Run 'unifi-mapper inventory update-firmware' to upgrade devices")
+            console.print(
+                "Run 'unifi-mapper inventory update-firmware --filter all' to preview the "
+                'upgrades; add --apply to trigger them'
+            )
         else:
             console.print('[bold green]✅ All devices are up to date[/bold green]')
 
@@ -584,7 +587,8 @@ def check_updates(
             console.print()
 
     console.print(
-        "Run 'unifi-mapper inventory update-firmware --filter <type>' to upgrade devices"
+        "Run 'unifi-mapper inventory update-firmware --filter <type>' to preview the upgrades; "
+        'add --apply to trigger them'
     )
     client.logout()
 
@@ -680,17 +684,22 @@ def update_firmware(
         '-c',
         help='Path to .env config file',
     ),
-    dry_run: bool = typer.Option(
-        False,
+    dry_run: Optional[bool] = typer.Option(
+        None,
         '--dry-run',
         '-n',
-        help='Show what would be updated without making changes',
+        help='Preview the upgrades without making changes (the default)',
+    ),
+    apply: bool = typer.Option(
+        False,
+        '--apply',
+        help='Trigger the upgrades; asks for confirmation unless --force is given',
     ),
     force: bool = typer.Option(
         False,
         '--force',
         '-y',
-        help='Skip confirmation prompt',
+        help='Skip the confirmation prompt (only with --apply)',
     ),
     wait: bool = typer.Option(
         True,
@@ -706,22 +715,33 @@ def update_firmware(
 ):
     """⬆️ Update firmware on UniFi devices.
 
-    Triggers firmware updates for devices that have updates available.
-    Updates are staggered to avoid overwhelming the network.
+    Previews the devices that have updates available. Only --apply triggers the
+    upgrades, after a confirmation prompt that --force skips. Updates are staggered
+    to avoid overwhelming the network.
 
     ⚠️  WARNING: Firmware updates will cause device reboots!
     Plan maintenance window accordingly.
 
     Examples:
-        # Preview what would be updated
-        unifi-mapper inventory update-firmware --filter switch --dry-run
-
-        # Update all switches
+        # Preview what would be updated (the default)
         unifi-mapper inventory update-firmware --filter switch
 
-        # Update all devices (use with caution!)
-        unifi-mapper inventory update-firmware --filter all --force
+        # Update all switches, after confirming
+        unifi-mapper inventory update-firmware --filter switch --apply
+
+        # Update all devices without a prompt (use with caution!)
+        unifi-mapper inventory update-firmware --filter all --apply --force
     """
+    if dry_run and apply:
+        console.print('[red]--dry-run and --apply contradict each other; pass one of them[/red]')
+        raise typer.Exit(code=2)
+    preview = not apply
+    if force and preview:
+        console.print(
+            '[yellow]--force without --apply has no effect: previewing. '
+            'Add --apply to trigger the upgrades.[/yellow]'
+        )
+
     filter_types = parse_filter(filter)
     show_all = 'all' in filter_types
 
@@ -757,8 +777,8 @@ def update_firmware(
         Panel.fit(
             f'[bold]Firmware Update Plan[/bold]\n'
             f'Devices to update: {len(upgradable_devices)}\n'
-            f'Mode: {"DRY RUN" if dry_run else "LIVE"}',
-            border_style='yellow' if dry_run else 'red',
+            f'Mode: {"PREVIEW" if preview else "LIVE"}',
+            border_style='yellow' if preview else 'red',
         )
     )
     console.print()
@@ -794,8 +814,11 @@ def update_firmware(
     console.print(table)
     console.print()
 
-    if dry_run:
-        console.print('[yellow]DRY RUN: No changes will be made[/yellow]')
+    if preview:
+        console.print(
+            '[yellow]Preview only: no changes were made. '
+            'Add --apply to trigger these upgrades.[/yellow]'
+        )
         client.logout()
         return
 
