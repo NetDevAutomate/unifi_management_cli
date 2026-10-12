@@ -1301,24 +1301,38 @@ For CLI tools, simply re-run the command. The `UnifiApiClient` re-authenticates 
 
 If a device has invalid `port_overrides` (e.g., from a partial write), the device may show unexpected port configurations.
 
-**Recovery**:
+> [!CAUTION]
+> **Last resort, not a troubleshooting step.** A device's `port_overrides` hold every per-port
+> setting that differs from the profile: names, port profiles, PoE mode, speed and duplex,
+> isolation, storm control. Clearing the list resets all of them on that switch at once, and the
+> controller force-provisions the switch, so links can drop. Nothing in this toolkit does this;
+> it is a raw API write you run yourself. Before it: take a controller backup (Settings > System
+> > Backups, and keep the `.unf`), note the current overrides (`ports list "SWITCH" --json`), and
+> make sure you can reach the switch out of band. Prefer fixing the one broken port in the UniFi
+> UI (Ports > the port > Reset to profile) and leave the rest alone.
+
+**Diagnose first (read-only):**
 
 ```bash
-# 1. Diagnose current device state (read-only): every port's settings, then one port's raw
-#    port_table entry, its port_overrides entry and profiles, as a JSON evidence bundle
-uv run unifi-mapper ports list "SWITCH" --json
+# Every port's settings, then one port's raw port_table entry, its port_overrides entry and
+# profiles, as a JSON evidence bundle you can keep
+uv run unifi-mapper ports list "SWITCH" --json > switch-overrides-before.json
 uv run unifi-mapper ports diagnose "SWITCH" PORT
+```
 
-# 2. Clear all port_overrides (reset to device defaults). This drops every port's override
-#    on the device, names and profile, PoE and speed settings alike
+**Only if a single-port reset in the UI does not clear it**, and only with a backup taken:
+
+```bash
+# Clear ALL port_overrides on one device (reset every port to its profile defaults)
 curl -k -X PUT \
   -H "X-API-KEY: YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"_id": "DEVICE_ID", "mac": "DEVICE_MAC", "port_overrides": []}' \
   https://YOUR_CONTROLLER/proxy/network/api/s/default/rest/device/DEVICE_ID
 
-# 3. Re-run mapper to re-apply names from LLDP
-uv run unifi-mapper --verify-updates --apply
+# Then preview the LLDP-derived names, and write them only once the preview looks right
+uv run unifi-mapper discover --verify-updates
+uv run unifi-mapper discover --verify-updates --apply
 ```
 
 ---
