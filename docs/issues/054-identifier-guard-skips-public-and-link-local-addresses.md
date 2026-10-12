@@ -4,7 +4,7 @@ date: 2026-10-04
 status: open
 severity: low
 components: [tests/test_docs_consistency.py]
-found_by: docs and repo hygiene review (code review, iteration 4)
+found_by: docs and repo hygiene review
 ---
 
 # The identifier guard skips public IPv4 and link-local IPv6 addresses from the captures

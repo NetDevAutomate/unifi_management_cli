@@ -88,7 +88,7 @@ def test_the_dump_writes_stripped_payloads_and_the_manifest(mod: Any, tmp_path: 
 def test_an_endpoint_error_is_redacted_in_the_manifest_and_on_stderr(
     mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
-    """M4 council NBF-001: the error text is redacted where it is made (diagnostic_reads)."""
+    """Review finding: the error text is redacted where it is made (diagnostic_reads)."""
     body = 'upstream said password=FAKE-DUMP-HTTP-BODY-PW'  # pragma: allowlist secret
     session = FakeSession({('GET', rf'^{API_RE}/stat/sta$'): (500, body)})
     monkeypatch.setattr(mod, '_login', lambda _path: (fake_client(session), 'default'))
@@ -143,7 +143,7 @@ def test_a_failed_login_is_one_redacted_line_and_exit_1(
     assert stat.S_IMODE((tmp_path / 'out').stat().st_mode) == 0o700
 
 
-# --- the output directory (review B5): nothing planted there can redirect a write ----------
+# --- the output directory: nothing planted there can redirect a write ----------
 
 
 def _no_login(mod: Any, monkeypatch: pytest.MonkeyPatch) -> list[Path]:
@@ -195,7 +195,7 @@ def test_a_write_never_follows_or_truncates_an_existing_path(mod: Any, tmp_path:
 def test_a_symlinked_output_directory_is_refused(
     mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
-    """M4 council BF-004: the checks followed a link to an empty private directory."""
+    """Review finding: the checks followed a link to an empty private directory."""
     target = tmp_path / 'elsewhere'
     target.mkdir(mode=0o700)
     link = tmp_path / 'out'
@@ -220,7 +220,7 @@ def test_a_dump_writes_only_into_the_directory_it_opened(mod: Any, tmp_path: Pat
 def test_an_output_directory_that_cannot_be_checked_is_refused(
     mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
-    """M4 council NBF-002: an unreadable directory ended in a traceback, not one line."""
+    """Review finding: an unreadable directory ended in a traceback, not one line."""
     output = tmp_path / 'out'
     output.mkdir(mode=0o700)
     output.chmod(0o300)  # no read bit: listing it fails
@@ -269,7 +269,7 @@ def test_an_empty_private_output_directory_is_used(
 def test_a_failed_logout_is_one_redacted_line_never_a_traceback(
     mod: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
-    """M4 council BF-001: the logout ran in a bare finally, outside the redacted paths."""
+    """Review finding: the logout ran in a bare finally, outside the redacted paths."""
     client = fake_client(_session())
 
     def _logout() -> bool:
@@ -365,7 +365,7 @@ def test_a_relative_xdg_state_home_is_ignored_for_the_default_output(tmp_path: P
 def _run_audit(tmp_path: Path, *args: str, cwd: Path | None = None) -> Any:
     """Run the audit script with a fake ``uv`` (``_fake_uv_env``), never the real one.
 
-    Review SR6-S1: every case runs through this, so no case inherits the developer's PATH,
+    Review finding: every case runs through this, so no case inherits the developer's PATH,
     HOME or UNIFI_* variables, which could reach the live controller.
     """
     return subprocess.run(
@@ -400,7 +400,7 @@ def _run_audit(tmp_path: Path, *args: str, cwd: Path | None = None) -> Any:
 def test_an_unsafe_existing_output_dir_is_refused_before_any_step(
     tmp_path: Path, prepare: Any, message: str
 ) -> None:
-    """M4 council BF-002: the reports and audit.log went into whatever directory was given,
+    """Review finding: the reports and audit.log went into whatever directory was given,
     appending to a log already there; nothing planted there may receive them."""
     out = tmp_path / 'audit'
     prepare(out)
@@ -443,7 +443,7 @@ def test_the_printed_apply_commands_carry_the_audits_own_config(tmp_path: Path) 
 
 
 def test_relative_paths_are_printed_absolute(tmp_path: Path) -> None:
-    """M4 council BF-003: a relative --config was printed as given, so the pasted command
+    """Review finding: a relative --config was printed as given, so the pasted command
     read another file from another directory; the guide says it works from any directory."""
     run_dir = tmp_path / 'run'
     run_dir.mkdir()
@@ -485,7 +485,7 @@ printf 'report\\n' > "$report"
 def test_the_audit_draws_its_diagram_in_its_output_dir_never_the_cwd(
     tmp_path: Path, dot: str
 ) -> None:
-    """Review AGG-1: step 1 ran discover with no -d, so its diagram, or without Graphviz's
+    """Review finding: step 1 ran discover with no -d, so its diagram, or without Graphviz's
     dot the DOT source naming the site's devices, landed in the caller's directory."""
     env = _fake_uv_env(tmp_path)
     (tmp_path / 'bin' / 'uv').write_text(FAKE_DISCOVER_UV, encoding='utf-8')

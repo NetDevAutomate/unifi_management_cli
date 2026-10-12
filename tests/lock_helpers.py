@@ -1,7 +1,7 @@
 """Hold a capped file's lock the way another local account can, and run a writer against it.
 
 Shared by the writer's tests (``tests/utility/test_jsonl.py``) and the MCP call log's
-(``tests/mcp/test_call_audit.py``), final-fix VS-1: a lock held on a read-only descriptor
+(``tests/mcp/test_call_audit.py``): a lock held on a read-only descriptor
 must never stall a write for longer than its limit. The writer runs in a daemon thread with
 a join timeout, so a regression fails the test instead of hanging the suite.
 """

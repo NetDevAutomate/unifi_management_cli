@@ -102,7 +102,7 @@ def test_a_read_failure_is_reported_redacted(controller, monkeypatch, flag):
     monkeypatch.setattr(link_error_tracking, 'fetch_devices', _boom)
     result = runner.invoke(app, ['analyze', 'link-errors', flag])
 
-    # Regression (code-review F11): this path printed the exception text unredacted.
+    # Regression: this path printed the exception text unredacted.
     assert result.exit_code == 1
     assert secret not in result.output
     assert 'api_key=***redacted***' in _plain(result)

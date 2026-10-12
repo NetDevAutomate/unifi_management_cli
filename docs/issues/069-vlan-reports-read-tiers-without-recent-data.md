@@ -5,7 +5,7 @@ status: resolved
 resolved_by: dec3450
 severity: medium
 components: [analysis/vlan_traffic_store, typer_cli, mcp/manifests/analysis.yaml]
-found_by: July port review (iteration 5, semantic review and council)
+found_by: July port review
 ---
 
 # VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty
@@ -35,8 +35,7 @@ wrote nothing wrong and leaked nothing. Breaks fresh clones, CI or prod: no.
 
 ## Resolution
 
-Signed off as a user-visible change by the port's orchestrator (its decision record is kept
-outside the repo):
+Signed off as a user-visible change by the maintainer:
 
 - `now`, `1d` and `1w` read raw samples, which are kept 8 days; `1m` reads hourly rows and
   `1y` daily rows. Each report's methodology caption names its tier.

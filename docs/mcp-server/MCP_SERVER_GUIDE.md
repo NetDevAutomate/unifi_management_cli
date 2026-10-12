@@ -9,9 +9,8 @@ tool it will run is read-only against the controller. The three tools that would
 are refused over MCP (see [Control boundary](#mcp-control-boundary)); those changes go through
 the `unifi-mapper` `stp` and `radio` commands, which preview by default and write only when
 told (`stp apply --plan … --no-dry-run`, `stp optimize --apply`, `radio optimize --apply`,
-`radio restore --apply`, and every `discover` entry point with `--apply`). The one CLI write
-that does not preview first is `inventory update-firmware`, which asks for confirmation
-instead.
+`radio restore --apply`, `inventory update-firmware --apply`, and every `discover` entry point
+with `--apply`).
 The [MCP standards review](MCP_STANDARDS_REVIEW.md) audits the server against the MCP
 specification and SDK guidance, and lists the decisions still open.
 

@@ -4,7 +4,7 @@ date: 2026-10-03
 status: open
 severity: low
 components: [network/models, network/acl, network/dns]
-found_by: review follow-ups (code-review F16/F17, checking the models against the reference)
+found_by: review follow-ups (checking the models against the reference)
 ---
 
 # Integration API models disagree with the v10.6 reference, so some fields are lost

@@ -5,7 +5,7 @@ status: resolved
 resolved_by: 1abcbbb
 severity: medium
 components: [typer_cli, run_methods, port_mapper]
-found_by: port diagnostics gap analysis (F2)
+found_by: port diagnostics gap analysis
 ---
 
 # `unifi-mapper --connected-devices` writes port names by default
@@ -46,7 +46,7 @@ Approved (design §10.5) and applied in `typer_cli.py`:
   installed before it keeps its old command line (install copies the command into the plist
   or crontab entry), so naming silently stops writing until it is reinstalled: run
   `./scripts/unifi-cron.sh update` after upgrading. `status` flags the stale entry, and a
-  re-run of `install` on macOS now unloads each job before loading it (code-review F5).
+  re-run of `install` on macOS now unloads each job before loading it.
 - The README, the operator runbook and the use-cases guide add `--apply` wherever they
   describe writing names.
 

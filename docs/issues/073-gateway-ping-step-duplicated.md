@@ -4,7 +4,7 @@ date: 2026-10-06
 status: open
 severity: low
 components: [connectivity/gateway_probe, analysis/ap_health]
-found_by: July port build-loop semantic review, iteration 6 (SR6-4)
+found_by: July port review
 ---
 
 # The gateway ping step is written twice, in gateway ping and in AP-health's client pings

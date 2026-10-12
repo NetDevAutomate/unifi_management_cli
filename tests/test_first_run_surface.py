@@ -1,7 +1,7 @@
 """First-run surface: the no-config message and the version output.
 
 A new user who followed ``.env.example`` and put the file somewhere else saw only
-``Configuration file not found: /cwd/.env`` (readiness review, 2026-10-12): the message named
+``Configuration file not found: /cwd/.env`` (2026-10-12): the message named
 the legacy fallback and none of the places the CLI had actually searched. The ``version``
 command printed a hard-coded ``2.0.0 (Enterprise Edition)`` while the package was 0.2.0, and
 ``--version`` was not an option.
@@ -118,7 +118,7 @@ def test_env_values_follow_the_dotenv_comment_grammar(
 
 def test_the_argparse_entry_points_report_the_same_version(capsys) -> None:
     """`unifi-network-toolkit --version` and `python -m unifi_mapper.cli --version` print the
-    distribution version too (the validation council found only unifi-mapper had it)."""
+    distribution version too (only unifi-mapper had it)."""
     import sys
     from unifi_mapper import network_cli
 

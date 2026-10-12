@@ -1,6 +1,6 @@
 """`scripts/unifi-cron.sh` upgrades: stale installed commands are flagged and replaced.
 
-Regression (code-review F5): install copies each TASKS command into a plist or crontab
+Regression: install copies each TASKS command into a plist or crontab
 line, so a schedule installed before `--apply`/`--record` keeps its old command line.
 `status` must say so, and a re-run of `install` on macOS must replace a loaded job
 (`launchctl load` of a loaded label fails, and the script swallowed the error).

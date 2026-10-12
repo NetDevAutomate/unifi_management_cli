@@ -1,4 +1,4 @@
-"""What the topology diagram's formats need from Graphviz (issue 075; review AGG-8).
+"""What the topology diagram's formats need from Graphviz (issue 075).
 
 PNG and SVG are drawn by Graphviz's ``dot`` program through the ``graphviz`` package; HTML
 is a d3 page written without it. Each case runs the real ``graphviz`` package, with ``dot``
@@ -86,7 +86,7 @@ def test_with_dot_a_render_writes_the_image_and_removes_the_source(
 @pytest.mark.parametrize('dir_name', ['site.{fmt}.d', 'run.{fmt}'])
 @pytest.mark.usefixtures('fake_dot')
 def test_a_render_strips_only_the_final_extension(tmp_path: Path, fmt: str, dir_name: str) -> None:
-    """Final council F1: an extension in a directory's name stays, so the image and its DOT
+    """Review finding: an extension in a directory's name stays, so the image and its DOT
     source go to the directory asked for, the one network-audit.sh checks, and nowhere else."""
     out_dir = tmp_path / dir_name.format(fmt=fmt)
     out_dir.mkdir()

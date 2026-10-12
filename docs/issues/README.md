@@ -7,6 +7,11 @@ Each file has `status: open` (or `open, decision needed`) in its front matter. W
 issue is fixed, set `status: resolved`, add `resolved_by: <commit>` and keep the file, so
 the reasoning stays next to the code it explains.
 
+Several files refer to *the July port*: the diagnostics work written in June and July 2026 on
+a separate checkout, and ported onto this history in October 2026 (release 0.2.0). Issues
+[059](059-july-work-not-ported.md) and [060](060-decisions-from-the-july-port.md) record what
+was and was not carried over.
+
 ## Index
 
 | # | Title | Status |

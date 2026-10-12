@@ -20,8 +20,7 @@ a sample (decision D1 in issue 060); the MCP tools read stored results only.
 
 Ported from the July work (a local archive, not in the repo): the script and the two
 parsers are July's; the sampler is rebuilt on the shared SSH and store helpers, and the
-parsers refuse output that July read as an empty or a partial sample (review B4, final
-council F4).
+parsers refuse output that July read as an empty or a partial sample.
 """
 
 import json
@@ -68,7 +67,7 @@ def parse_bridge_counters(output: str) -> dict[str, dict[str, int]]:
     Every line that is not blank is a bridge's. The script exits with ``ip``'s status, so a
     ``cat`` that could not read a counter shows only as an empty field: a line that is not
     three fields ending in two non-negative integers fails the whole sample, never leaving
-    out that bridge and storing the rest (final council F4).
+    out that bridge and storing the rest.
 
     Args:
         output: The script's stdout before :data:`ADDR_MARKER`.

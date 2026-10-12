@@ -5,7 +5,7 @@ status: resolved
 resolved_by: 5885ece
 severity: low
 components: [analysis/port_counter_baseline, port_history]
-found_by: port diagnostics gap analysis (F4)
+found_by: port diagnostics gap analysis
 ---
 
 # The port counter baseline store has no producer

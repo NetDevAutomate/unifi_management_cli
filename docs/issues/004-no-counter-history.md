@@ -5,7 +5,7 @@ status: resolved
 resolved_by: 5885ece
 severity: low
 components: [analysis/link_error_tracking, scripts/unifi-cron.sh]
-found_by: port diagnostics gap analysis (F6)
+found_by: port diagnostics gap analysis
 ---
 
 # There is no on-disk history of port error counters
@@ -54,7 +54,7 @@ Applied the recommended fix (approved, design §10.5):
   `.lock`; compaction (temp file + `os.replace`) runs only once the oldest line is a day past
   `--retention-days` (default 14, 1-365; it then drops every line older than the window) or
   the file passes the 64 MiB cap (it then trims to 80% of the cap), so a full file is not
-  rewritten on every run (code-review F6). Each `--record` prints the days the file holds.
+  rewritten on every run. Each `--record` prints the days the file holds.
 - The comparison baseline stays separate: only `--snapshot` sets it. The link-error
   baseline default moved off the working directory to
   `$XDG_STATE_HOME/unifi_mapper/link-error-baseline.json`; a legacy

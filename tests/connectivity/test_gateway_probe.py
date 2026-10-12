@@ -217,7 +217,7 @@ traceroute to 2001:db8:53::53 (2001:db8:53::53), 20 hops max, 80 byte packets
 
 
 def test_traceroute_reads_ipv6_hops() -> None:
-    """Council M4 CF-001: the hop pattern took only the digits before an IPv6 address's
+    """Review finding: the hop pattern took only the digits before an IPv6 address's
     first colon, so a successful IPv6 trace never matched its target."""
     hops = parse_traceroute_output(TRACEROUTE_V6)
     assert [(h['host'], h['ip']) for h in hops] == [
@@ -239,7 +239,7 @@ async def test_an_ipv6_trace_that_ends_at_the_target_is_reached(
     assert trace['reached'] is True  # the same address, however it is written
 
 
-# Review SR6-1: July's time pattern ran over the whole hop line, so a host name holding "ms"
+# Review finding: July's time pattern ran over the whole hop line, so a host name holding "ms"
 # crashed the parse (a ".ms" label) or added a time never measured (digits before "ms").
 TRACEROUTE_MS_NAMES = """\
 traceroute to 203.0.113.53 (203.0.113.53), 20 hops max, 60 byte packets
@@ -264,7 +264,7 @@ def _hop(
     }
 
 
-# One hop line each, documentation values only (the orchestrator's corpus for SR6-1). A time
+# One hop line each, documentation values only. A time
 # is '10.5 ms' (two tokens) or, from GNU inetutils, '0.351ms' with the unit glued on.
 HOP_LINES: dict[str, tuple[str, dict[str, Any]]] = {
     'a .ms label': (
@@ -344,7 +344,7 @@ HOP_LINES: dict[str, tuple[str, dict[str, Any]]] = {
     'a dot before ms': (' 9  . ms  2.0 ms', _hop(9, None, None, [2.0])),
     'a number that is not a time': (' 9  1.2.3 ms', _hop(9, None, None, [])),
     # GNU inetutils glues the unit to the time and prints a resolved name after the address,
-    # in parentheses (review AGG-7).
+    # in parentheses.
     'GNU inetutils (numeric)': (
         '  1   192.0.2.1  0.351ms  0.247ms  0.230ms ',
         _hop(1, '192.0.2.1', '192.0.2.1', [0.351, 0.247, 0.23]),
@@ -373,7 +373,7 @@ HOP_LINES: dict[str, tuple[str, dict[str, Any]]] = {
 def test_traceroute_times_are_read_by_token_never_from_a_name(
     line: str, expected: dict[str, Any]
 ) -> None:
-    """Review SR6-1: a time is a number token then an "ms" token, or (review AGG-7, GNU
+    """Review finding: a time is a number token then an "ms" token, or (GNU
     inetutils) one number token with "ms" glued on; names are never read."""
     assert parse_traceroute_output(line) == [expected]
 
@@ -391,7 +391,7 @@ async def test_a_trace_through_names_holding_ms_is_reached(
 def test_the_cli_reads_a_trace_through_names_holding_ms(
     monkeypatch: pytest.MonkeyPatch, controller: FakeController
 ) -> None:
-    """Review SR6-1: `gateway traceroute` exited 1 on a hop named under a '.ms' label."""
+    """Review finding: `gateway traceroute` exited 1 on a hop named under a '.ms' label."""
     monkeypatch.setattr(
         asyncssh, 'connect', FakeSSH({**REPLIES, 'traceroute': TRACEROUTE_MS_NAMES})
     )
@@ -488,7 +488,7 @@ async def test_an_unknown_name_is_not_found_before_any_ssh(
     assert ssh.connects == []
 
 
-# --- one resolver for devices and clients (review F10) -------------------------------------
+# --- one resolver for devices and clients -------------------------------------
 
 HUB_DEVICES = [
     {'name': 'AP Hub 3', 'mac': '02:00:00:00:01:03', 'type': 'uap', 'ip': '192.0.2.23'},
@@ -698,7 +698,7 @@ async def test_the_interface_a_vlan_resolves_to_is_validated_too(
     assert [shlex.split(c)[0] for c in fake.commands] == ['ip']  # no curl
 
 
-# --- a probe that could not run is an error, not a result (review F7) ----------------------
+# --- a probe that could not run is an error, not a result ----------------------
 
 FAKE_STDERR_PW = 'FAKE-STDERR-PASSWORD'  # pragma: allowlist secret
 
@@ -829,7 +829,7 @@ async def test_a_result_code_is_still_a_result(
 def test_the_flow_states_are_the_design_s() -> None:
     from unifi_mapper.typer_cli import _FlowState
 
-    # SR4-N2: the CLI's --state choices are the core's list, in order (the CLI keeps its own
+    # Review finding: the CLI's --state choices are the core's list, in order (the CLI keeps its own
     # enum so that importing it never imports the SSH module at startup).
     assert [state.value for state in _FlowState] == list(FLOW_STATES)
     assert set(FLOW_STATES) == {
@@ -929,7 +929,7 @@ def test_a_trace_that_runs_out_of_hops_says_not_reached(
 def test_the_table_marks_a_hop_that_answered_unreachable(
     monkeypatch: pytest.MonkeyPatch, controller: FakeController
 ) -> None:
-    """M4 council NF-002: a !H hop looked like any other hop in the text table."""
+    """Review finding: a !H hop looked like any other hop in the text table."""
     fake = FakeSSH({**REPLIES, 'traceroute': TRACEROUTE_HOST_UNREACHABLE})
     monkeypatch.setattr(asyncssh, 'connect', fake)
     route_cli(monkeypatch, controller)
@@ -975,7 +975,7 @@ def test_a_bad_value_is_one_error_line_and_no_ssh(cli: FakeSSH) -> None:
     ids=['not http', 'leading dash', 'vlan and interface'],
 )
 def test_a_value_a_probe_checks_itself_exits_1_before_ssh(cli: FakeSSH, args: list[str]) -> None:
-    """The README's exit-code table (review M1): Typer's own checks exit 2, the probe's 1."""
+    """The README's exit-code table: Typer's own checks exit 2, the probe's 1."""
     result = runner.invoke(app, args)
     assert result.exit_code == 1, result.output
     assert result.stdout == '' and 'CONFIG_INVALID' in result.stderr
@@ -988,12 +988,12 @@ def test_every_command_has_help(command: str) -> None:
     assert result.exit_code == 0
     flat = ' '.join(result.output.split())
     assert 'SSH' in flat and 'host key is not verified' in flat
-    if command == 'traceroute':  # review M3 (council N2): the JSON hop fields are described
+    if command == 'traceroute':  # review finding: the JSON hop fields are described
         assert '"unreachable"' in flat and '!H (host)' in flat and '"timeout" (no reply)' in flat
 
 
 def test_the_url_help_says_to_put_no_secret_in_the_query() -> None:
-    """M4 council A: a query string is run as given, on the gateway's command line."""
+    """Review finding: a query string is run as given, on the gateway's command line."""
     root = typer.main.get_command(app)
     assert isinstance(root, click.Group)
     group = root.commands['gateway']

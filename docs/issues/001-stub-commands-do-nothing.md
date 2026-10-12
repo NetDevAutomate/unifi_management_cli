@@ -5,7 +5,7 @@ status: resolved
 resolved_by: c42bf59
 severity: low
 components: [typer_cli]
-found_by: port diagnostics gap analysis (F3)
+found_by: port diagnostics gap analysis
 ---
 
 # `find device`, `analyze link-quality` and `diagnose health` are stubs

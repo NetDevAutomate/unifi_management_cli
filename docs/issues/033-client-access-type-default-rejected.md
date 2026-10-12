@@ -5,7 +5,7 @@ status: resolved
 resolved_by: a43d39f
 severity: medium
 components: [network/models]
-found_by: review follow-ups live checks at d6d013f (L3)
+found_by: review follow-ups, live checks at d6d013f
 ---
 
 # `get_clients` returns no clients: `access.type: DEFAULT` fails validation

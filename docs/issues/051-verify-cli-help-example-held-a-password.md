@@ -48,7 +48,7 @@ What is left, in this order:
    approved removing the network details in the unpushed commits
    ([issue 040](040-real-identifiers-in-tests.md),
    [issue 046](046-real-device-names-in-code-and-history.md)) in the same rewrite. Only the
-   identifiers in the pushed history are still to decide. The orchestrator sets the exact
+   identifiers in the pushed history are still to decide. The maintainer sets the exact
    commit list.
 
 A guard is already in place: `tests/test_example_credentials.py` (`85c937d`) reads every

@@ -876,7 +876,7 @@ def test_latency_counts_a_target_with_total_loss_as_unreachable() -> None:
     assert (result.reachable, result.packet_loss, result.rtt_avg) == (False, 100.0, None)
 
 
-# --- the connect itself is bounded (M2 council finding M2-MAJOR-001) ---------------------
+# --- the connect itself is bounded ---------------------
 
 
 async def test_a_stalled_connect_ends_as_unreachable_after_the_bound(

@@ -234,7 +234,7 @@ def test_a_file_that_is_not_a_store_is_unreadable(tmp_path: Path) -> None:
     [('now', 'raw'), ('1d', 'raw'), ('1w', 'raw'), ('1m', 'hourly'), ('1y', 'daily')],
 )
 def test_each_period_reads_its_tier(tmp_path: Path, period: str, tier: str) -> None:
-    """Orchestrator §8 (review B1): 1w reads raw samples, which are kept 8 days."""
+    """1w reads raw samples, which are kept 8 days."""
     path = tmp_path / 'store.sqlite3'
     _writable(path).close()
     report = read_vlan_traffic_report(period, path)
@@ -268,11 +268,11 @@ def test_the_raw_tier_computes_rates_from_bytes(
     (vlan,) = read_vlan_traffic_report('now', path)['vlans']
     assert vlan['vlan_id'] == 10 and vlan['avg_rx_bps'] > 0
     assert (vlan['samples'], vlan['valid_sample_pct']) == (2, 50.0)
-    assert 'coverage_pct' not in vlan  # final council F5: a share of samples, not of time
+    assert 'coverage_pct' not in vlan  # a share of samples, not of time
 
 
 def test_a_raw_window_pairs_its_first_sample_with_the_one_before(tmp_path: Path) -> None:
-    """M4 council CF-003: each VLAN started the window with no previous counter, so the
+    """Review finding: each VLAN started the window with no previous counter, so the
     first interval was lost, and at a 5-minute cadence 'now' read one sample and no rate."""
     path = tmp_path / 'store.sqlite3'
     last = FAR_FUTURE - 100
@@ -331,7 +331,7 @@ def test_coverage_counts_rows_and_gaps_by_tier(tmp_path: Path) -> None:
 
 
 # --- run_rollups: every complete bucket, recomputed, pruned only once rolled ---------------
-# Orchestrator §8 (review B1). July's rollup rolled an hour only once it was 8 days old and a
+# July's rollup rolled an hour only once it was 8 days old and a
 # day once about 61 days old, so 1w read nothing and 1m and 1y missed the newest 8 and 61
 # days. Every run below passes ``now``, so nothing depends on the clock.
 
@@ -488,7 +488,7 @@ def test_a_late_sample_is_counted_on_the_next_run(tmp_path: Path) -> None:
 def test_a_late_sample_counts_only_inside_the_trailing_window(
     tmp_path: Path, delay: int, counted: bool
 ) -> None:
-    """Council CF-002: a run recomputes only the newest TRAILING_HOURS complete hours, so a
+    """Review finding: a run recomputes only the newest TRAILING_HOURS complete hours, so a
     sample written into an hour that became complete that long before the run never reaches
     the hourly tier (issue 071); the raw tier keeps it for now, 1d and 1w."""
     path = tmp_path / 'store.sqlite3'

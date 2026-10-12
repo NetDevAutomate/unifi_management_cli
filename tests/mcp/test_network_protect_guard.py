@@ -188,7 +188,7 @@ async def test_each_network_tool_sends_only_audited_gets(
     assert FAKE_TOKEN not in text and NETWORK_HOST not in text and '?' not in text
 
 
-# A lower layer's message that carries a credential (M3 council M3-BLOCK-001).
+# A lower layer's message that carries a credential.
 LEAKY = (
     'request failed: password=' + 'FAKE-TOOL-ERROR-PASSWORD-MUST-NOT-APPEAR'
 )  # pragma: allowlist secret

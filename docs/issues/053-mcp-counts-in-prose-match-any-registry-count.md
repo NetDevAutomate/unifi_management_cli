@@ -4,7 +4,7 @@ date: 2026-10-04
 status: open
 severity: low
 components: [tests/test_docs_consistency.py, docs]
-found_by: docs and repo hygiene review (council, iteration 3)
+found_by: docs and repo hygiene review
 ---
 
 # A tool count in prose only has to match one of the registry's counts

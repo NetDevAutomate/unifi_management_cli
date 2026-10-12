@@ -4,31 +4,30 @@ date: 2026-10-06
 status: open, decision needed
 severity: low
 components: [analysis, diagnostics, mcp, core/utils/redact, tests, docs/issues]
-found_by: July port final council and iteration-8 review (final-fix triage)
+found_by: July port final review
 ---
 
 # Follow-ups from the July port's final review that were not fixed on the branch
 
 ## Problem
 
-The final council's 89 non-blocking findings, the iteration-8 review's and the standards
-review's SR8-S1 were triaged in the final-fix run. The ones whose fix was a few lines were
-fixed on the branch; findings already fixed by the final-fix commits, or contradicted by the
-code, are recorded in the port's verification record. These remain, each with the fix to
-make; item 8 was fixed on the branch after it was filed and keeps its number, items 30
-and 31 came from the final-fix review, and items 32 to 36 from the review of the FQ-5 fix
-on `main` (the MCP call log's lock made private, with a bounded wait). References in
-brackets are the council bundle and finding (`04/F1`) or the review id.
+The port's final review left 89 non-blocking findings. The ones whose fix was a few lines
+were fixed on the branch; findings already fixed by later commits, or contradicted by the
+code, are recorded in the port's verification record, which is kept outside the repo. These
+remain, each with the fix to make; item 8 was fixed on the branch after it was filed and
+keeps its number, items 30 and 31 came from the review of those fixes, and items 32 to 36
+from the review of the call-log lock fix on `main` (the MCP call log's lock made private,
+with a bounded wait).
 
 ### Behaviour: each changes what a command reports, so each needs sign-off
 
-1. **`diagnose ap-health` measures another SSID under the tracked SSID's name** (04/F1,
-   AGG8-1). When an AP has no 2.4 GHz VAP with the tracked SSID, `pick_vap` falls back to the
-   busiest VAP, so a mistyped or 5 GHz-only `--essid` is accepted, and a reference AP without
-   the SSID is measured on its busiest one. Fix: refuse an `--essid` that is not on the
-   target's 2.4 GHz VAPs (exit 2, naming the SSIDs it has), and report a reference AP without
-   it as "no rate (SSID not present)"; test both.
-2. **The ap-health retry note says pings ran when they didn't** (04/F5). `RETRY_NOTE` always
+1. **`diagnose ap-health` measures another SSID under the tracked SSID's name**. When an AP
+   has no 2.4 GHz VAP with the tracked SSID, `pick_vap` falls back to the busiest VAP, so a
+   mistyped or 5 GHz-only `--essid` is accepted, and a reference AP without the SSID is
+   measured on its busiest one. Fix: refuse an `--essid` that is not on the target's 2.4 GHz
+   VAPs (exit 2, naming the SSIDs it has), and report a reference AP without it as "no rate
+   (SSID not present)"; test both.
+2. **The ap-health retry note says pings ran when they didn't**. `RETRY_NOTE` always
    ends "Pings run from the gateway to 2.4 GHz clients on each AP at sample time", without
    `--ping-clients` too, and the pings also reach clients whose radio isn't reported. Fix:
    move that sentence to a note added only with `--ping-clients`, worded as the selection
@@ -41,12 +40,12 @@ brackets are the council bundle and finding (`04/F1`) or the review id.
    ("smoothed peaks") and the tool's docstring say otherwise. Fix: say each tier's peak is
    the largest sample rate in its window and that bursts shorter than the sampling interval
    are under-represented in every tier; regenerate the MCP guide's tool row.
-4. **`diagnose latency-matrix` reads a ping that could not run as a lost target** (04/F12).
+4. **`diagnose latency-matrix` reads a ping that could not run as a lost target**.
    `_ping_single` parses stdout without checking the exit status, so a missing or refused
    `ping` (exit 127 or 2, nothing on stdout) shows as 100% loss. Fix: check the status as the
    gateway probes do (`check_exit_status(result, 'ping', (0, 1))`) and report any other
    status as an error for that target; test exit 127 and an empty stdout.
-5. **The STP audit's tie warning skips a core switch tied with an access switch** (04/F13).
+5. **The STP audit's tie warning skips a core switch tied with an access switch**.
    `_tie_warning` returns nothing when any tied switch is aggregation- or core-class, so a
    core switch and an access switch tied at the lowest priority leave the root to MAC order
    unwarned. Its docstring states the rule but not this case. Fix: warn unless every tied
@@ -54,15 +53,15 @@ brackets are the council bundle and finding (`04/F1`) or the review id.
 6. **Free text with "pre-shared" spellings is not masked** (06/N6). `SECRET_KEY_RE` and the
    free-text pattern match `preshared` but not `pre-shared`, `pre_shared` or `pre shared`.
    Fix: `pre[-_ ]?shared` in both, test first with each spelling.
-7. **The speedtest history keeps a permissive mode it finds** (found with final council F6).
+7. **The speedtest history keeps a permissive mode it finds**.
    `diagnostics/wan_history.py` writes with `file_mode=0o600` and `dir_mode=0o700` but no
    `enforce_modes`, so an existing history or directory with group or other bits stays
    readable, the gap the MCP call log had. Fix: pass `enforce_modes=True`; decide what a file
    or directory owned by another user does there (the recording command would then fail).
-8. **Fixed on the branch: a call log path's own directory was made private, whatever it was**
-   (found with final council F6; the final-fix review's FFA-1). With `UNIFI_MCP_CALL_AUDIT`
-   set to a path, its directory was set to `0o700` on every write, so `~/mcp-audit.jsonl`
-   changed the home directory's mode. Now only the default state directory is kept `0o700`.
+8. **Fixed on the branch: a call log path's own directory was made private, whatever it
+   was**. With `UNIFI_MCP_CALL_AUDIT` set to a path, its directory was set to `0o700` on
+   every write, so `~/mcp-audit.jsonl` changed the home directory's mode. Now only the
+   default state directory is kept `0o700`.
    A given path's existing directory is never changed: when another user owns it, or it has
    a group or other write bit, the log turns off with one warning and writes nothing. The
    file is still kept `0o600`, and `tests/mcp/test_call_audit.py` pins each case.
@@ -71,21 +70,21 @@ brackets are the council bundle and finding (`04/F1`) or the review id.
    `unifi-mapper diagnose wan-history` reference; regenerate the MCP guide's tool row and
    recheck the tools/list size test.
 
-Filed by the final-fix review:
+Filed by the review of those fixes:
 
-30. **A gateway with no `br*` interface fails the VLAN sample with a misleading message**
-    (FFA-3, SR-FF-2). `SAMPLE_SCRIPT` (`analysis/vlan_traffic.py:47-52`) loops over
-    `/sys/class/net/br*`. With no match, POSIX `sh` keeps the literal glob, so the script
-    prints a `br*` line with empty counters, and `parse_bridge_counters` fails the sample
+30. **A gateway with no `br*` interface fails the VLAN sample with a misleading message**.
+    `SAMPLE_SCRIPT` (`analysis/vlan_traffic.py:47-52`) loops over `/sys/class/net/br*`. With
+    no match, POSIX `sh` keeps the literal glob, so the script prints a `br*` line with empty
+    counters, and `parse_bridge_counters` fails the sample
     with "printed a bridge line without two integer counters" and the read-access
     suggestion, where "no bridge interfaces" is meant. The exit status (1) and "nothing
     stored" are right; only the message misleads, and every UniFi OS gateway has `br0`. Fix,
     test first: add `[ -e "$i" ] || continue` to the loop (a change to the script the
     gateway runs, so it needs sign-off), or treat a literal `br*` line as no bridges.
 
-Filed by the review of the FQ-5 fix on `main`:
+Filed by the review of the call-log lock fix on `main`:
 
-32. **A lock another account holds stalls the CLI's recording commands** (SR-FQ5-2). By
+32. **A lock another account holds stalls the CLI's recording commands**. By
     design the CLI histories wait for their lock with no limit.
     `analyze link-errors --record` writes the port counter history
     (`analysis/counter_history.py:274`) with no `file_mode`, so its file and lock keep the
@@ -99,12 +98,12 @@ Filed by the review of the FQ-5 fix on `main`:
     pile up, and under launchd (macOS), which skips an interval while the job still runs,
     the recording stops. `diagnose wan --record` (`diagnostics/wan_history.py:86`, scheduled
     at `unifi-cron.sh:40`) can be stalled the same way through a speedtest lock made before
-    the FQ-5 fix, which keeps its `0o644` (that history has no `enforce_modes`). Fix: give
+    the lock fix, which keeps its `0o644` (that history has no `enforce_modes`). Fix: give
     the CLI writers a bounded wait that fails the run with a clear message, or document that
     a held lock blocks them. Also decide the counter history's file, lock and directory
     modes, together with item 7.
 33. **A call-log lock that is never released costs every logged call up to 5 s, without a
-    trace** (SR-FQ5-3, FQ5-02). If the call log's lock is never released, every logged call
+    trace**. If the call log's lock is never released, every logged call
     waits up to 5 s for it; the meta-tools (`search_tools`, `get_tool_info`,
     `list_categories`) aren't logged, so they never wait. After the first warning, each
     dropped line leaves no trace: the log still reports itself on (`CallAuditLog.enabled`),
@@ -112,17 +111,17 @@ Filed by the review of the FQ-5 fix on `main`:
     The writes (`mcp/runner.py:351-352`) share anyio's default worker-thread limiter (40
     tokens) with the SDK's stdio transport, so with about 40 or more writes in flight a call
     can wait longer than 5 s. Holding the lock for good needs root, the same user, or a
-    descriptor opened on a `0o644` lock from before the FQ-5 fix. Options: a cool-down after
+    descriptor opened on a `0o644` lock from before the lock fix. Options: a cool-down after
     a timeout that skips the lock attempt for N s; a `lock_timeout` line with the number of
     dropped lines on the next successful write, as `request_overflow` does; a small
     `CapacityLimiter` just for the writes.
 35. **Two call-log writes that fail together, for a reason other than a lock timeout, can
-    each warn** (AGG-FQ5-12, council FQ5-NB-2). `CallAuditLog._write`
+    each warn**. `CallAuditLog._write`
     (`mcp/call_audit.py:333-334`) checks `_disabled` without holding `self._lock`, and its
     generic handler (`mcp/call_audit.py:365-372`) sets `_disabled` and warns with no guard.
     The runner records in worker threads (`mcp/runner.py:352`), so two writes already past
     that check can both fail and both warn: the documented one warning isn't guaranteed
-    under concurrency. This predates the FQ-5 fix (a second write blocked on `flock` failed
+    under concurrency. This predates the lock fix (a second write blocked on `flock` failed
     and warned the same way), and the `LockTimeoutError` handler beside it
     (`mcp/call_audit.py:354-364`) already sets its own flag under `self._lock`. The effect
     is a repeated stderr line that names only the path and a fixed reason or an error class;
@@ -135,9 +134,9 @@ Filed by the review of the FQ-5 fix on `main`:
     path, each in a thread with a join timeout; assert exactly one `MCP call log disabled`
     warning and that `enabled` is False. Save the failing run (two warnings) against the
     current src before changing it.
-36. **A link in the lock's place gives a warning that names the log, not the lock**
-    (SR-FQ5-12, AGG-FQ5-16). With a symbolic link where the call log's lock should be, the
-    lock's `O_NOFOLLOW` open fails with `ELOOP` (`core/utils/jsonl.py:222-223`, reached from
+36. **A link in the lock's place gives a warning that names the log, not the lock**. With a
+    symbolic link where the call log's lock should be, the lock's `O_NOFOLLOW` open fails
+    with `ELOOP` (`core/utils/jsonl.py:222-223`, reached from
     line 330), and the generic handler (`mcp/call_audit.py:365-372`) warns
     `MCP call log disabled for this process: cannot write <log path>: OSError (ELOOP)`.
     That names the log, which may not exist, and not the lock. Fix: when the `OSError`'s
@@ -186,18 +185,18 @@ Filed by the review of the FQ-5 fix on `main`:
     `test_the_password_config_exports_no_login_past_the_test` in `tests/test_ports_cli.py`).
     Fix: rename it for what it checks, or assert the keys are gone in a fixture finalizer.
 
-Filed by the final-fix review:
+Filed by the review of those fixes:
 
-31. **Nothing pins the codemap's command total** (FFA-4, SR-FF-3, delta council FF-3).
+31. **Nothing pins the codemap's command total**.
     `docs/architecture/codemap.md` says "80 commands in all" for `typer_cli.py`. A script
     kept outside the repository derived it from `typer.main.get_command(app)`, and the
     figure has gone stale before (it said 68). Fix: pin the "N commands in all" figure in
     `tests/test_docs_consistency.py` against a walk of `typer.main.get_command(app)`, the
     way that module's prose tool-count guard (issue 053) pins the README's tool counts.
 
-Filed by the review of the FQ-5 fix on `main`:
+Filed by the review of the call-log lock fix on `main`:
 
-34. **An owner test now passes on the lock's check, not the file's** (SR-FQ5-6).
+34. **An owner test now passes on the lock's check, not the file's**.
     `test_enforced_modes_refuse_a_file_owned_by_another_user`
     (`tests/utility/test_jsonl.py:311-329`) fakes the owner of every descriptor and matches
     `'file is owned by another user'` without anchors. The lock is now checked first, so the
@@ -210,7 +209,7 @@ Filed by the review of the FQ-5 fix on `main`:
 ### Issue line references the branch moved
 
 23. Line references filed against `main` that the branch's code changes moved (found by
-    the final-fix run; issue 044's two `enhanced_network_topology.py` references were
+    the review of those fixes; issue 044's two `enhanced_network_topology.py` references were
     corrected there). Fix, after the merge: re-point each, then add a check that every
     `src/...py:N` reference in `docs/issues/` still lands on the line it quotes.
 
@@ -231,11 +230,11 @@ Filed by the review of the FQ-5 fix on `main`:
 
 ### Optional, style only
 
-24. README's "87 MCP Tools" feature line could name the two surfaces' counts (01/F7); check
+24. README's "87 MCP Tools" feature line could name the two surfaces' counts; check
     it against the prose-count guard (issue 053) first.
-25. The July-port issue files mix tenses for "the July port" (03/F9): one pass to the past
+25. The July-port issue files mix tenses for "the July port": one pass to the past
     tense.
-26. Issue 074's index row is long (03/F11): tighten it once 074 is decided.
+26. Issue 074's index row is long: tighten it once 074 is decided.
 27. The Protect tools' error payloads name the exception class (07/N6); a class name holds
     no value, so map it to a category only if that is ever judged a leak.
 28. `server.get_runner()` sets a module global (07/N10): inject the runner if a second one

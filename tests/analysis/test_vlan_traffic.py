@@ -87,7 +87,7 @@ SECRET_FIELD = 'password=FAKE-BRIDGE-LINE-PW'  # pragma: allowlist secret
     ],
 )
 def test_a_bridge_line_without_two_integer_counters_is_an_error(line: str) -> None:
-    """Final council F4: the script exits with ``ip``'s status, so a ``cat`` that failed
+    """Review finding: the script exits with ``ip``'s status, so a ``cat`` that failed
     printed an empty counter, and the line was skipped: a partial sample, exit 0."""
     with pytest.raises(ToolError) as caught:
         parse_bridge_counters(f'br0 1000 2000\n{line}\nbr9 300 400\n')
@@ -213,7 +213,7 @@ async def test_a_resolved_interface_with_no_counters_is_skipped(
 async def test_a_bridge_whose_counter_could_not_be_read_fails_the_sample(
     ssh: FakeSSH, tmp_path: Path
 ) -> None:
-    """Final council F4: a failed ``cat`` leaves an empty field under exit status 0; the
+    """Review finding: a failed ``cat`` leaves an empty field under exit status 0; the
     sample is an error and stores nothing, never the other bridges' partial sample."""
     ssh.replies = {
         'sh': 'br0 1000 2000\nbr7 500 \nbr9 300 400\n===ADDR===\n' + json.dumps(ADDRESSES)
@@ -251,7 +251,7 @@ async def test_a_script_that_fails_is_an_error_and_stores_nothing(
 
 
 async def test_the_failed_scripts_stderr_line_is_redacted(ssh: FakeSSH, tmp_path: Path) -> None:
-    """M4 council NBF-003: the failure cases held no secret-like text, so they would pass
+    """Review finding: the failure cases held no secret-like text, so they would pass
     with the redaction removed; this one fails then."""
     stderr = 'fatal: login password=FAKE-VLAN-STDERR-PW'  # pragma: allowlist secret
     ssh.replies = {'sh': ('', stderr, 1)}
@@ -342,7 +342,7 @@ def test_sample_exits_1_when_the_script_fails(
 def test_sample_exits_1_when_a_bridge_counter_is_missing(
     cli: FakeController, ssh: FakeSSH, tmp_path: Path
 ) -> None:
-    """Final council F4: before, the other bridges were stored and the run exited 0."""
+    """Review finding: before, the other bridges were stored and the run exited 0."""
     ssh.replies = {'sh': 'br0 1000 2000\nbr7  \n===ADDR===\n' + json.dumps(ADDRESSES)}
     path = tmp_path / 'store.sqlite3'
     result = runner.invoke(app, ['vlan-traffic', 'sample', '--db', str(path)])
@@ -355,7 +355,7 @@ def test_sample_exits_1_when_a_bridge_counter_is_missing(
 def test_sample_exits_1_when_nothing_was_sampled(
     cli: FakeController, ssh: FakeSSH, tmp_path: Path
 ) -> None:
-    """A schedule must notice a sample that stored nothing (review B4)."""
+    """A schedule must notice a sample that stored nothing."""
     ssh.replies = {'sh': 'br0 1000 2000\n===ADDR===\n[]'}
     path = tmp_path / 'store.sqlite3'
     result = runner.invoke(app, ['vlan-traffic', 'sample', '--db', str(path)])
@@ -420,7 +420,7 @@ def test_report_and_coverage_print_json_and_tables(cli: FakeController, tmp_path
     assert json.loads(coverage.stdout)['raw']['count'] == 1
     table = runner.invoke(app, ['vlan-traffic', 'report', '1d', '--db', str(path)])
     assert table.exit_code == 0 and 'IoT' in table.stdout
-    # Final council F5: the column is the share of samples that gave a rate, not coverage.
+    # Review finding: the column is the share of samples that gave a rate, not coverage.
     assert 'Valid samples' in table.stdout and 'Coverage' not in table.stdout
     assert {v['valid_sample_pct'] for v in data['vlans']} == {0.0}  # one sample each
     assert runner.invoke(app, ['vlan-traffic', 'coverage', '--db', str(path)]).exit_code == 0
@@ -437,7 +437,7 @@ def test_an_unknown_period_is_a_usage_error(tmp_path: Path) -> None:
 def test_a_db_that_is_a_directory_exits_2_naming_it(
     cli: FakeController, tmp_path: Path, command: list[str]
 ) -> None:
-    """Design section 6.1 (review F8): ``--db`` naming a directory is refused, exit 2."""
+    """Design section 6.1: ``--db`` naming a directory is refused, exit 2."""
     result = runner.invoke(app, ['vlan-traffic', *command, '--db', str(tmp_path)])
     assert result.exit_code == 2, result.output
     assert '--db names a directory' in result.stderr and cli.calls == []

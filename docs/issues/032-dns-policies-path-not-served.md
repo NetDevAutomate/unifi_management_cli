@@ -5,7 +5,7 @@ status: resolved
 resolved_by: d1b36f0
 severity: medium
 components: [network/client]
-found_by: review follow-ups live checks at d6d013f (L2)
+found_by: review follow-ups, live checks at d6d013f
 ---
 
 # `get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served

@@ -75,6 +75,6 @@ eight test files, `d40d090`, the removed lines of `5aff119` and `a91e62a`, and t
 lines of `fb3e1f3` and `d379f2d` (the 45 doc and docstring lines above, public since before
 this review). The user has approved removing the network details in the unpushed commits in
 the same rewrite as the passwords. Only the identifiers in the pushed history are still to
-decide. The orchestrator sets the exact commit list. A rewrite changes every later commit
+decide. The maintainer sets the exact commit list. A rewrite changes every later commit
 hash, including the `resolved_by` hashes the issue files record, and every clone has to be
 re-made afterwards.

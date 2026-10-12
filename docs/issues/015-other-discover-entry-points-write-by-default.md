@@ -31,7 +31,8 @@ other. An operator who learned the new `unifi-mapper` default can write by accid
 
 Resolved 2026-10-12 in `dd2b01b`: both entry points preview unless `--apply`, keep `--dry-run`
 as the accepted default and exit 2 when given both; `tests/test_argparse_discover_defaults.py`
-pins each case. The readiness council named the old default a blocker for a shared repository.
+pins each case. The pre-publication review named the old default a blocker for a shared
+repository.
 
 ## Decision needed (as filed)
 

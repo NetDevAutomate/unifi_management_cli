@@ -462,7 +462,7 @@ def _git_ignored(path: str) -> bool:
     ids=['dot source', 'png', 'gv source', 'subdirectory'],
 )
 def test_every_diagram_output_is_git_ignored(path: str) -> None:
-    """Review AGG-1: only diagrams/*.png, .svg, .html and .dot were ignored, so the DOT source
+    """Review finding: only diagrams/*.png, .svg, .html and .dot were ignored, so the DOT source
     a render without Graphviz's dot leaves at the diagram path minus its extension, which
     names the site's devices, could be staged."""
     assert _git_ignored(path)

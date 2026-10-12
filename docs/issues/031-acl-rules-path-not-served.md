@@ -5,7 +5,7 @@ status: resolved
 resolved_by: d1b36f0
 severity: medium
 components: [network/client]
-found_by: review follow-ups live checks at d6d013f (L1)
+found_by: review follow-ups, live checks at d6d013f
 ---
 
 # `get_acl_rules` gets a 404: the client's `/acls` path isn't served by Network 10.6

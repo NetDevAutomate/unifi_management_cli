@@ -5,7 +5,7 @@ status: resolved
 resolved_by: 40b8653
 severity: medium
 components: [inventory_cli, README, SECURITY]
-found_by: readiness review, validation council (openai.gpt-6-astra, lens 3)
+found_by: pre-publication review
 ---
 
 # `inventory update-firmware` writes after a confirmation prompt, not a preview

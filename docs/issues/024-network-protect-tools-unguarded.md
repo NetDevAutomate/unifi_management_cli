@@ -5,7 +5,7 @@ status: resolved
 resolved_by: 20236cc
 severity: low
 components: [mcp/tools/network, mcp/tools/protect, network/client, protect/client, core/utils/readonly]
-found_by: MCP uvx standards work (convergence fixer, iteration 1)
+found_by: MCP uvx standards work
 ---
 
 # Network Integration API and Protect MCP tools run without a read-only guard or request audit

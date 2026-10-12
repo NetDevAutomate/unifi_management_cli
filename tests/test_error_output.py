@@ -227,7 +227,7 @@ def test_both_clis_replace_the_default_handler_before_running(
     assert swapped == [0]
 
 
-# --- every CLI error line and debug traceback is redacted (M2 council M2-BLOCK-001) ------
+# --- every CLI error line and debug traceback is redacted ------
 
 CLI_MODULES = [
     PACKAGE / name
@@ -401,7 +401,7 @@ def _loguru_traceback_uses(path: Path, base: Path = PACKAGE) -> list[str]:
 
 
 def test_no_mcp_module_logs_an_unredacted_traceback() -> None:
-    """Final council F7: ``logger.exception`` printed ``str(e)`` and its traceback, as they
+    """Review finding: ``logger.exception`` printed ``str(e)`` and its traceback, as they
     were, to the stderr an MCP client keeps; ``mcp/runner.py`` logs a failed call through
     ``_log_tool_failure`` instead."""
     mcp = sorted((PACKAGE / 'mcp').rglob('*.py'))
@@ -551,7 +551,7 @@ def test_a_tool_error_through_the_analysis_helper_is_redacted(
     assert FAKE_PW not in result.output
 
 
-# --- the argparse CLIs and the shared env-file loaders (review B5) ----------------------
+# --- the argparse CLIs and the shared env-file loaders ----------------------
 
 
 def _fake() -> str:

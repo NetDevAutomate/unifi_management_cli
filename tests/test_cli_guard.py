@@ -152,7 +152,7 @@ def test_new_commands_run_behind_the_read_only_transport() -> None:
 
 # Every module that reads the controller through UniFiClient must borrow the installed holder:
 # a UniFiClient(...) with arguments would bypass it, an httpx.AsyncClient(...) the guard.
-# Derived (review F11), so a module added later is scanned without being listed; client.py
+# Derived, so a module added later is scanned without being listed; client.py
 # itself defines the client and the holder.
 CLIENT_MODULE = PACKAGE / 'core' / 'utils' / 'client.py'
 JULY_CONTROLLER_MODULES = (

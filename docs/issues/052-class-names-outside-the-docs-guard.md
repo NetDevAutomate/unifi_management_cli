@@ -4,7 +4,7 @@ date: 2026-10-04
 status: open
 severity: low
 components: [tests/test_docs_consistency.py, docs]
-found_by: docs and repo hygiene review (semantic review, iteration 2)
+found_by: docs and repo hygiene review
 ---
 
 # Class names in the docs are outside the docs-drift guard

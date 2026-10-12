@@ -273,7 +273,7 @@ def _private(path: Path, line: str) -> None:
 
 
 def test_enforced_modes_tighten_an_existing_file_and_directory(tmp_path: Path) -> None:
-    """Final council F6: the modes applied on creation only, so a file or directory that
+    """Review finding: the modes applied on creation only, so a file or directory that
     already existed with group or other bits stayed readable by other local users."""
     directory = tmp_path / 'state'
     directory.mkdir()
@@ -338,7 +338,7 @@ def test_without_enforcement_an_existing_file_keeps_its_mode(tmp_path: Path) -> 
     assert _mode(path) == 0o644
 
 
-# --- the lock: its mode and a bounded wait (final-fix VS-1) -------------------------------
+# --- the lock: its mode and a bounded wait -------------------------------
 
 
 def _lock_of(path: Path) -> Path:
@@ -459,9 +459,9 @@ class _CountingFcntl:
 def test_a_bounded_wait_takes_a_lock_released_during_the_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SR-FQ5-1: the contention the call log stays on for. A loop that slept out the whole
+    """Review finding: the contention the call log stays on for. A loop that slept out the whole
     limit would fail on the time, a write that took the lock without appending on the lines,
-    and a writer that found the lock already free on the refusals (SR-FQ5-13)."""
+    and a writer that found the lock already free on the refusals."""
     path = tmp_path / 'h.jsonl'
     append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
     counting = _CountingFcntl()
@@ -502,7 +502,7 @@ def _open_descriptors() -> int | None:
 def test_a_limit_of_zero_or_less_or_nan_gives_up_at_once_on_a_held_lock(
     tmp_path: Path, limit: float
 ) -> None:
-    """Council FQ5-04: the deadline check raises on each of these; none of them loops."""
+    """Review finding: the deadline check raises on each of these; none of them loops."""
     path = tmp_path / 'h.jsonl'
     append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
 

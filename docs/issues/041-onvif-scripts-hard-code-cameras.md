@@ -20,7 +20,7 @@ found_by: docs and repo hygiene review (privacy scan)
   rewritten to remove it. That rewrite runs separately, after this review, and its
   force-push needs the user's explicit confirmation.
 - The user reports that the camera password has been changed everywhere it was used. The old
-  value stays in the history until the orchestrator's rewrite purges it.
+  value stays in the history until the planned history rewrite purges it.
 
 ## Problem
 

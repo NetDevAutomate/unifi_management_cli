@@ -4,7 +4,7 @@ date: 2026-10-06
 status: open
 severity: low
 components: [enhanced_network_topology, run_methods, README]
-found_by: July port build loop, iteration 7 (live read-only run)
+found_by: July port (live read-only run)
 ---
 
 # discover needs Graphviz's dot program for its PNG and SVG diagrams and exits 1 without it, writing no report
@@ -58,7 +58,7 @@ message. Either changes what `discover` does without Graphviz, so it needs sign-
 user-visible change. Test both formats with `shutil.which('dot')` faked to None, and remove
 the DOT source a failed render leaves.
 
-Done since (final council F1): both methods used to strip the extension with `str.replace`,
+Done since: both methods used to strip the extension with `str.replace`,
 which removed `.png` (or `.svg`) anywhere in the path, so a `-d` under a directory such as
 `site.png.d/` rendered into `site.d/`, outside the directory the audit script checks. They
 now strip only a final suffix that matches the format (`Path.with_suffix('')`), and

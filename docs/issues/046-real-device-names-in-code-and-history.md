@@ -104,7 +104,7 @@ can't be removed without rewriting published commits.
    ([issue 041](041-onvif-scripts-hard-code-cameras.md),
    [issue 051](051-verify-cli-help-example-held-a-password.md)). The user has approved
    removing the network details in the unpushed commits in the same rewrite. Only the names
-   in the pushed history are still to decide. The orchestrator sets the exact commit list.
+   in the pushed history are still to decide. The maintainer sets the exact commit list.
    The copies are:
    - the six commits above, and the pushed history of the scripts' literals;
    - the removed lines of `e99e5f2` and `9d98dcb`, which hold the names they replaced.

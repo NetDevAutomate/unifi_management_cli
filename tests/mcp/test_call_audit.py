@@ -179,7 +179,7 @@ async def test_unknown_keys_are_a_count_never_a_name(
 
 
 def test_names_past_the_cap_are_not_counted_as_unknown() -> None:
-    """M4 council NBF-004: past 64 names, parameter names were counted as unknown keys."""
+    """Review finding: past 64 names, parameter names were counted as unknown keys."""
     log = CallAuditLog(CallAuditSetting('default'))
     known = {f'p{i:02d}' for i in range(70)}
     log.record(
@@ -290,7 +290,7 @@ def _record(log: CallAuditLog) -> None:
 
 
 def test_a_permissive_call_log_and_directory_are_made_private() -> None:
-    """Final council F6: 0o600 and 0o700 applied on creation only, so a call log or state
+    """Review finding: 0o600 and 0o700 applied on creation only, so a call log or state
     directory that already existed group- or world-readable stayed so."""
     path = state_dir() / CALL_AUDIT_FILENAME
     path.parent.mkdir(parents=True)
@@ -321,7 +321,7 @@ def test_a_call_log_owned_by_another_user_turns_the_log_off_with_one_warning(
     assert not path.exists() and stat.S_IMODE(path.parent.stat().st_mode) == 0o755
 
 
-# --- a given path: its directory is the user's, never changed (final-fix FFA-1) ------------
+# --- a given path: its directory is the user's, never changed ------------
 
 
 def _given(directory: Path) -> CallAuditLog:
@@ -333,7 +333,7 @@ def _given(directory: Path) -> CallAuditLog:
 def test_a_given_path_under_home_leaves_the_home_directory_mode_alone(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: int
 ) -> None:
-    """Final-fix review FFA-1: with ``~/mcp-audit.jsonl``, every call set the home
+    """Review finding: with ``~/mcp-audit.jsonl``, every call set the home
     directory to 0o700."""
     home = tmp_path / 'home'
     home.mkdir()
@@ -404,7 +404,7 @@ def test_a_given_paths_missing_directory_is_created_private(tmp_path: Path) -> N
     assert stat.S_IMODE((directory / CALL_AUDIT_FILENAME).stat().st_mode) == 0o600
 
 
-# --- the lock: private, and never waited on past its limit (final-fix VS-1) ----------------
+# --- the lock: private, and never waited on past its limit ----------------
 
 # How much longer than the patched limit a write may take before a test calls it a stall.
 LOCK_SLACK_S = 1.0

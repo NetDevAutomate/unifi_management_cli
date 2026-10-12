@@ -4,7 +4,7 @@ date: 2026-10-05
 status: open, decision needed
 severity: medium
 components: [scripts/onvif_stream.py]
-found_by: docs and repo hygiene review (M4 council)
+found_by: docs and repo hygiene review
 ---
 
 # `onvif_stream.py test-rtsp` passes the ONVIF password to ffprobe on its command line

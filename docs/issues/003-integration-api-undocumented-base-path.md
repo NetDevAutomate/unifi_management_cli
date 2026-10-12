@@ -4,7 +4,7 @@ date: 2026-10-02
 status: open
 severity: low
 components: [network/config, network/client]
-found_by: port diagnostics gap analysis (F5)
+found_by: port diagnostics gap analysis
 ---
 
 # The Network Integration API client uses an undocumented base path

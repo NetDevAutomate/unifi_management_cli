@@ -18,7 +18,7 @@ def _render_base(output_path: str, extension: str) -> str:
 
     graphviz writes the DOT source at this path and the image at it plus ``extension``. Only
     a final, matching suffix is stripped, so an extension in a directory's name stays and the
-    files land in the directory asked for (final council F1).
+    files land in the directory asked for.
     """
     path = Path(output_path)
     return str(path.with_suffix('') if path.suffix == extension else path)

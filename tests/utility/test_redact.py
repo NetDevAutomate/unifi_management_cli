@@ -347,7 +347,7 @@ def test_redact_traceback_masks_causes_notes_and_groups() -> None:
 
 
 def test_redact_traceback_masks_known_values_before_it_cuts_a_line() -> None:
-    """Final council F7: the MCP server's DEBUG traceback masks its secret values too; each
+    """Review finding: the MCP server's DEBUG traceback masks its secret values too; each
     is replaced on the whole line, so one across the 4000-character cut leaves no fragment."""
     padding = 'x' * (4000 - len(FAKE) // 2 - len('RuntimeError: '))
 

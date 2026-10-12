@@ -5,7 +5,7 @@ status: resolved
 resolved_by: 87386bd
 severity: medium
 components: [analysis/port_profile_validation, analysis/foreign_bridges, analysis/uplink_transparency, analysis/vlan_coverage, analysis/link_settings]
-found_by: MCP uvx standards work (semantic review finding 6 / code-review F9)
+found_by: MCP uvx standards work
 ---
 
 # `validate_port_profiles` and three other analyses resolve a port's profile without the override precedence

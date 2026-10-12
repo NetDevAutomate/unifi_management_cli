@@ -4,7 +4,7 @@ date: 2026-10-05
 status: open
 severity: low
 components: [backup/poc_decrypt, backup/verify]
-found_by: July port review (iteration 2, semantic reviewer)
+found_by: July port review
 ---
 
 # `backup verify` names collections by `_type`, unverified on a real backup

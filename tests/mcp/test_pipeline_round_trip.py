@@ -1,6 +1,6 @@
 """Every pipeline tool runs through execute_tool when fed the JSON form of its model inputs.
 
-Regression (code-review F7): the parity net only showed the 11 pipeline entries validate
+Regression: the parity net only showed the 11 pipeline entries validate
 (their schema-derived minimal arguments are ``{}``, so the call stops at
 ``INVALID_PARAMETERS``); none was ever run with a valid model. Here each model family
 is built by the real pure functions, dumped to JSON as a client would send it, sent

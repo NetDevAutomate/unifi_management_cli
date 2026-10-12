@@ -4,7 +4,7 @@ date: 2026-10-03
 status: open
 severity: low
 components: [mcp/tools/protect, protect/client]
-found_by: review follow-ups live checks at d6d013f (L4)
+found_by: review follow-ups, live checks at d6d013f
 ---
 
 # The Protect MCP tools are unverified live: no Protect account is configured
@@ -37,8 +37,8 @@ logins can lock or flag the account. It doesn't break fresh clones or CI.
 
 ## Decision (2026-10-03)
 
-Option (b), taken by the review orchestrator on the user's behalf for the review follow-ups
-branch: verify the Protect guard offline only, as the plan's baseline did.
+Option (b), taken by the maintainer: verify the Protect guard offline only, as the plan's
+baseline did.
 
 - The live checks expect each of the 10 Protect cases (five tools on the discovery and the
   direct surface) to return `CONFIG_MISSING` with zero requests, and count exactly that as

@@ -4,7 +4,7 @@ date: 2026-10-06
 status: open
 severity: low
 components: [analysis/vlan_traffic_store]
-found_by: July port build-loop council, iteration 6 (CF-002, one reviewer)
+found_by: July port review
 ---
 
 # A VLAN traffic sample written two hours or more late, into an hour already rolled, never reaches the hourly or daily rollups

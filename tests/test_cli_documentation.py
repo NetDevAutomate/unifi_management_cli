@@ -30,7 +30,7 @@ from unifi_mapper.typer_cli import app
 REPO_ROOT = Path(__file__).resolve().parent.parent
 README = REPO_ROOT / 'README.md'
 # The exhaustive command table and the exit-code table moved out of the README on 2026-10-12
-# (the readiness review cut it to a front door); both now live in the command reference.
+# (it was cut to a front door); both now live in the command reference.
 CLI_REFERENCE = REPO_ROOT / 'docs' / 'reference' / 'cli.md'
 TYPER_CLI = REPO_ROOT / 'src' / 'unifi_mapper' / 'typer_cli.py'
 

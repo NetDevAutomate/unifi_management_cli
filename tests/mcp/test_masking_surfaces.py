@@ -97,7 +97,7 @@ async def test_secret_written_after_the_runner_was_built_is_masked(runner, monke
 
 
 # ---------------------------------------------------------------------------
-# The server's stderr log (final council F7)
+# The server's stderr log
 # ---------------------------------------------------------------------------
 
 LOG_SENTINEL = 'FAKE-STDERR-LOG-SENTINEL-55aa'  # pragma: allowlist secret
@@ -114,7 +114,7 @@ async def test_a_tool_failure_logs_no_secret_on_stderr(
     level: str,
     site: str,
 ) -> None:
-    """Final council F7: each of the runner's four ``logger.exception`` sites printed
+    """Review finding: each of the runner's four ``logger.exception`` sites printed
     ``str(e)``, and the traceback that repeats it, to the stderr an MCP client keeps."""
     kind = 'TimeoutError' if site == 'tool TimeoutError' else 'RuntimeError'
     name, params = 'raise_exc', {'kind': kind, 'text': FAILURE_TEXT}

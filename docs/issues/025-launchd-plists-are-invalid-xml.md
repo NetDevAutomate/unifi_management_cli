@@ -5,7 +5,7 @@ status: resolved
 resolved_by: a671761
 severity: medium
 components: [scripts/unifi-cron.sh]
-found_by: MCP uvx standards work (convergence fixer, iteration 2, while fixing code-review F5)
+found_by: MCP uvx standards work
 ---
 
 # `unifi-cron.sh` writes launchd plists that are invalid XML, so macOS schedules never load

@@ -4,7 +4,7 @@ date: 2026-10-03
 status: open
 severity: low
 components: [network/client, network/statistics]
-found_by: review follow-ups (code-review F17, checking the client against the reference)
+found_by: review follow-ups (checking the client against the reference)
 ---
 
 # The Integration API client's device-statistics and port-action paths aren't served

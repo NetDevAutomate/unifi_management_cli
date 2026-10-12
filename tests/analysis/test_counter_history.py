@@ -73,7 +73,7 @@ def test_a_relative_or_empty_xdg_state_home_is_ignored(
     """The XDG spec: a relative path in these variables is invalid and must be ignored.
 
     Honoured, it would put every state file (the call log, the VLAN store, the baselines)
-    relative to the working directory (review N2).
+    relative to the working directory.
     """
     monkeypatch.setenv('XDG_STATE_HOME', value)
     assert state_dir() == Path.home() / '.local' / 'state' / 'unifi_mapper'
@@ -182,7 +182,7 @@ def test_the_append_after_a_size_compaction_does_not_rewrite_the_file(tmp_path):
         )
         rewrites.append((result.compacted, path.stat().st_ino == inode))
 
-    # Regression (code-review F6): without a low-water mark every append past the cap
+    # Regression: without a low-water mark every append past the cap
     # rewrote the whole file. Now the two appends after a compaction append in place,
     # and the cap is still enforced by the next one.
     assert rewrites == [(False, True), (False, True), (True, False)]

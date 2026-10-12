@@ -4,14 +4,14 @@ date: 2026-10-03
 status: open, decision needed
 severity: medium
 components: [mcp/config, network/config]
-found_by: review follow-ups (orchestrator F20 follow-up, variant a)
+found_by: review follow-ups
 ---
 
 # With the legacy config file, the six network_api tools return CONFIG_MISSING
 
 ## Problem
 
-The review orchestrator reports that the user's MCP clients launch `unifi-mcp` with
+The maintainer's MCP clients launch `unifi-mcp` with
 `UNIFI_CONFIG=~/.config/unifi_network_mapper/prod.env`. That file sets
 `UNIFI_NETWORK_API_KEY` but neither `UNIFI_NETWORK_HOST` nor `UNIFI_NETWORK_SITE_ID`, and
 the `network_api` family needs all three (`mcp/config.py` `CREDENTIAL_KEYS`). Launched that

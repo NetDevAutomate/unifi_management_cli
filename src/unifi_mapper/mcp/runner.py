@@ -218,7 +218,7 @@ class _Failure(Exception):
 
 
 def _log_tool_failure(name: str, exc: BaseException) -> None:
-    """Log a failed tool call on stderr, its secrets masked (final council F7).
+    """Log a failed tool call on stderr, its secrets masked.
 
     ERROR names the tool and the exception's type, and its text with every MCP secret value
     from the environment and every secret-shaped pair masked (:func:`mask_secret_values`,

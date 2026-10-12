@@ -4,7 +4,7 @@ date: 2026-10-05
 status: open, decision needed
 severity: low
 components: [cli, mcp/config, scripts/site_targets.py, scripts/unifi-mcp-launch.sh]
-found_by: July port review follow-up (iteration 6, while fixing the relative `XDG_STATE_HOME`)
+found_by: July port review follow-up (while fixing the relative `XDG_STATE_HOME`)
 ---
 
 # The config searches honour a relative `XDG_CONFIG_HOME`, so they can read a file under the working directory

@@ -67,7 +67,7 @@ class State:
 state = State()
 
 # Before a subcommand, Typer parses each level on its own, so a root flag never reaches the
-# subcommand. --apply is refused before any subcommand (code-review F11); the other discover
+# subcommand. --apply is refused before any subcommand; the other discover
 # shortcuts are passed on to discover and refused before anything else (issue 027).
 _ROOT_APPLY_HINT = (
     '--apply must follow the subcommand and its arguments '

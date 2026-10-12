@@ -4,7 +4,7 @@ date: 2026-10-05
 status: open
 severity: low
 components: [mcp, typer_cli, analysis, diagnostics, scripts, tests]
-found_by: July port (feat/july-port)
+found_by: July port
 ---
 
 # July work that was not ported, and why
@@ -109,9 +109,8 @@ port's plan at filing time; "Rebuilt by the port" below records the commit that 
   tests, or their feature was not ported. Breaks fresh clones, CI or prod: no.
 - The `.worktrees/` line in `.gitignore`: worktrees live under a git-ignored agent directory.
   Breaks fresh clones, CI or prod: no.
-- `AGENTS.md` (an auto-generated session-memory dump), the changelog, session handoffs,
-  images, PDFs, `.beads/`, `graphify-out/`, `.codegraph/` and `.gitattributes`: no project
-  content, or tool caches. Open items from the handoffs are in issue
+- `AGENTS.md`, the changelog, working notes, images, PDFs, tool caches and
+  `.gitattributes`: no project content. Open items from the working notes are in issue
   [062](062-open-items-from-the-archived-plans.md). Breaks fresh clones, CI or prod: no.
 - `reports/` captures: raw controller JSON with credentials included; never carried into the
   repo. Breaks fresh clones, CI or prod: no.

@@ -4,7 +4,7 @@ date: 2026-10-04
 status: open
 severity: low
 components: [tests/test_docs_consistency.py]
-found_by: docs and repo hygiene review (council, iteration 4)
+found_by: docs and repo hygiene review
 ---
 
 # The env-var guard counts a variable as read when any string in the code names it

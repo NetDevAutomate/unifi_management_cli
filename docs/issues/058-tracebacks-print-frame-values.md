@@ -5,7 +5,7 @@ status: resolved
 resolved_by: e017844
 severity: medium
 components: [src/unifi_mapper/mcp/server.py, src/unifi_mapper/typer_cli.py, src/unifi_mapper/inventory_cli.py, src/unifi_mapper/core/utils/logging.py]
-found_by: July-port design review (revision 5, M1 and M2)
+found_by: July port design review
 ---
 
 # Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on
@@ -61,14 +61,14 @@ Fixed as recommended, in the July port, before any tool that returns config obje
   stderr handler at the same level before anything logs
   (`core/utils/logging.replace_default_loguru_handler`).
 
-A follow-up from the July port's M2 council closed the rest of the CLI's error output: `_fail`
+A follow-up review closed the rest of the CLI's error output: `_fail`
 redacts its text (a `ToolError` can carry a lower layer's exception text), every `Error: …`
 line that showed a caught exception goes through `redact_text` (`typer_cli._error_text`), and
 `--debug` prints its traceback through `typer_cli._print_debug_traceback`, which keeps every
 frame but redacts each exception message. An AST test fails on any CLI print of a caught
 exception that isn't redacted, and on any `print_exception` call in either CLI.
 
-A second follow-up (the July port's review B5) closed the argparse CLIs and the env-file
+A second follow-up closed the argparse CLIs and the env-file
 loaders that every CLI runs. `cli.load_env_from_config` and `UnifiConfig.from_env` report a
 line without `=` as `Invalid line in <file>:<n> (no '=' found)` and never echo it, because a
 password typed with a space instead of `=` has no `name=value` shape to mask.

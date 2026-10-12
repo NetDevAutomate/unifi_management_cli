@@ -4,7 +4,7 @@ date: 2026-10-04
 status: open
 severity: low
 components: [tests/test_docs_consistency.py]
-found_by: docs and repo hygiene review (code review, iteration 5)
+found_by: docs and repo hygiene review
 ---
 
 # The MCP-name guard counts any name assigned in `src/` as known, local variables included

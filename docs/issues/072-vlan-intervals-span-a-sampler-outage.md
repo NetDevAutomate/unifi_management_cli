@@ -4,7 +4,7 @@ date: 2026-10-06
 status: open, decision needed
 severity: low
 components: [analysis/vlan_traffic_store]
-found_by: July port build-loop semantic review, iteration 6 (SR6-2)
+found_by: July port review
 ---
 
 # A VLAN traffic interval can span a sampler outage, so one fresh sample reports days of traffic as current
@@ -15,14 +15,14 @@ A rate is the difference between two samples (`compute_rates` in
 `analysis/vlan_traffic_store.py`), and nothing bounds how far apart the two may be:
 
 - `_raw_rates`, which the `now`, `1d` and `1w` reports read, pairs each VLAN's first sample in
-  the window with its newest sample before the window, however old (the pairing the M4
-  council's CF-003 asked for), and pairs the samples inside the window one after another;
+  the window with its newest sample before the window, however old (the pairing an earlier
+  review asked for), and pairs the samples inside the window one after another;
 - `_roll_hours` carries each VLAN's newest earlier sample into the first hour it rolls, as the
   July code did.
 
 So after the sampler stops for three days, one sample taken now makes `report now` show the
 three-day average as the current rate, with `samples: 1` and `valid_sample_pct: 100.0` (named
-`coverage_pct` until final council F5). In `1d` and
+`coverage_pct` before a review renamed it). In `1d` and
 `1w` that one long interval weighs as much in the mean of rates as any one-minute interval, and
 the hourly row of the hour the sampler came back in holds the whole gap. `coverage` lists the
 gap, but only to someone who runs it.

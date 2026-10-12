@@ -468,7 +468,7 @@ def test_an_interrupt_prints_and_writes_a_partial_report_and_exits_130(
     data = json.loads(result.stdout)
     assert data['partial'] is True and data['samples_taken'] == {'target': 2}
     assert 'Partial' in output.read_text(encoding='utf-8')
-    assert 'Partial run: 2 of 5 samples taken.' in result.stderr  # council N1
+    assert 'Partial run: 2 of 5 samples taken.' in result.stderr  # review finding
 
 
 def test_a_failure_after_samples_prints_and_writes_the_partial_report_and_exits_1(
@@ -509,7 +509,7 @@ def test_a_failure_before_any_sample_exits_1_without_a_report(
     assert result.stdout == '' and not output.exists()
 
 
-# --- --output (design section 6.1; review F8) ---------------------------------------------
+# --- --output (design section 6.1) ---------------------------------------------
 
 
 def test_an_output_that_is_a_directory_is_refused_before_any_read(
@@ -581,7 +581,7 @@ def test_the_command_has_help() -> None:
     assert result.exit_code == 0
     flat = ' '.join(result.output.split())
     assert 'Read-only' in flat and 'no power-cycle' in flat and 'exits 130' in flat
-    # Review M2 (council N1): the help states the filter clients_on_ap applies.
+    # Review finding: the help states the filter clients_on_ap applies.
     assert "whose radio the controller doesn't report (5 and 6 GHz clients are left out)" in flat
     root = typer.main.get_command(app)
     assert isinstance(root, click.Group)

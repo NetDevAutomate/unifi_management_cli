@@ -4,7 +4,7 @@ date: 2026-10-06
 status: open
 severity: low
 components: [analysis/vlan_interfaces, analysis/vlan_traffic, analysis/vlan_traffic_store]
-found_by: July port M4 council (bundle A, NF-004)
+found_by: July port review
 ---
 
 # Two networks without a VLAN ID both sample as VLAN 1, so one overwrites the other in the traffic store

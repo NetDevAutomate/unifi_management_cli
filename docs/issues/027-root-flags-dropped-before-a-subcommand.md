@@ -5,7 +5,7 @@ status: resolved
 resolved_by: 2fe35b9
 severity: medium
 components: [typer_cli]
-found_by: review follow-ups (code-review F11)
+found_by: review follow-ups
 ---
 
 # Root `--connected-devices`, `--verify-updates` and `--dry-run` are silently dropped before a subcommand
@@ -65,9 +65,8 @@ fail. Extend `tests/test_discover_defaults.py` with every form above.
 
 ## Resolution
 
-Decided on 2026-10-03 (review follow-ups, iteration 2) by the review orchestrator on the
-user's behalf: implement the recommendation, because a typed `--dry-run` that writes is a
-production-safety defect in the area issue 007 fixed.
+Decided on 2026-10-03 by the maintainer: implement the recommendation, because a typed
+`--dry-run` that writes is a production-safety defect in the area issue 007 fixed.
 
 - Before `discover`, the root `--dry-run`, `--connected-devices` and `--verify-updates` are
   passed on to it through `state` (`State.take_root_shortcuts`; the root callback clears
@@ -83,7 +82,7 @@ production-safety defect in the area issue 007 fixed.
   to use its own flag, and `ports list` and `analyze link-errors` have none
   (`test_the_dry_run_hint_suggests_no_flag_a_read_only_subcommand_lacks`). For the other
   two the hint names the `discover` option itself. A root `--apply` still exits 2 before any
-  subcommand (code-review F11); its hint now names `unifi-mapper discover --apply` and
+  subcommand; its hint now names `unifi-mapper discover --apply` and
   `unifi-mapper ports refresh --apply`.
 - All four write forms in the Problem section now exit 2 with no I/O. Meaningless forms
   such as `unifi-mapper --dry-run ports list X` (exit 0 before) exit 2 too, as accepted.

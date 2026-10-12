@@ -678,7 +678,7 @@ class TestMQTTBridgeLifecycle:
     async def test_start_without_aiomqtt_raises(self) -> None:
         """Test that start raises ImportError without aiomqtt, naming the uv command.
 
-        Review AGG-3: the hint said pip install in a project that uses uv only.
+        Review finding: the hint said pip install in a project that uses uv only.
         """
         client = create_mock_client()
         config = MQTTConfig()

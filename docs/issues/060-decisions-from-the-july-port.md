@@ -4,7 +4,7 @@ date: 2026-10-05
 status: open, decision needed
 severity: medium
 components: [mcp, typer_cli, analysis/gateway_ssh, core/utils/readonly, analysis/wlan_config]
-found_by: July port (feat/july-port)
+found_by: July port
 ---
 
 # Decisions from the July port

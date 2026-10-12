@@ -279,7 +279,7 @@ async def test_borrower_failure_propagates_and_leaves_it_unconnected() -> None:
 
 
 # ---------------------------------------------------------------------------
-# A session lost after the first connect (code-review F8)
+# A session lost after the first connect
 # ---------------------------------------------------------------------------
 
 ROTATED_TOKEN = 'FAKE-ROTATED-TOKEN-MUST-NOT-APPEAR'  # pragma: allowlist secret
