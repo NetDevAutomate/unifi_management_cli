@@ -653,7 +653,7 @@ ONVIF `GetStreamUri` returns an RTSP URI without embedded credentials. To play t
 rtsp://198.51.100.12/axis-media/media.amp?videocodec=h264
 
 # With credentials embedded:
-rtsp://onvifuser:***REMOVED***@198.51.100.12/axis-media/media.amp?videocodec=h264
+rtsp://onvifuser:<password>@198.51.100.12/axis-media/media.amp?videocodec=h264
 ```
 
 The `streams` subcommand prints the bare URI and the authenticated form with the password
