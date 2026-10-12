@@ -51,8 +51,8 @@ def test_extract_location_recognises_a_room_and_falls_back_to_core_or_network() 
 
 def test_a_persons_name_is_not_a_location_by_default() -> None:
     t = NetworkTopology()
-    assert t._extract_location('Sierra3 Bedroom AP') == 'Bedroom'  # the room, not the person
-    assert t._extract_location('Bravo4 Desk Switch') == 'Network'
+    assert t._extract_location('Robin Bedroom AP') == 'Bedroom'  # the room, not the person
+    assert t._extract_location('Morgan Desk Switch') == 'Network'
 
 
 def test_site_keywords_extend_the_list(monkeypatch: pytest.MonkeyPatch) -> None:
