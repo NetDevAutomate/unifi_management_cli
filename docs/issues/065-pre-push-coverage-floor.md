@@ -1,7 +1,8 @@
 ---
 title: "The pre-push pytest hook fails the 90% coverage floor"
 date: 2026-10-05
-status: open, decision needed
+status: resolved
+resolved_by: 8d8739a
 severity: medium
 components: [.pre-commit-config.yaml, pyproject.toml]
 found_by: July port planning (baseline measured at ac9861c)
@@ -23,7 +24,12 @@ Breaks fresh clones, CI or prod: **yes, where the pre-push hook is installed**: 
 fails on coverage although every test passes. Hosts without the installed hook are not
 affected.
 
-## Decision needed
+## Resolution
+
+Resolved 2026-10-12: `fail_under` is 60, with the measured 64% and the ratchet rule recorded
+beside it in `pyproject.toml`; raise it only to a value the full suite meets.
+
+## Decision needed (as filed)
 
 It changes a gate, so it is a decision. Recommendation: set `fail_under` to the measured
 floor (57) and ratchet it up as coverage grows, so the hook guards against regressions
