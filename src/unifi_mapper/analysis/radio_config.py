@@ -5,10 +5,56 @@ so changes are always reversible.
 """
 
 import json
+import os
+import re
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Sequence
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+
+
+CHANNEL_MOVES_VAR = 'UNIFI_RADIO_CHANNEL_MOVES'
+_CHANNEL_MOVE = re.compile(r'^(?P<name>[^=]+?)\s*=\s*(?P<src>\d+)\s*>\s*(?P<dst>\d+)$')
+
+
+@dataclass(frozen=True)
+class ChannelMove:
+    """A site rule for the 5 GHz plan.
+
+    An AP whose name contains ``name_contains`` and whose 5 GHz radio sits on ``from_channel``
+    is moved to ``to_channel`` when the plan touches that radio. The rules come from the site's own configuration (``UNIFI_RADIO_CHANNEL_MOVES``); the
+    repository ships none, so ``radio optimize`` makes the same plan on any site.
+    """
+
+    name_contains: str
+    from_channel: int
+    to_channel: int
+
+
+def channel_moves_from_env() -> list[ChannelMove]:
+    """Parse ``UNIFI_RADIO_CHANNEL_MOVES``: comma-separated ``NAME=FROM>TO`` entries.
+
+    ``Kitchen=36>44`` moves every AP whose name contains ``Kitchen`` off channel 36 to 44.
+    Unset or blank means no moves. A malformed entry raises ``ValueError`` naming the
+    variable and the grammar, so a typo fails the run instead of silently doing nothing.
+    """
+    raw = os.environ.get(CHANNEL_MOVES_VAR, '')
+    moves: list[ChannelMove] = []
+    for entry in (e.strip() for e in raw.split(',')):
+        if not entry:
+            continue
+        m = _CHANNEL_MOVE.match(entry)
+        if not m or not m.group('name').strip():
+            raise ValueError(
+                f'{CHANNEL_MOVES_VAR}: cannot read {entry!r}; '
+                'each entry is NAME=FROM>TO, for example Kitchen=36>44'
+            )
+        moves.append(
+            ChannelMove(m.group('name').strip(), int(m.group('src')), int(m.group('dst')))
+        )
+    return moves
 
 
 async def snapshot_radio_config(output_path: str | None = None) -> dict:
@@ -297,14 +343,16 @@ async def restore_radio_config(snapshot_path: str, dry_run: bool = True) -> list
     return results
 
 
-def build_optimisation_plan(devices: list[dict]) -> list[dict]:
+def build_optimisation_plan(
+    devices: list[dict], channel_moves: Sequence[ChannelMove] = ()
+) -> list[dict]:
     """Build recommended radio changes based on current state.
 
     Recommendations:
     - 5GHz: increase to 80MHz width
     - 2.4GHz: reduce tx_power to 12 dBm
-    - 5GHz on an AP whose name contains one hard-coded room word: move off channel 36 to
-      channel 44
+    - 5GHz: apply the site's configured channel moves (``channel_moves``, from
+      ``UNIFI_RADIO_CHANNEL_MOVES``); none by default
     - Enable min_rssi at -75 on all APs
     """
     changes = []
@@ -329,9 +377,13 @@ def build_optimisation_plan(devices: list[dict]) -> list[dict]:
                         'min_rssi_enabled': True,
                         'min_rssi': -75,
                     }
-                    # Move Kitchen off channel 36
-                    if 'Kitchen' in name and radio.get('channel') == 36:
-                        change['channel'] = 44
+                    for move in channel_moves:
+                        if (
+                            move.name_contains in name
+                            and radio.get('channel') == move.from_channel
+                        ):
+                            change['channel'] = move.to_channel
+                            break
                     changes.append(change)
 
             elif radio_id == 'ng':  # 2.4GHz
@@ -398,7 +450,7 @@ async def apply_radio_optimization_mcp() -> list[dict]:
     async with UniFiClient() as client:
         devices = await client.get_devices()
 
-    changes = build_optimisation_plan(devices)
+    changes = build_optimisation_plan(devices, channel_moves_from_env())
     if not changes:
         return [{'status': 'NO_CHANGES', 'message': 'Config already optimal'}]
 

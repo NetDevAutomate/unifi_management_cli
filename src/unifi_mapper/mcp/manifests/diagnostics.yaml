@@ -49,7 +49,7 @@ tools:
       switch:
         type: string
         required: true
-        description: Switch name, model, IP or MAC (e.g. "Office Desk Flex 5")
+        description: Switch name, model, IP or MAC (e.g. "Rack Switch 24")
       port:
         type: integer
         required: true

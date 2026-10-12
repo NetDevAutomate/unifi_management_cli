@@ -15,7 +15,11 @@ from unifi_mapper.analysis.neighbour_scan import (
 )
 from unifi_mapper.analysis.neighbour_trend import _compare_snapshots
 from unifi_mapper.analysis.poe_budget import _analyze_poe_budgets
-from unifi_mapper.analysis.radio_config import build_optimisation_plan
+from unifi_mapper.analysis.radio_config import (
+    ChannelMove,
+    build_optimisation_plan,
+    channel_moves_from_env,
+)
 from unifi_mapper.analysis.uplink_redundancy import _analyze_uplink_redundancy
 
 
@@ -412,8 +416,8 @@ class TestRadioConfig:
         assert len(ng_changes) == 1
         assert ng_changes[0]['tx_power'] == 12
 
-    def test_kitchen_channel_move(self) -> None:
-        """Kitchen AP on channel 36 gets moved to 44."""
+    def test_no_channel_move_without_configuration(self) -> None:
+        """Issue 046: the plan moves no AP's channel unless a move is configured."""
         device = {
             '_id': 'ap_k',
             'name': 'Kitchen AP',
@@ -421,7 +425,53 @@ class TestRadioConfig:
             'radio_table': [{'radio': 'na', 'channel': 36, 'ht': '40'}],
         }
         changes = build_optimisation_plan([device])
-        assert changes[0]['channel'] == 44
+        assert 'channel' not in changes[0]
+
+    def test_configured_channel_move_applies_to_matching_ap_only(self) -> None:
+        """A move names a substring of the AP name, the channel to leave and the one to use."""
+        kitchen = {
+            '_id': 'ap_k',
+            'name': 'Kitchen AP',
+            'type': 'uap',
+            'radio_table': [{'radio': 'na', 'channel': 36, 'ht': '40'}],
+        }
+        garage = {
+            '_id': 'ap_g',
+            'name': 'Garage AP',
+            'type': 'uap',
+            'radio_table': [{'radio': 'na', 'channel': 36, 'ht': '40'}],
+        }
+        elsewhere = {
+            '_id': 'ap_e',
+            'name': 'Kitchen AP 2',
+            'type': 'uap',
+            'radio_table': [{'radio': 'na', 'channel': 40, 'ht': '40'}],
+        }
+        moves = [ChannelMove(name_contains='Kitchen', from_channel=36, to_channel=44)]
+        by_id = {
+            c['device_id']: c
+            for c in build_optimisation_plan([kitchen, garage, elsewhere], channel_moves=moves)
+        }
+        assert by_id['ap_k']['channel'] == 44
+        assert 'channel' not in by_id['ap_g']  # name does not match
+        assert 'channel' not in by_id['ap_e']  # not on the channel to leave
+
+    def test_channel_moves_from_env_parses_the_documented_grammar(self, monkeypatch) -> None:
+        monkeypatch.setenv('UNIFI_RADIO_CHANNEL_MOVES', 'Kitchen=36>44, Garage=36>48')
+        assert channel_moves_from_env() == [
+            ChannelMove('Kitchen', 36, 44),
+            ChannelMove('Garage', 36, 48),
+        ]
+        monkeypatch.delenv('UNIFI_RADIO_CHANNEL_MOVES')
+        assert channel_moves_from_env() == []
+        monkeypatch.setenv('UNIFI_RADIO_CHANNEL_MOVES', '  ')
+        assert channel_moves_from_env() == []
+
+    @pytest.mark.parametrize('value', ['Kitchen', 'Kitchen=36', 'Kitchen=a>44', '=36>44'])
+    def test_channel_moves_from_env_rejects_a_malformed_entry(self, monkeypatch, value) -> None:
+        monkeypatch.setenv('UNIFI_RADIO_CHANNEL_MOVES', value)
+        with pytest.raises(ValueError, match='UNIFI_RADIO_CHANNEL_MOVES'):
+            channel_moves_from_env()
 
     def test_non_ap_skipped(self) -> None:
         changes = build_optimisation_plan([{'_id': 'sw1', 'type': 'usw'}])

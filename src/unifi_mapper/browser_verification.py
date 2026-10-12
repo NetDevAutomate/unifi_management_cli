@@ -109,9 +109,7 @@ class BrowserVerifier:
                 await self.page.wait_for_selector('table', timeout=10000)
 
                 # Find device in device selector dropdown
-                device_selector = self.page.locator(
-                    'input[placeholder*="Select"], input:has-text("Office")'
-                )
+                device_selector = self.page.locator('input[placeholder*="Select"]')
                 await device_selector.first.click()
 
                 # Look for the device option

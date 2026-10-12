@@ -5,12 +5,45 @@ Contains the NetworkTopology class for managing network topology visualization.
 
 import json
 import logging
+import os
 from .models import DeviceInfo, PortInfo
 from pathlib import Path
 from typing import Dict, Optional
 
 
 log = logging.getLogger(__name__)
+
+# Generic room words a device name may carry. A site adds its own words (an owner's name,
+# a named room) through UNIFI_LOCATION_KEYWORDS, so none of them lives in the repository.
+DEFAULT_LOCATION_KEYWORDS: tuple[str, ...] = (
+    'office',
+    'lounge',
+    'bedroom',
+    'kitchen',
+    'shed',
+    'hallway',
+    'dining',
+    'garage',
+    'basement',
+    'attic',
+    'loft',
+    'garden',
+)
+LOCATION_KEYWORDS_VAR = 'UNIFI_LOCATION_KEYWORDS'
+
+
+def location_keywords() -> tuple[str, ...]:
+    """The location words to look for in device names: the generic rooms, then the site's.
+
+    ``UNIFI_LOCATION_KEYWORDS`` is comma-separated; entries are trimmed and lower-cased, and
+    one already in the defaults is not repeated.
+    """
+    extra = [
+        w.strip().lower()
+        for w in os.environ.get(LOCATION_KEYWORDS_VAR, '').split(',')
+        if w.strip()
+    ]
+    return (*DEFAULT_LOCATION_KEYWORDS, *(w for w in extra if w not in DEFAULT_LOCATION_KEYWORDS))
 
 
 def _render_base(output_path: str, extension: str) -> str:
@@ -785,29 +818,12 @@ class NetworkTopology:
         """
         name_lower = name.lower()
 
-        # Common location keywords
-        locations = [
-            'office',
-            'lounge',
-            'bedroom',
-            'kitchen',
-            'shed',
-            'hallway',
-            'dining',
-            'garage',
-            'basement',
-            'attic',
-            'bob',
-            'Bravo4',
-            'Sierra3',
-        ]
-
-        for loc in locations:
+        for loc in location_keywords():
             if loc in name_lower:
                 return loc.title()
 
-        # Check for "Tower", "Desk", "Hub", "Core" identifiers
-        if any(x in name_lower for x in ['tower', 'core', 'main', 'hub']):
+        # Check for "Core", "Main", "Hub" identifiers
+        if any(x in name_lower for x in ['core', 'main', 'hub']):
             return 'Core'
 
         return 'Network'
@@ -961,15 +977,7 @@ class NetworkTopology:
             # Extract location from name
             location = 'unknown'
             name_parts = device.name.lower().split() if device.name else []
-            for loc in [
-                'office',
-                'lounge',
-                'bedroom',
-                'kitchen',
-                'dining',
-                'shed',
-                'Sierra3',
-            ]:
+            for loc in location_keywords():
                 if loc in name_parts:
                     location = loc.capitalize()
                     break

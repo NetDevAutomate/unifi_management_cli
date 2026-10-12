@@ -33,6 +33,18 @@ warnings.filterwarnings('ignore')
 
 log = logging.getLogger(__name__)
 
+CAMERA_HOSTS_VAR = 'PROTECT_CAMERA_HOSTS'
+
+
+def camera_hosts_from_env() -> tuple[str, ...]:
+    """Return the camera host prefixes named by ``PROTECT_CAMERA_HOSTS`` (comma-separated).
+
+    Empty when unset: the monitor then tracks every camera. A site that wants only its
+    camera VLAN lists that subnet's prefix, for example ``198.51.100.``.
+    """
+    raw = os.environ.get(CAMERA_HOSTS_VAR, '')
+    return tuple(p.strip() for p in raw.split(',') if p.strip())
+
 
 class ProtectMonitor:
     """Real-time monitor for UniFi Protect devices with AI analytics.
@@ -59,6 +71,7 @@ class ProtectMonitor:
         password: str,
         poll_interval: int = 3,
         log_file: Optional[str] = None,
+        camera_hosts: tuple[str, ...] = (),
     ):
         """Initialize the Protect Monitor.
 
@@ -68,12 +81,15 @@ class ProtectMonitor:
             password: Protect admin password
             poll_interval: Seconds between API polls (default: 3)
             log_file: Optional path to write logs
+            camera_hosts: Host prefixes of the cameras to track (``PROTECT_CAMERA_HOSTS``);
+                empty tracks every camera. Third-party cameras are always tracked.
         """
         self.base_url = base_url.rstrip('/')
         self.username = username
         self.password = password
         self.poll_interval = poll_interval
         self.log_file = log_file
+        self.camera_hosts = camera_hosts
         self.session: Optional[requests.Session] = None
         self.previous_state: Optional[Dict[str, Any]] = None
         self.is_authenticated = False
@@ -501,6 +517,20 @@ class ProtectMonitor:
 
         return changes
 
+    def tracks_camera(self, cam: Dict[str, Any]) -> bool:
+        """Return True when this camera is one the monitor follows.
+
+        Every camera is tracked unless ``camera_hosts`` names host prefixes, in which case
+        only cameras whose host starts with one of them are kept. A third-party camera is
+        kept either way: it has no UniFi host to match.
+        """
+        if cam.get('isThirdPartyCamera'):
+            return True
+        if not self.camera_hosts:
+            return True
+        host = str(cam.get('host', ''))
+        return any(host.startswith(prefix) for prefix in self.camera_hosts)
+
     def run(self, show_full: bool = True) -> None:
         """Main monitoring loop.
 
@@ -537,8 +567,7 @@ class ProtectMonitor:
                     current_state['aiports'][ap.get('id')] = ap_state
 
                 for cam in bootstrap.get('cameras', []):
-                    # Only track VLAN 10 / third-party cameras
-                    if '192.168.10' in str(cam.get('host', '')) or cam.get('isThirdPartyCamera'):
+                    if self.tracks_camera(cam):
                         cam_state = self.extract_camera_state(cam)
                         current_state['cameras'][cam.get('id')] = cam_state
 
@@ -605,6 +634,9 @@ Examples:
     --url https://192.0.2.1 \\
     --user admin \\
     --password <password>
+
+  # Follow only the cameras on one subnet (default: every camera; third-party cameras always)
+  uv run python -m unifi_mapper.monitors.protect_monitor --camera-host 198.51.100.
         """,
     )
     parser.add_argument(
@@ -640,6 +672,16 @@ Examples:
         action='store_true',
         help='Only show changes, not full status',
     )
+    parser.add_argument(
+        '--camera-host',
+        action='append',
+        default=None,
+        metavar='PREFIX',
+        help=(
+            'Track only cameras whose host starts with PREFIX; repeatable '
+            '(default: $PROTECT_CAMERA_HOSTS, comma-separated; unset tracks every camera)'
+        ),
+    )
     args = parser.parse_args()
 
     # Credentials come from the environment unless overridden on the command
@@ -667,12 +709,19 @@ Examples:
     if base_url and not base_url.startswith(('http://', 'https://')):
         base_url = f'https://{base_url}'
 
+    camera_hosts = (
+        tuple(p.strip() for p in args.camera_host if p.strip())
+        if args.camera_host
+        else camera_hosts_from_env()
+    )
+
     monitor = ProtectMonitor(
         base_url=base_url,
         username=username,
         password=password,
         poll_interval=args.interval,
         log_file=args.log,
+        camera_hosts=camera_hosts,
     )
     monitor.run(show_full=not args.quiet)
 

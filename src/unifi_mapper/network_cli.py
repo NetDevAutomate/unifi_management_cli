@@ -36,7 +36,7 @@ Examples:
   unifi-network-toolkit analyze mac
 
   # Device discovery and troubleshooting
-  unifi-network-toolkit find device "Office Switch"
+  unifi-network-toolkit find device "Rack Switch"
   unifi-network-toolkit find ip 192.0.2.100
   unifi-network-toolkit find mac 00:11:22:33:44:55
   unifi-network-toolkit diagnose network-health

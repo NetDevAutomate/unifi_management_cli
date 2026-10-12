@@ -23,6 +23,14 @@ The current release is 0.2.0; only the latest release is supported.
   after the confirmation that `--force` skips, like every other writer. `--dry-run` is still
   accepted and means the default; both flags together exit 2; `--force` on its own previews and
   says so. A script that upgraded with `--force` must now pass `--apply --force` (issue 077).
+- `radio optimize` no longer moves one hard-coded AP name off channel 36. Channel moves are a
+  site setting: `UNIFI_RADIO_CHANNEL_MOVES=NAME=FROM>TO,…`; unset means no moves (issue 046).
+- The Protect monitor follows every camera unless `PROTECT_CAMERA_HOSTS` (or `--camera-host`)
+  names the host prefixes to keep; it used to follow one hard-coded subnet. Third-party cameras
+  are followed either way (issue 046).
+- The topology report and HTML diagram group devices by generic room words only; a site adds its
+  own words with `UNIFI_LOCATION_KEYWORDS`. Example addresses and names in help text, descriptions
+  and docstrings are documentation values (issue 046).
 - The read-only guard refuses a raw request path that starts with `//` (issue 029).
 - The coverage floor is 60 (measured 64%), so the pre-push hook can pass (issue 065).
 

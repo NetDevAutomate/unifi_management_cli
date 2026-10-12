@@ -3319,7 +3319,7 @@ def _slug(text: str) -> str:
 @ports_app.command('inspect')
 def ports_inspect(
     switch: str = typer.Argument(
-        ..., help="Switch name, model, IP or MAC (e.g. 'Office Desk Flex 5')"
+        ..., help="Switch name, model, IP or MAC (e.g. 'Rack Switch 24')"
     ),
     port: int = typer.Argument(..., help='Port index (1-based)'),
     as_json: bool = typer.Option(
@@ -3644,6 +3644,7 @@ def radio_optimize(
     from unifi_mapper.analysis.radio_config import (
         apply_radio_config,
         build_optimisation_plan,
+        channel_moves_from_env,
         snapshot_radio_config,
     )
     from unifi_mapper.core.utils.client import UniFiClient
@@ -3651,6 +3652,10 @@ def radio_optimize(
     load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
+    try:
+        channel_moves = channel_moves_from_env()  # the site's own 5 GHz rules, if any
+    except ValueError as e:
+        _fail(e, code=2)
 
     console.print('⚡ [bold]Radio Optimisation[/bold]\n')
 
@@ -3660,7 +3665,7 @@ def radio_optimize(
         return devices
 
     devices = asyncio.run(run())
-    changes = build_optimisation_plan(devices)
+    changes = build_optimisation_plan(devices, channel_moves)
 
     if not changes:
         console.print('[green]No optimisations needed — config already optimal.[/green]')

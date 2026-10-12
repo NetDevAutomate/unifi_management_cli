@@ -138,15 +138,15 @@ def _is_rfc1918_ip(ip: str) -> bool:
 
         first, second = parts[0], parts[1]
 
-        # 10.0.0.0/8
+        # the 10/8 private range
         if first == 10:
             return True
 
-        # 172.16.0.0/12
+        # the 172.16/12 private range
         if first == 172 and 16 <= second <= 31:
             return True
 
-        # 192.168.0.0/16
+        # the 192.168/16 private range
         if first == 192 and second == 168:
             return True
 

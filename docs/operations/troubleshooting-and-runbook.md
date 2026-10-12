@@ -1447,6 +1447,8 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients`, `vlan-traffic sample` and the `gateway` probes (see section 2). |
 | `UNIFI_SSH_USERNAME` | No | `root` | String | Gateway SSH user. |
 | `UNIFI_STP_OVERRIDES` | No | `~/.config/unifi_management_cli/stp_overrides.yaml` | File path | Root-eligible and forced-access switch MACs for the STP optimiser. |
+| `UNIFI_RADIO_CHANNEL_MOVES` | No | None | `NAME=FROM>TO`, comma-separated | 5 GHz channel moves for `radio optimize`: an AP whose name contains `NAME` and sits on channel `FROM` is moved to `TO`. Unset means no moves; a malformed entry exits 2. |
+| `UNIFI_LOCATION_KEYWORDS` | No | None | Words, comma-separated | Extra location words for the topology report and HTML diagram, matched against device names after the built-in room words. |
 | `XDG_CONFIG_HOME` | No | `~/.config` | Directory path | Overrides XDG config base directory. |
 | `XDG_STATE_HOME` | No | `~/.local/state` | Absolute directory path (a relative one is ignored, as the XDG spec says) | Base of `unifi_mapper/`, where the link-error baselines, the counter and speedtest histories, the MCP call log and the VLAN traffic store live. |
 
@@ -1462,6 +1464,7 @@ listed in `.env.example` and the [MCP server guide](../mcp-server/MCP_SERVER_GUI
 | `PROTECT_USERNAME` | Yes | None | A dedicated local, view-only Protect user (not a Ubiquiti cloud account) |
 | `PROTECT_PASSWORD` | Yes | None | That user's password |
 | `PROTECT_VERIFY_SSL` | No | `false` | SSL verification for Protect connection |
+| `PROTECT_CAMERA_HOSTS` | No | None (every camera) | Host prefixes, comma-separated, of the cameras the Protect monitor follows; third-party cameras are always followed. `--camera-host` overrides it. |
 
 ---
 

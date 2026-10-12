@@ -89,7 +89,7 @@ def _inspect_sync(switch: str, port: int) -> dict[str, Any]:
 async def inspect_switch_port(
     switch: Annotated[
         str,
-        Field(description='Switch name, model, IP or MAC (e.g. "Office Desk Flex 5")'),
+        Field(description='Switch name, model, IP or MAC (e.g. "Rack Switch 24")'),
     ],
     port: Annotated[int, Field(description='Port index on the switch, 1-based')],
 ) -> dict[str, Any]:

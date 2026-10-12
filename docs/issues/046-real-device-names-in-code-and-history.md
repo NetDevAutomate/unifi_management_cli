@@ -1,5 +1,5 @@
 ---
-title: "Tests, scripts and docstrings carried the site's device and room names; the history and some runtime strings still do"
+title: "Tests, scripts and docstrings carried the site's device and room names; the history still does"
 date: 2026-10-04
 status: open, decision needed
 severity: medium
@@ -7,7 +7,7 @@ components: [tests, scripts, radio_config, enhanced_network_topology, protect_mo
 found_by: docs and repo hygiene review (privacy scan)
 ---
 
-# Tests, scripts and docstrings carried the site's device and room names; the history and some runtime strings still do
+# Tests, scripts and docstrings carried the site's device and room names; the history still does
 
 ## Status
 
@@ -28,8 +28,22 @@ found_by: docs and repo hygiene review (privacy scan)
     points become `AP B` to `AP D`, the `_extract_location` example uses two generic words
     from that method's own location list, and the radio rule's description no longer names
     its word. No code changed.
-- Still open: the history (item 3), and the site-specific rules and runtime strings in `src/`
-  (items 4 and 5).
+- Fixed at HEAD on 2026-10-12 for the site-specific rules and runtime strings in `src/` (items
+  4 and 5), so the code behaves the same on any site and the history rewrite's "HEAD tree
+  unchanged" check can hold:
+  - the radio rule's hard-coded channel move is gone; `radio optimize` and the MCP optimiser read
+    the site's moves from `UNIFI_RADIO_CHANNEL_MOVES` (`NAME=FROM>TO`, comma-separated), none by
+    default;
+  - the Protect monitor follows every camera unless `PROTECT_CAMERA_HOSTS` or `--camera-host`
+    names the host prefixes to keep (third-party cameras always);
+  - the topology report and HTML diagram share one list of generic room words, extended by
+    `UNIFI_LOCATION_KEYWORDS`; the household names left the list;
+  - the switch-name example in a `--switch` help, an argparse epilog, a model field description
+    and an MCP tool description, the browser verifier's device selector and one comment use
+    neutral wording;
+  - the 23 private addresses on 22 `src/` lines are RFC 5737 documentation addresses (last octet
+    kept), and `tests/test_src_privacy.py` fails on any private address literal under `src/`.
+- Still open: the history (item 3), which the planned rewrite covers.
 
 ## Problem
 

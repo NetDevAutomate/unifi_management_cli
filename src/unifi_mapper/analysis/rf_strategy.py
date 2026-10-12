@@ -123,7 +123,7 @@ class ClientImpact:
     ]  # AP names this client has associated to (from roaming history)
     current_rssi: int  # dBm, from current stat/sta
     predicted_impact: (
-        str  # human-readable: "reassociate to 5GHz (same AP)", "roam to Office", etc.
+        str  # human-readable: "reassociate to 5GHz (same AP)", "roam to <AP name>", etc.
     )
     risk: Risk
 
