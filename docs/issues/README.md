@@ -25,7 +25,7 @@ the reasoning stays next to the code it explains.
 | [012](012-mcp-default-tool-deadline.md) | MCP tool calls have no deadline by default | open, decision needed |
 | [013](013-mcp-audit-log-and-result-cap.md) | No default audit log of MCP calls, and no cap on result size | resolved (`6b4e60c`) |
 | [014](014-optional-dependency-extras.md) | Every uvx launch installs the Protect, backup and ONVIF dependencies | open |
-| [015](015-other-discover-entry-points-write-by-default.md) | `unifi-network-toolkit discover` and `python -m unifi_mapper.cli` still write port names by default | open, decision needed |
+| [015](015-other-discover-entry-points-write-by-default.md) | `unifi-network-toolkit discover` and `python -m unifi_mapper.cli` still write port names by default | resolved (`dd2b01b`) |
 | [016](016-audit-lldp-consistency-tool.md) | Add an LLDP consistency audit (`audit_lldp_consistency` / `analyze lldp`) | open |
 | [017](017-firmware-drift-tool.md) | Add a firmware drift tool (`get_firmware_drift`) and `inventory firmware-skew --json` | open |
 | [018](018-read-only-tool-proposals.md) | Read-only tool proposals for the CLI and MCP | open |

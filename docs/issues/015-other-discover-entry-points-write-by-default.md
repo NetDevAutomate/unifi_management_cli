@@ -1,7 +1,8 @@
 ---
 title: "`unifi-network-toolkit discover` and `python -m unifi_mapper.cli` still write port names by default"
 date: 2026-10-02
-status: open, decision needed
+status: resolved
+resolved_by: dd2b01b
 severity: medium
 components: [network_cli, cli]
 found_by: MCP uvx standards work
@@ -26,7 +27,13 @@ Both reach the same `run_port_mapper` / `batch_update_port_names` path, which PU
 The same command name previews in one entry point and writes production port names in the
 other. An operator who learned the new `unifi-mapper` default can write by accident.
 
-## Decision needed
+## Resolution
+
+Resolved 2026-10-12 in `dd2b01b`: both entry points preview unless `--apply`, keep `--dry-run`
+as the accepted default and exit 2 when given both; `tests/test_argparse_discover_defaults.py`
+pins each case. The readiness council named the old default a blocker for a shared repository.
+
+## Decision needed (as filed)
 
 Give both the same default as 007: preview unless `--apply`, keep `--dry-run` accepted, and
 reject `--apply` with `--dry-run` (exit 2)?
