@@ -2,7 +2,7 @@
 """AXIS Device Provisioning Script.
 
 Reads configuration from ~/.config/axiscam/config.yaml and ensures all devices have:
-- ataylor admin account
+- an admin account for the toolkit
 - ONVIF user account
 - MQTT settings configured
 
