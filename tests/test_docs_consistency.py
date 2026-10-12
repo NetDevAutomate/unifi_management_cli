@@ -30,7 +30,7 @@ Each detector is a pure function over ``(path, text)`` and has a negative self-t
 synthetic snippet, so no guard can pass because it matched nothing. Failures name
 ``path:line`` and a kind, never a matched address, identifier or device name.
 
-"Current" docs are everything except ``docs/issues/`` and ``docs/solutions/``, which record
+"Current" docs are everything except ``docs/issues/``, which records
 history and proposals on purpose; links, local paths, Mermaid and privacy cover every doc.
 """
 
@@ -63,7 +63,7 @@ from unifi_mapper.typer_cli import app
 
 
 REPO = Path(__file__).resolve().parent.parent
-HISTORICAL = ('docs/issues/', 'docs/solutions/')
+HISTORICAL = ('docs/issues/',)
 MCP_GUIDE = 'docs/mcp-server/MCP_SERVER_GUIDE.md'
 
 # Every test here is offline by design; block_network fails any test that reaches a network.

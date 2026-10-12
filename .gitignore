@@ -129,3 +129,9 @@ docs/artefacts/unifi_management_cli_content.md
 
 # Specifications
 specs/
+
+# Internal process docs: AI-agent scaffolding and engineering learning notes live in
+# personal_docs/ (gitignored above), never in the public tree.
+.github/agents/
+.github/prompts/
+docs/solutions/
