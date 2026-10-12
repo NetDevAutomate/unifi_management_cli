@@ -4,7 +4,7 @@ date: 2026-10-05
 status: open
 severity: low
 components: [backup/poc_decrypt, backup/verify]
-found_by: July port review
+found_by: 0.2.0 port review
 ---
 
 # `backup verify` names collections by `_type`, unverified on a real backup
@@ -12,7 +12,7 @@ found_by: July port review
 ## Problem
 
 `verify_backup_bytes` names each document's collection by its `_type` field
-(`poc_decrypt.collection_name`), as the July work and the proof of concept it builds on did.
+(`poc_decrypt.collection_name`), as the prototype and the proof of concept it builds on did.
 Every backup in the test suite is synthetic (`tests/backup/synthetic_unf.py`) and tags its
 documents the same way, so no test shows that a backup downloaded from a controller is laid
 out like that. The port's live check uses a synthetic backup too, by design (no real backup

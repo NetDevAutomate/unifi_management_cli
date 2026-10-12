@@ -4,7 +4,7 @@ date: 2026-10-05
 status: open
 severity: medium
 components: [src/unifi_mapper/analysis/lag_monitoring.py]
-found_by: July port (an untracked July test, kept in a local archive, not in the repo)
+found_by: 0.2.0 port (an untracked prototype test, kept in a local archive, not in the repo)
 ---
 
 # `monitor_lags` misses LAGs on current switch firmware

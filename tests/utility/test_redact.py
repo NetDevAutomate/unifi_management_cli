@@ -246,7 +246,7 @@ def test_unrelated_true_survives_masking():
     assert mask_secrets({'enabled': 'true'}, secrets) == {'enabled': 'true'}
 
 
-# --- exact keys and pre-shared keys (the July port's config objects) ---------------------
+# --- exact keys and pre-shared keys (the 0.2.0 port's config objects) ---------------------
 
 SUFFIX_KEYS = [
     'community',

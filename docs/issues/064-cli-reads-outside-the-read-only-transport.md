@@ -4,14 +4,14 @@ date: 2026-10-05
 status: open
 severity: medium
 components: [src/unifi_mapper/typer_cli.py]
-found_by: July port design (asyncio.run sites counted by AST)
+found_by: 0.2.0 port design (asyncio.run sites counted by AST)
 ---
 
 # CLI read commands that reach the controller outside the read-only transport
 
 ## Problem
 
-The July port moves `typer_cli.py`'s two async helpers, `_run_analysis` and
+The 0.2.0 port moves `typer_cli.py`'s two async helpers, `_run_analysis` and
 `_run_gateway_ssh`, behind the read-only transport: every command that runs through them
 borrows one guarded controller client, so a write refuses before it leaves the host. The
 rest of the CLI's async commands call `asyncio.run(...)` directly and each build their own

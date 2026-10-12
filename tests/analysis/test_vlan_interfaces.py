@@ -1,6 +1,6 @@
 """Matching VLAN networks to the gateway's live interfaces by subnet (``vlan_interfaces``).
 
-Ported from the July work's sampler tests (a local archive, not in the repo) with
+Ported from the prototype's sampler tests (a local archive, not in the repo) with
 documentation values. Pure: no controller, no SSH.
 """
 

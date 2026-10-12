@@ -4,7 +4,7 @@ date: 2026-10-06
 status: open, decision needed
 severity: low
 components: [protect/mqtt, pyproject.toml]
-found_by: July port (while fixing a review finding)
+found_by: 0.2.0 port (while fixing a review finding)
 ---
 
 # MQTT support needs aiomqtt, which the project does not declare

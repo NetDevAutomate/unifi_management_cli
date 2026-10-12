@@ -17,7 +17,7 @@ diagnostics path was deliberately left per call: `diagnose_switch_port`, `get_sw
 `diff_port_profiles`, `get_client_history`, `get_device_events`, `get_port_counter_rates`,
 `audit_link_speeds` and `audit_port_profile_usage` each build a new `UnifiApiClient` through
 `port_diagnostics_tools._readonly_sync_client()`, log in, install the read-only guard, run,
-and log out. The July port's `get_recent_events` (`709fdd7`) takes the same path, so it logs
+and log out. The 0.2.0 port's `get_recent_events` (`709fdd7`) takes the same path, so it logs
 in and out on every call too.
 
 They stay per call because each call's `request_audit` (the list of controller requests that
@@ -61,7 +61,7 @@ client rather than `_readonly_sync_client()`/`_mapped`, so its login failure mes
 the kept error codes. Step 2 (one shared sync session) is still open, so this issue stays
 open.
 
-## `get_recent_events` reads every page before it keeps the newest (July port review)
+## `get_recent_events` reads every page before it keeps the newest (0.2.0 port review)
 
 `collect_recent_events` pages each source to its page cap (`stat/event` 20 pages of 1000,
 `list/alarm` once, the four system-log classes 20 pages of 100 each) and only then sorts and

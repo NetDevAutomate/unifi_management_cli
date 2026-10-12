@@ -14,9 +14,9 @@ reported ``not_run: budget``. The controller reads borrow the read-only holder t
 installs, so none of them can write; the probes run on the gateway as the SSH user, whose
 host key is not verified (issue 038).
 
-Ported from the July work (a local archive, not in the repo): the verdict's layers and wording
-are July's. Adapted: the HTTP probe takes the client's VLAN, resolved to the gateway interface
-whose address is in its subnet (July passed a VLAN ID as an interface name), an untagged LAN
+Ported from the prototype (a local archive, not in the repo): the verdict's layers and wording
+are the prototype's. Adapted: the HTTP probe takes the client's VLAN, resolved to the gateway interface
+whose address is in its subnet (the prototype passed a VLAN ID as an interface name), an untagged LAN
 counts as VLAN 1, a lookup that matches more than one client is an error naming them, and the
 DNS check asks for the probe URL's own host.
 """

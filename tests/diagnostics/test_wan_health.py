@@ -1,6 +1,6 @@
 """WAN health from ``stat/health`` and ``diagnose wan [--record]``.
 
-Ported from the July work (a local archive, not in the repo) and adapted: documentation
+Ported from the prototype (a local archive, not in the repo) and adapted: documentation
 addresses only, no speedtest trigger (a controller command the port does not build), and
 every controller read driven through the real read-only guard over
 ``tests/fake_controller.py``, so each test can assert that only GETs left the host.

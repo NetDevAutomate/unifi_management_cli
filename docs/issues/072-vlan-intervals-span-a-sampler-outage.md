@@ -4,7 +4,7 @@ date: 2026-10-06
 status: open, decision needed
 severity: low
 components: [analysis/vlan_traffic_store]
-found_by: July port review
+found_by: 0.2.0 port review
 ---
 
 # A VLAN traffic interval can span a sampler outage, so one fresh sample reports days of traffic as current
@@ -18,7 +18,7 @@ A rate is the difference between two samples (`compute_rates` in
   the window with its newest sample before the window, however old (the pairing an earlier
   review asked for), and pairs the samples inside the window one after another;
 - `_roll_hours` carries each VLAN's newest earlier sample into the first hour it rolls, as the
-  July code did.
+  prototype's code did.
 
 So after the sampler stops for three days, one sample taken now makes `report now` show the
 three-day average as the current rate, with `samples: 1` and `valid_sample_pct: 100.0` (named

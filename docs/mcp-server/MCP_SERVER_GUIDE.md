@@ -171,7 +171,7 @@ connected clients while `active_only` is true, the default; every client when it
 pass a page's `next_offset` as the next `offset` until it is null. A failure is `{error}`.
 
 > [!IMPORTANT]
-> **Breaking change in the July port: `get_clients` returns a page object, not a list.**
+> **Breaking change in the 0.2.0 port: `get_clients` returns a page object, not a list.**
 > Before, it returned a bare list of client objects, and `[{error}]` on failure. A caller
 > that iterates the result, or reads `result[0]['error']`, must read `result['clients']`
 > and `result['error']` instead, and follow `next_offset` to get more than one page
@@ -352,7 +352,7 @@ day, so they are as current as its last run. Each VLAN's `valid_sample_pct` is t
 its samples (or rollup rows) in the period that gave a rate (a first sample with none before
 it, or one after a counter reset, gives none), not the share of the period that was sampled:
 `list_vlan_traffic_periods` gives each tier's earliest and latest time and its gaps. As
-ported from the July work the tool's `1w` was
+ported from the prototype the tool's `1w` was
 always empty and `1m` and `1y` left out the newest 8 and about 61 days ([issue
 069](../issues/069-vlan-reports-read-tiers-without-recent-data.md)).
 

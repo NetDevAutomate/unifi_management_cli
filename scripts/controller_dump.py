@@ -17,9 +17,9 @@ directory as it was opened, so a file or symlink planted there can't redirect a 
 Events and alarms are not in the table: ``unifi-mapper controller events --json`` reads
 them through the allowlisted readers.
 
-Rebuilt from the July work's IoT diagnostic fetch (a local archive, not in the repo): no
+Rebuilt from the prototype's IoT diagnostic fetch (a local archive, not in the repo): no
 ``reports/`` default, no hard-coded config path, the guard installed, secrets stripped,
-and the endpoints that returned 404 in July's own capture (legacy ``stat/event``,
+and the endpoints that returned 404 in the prototype's own capture (legacy ``stat/event``,
 ``stat/alarm``, ``stat/dhcp``; v2 ``events``, ``mdns``) and ``stat/rogueap`` (detection
 data, read by ``unifi-mapper analyze neighbours``) dropped.
 

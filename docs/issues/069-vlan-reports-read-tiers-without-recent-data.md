@@ -5,15 +5,15 @@ status: resolved
 resolved_by: dec3450
 severity: medium
 components: [analysis/vlan_traffic_store, typer_cli, mcp/manifests/analysis.yaml]
-found_by: July port review
+found_by: 0.2.0 port review
 ---
 
 # VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty
 
 ## Problem
 
-The VLAN traffic store was ported from the July work (a local archive, not in the repo) with
-July's tier timing, and that timing was broken:
+The VLAN traffic store was ported from the prototype (a local archive, not in the repo) with
+The prototype's tier timing, and that timing was broken:
 
 - `vlan-traffic rollup` rolled an hour of raw samples into an hourly row only once the hour
   was more than 8 days old, and a day of hourly rows into a daily row only once the day was
@@ -48,11 +48,11 @@ Signed off as a user-visible change by the maintainer:
   ([issue 071](071-late-vlan-samples-never-reach-the-rollups.md)).
 - Raw samples are pruned after 8 days and hourly rows after 60, and never before their hour
   or day has been rolled.
-- A store the July code made upgrades in place on its first run: no schema change, every hour
+- A store the prototype's code made upgrades in place on its first run: no schema change, every hour
   after its high-water mark is rolled from raw (none is skipped), and the recent days are
   backfilled.
 
 Tests, at a fixed time: sample, rollup and report across every tier boundary for `1d`, `1w`,
 `1m` and `1y`, asserting the newest bucket each includes; the grace for two sampling
 intervals; a late sample; two identical runs; pruning, and a row that stays because its
-hour is not complete; and an upgrade of a store as the July code left it.
+hour is not complete; and an upgrade of a store as the prototype's code left it.

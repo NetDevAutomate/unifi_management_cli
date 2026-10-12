@@ -155,7 +155,7 @@ def test_macos_status_accepts_every_plist_that_install_writes(cron):
     assert 'stale' not in status.stdout and 'to reinstall' not in status.stdout
 
 
-# --- the task tables stay in step (July port: wan-speedtest-record) -----------------------
+# --- the task tables stay in step (0.2.0 port: wan-speedtest-record) -----------------------
 
 
 def _bash_array(name: str) -> list[str]:

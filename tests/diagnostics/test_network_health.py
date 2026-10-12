@@ -1,6 +1,6 @@
 """Tests for the network health score and its uplink check (``diagnose health``).
 
-Ported from the July work (a local archive, not in the repo) with generic names. A healthy
+Ported from the prototype (a local archive, not in the repo) with generic names. A healthy
 network scores 100; an uplink counts as down only when its state says so explicitly.
 """
 

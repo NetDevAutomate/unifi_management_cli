@@ -53,10 +53,10 @@ assignment. After the fix, change the README and runbook to describe one behavio
 
 ## Resolution
 
-Fixed as recommended, in the July port: `diagnose latency-matrix` now runs through
+Fixed as recommended, in the 0.2.0 port: `diagnose latency-matrix` now runs through
 `_run_gateway_ssh`, as `diagnose bandwidth` does, so both report a failure on stderr with the
 `❌` prefix, unwrapped, and an unexpected error's text redacted (a traceback only with
-`--debug`, without local variables). Since the July port's SSH refactor, both connect
+`--debug`, without local variables). Since the 0.2.0 port's SSH refactor, both connect
 messages read "SSH connection to {host} failed: …", redacted.
 
 Tests: `tests/analysis/test_gateway_ssh.py` runs both commands through a refused connect and

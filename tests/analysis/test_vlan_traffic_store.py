@@ -1,6 +1,6 @@
 """The per-VLAN traffic store (``analysis/vlan_traffic_store.py``) and its two MCP tools.
 
-Ported from the July work (a local archive, not in the repo) and adapted: documentation values
+Ported from the prototype (a local archive, not in the repo) and adapted: documentation values
 and generic network names; the store under the XDG state directory (never the working
 directory) with ``--db`` instead of ``UNIFI_VLAN_TRAFFIC_DB``; reads open it read-only
 through a file URI and never create it; SQLite's default rollback journal (not WAL) with
@@ -61,7 +61,7 @@ def _insert_rollup(conn: sqlite3.Connection, table: str, bucket: int, vlan: int,
     )
 
 
-# --- compute_rates, rollups, floors (July's, unchanged in logic) --------------------------
+# --- compute_rates, rollups, floors (the prototype's, unchanged in logic) --------------------------
 
 
 def test_the_first_sample_has_no_rate() -> None:
@@ -226,7 +226,7 @@ def test_a_file_that_is_not_a_store_is_unreadable(tmp_path: Path) -> None:
     assert caught.value.message == 'store unreadable: SQLITE_NOTADB'
 
 
-# --- the report and the coverage (July's logic) --------------------------------------------
+# --- the report and the coverage (the prototype's logic) --------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -331,7 +331,7 @@ def test_coverage_counts_rows_and_gaps_by_tier(tmp_path: Path) -> None:
 
 
 # --- run_rollups: every complete bucket, recomputed, pruned only once rolled ---------------
-# July's rollup rolled an hour only once it was 8 days old and a
+# The prototype's rollup rolled an hour only once it was 8 days old and a
 # day once about 61 days old, so 1w read nothing and 1m and 1y missed the newest 8 and 61
 # days. Every run below passes ``now``, so nothing depends on the clock.
 
@@ -599,7 +599,7 @@ def test_each_period_includes_its_newest_complete_bucket(tmp_path: Path) -> None
 
 
 def _as_the_old_code_left_it(path: Path, old_now: int) -> None:
-    """A store as July's rollup left it at ``old_now``: an hour rolled only once 8 days old,
+    """A store as the prototype's rollup left it at ``old_now``: an hour rolled only once 8 days old,
     a day once about 61 days old, and each tier pruned as soon as it was rolled."""
     old_hour = floor_to_hour(old_now - RAW_RETENTION_SECONDS - 3600)
     old_day = floor_to_day(old_now - store.HOURLY_RETENTION_SECONDS - 86400)

@@ -1,7 +1,7 @@
 """Device stats, AP retry rates, config objects and config-change timelines (observability).
 
-Ported from the July work (a local archive, not in the repo) and adapted: documentation
-values only, the house ``strip_secrets`` instead of July's masking, and every handler driven
+Ported from the prototype (a local archive, not in the repo) and adapted: documentation
+values only, the house ``strip_secrets`` instead of the prototype's masking, and every handler driven
 through the real read-only guard over ``tests/fake_controller.py``, so each test can assert
 that only GETs left the host.
 """

@@ -5,7 +5,7 @@ status: resolved
 resolved_by: 8d8739a
 severity: medium
 components: [.pre-commit-config.yaml, pyproject.toml]
-found_by: July port planning (baseline measured at ac9861c)
+found_by: 0.2.0 port planning (baseline measured at ac9861c)
 ---
 
 # The pre-push pytest hook fails the 90% coverage floor

@@ -1,23 +1,23 @@
 ---
-title: "Decisions from the July port"
+title: "Decisions from the 0.2.0 port"
 date: 2026-10-05
 status: open, decision needed
 severity: medium
 components: [mcp, typer_cli, analysis/gateway_ssh, core/utils/readonly, analysis/wlan_config]
-found_by: July port
+found_by: 0.2.0 port
 ---
 
-# Decisions from the July port
+# Decisions from the 0.2.0 port
 
 ## Problem
 
-The July work (2026-06-29 to 2026-07-27, kept in a local archive, not in the repo) included
-features that the July port did not build, because building them changes what the system
+The prototype (2026-06-29 to 2026-07-27, kept in a local archive, not in the repo) included
+features that the 0.2.0 port did not build, because building them changes what the system
 does: an SSH probe triggered from an MCP call, a controller command, or a controller write.
 Each needs a user decision. What was not ported and why is listed in issue
-[059](059-july-work-not-ported.md).
+[059](059-prototype-work-not-ported.md).
 
-This issue was filed at the start of the July port. Every command or tool it names as rebuilt
+This issue was filed at the start of the 0.2.0 port. Every command or tool it names as rebuilt
 now exists, and the port's last update added the commit that built each one; the W6-W10
 proposals below stay unbuilt until they are decided.
 
@@ -49,18 +49,18 @@ proposals below stay unbuilt until they are decided.
   body, CLI only (`backup list`), never MCP. A GET, if one is found and verified read-only on
   a live controller, replaces the POST. It is the safer first user of the body-aware policy,
   because the command reads.
-- **D4: long-running MCP jobs** (the July job registry, AP-health sampling over MCP; the
+- **D4: long-running MCP jobs** (the prototype's job registry, AP-health sampling over MCP; the
   sampling exists as the CLI-only `diagnose ap-health`, `707ea13`)?
   Recommendation: wait for SDK v2 tasks (issue [008](008-mcp-sdk-v2-migration.md)) rather
   than an in-process registry outside the tool runner, which escaped its concurrency cap,
   timeout and cancellation (issue [012](012-mcp-default-tool-deadline.md)).
 
-Controller writes from the July work. Each follows issue
+Controller writes from the prototype. Each follows issue
 [019](019-write-capable-cli-ideas.md)'s rules if built: CLI only, dry run by default,
 explicit `--apply`, re-read to verify, never over MCP.
 
 - **W6** `wlan set-option`, built on `wlan_config.update_wlan_settings` (minimal patch,
-  verify, plan, review, apply). The July version was a GET-modify-PUT of the whole WLAN
+  verify, plan, review, apply). The prototype version was a GET-modify-PUT of the whole WLAN
   object, the pattern `analysis/wlan_config.py` documents as having flipped `wlan_bands` and
   WPA3 and dropped clients.
 - **W7** `wlan ap-group` (the v2 `apgroups` PUT), with a snapshot under XDG state first.

@@ -18,9 +18,9 @@ it runs on the gateway as the SSH user, whose host key is not verified (issue 03
 also why no schedule is published for the sampler until 038 is decided. No MCP tool triggers
 a sample (decision D1 in issue 060); the MCP tools read stored results only.
 
-Ported from the July work (a local archive, not in the repo): the script and the two
-parsers are July's; the sampler is rebuilt on the shared SSH and store helpers, and the
-parsers refuse output that July read as an empty or a partial sample.
+Ported from the prototype (a local archive, not in the repo): the script and the two
+parsers are the prototype's; the sampler is rebuilt on the shared SSH and store helpers, and the
+parsers refuse output that the prototype read as an empty or a partial sample.
 """
 
 import json

@@ -41,9 +41,9 @@ live (B14): time `network_health_check`, `security_audit`, `audit_link_speeds`,
 `analyze_traffic_matrix` and `diagnose_switch_port` once each, read-only, and record the
 figures here. Until then the variable works opt-in.
 
-## A deadline ends the call, not a worker thread (found in the July port's review)
+## A deadline ends the call, not a worker thread (found in the 0.2.0 port's review)
 
-Fourteen tools run their blocking work in `asyncio.to_thread` (counted at the July port's last
+Fourteen tools run their blocking work in `asyncio.to_thread` (counted at the 0.2.0 port's last
 commit): `get_switch_ports`, `diff_port_profiles`, `get_client_history`, `get_device_events`,
 `get_recent_events`, `get_port_counter_rates`, `diagnose_switch_port`,
 `audit_port_profile_usage`, `audit_link_speeds`, `inspect_switch_port`,
@@ -58,7 +58,7 @@ timeout starts another worker while the first still runs; only the default execu
 thread limit bounds them. Recommended fix: a stop flag the handler sets when its task is
 cancelled, checked between the backup's stages and between event pages.
 
-## `get_ap_retry_rates` can outlast the clients' 300 s limit (found in the July port's review)
+## `get_ap_retry_rates` can outlast the clients' 300 s limit (found in the 0.2.0 port's review)
 
 `get_ap_retry_rates` pauses `interval_seconds` (10-240 s) between two device reads. Each read
 opens its own `UniFiClient` and has no deadline of its own: only httpx's per-request timeouts
@@ -72,6 +72,6 @@ under the client limit (or raise the client timeouts, as above). Breaks fresh cl
 prod: no.
 
 The port's longest composite stays CLI only: `diagnose ap-health` runs up to about 10 h, so an
-MCP form waits for decision D4 in issue [060](060-decisions-from-the-july-port.md) (SDK v2
+MCP form waits for decision D4 in issue [060](060-decisions-from-the-0.2.0-port.md) (SDK v2
 tasks, issue [008](008-mcp-sdk-v2-migration.md)), not for a deadline here.
 `diagnose client-connectivity` stops at 120 s but uses SSH, so it waits for 060's D1 as well.

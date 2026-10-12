@@ -155,7 +155,7 @@ def test_new_commands_run_behind_the_read_only_transport() -> None:
 # Derived, so a module added later is scanned without being listed; client.py
 # itself defines the client and the holder.
 CLIENT_MODULE = PACKAGE / 'core' / 'utils' / 'client.py'
-JULY_CONTROLLER_MODULES = (
+PROTOTYPE_CONTROLLER_MODULES = (
     'analysis/ap_health.py',
     'analysis/vlan_traffic.py',
     'connectivity/gateway_probe.py',
@@ -198,9 +198,9 @@ def test_controller_modules_only_borrow_the_guarded_client(path: Path) -> None:
     assert _own_clients(ast.parse(path.read_text(encoding='utf-8'))) == []
 
 
-def test_the_scan_covers_every_july_controller_module() -> None:
+def test_the_scan_covers_every_prototype_controller_module() -> None:
     scanned = {str(path.relative_to(PACKAGE)) for path in CONTROLLER_MODULES}
-    assert set(JULY_CONTROLLER_MODULES) <= scanned
+    assert set(PROTOTYPE_CONTROLLER_MODULES) <= scanned
     assert len(scanned) > 40, f'only {len(scanned)} modules name UniFiClient: has it moved?'
     assert str(CLIENT_MODULE.relative_to(PACKAGE)) not in scanned
 

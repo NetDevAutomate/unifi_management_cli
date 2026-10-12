@@ -29,7 +29,7 @@
 # Example:
 #   scripts/network-audit.sh --config ~/.config/unifi_management_cli/prod.env --planned-switches 3
 #
-# Rebuilt from the July work's audit script (a local archive, not in the repo): no
+# Rebuilt from the prototype's audit script (a local archive, not in the repo): no
 # reports/ directory in the repository, no STP apply step and no confirmation prompt
 # (`stp apply --plan` already previews, then applies with --no-dry-run), and no default
 # for the planned-switch count.

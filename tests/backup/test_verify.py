@@ -1,6 +1,6 @@
 """Offline backup verification: the POC stages it runs, the path checks, the tool and the CLI.
 
-Ported from the July work (a local archive, not in the repo) and adapted: every backup is
+Ported from the prototype (a local archive, not in the repo) and adapted: every backup is
 synthetic (``tests/backup/synthetic_unf.py``), the database is capped and decompressed by
 ``gzip.decompress``' rules, documents are counted, never kept, and the path is checked in a
 safe order before the file is opened.

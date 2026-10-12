@@ -1,6 +1,6 @@
 """Tests for the shared ping output parser (GNU and BusyBox variants).
 
-Ported from the July work (a local archive, not in the repo) with documentation addresses.
+Ported from the prototype (a local archive, not in the repo) with documentation addresses.
 """
 
 from unifi_mapper.core.utils.ping_parse import parse_ping_output

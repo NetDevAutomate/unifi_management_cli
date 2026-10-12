@@ -944,7 +944,7 @@ ago (at least 5 minutes), and each run recomputes the newest two hours and the n
 a sample written late still counts if `rollup` runs less than two hours after its hour is
 complete; a later one stays in the raw samples (`now`, `1d`, `1w`) and never reaches `1m` or
 `1y` ([issue 071](../issues/071-late-vlan-samples-never-reach-the-rollups.md)). As ported
-from the July work these reports were broken: July rolled
+from the prototype these reports were broken: it rolled
 an hour only once it was 8 days old, so `1w` was always empty and `1m` and `1y` left out the
 newest 8 and about 61 days ([issue 069](../issues/069-vlan-reports-read-tiers-without-recent-data.md)).
 Run

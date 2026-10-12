@@ -1,6 +1,6 @@
 """Match the controller's VLAN networks to the gateway's live interfaces, by subnet.
 
-Pure: no I/O. Ported from the July work's VLAN sampler (a local archive, not in the repo),
+Pure: no I/O. Ported from the prototype's VLAN sampler (a local archive, not in the repo),
 logic unchanged. A network's interface is the one whose address lies in the network's
 ``ip_subnet``, never one assumed from a ``br<vlan>`` naming convention, which survives neither
 renumbering nor a gateway migration. Used by ``gateway http --vlan`` and the VLAN traffic

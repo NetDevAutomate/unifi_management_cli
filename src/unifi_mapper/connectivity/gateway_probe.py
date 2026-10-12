@@ -9,12 +9,12 @@ not verified (issue 038). A device or client name is resolved to its address thr
 ``UniFiClient()``, which borrows the read-only holder the CLI installs, so those reads can't
 write.
 
-Ported from the July work (a local archive, not in the repo): the conntrack, nslookup and
-curl parsers are July's, logic unchanged; the traceroute parser reads each hop line token by
-token (July's pattern took a time from any digits or dots before ``ms``, host names
-included). The handlers are rebuilt on argv lists (July built shell strings and piped
+Ported from the prototype (a local archive, not in the repo): the conntrack, nslookup and
+curl parsers are the prototype's, logic unchanged; the traceroute parser reads each hop line token by
+token (the prototype's pattern took a time from any digits or dots before ``ms``, host names
+included). The handlers are rebuilt on argv lists (the prototype built shell strings and piped
 conntrack through ``grep``), ``--globoff`` keeps curl from expanding ``[]`` and ``{}`` in a
-URL, and a VLAN resolves to the interface whose address is in its subnet. July's spectrum
+URL, and a VLAN resolves to the interface whose address is in its subnet. The prototype's spectrum
 scan (a controller command) is not ported.
 """
 
@@ -68,7 +68,7 @@ NSLOOKUP_RESULT_CODES = (0, 1)
 # when it printed hops (a traceroute that could not run prints none).
 TRACEROUTE_RESULT_CODES = (0, 1)
 CURL_RESULT_CODES = range(126)
-FLOWS_TIMEOUT = 60  # July's 30 s, raised for busy tables
+FLOWS_TIMEOUT = 60  # The prototype's 30 s, raised for busy tables
 INTERFACES_TIMEOUT = 15
 
 # A hop line's first token is its number (traceroute probes at most 255 hops).
@@ -88,7 +88,7 @@ _NSLOOKUP_NAME_RE = re.compile(r'^Name:\s*(\S+)', re.M)
 _DNS_FAILURE_MARKERS = ("can't resolve", "server can't find", 'NXDOMAIN', 'no servers could')
 
 
-# --- pure parsers (July's, but traceroute's: it reads each hop line token by token) -------
+# --- pure parsers (the prototype's, but traceroute's: it reads each hop line token by token) -------
 
 
 def _paren_address(token: str) -> str | None:

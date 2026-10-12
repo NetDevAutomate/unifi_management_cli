@@ -1,6 +1,6 @@
 """Per-VLAN traffic sampling (``analysis/vlan_traffic.py``) and the ``vlan-traffic`` CLI group.
 
-Ported from the July work (a local archive, not in the repo) and adapted: documentation values
+Ported from the prototype (a local archive, not in the repo) and adapted: documentation values
 and generic names; the sample is one fixed ``sh -c`` script through
 ``analysis/gateway_ssh.py`` with a 30 s bound; the network list comes through the read-only
 guard; the store is under the XDG state directory unless ``--db`` names one, never in the
@@ -49,7 +49,7 @@ NETWORKS = [
 STDOUT = 'br0 1000 2000\nbr7 500 700\nbr9 300 400\n===ADDR===\n' + json.dumps(ADDRESSES)
 
 
-# --- the parsers (July's) ------------------------------------------------------------------
+# --- the parsers (the prototype's) ------------------------------------------------------------------
 
 
 def test_bridge_counters_parse() -> None:

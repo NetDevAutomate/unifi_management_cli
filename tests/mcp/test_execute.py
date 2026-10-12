@@ -109,9 +109,9 @@ def test_the_writer_naming_rule_catches_set_power_cycle_and_speedtest_names(
     ]
 
 
-# The July work's MCP tools that the port did not put on MCP (issue 059 says why; issue 060
+# The prototype's MCP tools that the port did not put on MCP (issue 059 says why; issue 060
 # holds the open choices). None may be registered without that decision.
-JULY_TOOLS_NOT_ON_MCP = (
+PROTOTYPE_TOOLS_NOT_ON_MCP = (
     'decode_object_timestamps',
     'run_latency_matrix',
     'run_port_mapping',
@@ -137,15 +137,15 @@ JULY_TOOLS_NOT_ON_MCP = (
 )
 
 
-def test_no_july_tool_left_off_mcp_is_registered() -> None:
-    assert len(set(JULY_TOOLS_NOT_ON_MCP)) == 22
+def test_no_prototype_tool_left_off_mcp_is_registered() -> None:
+    assert len(set(PROTOTYPE_TOOLS_NOT_ON_MCP)) == 22
     shipped = ToolRegistry()
     names = {n for tools in shipped.get_categories().values() for n in tools}
-    registered = sorted(names & set(JULY_TOOLS_NOT_ON_MCP))
+    registered = sorted(names & set(PROTOTYPE_TOOLS_NOT_ON_MCP))
     assert not registered, (
-        f'{registered} were left off MCP by the July port: read '
-        'docs/issues/059-july-work-not-ported.md and docs/issues/060-decisions-from-the-'
-        'july-port.md (decisions D1-D4, W6-W10) before registering them'
+        f'{registered} were left off MCP by the 0.2.0 port: read '
+        'docs/issues/059-prototype-work-not-ported.md and docs/issues/060-decisions-from-the-'
+        '0.2.0-port.md (decisions D1-D4, W6-W10) before registering them'
     )
 
 

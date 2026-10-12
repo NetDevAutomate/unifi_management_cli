@@ -1,4 +1,4 @@
-"""A fake UniFi controller behind the real read-only guard, for the July port's tests.
+"""A fake UniFi controller behind the real read-only guard, for the 0.2.0 port's tests.
 
 ``FakeController`` is an ``httpx.MockTransport``: it answers the console-token login and the
 routes it is given, answers anything else 404, and records every request, so a test can

@@ -199,8 +199,8 @@ and `1y` daily rows, which `rollup` writes for every complete hour and day (run 
 each run also recomputes the newest two hours and the newest day, so a sample written late
 still counts if a run comes less than two hours after its hour is complete; a later one stays
 in the raw samples only, [issue 071](../issues/071-late-vlan-samples-never-reach-the-rollups.md)).
-As ported from July, `1w` was always empty and `1m` and `1y` left out the newest 8 and about
-61 days, because July rolled an hour only once it was 8 days old ([issue
+As ported from the prototype, `1w` was always empty and `1m` and `1y` left out the newest 8 and about
+61 days, because the prototype rolled an hour only once it was 8 days old ([issue
 069](../issues/069-vlan-reports-read-tiers-without-recent-data.md)). The MCP tools
 `get_vlan_traffic_report` and `list_vlan_traffic_periods` read the same
 store and need no credentials; nothing over MCP starts a sample. A report of a store a crashed

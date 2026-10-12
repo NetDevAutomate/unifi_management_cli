@@ -41,7 +41,7 @@ today.
 
 ## Resolution
 
-D5 is implemented as recommended, in the July port: `mcp/call_audit.py` writes one JSON line
+D5 is implemented as recommended, in the 0.2.0 port: `mcp/call_audit.py` writes one JSON line
 per catalog tool call, on by default, to `$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl`
 (resolved at each write, never relative to the working directory). A line holds the time,
 the registered tool's name (an unregistered name is `<unregistered>` with its length), the

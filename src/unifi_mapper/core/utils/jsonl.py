@@ -2,7 +2,7 @@
 
 Every capped history the tools keep under the XDG state root goes through
 :func:`append_capped_jsonl`: the port counter history (``analysis/counter_history``), and
-the files the July port adds on top of it. One append holds an exclusive ``fcntl.flock`` on
+the files the 0.2.0 port adds on top of it. One append holds an exclusive ``fcntl.flock`` on
 a sibling ``<file>.lock`` for the whole append-and-compact; repairs a torn last line (an
 interrupted writer) before appending; optionally drops incoming lines whose key is already
 in the file; and compacts through a temporary file plus ``os.replace`` only when the file is

@@ -1,6 +1,6 @@
 """Tests for the reset-aware VAP counter deltas (``core/utils/counters``).
 
-Ported from the July work (a local archive, not in the repo) with generic SSIDs.
+Ported from the prototype (a local archive, not in the repo) with generic SSIDs.
 """
 
 import pytest

@@ -53,7 +53,7 @@ Also from §6: expose `analyse_port_names` as a plan-only (read-only) tool. `run
 and `run_bandwidth_test` generate traffic on the production network; expose them only with an
 explicit opt-in and an `active_probe` marker, never by default.
 
-## Progress (July port)
+## Progress (0.2.0 port)
 
 - `get_wan_status` was built as `get_wan_health` (MCP) and `diagnose wan` (CLI), with the
   recorded speedtest history beside it, in `b46a8db`.

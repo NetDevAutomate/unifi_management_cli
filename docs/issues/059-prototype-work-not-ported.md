@@ -1,18 +1,18 @@
 ---
-title: "July work that was not ported, and why"
+title: "Prototype work that was not ported, and why"
 date: 2026-10-05
 status: open
 severity: low
 components: [mcp, typer_cli, analysis, diagnostics, scripts, tests]
-found_by: July port
+found_by: 0.2.0 port
 ---
 
-# July work that was not ported, and why
+# Prototype work that was not ported, and why
 
 ## Problem
 
 Work done between 2026-06-29 and 2026-07-27 on a second clone of this repository was never
-merged here. It survives only in a local archive (not in the repo). The July port rebuilt
+merged here. It survives only in a local archive (not in the repo). The 0.2.0 port rebuilt
 the parts that fit today's architecture as fresh commits (no archive commit or object entered
 this repository). This issue is the single list of what was **not** ported, so nothing is lost
 silently. Hashes below marked "archive commit" name commits in that archive, not in this
@@ -20,9 +20,9 @@ repository.
 
 Each line gives the item, why it was not ported, and whether leaving it out breaks fresh
 clones, CI or production. The open choices are in issue
-[060](060-decisions-from-the-july-port.md).
+[060](060-decisions-from-the-0.2.0-port.md).
 
-This issue was filed at the start of the July port, before its features were rebuilt. Where a
+This issue was filed at the start of the 0.2.0 port, before its features were rebuilt. Where a
 line says the port *rebuilds* something (a CLI command, an MCP tool, a fixture), that is the
 port's plan at filing time; "Rebuilt by the port" below records the commit that built each one.
 
@@ -49,7 +49,7 @@ port's plan at filing time; "Rebuilt by the port" below records the commit that 
 - `--preserve-existing-names`: the archive threaded the flag through but never read it, and
   the port-name chooser is identical in both trees, so nothing writes more by default. Breaks
   fresh clones, CI or prod: no.
-- The July `core/utils/gateway_ssh.py`: it fell back to `UNIFI_PASSWORD`, interpolated
+- The prototype's `core/utils/gateway_ssh.py`: it fell back to `UNIFI_PASSWORD`, interpolated
   f-strings into shell commands and disabled host-key checking a second time. The existing
   `analysis/gateway_ssh.py` gained the session and command helpers instead. Breaks fresh
   clones, CI or prod: no.
@@ -62,7 +62,7 @@ port's plan at filing time; "Rebuilt by the port" below records the commit that 
   open SSH to the gateway; the port rebuilds them as CLI-only commands (`gateway …`,
   `diagnose client-connectivity`), and MCP exposure is decision D1. Breaks fresh clones, CI or
   prod: no.
-- The probes' hostname fallback: July passed a `gateway ping` or `traceroute` target that
+- The probes' hostname fallback: the prototype passed a `gateway ping` or `traceroute` target that
   matched no device or client to the gateway as a DNS hostname. The port probes only an
   address or a name the controller knows (design section 4.8) and refuses anything else as
   `DEVICE_NOT_FOUND`, so a mistyped name never reaches the gateway's resolver; `gateway dns
@@ -89,7 +89,7 @@ port's plan at filing time; "Rebuilt by the port" below records the commit that 
   classes. Breaks
   fresh clones, CI or prod: no.
 - The dump script's `stat/event`, `stat/alarm`, `stat/dhcp`, v2 `events` and `mdns` paths:
-  they returned 404 in the July capture. Breaks fresh clones, CI or prod: no.
+  they returned 404 in the prototype capture. Breaks fresh clones, CI or prod: no.
 - `UNIFI_VLAN_TRAFFIC_DB`: replaced by `--db` on each of the port's `vlan-traffic`
   commands. Breaks fresh
   clones, CI or prod: no.
@@ -103,7 +103,7 @@ port's plan at filing time; "Rebuilt by the port" below records the commit that 
 - The 17-switch topology capture: the port carries it anonymised as
   `tests/fixtures/fleet_17_switch_anonymised.json`, used by the 17-switch STP audit test; the
   real capture stays out. Breaks fresh clones, CI or prod: no.
-- The July MCP tests `test_mutation_enforcement.py`, `test_jobs.py`, `test_health_check.py`,
+- The prototype's MCP tests `test_mutation_enforcement.py`, `test_jobs.py`, `test_health_check.py`,
   `test_server.py`, `test_manifests.py`, `test_wire_only_tools.py` and
   `tests/network/test_wlan_mutations.py`: superseded by today's catalog, runner and parity
   tests, or their feature was not ported. Breaks fresh clones, CI or prod: no.
@@ -114,7 +114,7 @@ port's plan at filing time; "Rebuilt by the port" below records the commit that 
   [062](062-open-items-from-the-archived-plans.md). Breaks fresh clones, CI or prod: no.
 - `reports/` captures: raw controller JSON with credentials included; never carried into the
   repo. Breaks fresh clones, CI or prod: no.
-- 13 personal scripts kept in a git-ignored personal folder beside the archived July branch
+- 13 personal scripts kept in a git-ignored personal folder beside the archived prototype branch
   (a crash monitor, 11 one-off investigation scripts and an upgrade-ordering script):
   personal, git-ignored, kept outside the repo. Breaks fresh clones, CI or prod: no.
 

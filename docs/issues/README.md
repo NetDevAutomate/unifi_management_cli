@@ -7,10 +7,10 @@ Each file has `status: open` (or `open, decision needed`) in its front matter. W
 issue is fixed, set `status: resolved`, add `resolved_by: <commit>` and keep the file, so
 the reasoning stays next to the code it explains.
 
-Several files refer to *the July port*: the diagnostics work written in June and July 2026 on
-a separate checkout, and ported onto this history in October 2026 (release 0.2.0). Issues
-[059](059-july-work-not-ported.md) and [060](060-decisions-from-the-july-port.md) record what
-was and was not carried over.
+Several files refer to *the prototype* and *the 0.2.0 port*. The prototype is the diagnostics
+work written in June and July 2026 on a separate checkout; the 0.2.0 port carried it onto this
+history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-ported.md) and
+[060](060-decisions-from-the-0.2.0-port.md) record what was and was not carried over.
 
 ## Index
 
@@ -74,8 +74,8 @@ was and was not carried over.
 | [056](056-mcp-name-guard-knows-every-assigned-name.md) | The MCP-name guard counts any name assigned in `src/` as known, local variables included | open |
 | [057](057-onvif-test-rtsp-puts-the-password-on-argv.md) | `onvif_stream.py test-rtsp` passes the ONVIF password to ffprobe on its command line | open, decision needed |
 | [058](058-tracebacks-print-frame-values.md) | Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on | resolved (`e017844`) |
-| [059](059-july-work-not-ported.md) | July work that was not ported, and why | open |
-| [060](060-decisions-from-the-july-port.md) | Decisions from the July port | open, decision needed |
+| [059](059-prototype-work-not-ported.md) | Prototype work that was not ported, and why | open |
+| [060](060-decisions-from-the-0.2.0-port.md) | Decisions from the 0.2.0 port | open, decision needed |
 | [061](061-monitor-lags-misses-current-firmware-lags.md) | `monitor_lags` misses LAGs on current switch firmware | open |
 | [062](062-open-items-from-the-archived-plans.md) | Open items from the archived improvement and STP plans | open |
 | [063](063-execute-tool-result-cap.md) | No cap on `execute_tool` result size | open, decision needed |
@@ -91,5 +91,5 @@ was and was not carried over.
 | [073](073-gateway-ping-step-duplicated.md) | The gateway ping step is written twice, in gateway ping and in AP-health's client pings | open |
 | [074](074-mqtt-needs-an-undeclared-dependency.md) | MQTT support needs aiomqtt, which the project does not declare (its hint and the README now name `uv add aiomqtt`) | open, decision needed |
 | [075](075-discover-needs-graphviz-dot-undocumented.md) | `discover` needs Graphviz's `dot` program for its PNG and SVG diagrams and exits 1 without it, writing no report (the docs now name it) | open |
-| [076](076-july-port-final-review-follow-ups.md) | Follow-ups from the July port's final review that were not fixed on the branch | open, decision needed |
+| [076](076-0.2.0-port-final-review-follow-ups.md) | Follow-ups from the 0.2.0 port's final review that were not fixed on the branch | open, decision needed |
 | [077](077-update-firmware-confirms-instead-of-previewing.md) | `inventory update-firmware` writes after a confirmation prompt, not a preview | open, decision needed |

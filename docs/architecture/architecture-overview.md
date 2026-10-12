@@ -322,7 +322,7 @@ state directory (`vlan-traffic.sqlite3`, never the working directory; `--db` nam
 a script that fails on the gateway, or a run that stores nothing, exits 1;
 `rollup`, `report PERIOD` and `coverage` work on the store alone (`now`, `1d` and `1w` read raw
 samples, `1m` and `1y` the hourly and daily rows `rollup` writes for every complete hour and
-day; issue 069 records why July's tiers were replaced). The MCP tools
+day; issue 069 records why the prototype's tiers were replaced). The MCP tools
 `get_vlan_traffic_report` and `list_vlan_traffic_periods` read the default store read-only in a
 worker thread, with no credentials; nothing over MCP starts a sample (decision D1 in issue 060),
 and no schedule is published until issue 038 is decided.

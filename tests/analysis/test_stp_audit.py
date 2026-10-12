@@ -1,6 +1,6 @@
 """The one-shot STP priority audit (``analysis/stp_audit.py``) and its CLI command.
 
-Rebuilt from the July work (a local archive, not in the repo) and adapted: documentation values
+Rebuilt from the prototype (a local archive, not in the repo) and adapted: documentation values
 only, the gateway reported under ``skipped``, remediation as CLI commands, and the fleet never
 scoped before tiering. The end-to-end cases run the real discovery and priority calculation
 through the read-only guard over ``tests/fake_controller.py``, so they also assert that only
@@ -118,7 +118,7 @@ async def test_a_scoped_row_equals_the_switch_s_fleet_row(
     fleet = _rows(await _audit(_controller()))
     scoped = await _audit(_controller(), device)
     assert scoped['switches'] == [fleet[device]]
-    # July scoped the discovery: B became the only core (4096), D kept tier 2 (16384).
+    # The prototype scoped the discovery: B became the only core (4096), D kept tier 2 (16384).
     assert (scoped['switches'][0]['tier'], scoped['switches'][0]['optimal_priority']) == (
         tier,
         priority,

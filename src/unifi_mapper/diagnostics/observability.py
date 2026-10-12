@@ -1,7 +1,7 @@
 """Read-only device statistics, AP retry rates, config objects and config-change timelines.
 
 Four MCP tools and their CLI commands (``diagnose device-stats``, ``diagnose ap-retries``,
-``controller config``, ``controller config-changes``), rebuilt from the July work: pure
+``controller config``, ``controller config-changes``), rebuilt from the prototype: pure
 ``*_from_data`` cores over plain controller records, and thin async handlers that read the
 controller through ``UniFiClient()`` with no explicit credentials. Under the MCP server that
 client borrows the lifespan's shared, read-only-guarded connection, and under the CLI the one

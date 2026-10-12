@@ -1,6 +1,6 @@
 """One-shot client connectivity diagnosis (``diagnostics/client_connectivity.py``) and its CLI.
 
-Ported from the July work (a local archive, not in the repo) and adapted: documentation values
+Ported from the prototype (a local archive, not in the repo) and adapted: documentation values
 only; the HTTP probe takes the client's VLAN (resolved to its gateway interface by subnet), not
 a VLAN ID passed as an interface name; every layer is bounded and the chain has a 120 s
 budget; a failing layer is that layer's finding; no MCP tool (decision D1 in issue 060). SSH is
@@ -34,7 +34,7 @@ from unifi_mapper.typer_cli import app
 runner = CliRunner()
 FAKE_SSH_PW = 'FAKE-CONNECTIVITY-SSH-PASSWORD'  # pragma: allowlist secret
 
-# --- build_verdict: July's layers, documentation values -----------------------------------
+# --- build_verdict: the prototype's layers, documentation values -----------------------------------
 
 PING_OK = {'reachable': True, 'loss_pct': 0.0, 'rtt_avg_ms': 5.0}
 PING_DEAD = {'reachable': False, 'loss_pct': 100.0, 'rtt_avg_ms': None}

@@ -8,7 +8,7 @@ among the switches or the remediation.
 
 Scoping to one device never scopes the discovery: hierarchy tiers and the root come from the
 whole fleet, so a scoped row always equals that switch's row in the fleet-wide report
-(``scope_stp_audit``). Rebuilt from the July work (a local archive, not in the repo), where the
+(``scope_stp_audit``). Rebuilt from the prototype (a local archive, not in the repo), where the
 device was forwarded into the discovery and tiers were computed on a one-switch fleet.
 
 Remediation is advice only: the change plan is written and applied with the CLI (``stp

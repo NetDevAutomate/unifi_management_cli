@@ -70,7 +70,7 @@ the gateway's key is accepted once (`ssh root@<gateway>`), and so does any run a
 key changes. That is the point of the check, but it changes how both commands behave for
 every user, so it is the user's call.
 
-## Since the July port
+## Since the 0.2.0 port
 
 - Every gateway SSH session now opens in one helper, `gateway_session()` in
   `analysis/gateway_ssh.py` (`db18bfa`), which passes `known_hosts=GATEWAY_KNOWN_HOSTS`. That
@@ -80,7 +80,7 @@ every user, so it is the user's call.
   `traceroute`, `dns`, `http` and `flows` (`8ed301f`); `diagnose client-connectivity` and
   `diagnose ap-health --ping-clients` (`707ea13`); and `vlan-traffic sample` (`ad846b6`). Each
   prints the warning that the host key is not verified once per run, before it connects. None
-  is an MCP tool (decision D1 in issue [060](060-decisions-from-the-july-port.md)).
+  is an MCP tool (decision D1 in issue [060](060-decisions-from-the-0.2.0-port.md)).
 - The VLAN traffic sampler is held off every schedule: `scripts/unifi-cron.sh` has no
   `vlan-traffic sample` task. An unattended root SSH login every few minutes should wait for
   this decision.

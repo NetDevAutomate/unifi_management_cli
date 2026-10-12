@@ -5,7 +5,7 @@ status: resolved
 resolved_by: e017844
 severity: medium
 components: [src/unifi_mapper/mcp/server.py, src/unifi_mapper/typer_cli.py, src/unifi_mapper/inventory_cli.py, src/unifi_mapper/core/utils/logging.py]
-found_by: July port design review
+found_by: 0.2.0 port design review
 ---
 
 # Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on
@@ -43,11 +43,11 @@ No such leak has been observed. This is about the defaults.
    file sink.
 3. Add tests: one imports each Typer app and asserts the flag is False; one logs an exception
    whose frame holds a sentinel credential and asserts the sentinel isn't in the output.
-4. Fix it before the next push. The planned July-port changes already include it.
+4. Fix it before the next push. The planned 0.2.0-port changes already include it.
 
 ## Resolution
 
-Fixed as recommended, in the July port, before any tool that returns config objects:
+Fixed as recommended, in the 0.2.0 port, before any tool that returns config objects:
 
 - Every `typer.Typer(...)` in `src/` (those in `typer_cli.py` and `inventory_app`) passes
   `pretty_exceptions_show_locals=False`; the 24 `print_exception(show_locals=True)` debug paths

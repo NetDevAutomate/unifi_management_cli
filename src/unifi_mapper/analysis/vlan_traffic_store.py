@@ -19,9 +19,9 @@ unreadable". The journal mode is SQLite's default (``DELETE``), so a read-only o
 ``-shm`` file. A new store is ``0o600``, and a missing directory is created ``0o700`` (an
 existing one keeps its mode).
 
-Ported from the July work (a local archive, not in the repo): the schema, ``compute_rates``,
+Ported from the prototype (a local archive, not in the repo): the schema, ``compute_rates``,
 the rollup arithmetic (a high-water mark per tier, the per-VLAN boundary carry) and the
-report and coverage queries are July's. July's tier timing was broken and is replaced
+report and coverage queries are the prototype's. The prototype's tier timing was broken and is replaced
 (issue 069): it rolled an hour only once it was 8 days old and a
 day once about 61 days old, and read ``1w`` from the hourly tier, so ``1w`` was always empty
 and ``1m`` and ``1y`` left out the newest 8 and about 61 days. Now ``1w`` reads raw samples,
@@ -249,7 +249,7 @@ def insert_samples(path: Path, rows: list[dict[str, Any]]) -> None:
         conn.close()
 
 
-# --- pure functions: rates and rollups (July's) --------------------------------------------
+# --- pure functions: rates and rollups (the prototype's) --------------------------------------------
 
 
 def compute_rates(
@@ -576,7 +576,7 @@ def run_rollups(path: Path | None = None, *, now: int | None = None) -> dict[str
     cadence. A sample written after that is counted only by a run less than
     :data:`TRAILING_HOURS` hours after its hour became complete (its day's row follows); a
     later one stays in the raw tier, which ``now``, ``1d`` and ``1w`` read, but never reaches
-    the hourly or daily rows (issue 071). A store the July code left (hours rolled only once
+    the hourly or daily rows (issue 071). A store the prototype's code left (hours rolled only once
     8 days old) upgrades in place on its first run: no schema change, every hour after its
     mark is rolled from raw, so none is skipped. Opening the store writable also rolls back a
     hot journal a crashed sampler left, so this recovers a store a read reported as needing
@@ -602,7 +602,7 @@ def run_rollups(path: Path | None = None, *, now: int | None = None) -> dict[str
         conn.close()
 
 
-# --- the report and the coverage (July's queries, each period on its own tier) -------------
+# --- the report and the coverage (the prototype's queries, each period on its own tier) -------------
 
 
 def _tier_for_period(period: str) -> str:

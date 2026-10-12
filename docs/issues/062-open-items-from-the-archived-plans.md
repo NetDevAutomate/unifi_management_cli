@@ -4,17 +4,17 @@ date: 2026-10-05
 status: open
 severity: low
 components: [analysis, typer_cli, monitors]
-found_by: July port (plans and working notes kept in a local archive, not in the repo)
+found_by: 0.2.0 port (plans and working notes kept in a local archive, not in the repo)
 ---
 
 # Open items from the archived improvement and STP plans
 
 ## Problem
 
-The July work carried an STP and tooling plan, an improvement plan and four sets of
+The prototype carried an STP and tooling plan, an improvement plan and four sets of
 working notes (2026-05-04, 2026-07-22, 2026-07-23 and 2026-07-24). They are kept in a local
 archive (not in the repo). Each item was checked against this repository when this issue was
-filed, at the start of the July port, and again at the port's last update: the port built none
+filed, at the start of the 0.2.0 port, and again at the port's last update: the port built none
 of the items under "Still open", so all of them remain open. This issue lists only what is
 still open, so the plans need not be carried forward.
 
@@ -24,14 +24,14 @@ and MTU audits, the drops-only counter threshold, LAG candidates, VLAN coverage,
 matrix, XDG state with STP snapshots and diffs, preflight simulation, PoE budget, STP drift,
 the STP MCP tools, counter-reset detection, neighbour-aware channel scoring, the Phase D RF
 strategy work, and MCP tools for link errors, roaming, config drift and neighbours (issues
-[010](010-cwd-relative-state-files.md) and [018](018-read-only-tool-proposals.md)). The July
+[010](010-cwd-relative-state-files.md) and [018](018-read-only-tool-proposals.md)). The 0.2.0
 port adds two more: a one-shot STP priority audit (`stp audit-priorities`, landed in
 `c82d52c`) and the VLAN traffic collector (`vlan-traffic sample`, `rollup`, `report` and
 `coverage`, with the MCP readers `get_vlan_traffic_report` and `list_vlan_traffic_periods`,
 landed in `ad846b6`).
 The 2026-07-22 notes' other items were site operations, not repository work; its code
-item was the July port itself. An unattended weekly `radio auto-channel --apply` is decision
-W10 in issue [060](060-decisions-from-the-july-port.md).
+item was the 0.2.0 port itself. An unattended weekly `radio auto-channel --apply` is decision
+W10 in issue [060](060-decisions-from-the-0.2.0-port.md).
 
 ## Still open
 

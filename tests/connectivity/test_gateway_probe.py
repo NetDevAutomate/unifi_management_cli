@@ -1,6 +1,6 @@
 """Gateway probes over SSH (``connectivity/gateway_probe.py``) and the ``gateway`` CLI group.
 
-Ported from the July work (a local archive, not in the repo) and adapted: documentation
+Ported from the prototype (a local archive, not in the repo) and adapted: documentation
 values only, every command an argv through ``analysis/gateway_ssh.py`` with its own bound,
 conntrack filtered in Python (no ``grep`` on the gateway), ``--globoff`` on curl, ``--vlan``
 resolved by subnet from the controller's network list, and no MCP tool (decision D1 in issue
@@ -149,7 +149,7 @@ def _argv(ssh: FakeSSH) -> list[list[str]]:
     return [shlex.split(command) for command in ssh.commands]
 
 
-# --- the pure parsers (from July, documentation values) -----------------------------------
+# --- the pure parsers (from the prototype, documentation values) -----------------------------------
 
 
 def test_traceroute_hops_timeouts_and_names() -> None:
@@ -239,7 +239,7 @@ async def test_an_ipv6_trace_that_ends_at_the_target_is_reached(
     assert trace['reached'] is True  # the same address, however it is written
 
 
-# Review finding: July's time pattern ran over the whole hop line, so a host name holding "ms"
+# Review finding: the prototype's time pattern ran over the whole hop line, so a host name holding "ms"
 # crashed the parse (a ".ms" label) or added a time never measured (digits before "ms").
 TRACEROUTE_MS_NAMES = """\
 traceroute to 203.0.113.53 (203.0.113.53), 20 hops max, 60 byte packets

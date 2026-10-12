@@ -1,6 +1,6 @@
 """AP health sampling (``analysis/ap_health.py``) and ``diagnose ap-health``.
 
-Ported from the July work (a local archive, not in the repo) and adapted: documentation values
+Ported from the prototype (a local archive, not in the repo) and adapted: documentation values
 only; no PoE power-cycle phase (a controller write, W9 in issue 060), no job registry and no
 MCP tool (D4), no SSID or ``reports/`` default; every sample read bounded and a timed-out
 sample recorded as missing; retry rates only over real intervals; client pings opt-in through
@@ -119,7 +119,7 @@ def test_clients_on_an_ap_are_its_wireless_ones_up_to_four() -> None:
 
 
 def test_only_2_4_ghz_clients_are_pinged() -> None:
-    """Review F9: the report measures the 2.4 GHz radio, so (as July did) only clients on
+    """Review F9: the report measures the 2.4 GHz radio, so (as the prototype did) only clients on
     it, or whose radio isn't reported, are pinged; 5 and 6 GHz clients are left out."""
     clients = [
         {'ip': '192.0.2.41', 'ap_mac': AP_MAC, 'radio': 'ng'},
@@ -197,7 +197,7 @@ def test_there_is_no_ssid_default_and_no_power_cycle_path() -> None:
     assert signature.parameters['essid'].default is None
     assert 'output' not in signature.parameters  # no reports/ default: the CLI's --output
     source = Path(ap_health.__file__).read_text(encoding='utf-8')
-    for marker in ('cmd/devmgr', '.post(', 'power_cycle'):  # the July cycle's call and name
+    for marker in ('cmd/devmgr', '.post(', 'power_cycle'):  # the prototype cycle's call and name
         assert marker not in source
 
 

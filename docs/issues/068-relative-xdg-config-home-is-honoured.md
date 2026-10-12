@@ -4,7 +4,7 @@ date: 2026-10-05
 status: open, decision needed
 severity: low
 components: [cli, mcp/config, scripts/site_targets.py, scripts/unifi-mcp-launch.sh]
-found_by: July port review follow-up (while fixing the relative `XDG_STATE_HOME`)
+found_by: 0.2.0 port review follow-up (while fixing the relative `XDG_STATE_HOME`)
 ---
 
 # The config searches honour a relative `XDG_CONFIG_HOME`, so they can read a file under the working directory
@@ -12,7 +12,7 @@ found_by: July port review follow-up (while fixing the relative `XDG_STATE_HOME`
 ## Problem
 
 The XDG Base Directory spec says every path in its variables must be absolute, and a relative
-one must be ignored. The July port made `state_dir()` follow that rule for `XDG_STATE_HOME`.
+one must be ignored. The 0.2.0 port made `state_dir()` follow that rule for `XDG_STATE_HOME`.
 The four config searches still use any non-empty `XDG_CONFIG_HOME`:
 
 - `get_default_config_path()` in `src/unifi_mapper/cli.py` (the CLI's search);

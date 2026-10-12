@@ -1,6 +1,6 @@
 """The STP priority audit over an anonymised 17-switch fleet (16 switches and a gateway).
 
-The fixture keeps the shape of a real 17-device capture from the July work (a local archive,
+The fixture keeps the shape of a real 17-device capture from the prototype (a local archive,
 not in the repo): its models, STP priorities, port STP state and LLDP links. Every
 identifier is a documentation value (IDs, ``02:00:00:…`` MACs, ``Switch NN`` and ``Port N``
 names), and it holds no address, client or counter. The shape guard below keeps it that way.

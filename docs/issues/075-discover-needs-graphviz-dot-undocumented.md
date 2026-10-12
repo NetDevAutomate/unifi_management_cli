@@ -4,7 +4,7 @@ date: 2026-10-06
 status: open
 severity: low
 components: [enhanced_network_topology, run_methods, README]
-found_by: July port (live read-only run)
+found_by: 0.2.0 port (live read-only run)
 ---
 
 # discover needs Graphviz's dot program for its PNG and SVG diagrams and exits 1 without it, writing no report

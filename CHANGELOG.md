@@ -48,6 +48,7 @@ The current release is 0.2.0; only the latest release is supported.
 
 ## [0.2.0] - 2026-10-07
 
-The July port: read-only MCP tools and CLI diagnostics (gateway probes, client connectivity,
+This release carries the diagnostics prototype of June and July 2026 onto the main line:
+read-only MCP tools and CLI diagnostics (gateway probes, client connectivity,
 AP health, the per-VLAN traffic collector, WAN history), the default-on MCP call log, and the
 docs hygiene pass. See `docs/issues/059` and `060` for what was and was not ported.

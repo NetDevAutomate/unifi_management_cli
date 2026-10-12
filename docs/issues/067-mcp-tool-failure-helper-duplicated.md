@@ -4,7 +4,7 @@ date: 2026-10-05
 status: open
 severity: low
 components: [mcp/tools/network, mcp/tools/protect, mcp/runner]
-found_by: July port review
+found_by: 0.2.0 port review
 ---
 
 # The network and Protect tools each carry a copy of the redacted-failure helper

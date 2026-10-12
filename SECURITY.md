@@ -17,7 +17,7 @@ write to it. Read this before running it against a production network.
   what was removed are reported. The match is by key name: a credential someone typed into a
   free-text field under another key (a device note, say) is not recognised, and a key spelt
   `pre-shared` or `pre_shared` is not matched yet
-  ([issue 076, item 6](docs/issues/076-july-port-final-review-follow-ups.md)). Tracebacks never
+  ([issue 076, item 6](docs/issues/076-0.2.0-port-final-review-follow-ups.md)). Tracebacks never
   print local variables.
 - **Stripping is not anonymisation.** Reports, evidence bundles and MCP results still carry
   device and client names, MAC and IP addresses, SSIDs and your topology. Treat every output

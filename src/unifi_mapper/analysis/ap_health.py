@@ -14,7 +14,7 @@ its redacted error: neither is fatal. The capture fills the :class:`ApHealthCapt
 given as it goes, so after Ctrl-C, or a failure that still ends the run, the CLI builds a
 partial report from what was gathered.
 
-Rebuilt from the July work (a local archive, not in the repo) without July's PoE power-cycle
+Rebuilt from the prototype (a local archive, not in the repo) without the prototype's PoE power-cycle
 phase (a controller write, W9 in issue 060), its job registry (issue 012), its hard-coded SSID
 and its output-path default. Without ``essid`` the busiest 2.4 GHz VAP of the first sample is
 tracked. A retry rate is computed only over a real interval (between two samples that both
@@ -61,7 +61,7 @@ MIN_INTERVAL_PACKETS = 50  # an interval with fewer TX packets gives no honest r
 RADIO = 'ng'  # 2.4 GHz
 RADIO_CONFIG_KEYS = ('channel', 'ht', 'tx_power_mode', 'tx_power', 'min_rssi_enabled', 'min_rssi')
 ROLES = ('target', 'reference')
-# The tracked SSID's settings the report shows (July's list); never a secret field.
+# The tracked SSID's settings the report shows (the prototype's list); never a secret field.
 SSID_CONFIG_KEYS = (
     'wlan_bands',
     'security',
@@ -201,7 +201,7 @@ def device_block(dev: dict[str, Any]) -> dict[str, Any]:
 def clients_on_ap(clients: list[Any], ap_mac: str) -> list[str]:
     """The addresses of up to :data:`MAX_PINGED_CLIENTS` wireless clients an AP pings. Pure.
 
-    Only clients on the radio the report measures are pinged, as in July: ``radio`` ``ng``
+    Only clients on the radio the report measures are pinged, as in the prototype: ``radio`` ``ng``
     (2.4 GHz), or not reported, since an unknown radio may be 2.4 GHz; a 5 or 6 GHz client
     is left out, and so is a wired one or one without an address.
 
