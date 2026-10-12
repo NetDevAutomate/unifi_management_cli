@@ -1,7 +1,8 @@
 ---
 title: "`unifi-cron.sh` writes launchd plists that are invalid XML, so macOS schedules never load"
 date: 2026-10-03
-status: open, decision needed
+status: resolved
+resolved_by: a671761
 severity: medium
 components: [scripts/unifi-cron.sh]
 found_by: MCP uvx standards work (convergence fixer, iteration 2, while fixing code-review F5)
@@ -51,7 +52,13 @@ disagree, and the literal `<string>…</string>` assertions in
 `test_macos_status_flags_a_stale_plist_and_install_replaces_a_loaded_job` need the new
 encoding.
 
-## Decision needed
+## Resolution
+
+Resolved 2026-10-12 in `a671761`: every plist `<string>` is XML-escaped (install and the
+`status` stale check alike, with a plistlib round-trip test), and port naming is scheduled or run
+only with `--with-port-naming`; the six default tasks only read or record locally.
+
+## Decision needed (as filed)
 
 Fixing this makes macOS schedules start running for the first time, including the
 `port-naming` task, which writes port names to the controller every 30 minutes
