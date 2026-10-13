@@ -33,7 +33,9 @@ asked GitHub Support to purge the superseded commits from the server's object st
   `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` reach every API client the CLIs build. A config
   file that already set these values will see them applied for the first time (issue 042).
 - `configure_logging` was removed from `unifi_mapper.core` and `unifi_mapper.core.utils`, and
-  `UNIFI_MAPPER_DEBUG` is no longer read; nothing in the project called it (issue 045).
+  `UNIFI_MAPPER_DEBUG` is no longer read; nothing in the project called it. Code outside the
+  project that imported it must configure logging itself (loguru or the standard library)
+  (issue 045).
 - `diagnose vlans` / `diagnose_vlans` audits every switch port (not only the overridden ones),
   reports profile names instead of raw `portconf_id`s, judges a trunk from the resolved profile's
   `forward` and `tagged_vlan_mgmt`, and lists a trunk's tagged VLANs; `analyze mac-table` tells a
@@ -49,7 +51,10 @@ asked GitHub Support to purge the superseded commits from the server's object st
   `isError` and the error code instead (issue 011).
 - Every MCP tool call has a 270 s deadline by default (`UNIFI_MCP_TOOL_TIMEOUT`, 5-3600 s,
   `[TIMEOUT]`), chosen so the server's code reaches a client whose own limit is 300 s, as the
-  guide's snippets are; set the variable higher for a slower controller (issue 012).
+  guide's snippets are; set the variable higher for a slower controller. The deadline starts
+  once a call has its concurrency slot (waiting for one is not counted), it cannot interrupt a
+  synchronous handler (the STP pipeline tools), and a worker thread a call started can keep
+  running after `[TIMEOUT]` until it finishes (issue 012).
 - `diagnose ap-health --essid <name>` exits 2 after the discovery read when the target's 2.4 GHz
   radio does not carry that SSID (it used to measure the busiest VAP under that name); an AP
   without the tracked SSID shows `no rate (SSID not present)`, the JSON rows gain `retry_note`,
@@ -62,7 +67,7 @@ asked GitHub Support to purge the superseded commits from the server's object st
   and who may hold it; histories and locks are `0o600` and the default state directory `0o700` on
   every run, a file owned by another user is refused, and a `--history` path's existing directory
   is left alone. A schedule that relied on exit 0 after a failed record should read the exit
-  status (issue 076).
+  status: a cron or systemd unit that treated exit 0 as success now sees the failure (issue 076).
 - MCP call log: after a lock timeout the log skips the lock for 30 s and the next successful
   write starts with a `{"kind": "lock_timeout", "dropped": N}` line; writes use a dedicated
   4-thread pool so a failing log can never slow every call (issue 076).
@@ -78,9 +83,11 @@ asked GitHub Support to purge the superseded commits from the server's object st
   with `--snapshot`, `--baseline` or `--history`, or move the file (issue 010).
 - The gateway SSH commands verify the gateway's host key against `~/.ssh/known_hosts` and
   refuse, before the password is sent, a key that is missing or has changed; the error names
-  `user@host` and the one `ssh` command that records the key. Anyone who never ran `ssh` to the
-  gateway from the same account must do so once. `UNIFI_SSH_KNOWN_HOSTS=off` disables the check
-  with a warning on every run; any other value is rejected (issue 038).
+  `user@host` and the one `ssh` command that records the key. Anyone, and any scheduled job,
+  that never ran `ssh <user>@<gateway>` from the same account fails with
+  `CONTROLLER_UNREACHABLE` until the key is recorded. `UNIFI_SSH_KNOWN_HOSTS` unset, empty or
+  `default` verifies; `off` disables the check with a warning on every run; any other value is
+  rejected with `CONFIG_INVALID` (issue 038).
 - `security_audit` / `diagnose security` reports only what the controller can show: pending
   adoption, guest-network overstay and the issue-079 rogue classes. The vendor blacklist, the
   `unknown_devices` count and the randomised-MAC risk are gone (a randomised MAC is noted as
@@ -88,13 +95,35 @@ asked GitHub Support to purge the superseded commits from the server's object st
   carries a `limitations` block saying its findings are controller-derived signals, not proof of
   authorisation or of absence of compromise; a check that could not run says "not assessed"
   (issue 080).
-
-### Changed (behaviour)
-
 - `unifi-network-toolkit discover` and `python -m unifi_mapper.cli` preview by default and write
   port names only with `--apply`, like `unifi-mapper discover`; `--dry-run` is still accepted and
   means the default; both flags together exit 2. A script that relied on the old write-by-default
   must add `--apply` (issue 015).
+- `inventory update-firmware` previews by default and triggers the upgrades only with `--apply`,
+  after the confirmation that `--force` skips, like every other writer. `--dry-run` is still
+  accepted and means the default; both flags together exit 2; `--force` on its own previews and
+  says so. A script that upgraded with `--force` must now pass `--apply --force` (issue 077).
+- `get_acl_rules` output carries `metadata.origin` and `portFilter`; the always-empty top-level
+  `origin` and `portsFilter` are gone (`ACLRule.origin` is a read-only property,
+  `ACLTrafficFilter.ports_filter` is `port_filter`). `DNSRecordType` members are `A_RECORD` to
+  `SRV_RECORD` plus `FORWARD_DOMAIN`, the values the API sends (issue 036).
+- `DeviceInfo.is_switch` / `is_router` / `is_access_point` test the reference's `switching`,
+  `gateway` and `accessPoint` feature names instead of `SWITCH`/`ROUTER`/`ACCESS_POINT`; code that
+  compared `features` to the upper-case names should use `feature_names` (issue 036).
+- Without Graphviz's `dot`, `discover` and `diagram` write a placeholder PNG/SVG with a warning
+  naming the install command and still write the report, exiting 0; the leftover DOT source is
+  removed. A script that relied on exit 1 to detect a missing Graphviz should check the warning or
+  install Graphviz (issue 075).
+- The `analyze`, `stp`, `radio`, `ports` and `diagnose` read commands that moved onto the shared
+  read-only runner print a controller failure as `❌ Error: ...` on stderr (was stdout, same
+  text) and exit 1; a script that grepped stdout for it should read stderr (issue 064).
+- Library callers of the Network Integration API models: `DeviceInfo.features` may be a list or
+  an object, so test `is_switch` / `is_router` / `is_access_point` (or `feature_names`) rather
+  than comparing with `SWITCH`/`ROUTER`/`ACCESS_POINT`; `DNSRecordType` members are `A_RECORD`
+  to `SRV_RECORD` and `FORWARD_DOMAIN` (issue 036).
+
+### Changed (behaviour)
+
 - `scripts/unifi-cron.sh` installs six read-only tasks; the port-naming job, which writes port
   names every 30 minutes, is scheduled or run only with `--with-port-naming`. Its launchd plists
   are now valid XML, so macOS schedules load (issue 025). A host that wants the scheduled write
@@ -110,10 +139,6 @@ asked GitHub Support to purge the superseded commits from the server's object st
   its fifteen checks are the shared `diagnostics/run_all.py` table.
 - `unifi-network-toolkit` and `python -m unifi_mapper.cli` honour `UNIFI_CONFIG` and the same XDG
   search as `unifi-mapper`; the toolkit's `--config` default was a hard-coded `prod.env` path.
-- `inventory update-firmware` previews by default and triggers the upgrades only with `--apply`,
-  after the confirmation that `--force` skips, like every other writer. `--dry-run` is still
-  accepted and means the default; both flags together exit 2; `--force` on its own previews and
-  says so. A script that upgraded with `--force` must now pass `--apply --force` (issue 077).
 - `radio optimize` no longer moves one hard-coded AP name off channel 36. Channel moves are a
   site setting: `UNIFI_RADIO_CHANNEL_MOVES=NAME=FROM>TO,…`; unset means no moves (issue 046).
 - The Protect monitor follows every camera unless `PROTECT_CAMERA_HOSTS` (or `--camera-host`)
@@ -128,17 +153,6 @@ asked GitHub Support to purge the superseded commits from the server's object st
   `/proxy/network/integration` first and falls back to the plural on a 404, as the port
   diagnostics do; this costs one `GET /v1/info` per connection, and
   `NetworkConfig.api_base_url` is the documented base (issue 003).
-- `DeviceInfo.is_switch` / `is_router` / `is_access_point` test the reference's `switching`,
-  `gateway` and `accessPoint` feature names instead of `SWITCH`/`ROUTER`/`ACCESS_POINT`; code that
-  compared `features` to the upper-case names should use `feature_names` (issue 036).
-- `get_acl_rules` output carries `metadata.origin` and `portFilter`; the always-empty top-level
-  `origin` and `portsFilter` are gone (`ACLRule.origin` is a read-only property,
-  `ACLTrafficFilter.ports_filter` is `port_filter`). `DNSRecordType` members are `A_RECORD` to
-  `SRV_RECORD` plus `FORWARD_DOMAIN`, the values the API sends (issue 036).
-- Without Graphviz's `dot`, `discover` and `diagram` write a placeholder PNG/SVG with a warning
-  naming the install command and still write the report, exiting 0; the leftover DOT source is
-  removed. A script that relied on exit 1 to detect a missing Graphviz should check the warning or
-  install Graphviz (issue 075).
 - The MQTT bridge's `ImportError` hint reads `uv sync --extra mqtt` (was `uv add aiomqtt`)
   (issue 074).
 - `inspect_switch_port` uses the same guarded `_readonly_sync_client()` path as the other sync
@@ -147,9 +161,6 @@ asked GitHub Support to purge the superseded commits from the server's object st
 - `search_tools` summary results carry `mutates: true` for the three mutating tools, and the
   redacted-failure helper and the 2,000-character error cap live once in `mcp/failure_text.py`
   (issues 022, 067).
-- The `analyze`, `stp`, `radio`, `ports` and `diagnose` read commands that moved onto the shared
-  read-only runner print a controller failure as `❌ Error: ...` on stderr (was stdout, same
-  text) and exit 1; a script that grepped stdout for it should read stderr (issue 064).
 - The MCP `snapshot_radio_config` tool returns the absolute path it wrote (`file`) and the exact
   `unifi-mapper radio restore --snapshot <path>` command (`restore_command`, shell-quoted);
   restore still previews by default. The radio, roaming, config-drift and neighbour path options
@@ -276,11 +287,12 @@ asked GitHub Support to purge the superseded commits from the server's object st
   and a derived host inherits `UNIFI_VERIFY_SSL` so the borrowed token never travels over a
   session the controller family would verify (issue 037).
 - `scripts/onvif_stream.py test-rtsp` probes each stream with one RTSP `DESCRIBE` from this
-  process (Digest, or Basic when that is all the camera offers) instead of running ffprobe with
-  the authenticated URI on its command line, so the ONVIF password no longer appears in the
-  process list; an `OK` line means the camera accepted the account and returned the stream's SDP
-  metadata, not that the stream plays (issue 057).
-
+  process instead of running ffprobe with the authenticated URI on its command line, so the
+  ONVIF password no longer appears in the process list. It answers Digest (MD5, SHA-256 and
+  their `-sess` forms); Basic is sent only when the camera offers nothing else, and a Digest
+  challenge it cannot answer is refused rather than downgraded. Each line says what was proved:
+  authentication accepted, or not assessed when the camera answered without asking; SDP
+  metadata returned, or none. It does not prove the stream plays (issue 057).
 ### Removed
 
 - Internal process documents (`.github/agents/`, `.github/prompts/`, `docs/solutions/`) from the
