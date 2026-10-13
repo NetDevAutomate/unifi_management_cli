@@ -57,6 +57,17 @@ asked GitHub Support to purge the superseded commits from the server's object st
   and docstrings are documentation values (issue 046).
 - The read-only guard refuses a raw request path that starts with `//` (issue 029).
 - The coverage floor is 60 (measured 64%), so the pre-push hook can pass (issue 065).
+- `UniFiNetworkClient` tries the documented Integration API base
+  `/proxy/network/integration` first and falls back to the plural on a 404, as the port
+  diagnostics do; this costs one `GET /v1/info` per connection, and
+  `NetworkConfig.api_base_url` is the documented base (issue 003).
+- `DeviceInfo.is_switch` / `is_router` / `is_access_point` test the reference's `switching`,
+  `gateway` and `accessPoint` feature names instead of `SWITCH`/`ROUTER`/`ACCESS_POINT`; code that
+  compared `features` to the upper-case names should use `feature_names` (issue 036).
+- `get_acl_rules` output carries `metadata.origin` and `portFilter`; the always-empty top-level
+  `origin` and `portsFilter` are gone (`ACLRule.origin` is a read-only property,
+  `ACLTrafficFilter.ports_filter` is `port_filter`). `DNSRecordType` members are `A_RECORD` to
+  `SRV_RECORD` plus `FORWARD_DOMAIN`, the values the API sends (issue 036).
 
 ### Added
 
@@ -83,6 +94,9 @@ asked GitHub Support to purge the superseded commits from the server's object st
   `path SRC DST` (`--analyze` for the path analysis; from controller data, no packet sent) and
   `client-path CLIENT`; `stp path-costs`; `find ip` and `find mac`. Both sides of the parity
   gate now report no gap that is not a recorded decision. 98 commands in all.
+- `INTEGRATION_BASES` in `network/config.py` and `UniFiNetworkClient.base_path_used` (issue 003);
+  `DeviceInterfaces`, `DevicePortInterface`, `DeviceInfo.feature_names`, `ACLRuleMetadata` and
+  `ACLRuleOrigin`, exported from `unifi_mapper.network` (issue 036).
 
 ### Fixed
 
@@ -95,6 +109,15 @@ asked GitHub Support to purge the superseded commits from the server's object st
   counted in `neighbour_aps`, the three loudest listed for context, none a risk or an action
   (issue 079). On a home site this took the report from 619 critical "rogues" and 195 MAC
   anomalies to none and 11.
+- `UniFiNetworkClient.get_device_statistics` reads `/statistics/latest` and `execute_port_action`
+  posts under `/interfaces/ports/{portIdx}/actions`, the reference's paths; the old statistics
+  path answered 404 on Network 10.6 (issue 035).
+- `DeviceInfo` validates what Network 10.6 sends: `state` accepts `ONLINE`, `OFFLINE`,
+  `PENDING_ADOPTION` and `UPDATING` and keeps an unknown state as sent; `features` and
+  `interfaces` take the list and the object shape, so `list_devices` and `get_device` no longer
+  fail. `ACLTrafficFilter` reads `portFilter` and `ACLRule` reads `metadata.origin`, so ACL port
+  filters and the user/system split are no longer silently empty; `DNSPolicyManager` counts the
+  `*_RECORD` types instead of filing every policy under `other_records` (issue 036).
 
 ### Removed
 

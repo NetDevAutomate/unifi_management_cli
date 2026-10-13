@@ -18,7 +18,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | --- | --- | --- |
 | [001](001-stub-commands-do-nothing.md) | `find device`, `analyze link-quality` and `diagnose health` are stubs | resolved (`4195f49`) |
 | [002](002-port-counter-baseline-has-no-producer.md) | The port counter baseline store has no producer | resolved (`9f8c215`) |
-| [003](003-integration-api-undocumented-base-path.md) | The Network Integration API client uses an undocumented base path | open |
+| [003](003-integration-api-undocumented-base-path.md) | The Network Integration API client uses an undocumented base path | resolved (`2533cf6`) |
 | [004](004-no-counter-history.md) | There is no on-disk history of port error counters | resolved (`9f8c215`) |
 | [005](005-pyright-errors-in-protect-monitor.md) | pyright reports 3 errors in `monitors/protect_monitor.py` | resolved (`3368379`) |
 | [006](006-mcp-guide-and-server-docstrings-stale.md) | The MCP guide and server docstrings miss the observability category and new counts | resolved (`ab32faa`) |
@@ -50,8 +50,8 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [032](032-dns-policies-path-not-served.md) | `get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served | resolved (`6fd892c`) |
 | [033](033-client-access-type-default-rejected.md) | `get_clients` returns no clients: `access.type: DEFAULT` fails validation | resolved (`8828255`) |
 | [034](034-protect-has-no-live-account.md) | The Protect MCP tools are unverified live: no Protect account is configured | open |
-| [035](035-device-statistics-and-port-action-paths.md) | The Integration API client's device-statistics and port-action paths aren't served | open |
-| [036](036-integration-api-models-drift-from-the-reference.md) | Integration API models disagree with the v10.6 reference, so some fields are lost | open |
+| [035](035-device-statistics-and-port-action-paths.md) | The Integration API client's device-statistics and port-action paths aren't served | resolved (`b975340`) |
+| [036](036-integration-api-models-drift-from-the-reference.md) | Integration API models disagree with the v10.6 reference, so some fields are lost | resolved (`befe82a`) |
 | [037](037-launch-config-network-family-incomplete.md) | With the legacy config file, the six network_api tools return CONFIG_MISSING | open, decision needed |
 | [038](038-ssh-host-key-verification-disabled.md) | The gateway SSH commands don't verify the gateway's host key (`known_hosts=None`) | open, decision needed |
 | [039](039-promote-the-live-check-harness.md) | Promote the read-only live-check harness into the repo as a config-driven tool | open, decision needed |
