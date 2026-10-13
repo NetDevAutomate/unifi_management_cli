@@ -10,6 +10,7 @@ their own working setup, so the dead one and its two re-exports are deleted.
 from __future__ import annotations
 
 import importlib
+import subprocess
 import pytest
 from pathlib import Path
 
@@ -35,21 +36,22 @@ def test_the_loguru_helper_the_clis_use_stays() -> None:
 
 
 def test_unifi_mapper_debug_is_named_nowhere_but_its_issue() -> None:
-    roots = [
-        REPO / 'src',
-        REPO / 'docs',
-        REPO / 'scripts',
-        REPO / 'README.md',
-        REPO / '.env.example',
-    ]
+    # Tracked files only, as the docs guards do: an untracked, gitignored local directory
+    # (for example docs/artefacts/ on the maintainer's machine) is not part of the project.
+    tracked = subprocess.run(
+        ['git', 'ls-files', 'src', 'docs', 'scripts', 'README.md', '.env.example'],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
     hits: list[str] = []
-    for root in roots:
-        files = [root] if root.is_file() else sorted(p for p in root.rglob('*') if p.is_file())
-        for path in files:
-            if '__pycache__' in path.parts or path.suffix in {'.pyc', '.png', '.svg'}:
-                continue
-            if path.parent == REPO / 'docs' / 'issues':
-                continue  # the issue files are the record of what was removed
-            if 'UNIFI_MAPPER_DEBUG' in path.read_text(encoding='utf-8', errors='ignore'):
-                hits.append(str(path.relative_to(REPO)))
+    for name in tracked:
+        path = REPO / name
+        if path.suffix in {'.pyc', '.png', '.svg'}:
+            continue
+        if path.parent == REPO / 'docs' / 'issues':
+            continue  # the issue files are the record of what was removed
+        if 'UNIFI_MAPPER_DEBUG' in path.read_text(encoding='utf-8', errors='ignore'):
+            hits.append(name)
     assert hits == []

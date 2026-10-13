@@ -57,12 +57,12 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [039](039-promote-the-live-check-harness.md) | Promote the read-only live-check harness into the repo as a config-driven tool | open, decision needed |
 | [040](040-real-identifiers-in-tests.md) | Test fixtures carried MAC addresses and addresses from the live network | resolved (`2650809`) |
 | [041](041-onvif-scripts-hard-code-cameras.md) | The ONVIF scripts hard-coded the site's cameras, and `onvif_stream.py` a camera password that is in pushed history | resolved (`2650809`) |
-| [042](042-settings-with-no-effect.md) | Five documented settings have no effect on `unifi-mapper` | open, decision needed |
+| [042](042-settings-with-no-effect.md) | Five documented settings have no effect on `unifi-mapper` | resolved (`38594dd`) |
 | [043](043-inventory-ignores-the-root-config.md) | `unifi-mapper inventory` ignores the root `--config` and `UNIFI_CONFIG` | resolved (`9e506f0`) |
-| [044](044-discover-mermaid-and-dot-write-a-placeholder.md) | `discover --format mermaid` and `--format dot` write a placeholder, not a diagram | open, decision needed |
-| [045](045-configure-logging-is-never-called.md) | `configure_logging` is never called, so `UNIFI_MAPPER_DEBUG` does nothing | open, decision needed |
+| [044](044-discover-mermaid-and-dot-write-a-placeholder.md) | `discover --format mermaid` and `--format dot` write a placeholder, not a diagram | resolved (`9b403ab`) |
+| [045](045-configure-logging-is-never-called.md) | `configure_logging` is never called, so `UNIFI_MAPPER_DEBUG` does nothing | resolved (`70bbf8b`) |
 | [046](046-real-device-names-in-code-and-history.md) | Tests, scripts and docstrings carried the site's device and room names; the history still does | resolved (`2650809`) |
-| [047](047-install-completions-fish-and-all-fail.md) | `unifi-mapper install-completions` accepts `fish` and `all` but installs only bash and zsh | open |
+| [047](047-install-completions-fish-and-all-fail.md) | `unifi-mapper install-completions` accepts `fish` and `all` but installs only bash and zsh | resolved (`3951920`) |
 | [048](048-cli-and-mcp-config-searches-differ.md) | With `XDG_CONFIG_HOME` set, the CLI and the MCP server search different config files | open, decision needed |
 | [049](049-lines-over-99-characters.md) | At `3ea7243`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it | open, decision needed |
 | [050](050-latency-matrix-errors-bypass-the-ssh-error-path.md) | `diagnose latency-matrix` reports errors on stdout and unredacted, unlike `diagnose bandwidth` | resolved (`7b1ef78`) |
@@ -89,8 +89,8 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [071](071-late-vlan-samples-never-reach-the-rollups.md) | A VLAN traffic sample written two hours or more late, into an hour already rolled, never reaches the hourly or daily rollups | open |
 | [072](072-vlan-intervals-span-a-sampler-outage.md) | A VLAN traffic interval can span a sampler outage, so one fresh sample reports days of traffic as current | open, decision needed |
 | [073](073-gateway-ping-step-duplicated.md) | The gateway ping step is written twice, in gateway ping and in AP-health's client pings | open |
-| [074](074-mqtt-needs-an-undeclared-dependency.md) | MQTT support needs aiomqtt, which the project does not declare (its hint and the README now name `uv add aiomqtt`) | open, decision needed |
-| [075](075-discover-needs-graphviz-dot-undocumented.md) | `discover` needs Graphviz's `dot` program for its PNG and SVG diagrams and exits 1 without it, writing no report (the docs now name it) | open |
+| [074](074-mqtt-needs-an-undeclared-dependency.md) | MQTT support needs aiomqtt, which the project does not declare (its hint and the README now name `uv add aiomqtt`) | resolved (`df3d905`) |
+| [075](075-discover-needs-graphviz-dot-undocumented.md) | `discover` needs Graphviz's `dot` program for its PNG and SVG diagrams and exits 1 without it, writing no report (the docs now name it) | resolved (`21f728b`) |
 | [076](076-0.2.0-port-final-review-follow-ups.md) | Follow-ups from the 0.2.0 port's final review that were not fixed on the branch | open, decision needed |
 | [077](077-update-firmware-confirms-instead-of-previewing.md) | `inventory update-firmware` writes after a confirmation prompt, not a preview | open, decision needed |
 | [078](078-cli-and-mcp-feature-parity-is-not-enforced.md) | The CLI and the MCP server do not have feature parity, and nothing checks that they do | resolved (`4d55fa0`) |

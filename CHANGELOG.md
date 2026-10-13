@@ -22,6 +22,15 @@ changed; the tree at the tip did not (the code is identical). `main` was force-p
 The removed credentials were rotated or belong to decommissioned services. The maintainer has
 asked GitHub Support to purge the superseded commits from the server's object store and caches.
 
+### Breaking
+
+- `discover --format` defaults to `UNIFI_DEFAULT_FORMAT` (then `png`) instead of always `png`,
+  and `discover` output paths honour `UNIFI_OUTPUT_DIR` and `UNIFI_DIAGRAM_DIR`;
+  `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` reach every API client the CLIs build. A config
+  file that already set these values will see them applied for the first time (issue 042).
+- `configure_logging` was removed from `unifi_mapper.core` and `unifi_mapper.core.utils`, and
+  `UNIFI_MAPPER_DEBUG` is no longer read; nothing in the project called it (issue 045).
+
 ### Changed (behaviour)
 
 - `unifi-network-toolkit discover` and `python -m unifi_mapper.cli` preview by default and write
@@ -68,6 +77,12 @@ asked GitHub Support to purge the superseded commits from the server's object st
   `origin` and `portsFilter` are gone (`ACLRule.origin` is a read-only property,
   `ACLTrafficFilter.ports_filter` is `port_filter`). `DNSRecordType` members are `A_RECORD` to
   `SRV_RECORD` plus `FORWARD_DOMAIN`, the values the API sends (issue 036).
+- Without Graphviz's `dot`, `discover` and `diagram` write a placeholder PNG/SVG with a warning
+  naming the install command and still write the report, exiting 0; the leftover DOT source is
+  removed. A script that relied on exit 1 to detect a missing Graphviz should check the warning or
+  install Graphviz (issue 075).
+- The MQTT bridge's `ImportError` hint reads `uv sync --extra mqtt` (was `uv add aiomqtt`)
+  (issue 074).
 
 ### Added
 
@@ -97,6 +112,10 @@ asked GitHub Support to purge the superseded commits from the server's object st
 - `INTEGRATION_BASES` in `network/config.py` and `UniFiNetworkClient.base_path_used` (issue 003);
   `DeviceInterfaces`, `DevicePortInterface`, `DeviceInfo.feature_names`, `ACLRuleMetadata` and
   `ACLRuleOrigin`, exported from `unifi_mapper.network` (issue 036).
+- `discover --format dot` writes the Graphviz source and `--format mermaid` writes a Mermaid
+  `graph TB` of the topology; both were one-line placeholders (issue 044).
+- Optional extra `mqtt` (`aiomqtt>=2,<3`) for the Home Assistant MQTT bridge:
+  `uv sync --extra mqtt` (issue 074).
 
 ### Fixed
 
@@ -118,6 +137,9 @@ asked GitHub Support to purge the superseded commits from the server's object st
   fail. `ACLTrafficFilter` reads `portFilter` and `ACLRule` reads `metadata.origin`, so ACL port
   filters and the user/system split are no longer silently empty; `DNSPolicyManager` counts the
   `*_RECORD` types instead of filing every policy under `other_records` (issue 036).
+- `unifi-mapper install-completions` installs what its help offers: `all` installs bash and zsh,
+  `fish` is refused with a pointer to `--install-completion`, and a failed installation exits 1
+  instead of 0 (issue 047).
 
 ### Removed
 
