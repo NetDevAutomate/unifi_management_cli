@@ -90,15 +90,20 @@ unifi-mapper --help
 
 The CLI reads the first of these (`cli.get_default_config_path`):
 
-1. `--config PATH`, or `UNIFI_CONFIG=PATH` (the `inventory` commands take their own
+1. `--config PATH`, or `UNIFI_CONFIG=PATH` (the inventory commands take their own
    `--config` instead, [issue 043](../issues/043-inventory-ignores-the-root-config.md))
-2. `prod.env` in `$XDG_CONFIG_HOME/unifi_management_cli/`, or in
-   `~/.config/unifi_management_cli/` when `XDG_CONFIG_HOME` is unset
-3. `default.env` in that same directory
-4. `.env` in the current directory (legacy fallback)
+2. `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` when
+   `XDG_CONFIG_HOME` is set to an absolute path (a relative one is ignored, as the XDG spec
+   says)
+3. `prod.env`, then `default.env`, in `~/.config/unifi_management_cli/`
+4. the legacy `~/.config/unifi_network_mapper/prod.env` (loaded with a deprecation warning)
+5. `.env` in the current directory (deprecated: loaded with a warning on stderr before any
+   controller connection; removed in 0.4.0. Name it with `--config ./.env` or
+   `UNIFI_CONFIG=./.env` instead)
 
-A set `XDG_CONFIG_HOME` replaces `~/.config` here, while the MCP server tries both
-([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
+This is the MCP server's search too (one shared function,
+`core/utils/config_search.py`), minus step 5: the server never reads a `.env` in its
+working directory ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
 
 **Resolution**:
 
@@ -114,7 +119,7 @@ uv run unifi-mapper --config /path/to/my.env discover
 
 #### Prevention
 
-Keep a `prod.env` at the XDG standard path. Never use `.env` in the working directory for production; it is a legacy fallback only.
+Keep a `prod.env` at the XDG standard path. Never rely on a `.env` in the working directory: the fallback is deprecated, warns on every run and is removed in 0.4.0; name such a file with `--config ./.env` or `UNIFI_CONFIG=./.env`.
 
 #### A Root Flag Exits 2
 

@@ -135,7 +135,12 @@ def main(
         typer.Option(
             '--config',
             '-c',
-            help='📁 Path to .env configuration file',
+            help=(
+                '📁 Path to .env configuration file (default: UNIFI_CONFIG, then '
+                '$XDG_CONFIG_HOME or ~/.config/unifi_management_cli/{prod,default}.env, then '
+                'the legacy ~/.config/unifi_network_mapper/prod.env, then ./.env with a '
+                'deprecation warning; ./.env is removed in 0.4.0)'
+            ),
             envvar='UNIFI_CONFIG',
         ),
     ] = None,

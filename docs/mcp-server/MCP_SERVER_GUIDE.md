@@ -52,7 +52,7 @@ src/unifi_mapper/mcp/
 | uvx, git | `uvx --python 3.12 --from git+https://github.com/NetDevAutomate/unifi_management_cli@v0.2.0 unifi-mcp` | Serves what is pushed and tagged on GitHub. Until `main` is pushed and `v0.2.0` is tagged, this mode serves an older release (a user action, design D7) |
 | Installed tool | `uv tool install --python 3.12 /ABS/PATH/TO/unifi_management_cli`, then point the client at the absolute path of the installed `unifi-mcp` (usually `~/.local/bin/unifi-mcp`) | GUI apps start with a minimal `PATH`, so use the absolute path |
 | Legacy dev | `uv --directory /ABS/PATH/TO/unifi_management_cli run unifi-mcp` with `UNIFI_CONFIG=/path/to/prod.env` in the client's `env` | Runs from the repo's `.venv` and `uv.lock` |
-| Legacy wrapper | `scripts/unifi-mcp-launch.sh` | Sources `$UNIFI_MCP_ENV` (default `${XDG_CONFIG_HOME:-~/.config}/unifi_management_cli/prod.env`), exports every key, then runs the legacy dev command. Still supported, unchanged |
+| Legacy wrapper | `scripts/unifi-mcp-launch.sh` | Sources `$UNIFI_MCP_ENV` (default `$XDG_CONFIG_HOME/unifi_management_cli/prod.env` when that variable is absolute, else `~/.config/unifi_management_cli/prod.env`), exports every key, then runs the legacy dev command. Still supported |
 
 Only the two legacy modes read `uv.lock`. The uvx and installed-tool modes resolve from the
 dependency bounds in `pyproject.toml`. The cache keys below also apply to the legacy modes'
@@ -102,7 +102,8 @@ whatever the MCP client chose). It picks **one** env file, first match wins:
 2. `UNIFI_CONFIG=/path/to/file.env` (a leading `~` is expanded). If that file is missing, the
    server warns on stderr, loads **no** file (it never falls through to another, which might be
    a different site) and still starts.
-3. `$XDG_CONFIG_HOME/unifi_management_cli/prod.env`, then `default.env`.
+3. `$XDG_CONFIG_HOME/unifi_management_cli/prod.env`, then `default.env`, when `XDG_CONFIG_HOME`
+   is set to an absolute path (a relative one is ignored, as the XDG spec says).
 4. `~/.config/unifi_management_cli/prod.env`, then `default.env`.
 5. `~/.config/unifi_network_mapper/prod.env` (legacy; loaded with a deprecation warning).
 6. Nothing: the server still starts. `search_tools`, `get_tool_info` and the resources work;

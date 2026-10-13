@@ -106,9 +106,12 @@ uv run unifi-mapper discover --format html --apply  # only when the preview look
 `diagnose all` prints one line per check (`✅`, `⚠️` or `❌` with the finding), then a
 pass/warn/fail count; it exits 2 when any check fails, so it works in a script or a cron job.
 
-`unifi-mapper` finds the config at `--config PATH` or `UNIFI_CONFIG`, else
-`${XDG_CONFIG_HOME:-~/.config}/unifi_management_cli/prod.env`, then `default.env` there, then
-`./.env`. When none exists it lists every path it tried. [`.env.example`](.env.example)
+`unifi-mapper` and `unifi-mcp` share one config search: `--config PATH` or `UNIFI_CONFIG`,
+else `$XDG_CONFIG_HOME/unifi_management_cli/{prod,default}.env` (an absolute
+`XDG_CONFIG_HOME` only), then `~/.config/unifi_management_cli/{prod,default}.env`, then the
+legacy `~/.config/unifi_network_mapper/prod.env` with a warning. The CLI alone still reads
+`./.env` last, with a deprecation warning; that fallback is removed in 0.4.0. When none
+exists it lists every path it tried. [`.env.example`](.env.example)
 documents every key, including the optional gateway SSH, Network Integration API and Protect
 settings.
 
