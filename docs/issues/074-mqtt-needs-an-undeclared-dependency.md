@@ -1,7 +1,8 @@
 ---
 title: "MQTT support needs aiomqtt, which the project does not declare"
 date: 2026-10-06
-status: open, decision needed
+status: resolved
+resolved_by: df3d905
 severity: low
 components: [protect/mqtt, pyproject.toml]
 found_by: 0.2.0 port (while fixing a review finding)
@@ -39,3 +40,18 @@ Declare the package, then make the hint the command that installs it:
 
 The decision needed is 014's: whether optional features get extras. Test: the `ImportError`'s
 hint names that uv command, and the extra (if chosen) resolves in `uv.lock`.
+
+## Resolution
+
+Resolved on 2026-10-13 (`df3d905`) with the first option: `aiomqtt` is the optional extra
+`mqtt = ["aiomqtt>=2,<3"]` under `[project.optional-dependencies]`, resolved in `uv.lock`
+(aiomqtt 2.5.1 with paho-mqtt 2.1.0); a plain `uv sync` still leaves it out, so every
+install does not carry an MQTT client it may never use. The `ImportError` hint now reads
+`Install it with: uv sync --extra mqtt`, and the README's limitation bullet, the Protect
+guide and the use-cases guide (prerequisite and error table) name that command instead of
+`uv add aiomqtt` / `uv run --with aiomqtt`.
+
+This answers [issue 014](014-optional-dependency-extras.md)'s question for MQTT only; the
+Protect, backup and ONVIF extras it asks about are not decided here. Test:
+`tests/protect/test_mqtt.py::TestMQTTBridgeLifecycle::test_start_without_aiomqtt_raises`
+asserts the hint names `uv sync --extra mqtt` and no longer `uv add aiomqtt`.
