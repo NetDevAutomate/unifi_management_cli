@@ -167,6 +167,8 @@ def _digest_authorization(
         parts += [f'qop={qop}', 'nc=00000001', f'cnonce="{cnonce}"']
     else:
         response = h(f'{ha1}:{nonce}:{ha2}')
+        if algorithm.endswith('-SESS'):
+            parts.append(f'cnonce="{cnonce}"')  # it entered HA1, so the camera needs it
     parts.append(f'response="{response}"')
     if fields.get('opaque'):
         parts.append(f'opaque="{fields["opaque"]}"')
@@ -182,12 +184,22 @@ def _authorization(
         ``(scheme, header value)`` with scheme ``'digest'`` or ``'basic'``, or None when the
         camera offered neither.
     """
+    digest_offered: list[str] = []
     for challenge in challenges:
         scheme, _, params = challenge.strip().partition(' ')
         if scheme.lower() == 'digest':
             value = _digest_authorization(params, user, password, method=method, uri=uri)
             if value:
                 return 'digest', value
+            digest_offered.append(_parse_auth_params(params).get('algorithm', 'MD5'))
+    if digest_offered:
+        # Basic would send the password base64-encoded; it is used only when the camera offers
+        # nothing else, never as a downgrade from a Digest challenge this probe cannot answer.
+        raise RtspError(
+            'the camera offered Digest with an algorithm this probe does not speak ('
+            + ', '.join(digest_offered)
+            + '); Basic is not tried in its place'
+        )
     for challenge in challenges:
         if challenge.strip().lower().startswith('basic'):
             token = base64.b64encode(f'{user}:{password}'.encode()).decode()
@@ -313,6 +325,33 @@ async def rtsp_describe(
         return await asyncio.wait_for(exchange(), timeout)
     except asyncio.TimeoutError as e:
         raise RtspError(f'timed out after {timeout:g}s waiting for {host}:{port}') from e
+
+
+_CONTROL_CHARS = re.compile(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]')
+
+
+def _describe_outcome(result: DescribeResult, config: CameraConfig) -> str:
+    """One line saying exactly what the DESCRIBE proved (council pass B, findings M2 and M4).
+
+    Authentication is "accepted" only when the camera challenged and then answered 200; a camera
+    that answers without asking proves nothing about the account. Metadata is claimed only for a
+    body that is SDP (``v=0`` and at least one ``m=`` line). Camera-supplied text is masked and
+    stripped of control characters before it is printed.
+    """
+    if result.auth == 'none':
+        auth = 'authentication not assessed: the camera answered without asking for credentials'
+        mark = '⚠️'
+    else:
+        auth = f'authentication accepted ({result.auth.title()})'
+        mark = '✅'
+    media = result.media() if result.sdp.lstrip().startswith('v=0') else []
+    if media:
+        shown = _CONTROL_CHARS.sub('', _redact(', '.join(media), config))
+        what = f'SDP returned: {shown}. Metadata only: this does not pull video.'
+    else:
+        what = 'no SDP metadata in the answer.'
+        mark = '⚠️'
+    return f'{mark} DESCRIBE answered: {auth}; {what}'
 
 
 def _strip_userinfo(uri: str) -> str:
@@ -472,11 +511,7 @@ async def check_rtsp(config: CameraConfig) -> None:
         except RtspError as e:
             print(f'  ❌ DESCRIBE failed: {_redact(e, config)}')
         else:
-            media_lines = ', '.join(result.media()) or 'no media lines in the SDP'
-            print(
-                f'  ✅ DESCRIBE accepted ({result.auth} auth), SDP returned: {media_lines}. '
-                'Metadata only: this does not pull video.'
-            )
+            print(f'  {_describe_outcome(result, config)}')
 
         await camera.close()
     except Exception as e:

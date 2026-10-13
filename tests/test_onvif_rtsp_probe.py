@@ -56,12 +56,23 @@ class FakeRtspCamera:
     """An RTSP server that answers DESCRIBE after Digest (or Basic) authentication."""
 
     def __init__(
-        self, path: Path, *, password: str, schemes: tuple[str, ...] = ('Digest',), qop: bool
+        self,
+        path: Path,
+        *,
+        password: str,
+        schemes: tuple[str, ...] = ('Digest',),
+        qop: bool,
+        algorithm: str = 'MD5',
+        open_access: bool = False,
+        sdp: str | None = None,
     ) -> None:
         self.path = path
         self.password = password
         self.schemes = schemes
         self.qop = qop
+        self.algorithm = algorithm
+        self.open_access = open_access  # answers DESCRIBE without asking for credentials
+        self.sdp = SDP if sdp is None else sdp
         self.received: list[bytes] = []
         self.requests: list[dict[str, str]] = []
         self._server: asyncio.AbstractServer | None = None
@@ -89,7 +100,7 @@ class FakeRtspCamera:
                 qop = ', qop="auth"' if self.qop else ''
                 lines.append(
                     f'WWW-Authenticate: Digest realm="{REALM}", nonce="{NONCE}", '
-                    f'algorithm=MD5, stale=FALSE{qop}\r\n'
+                    f'algorithm={self.algorithm}, stale=FALSE{qop}\r\n'
                 )
             else:
                 lines.append(f'WWW-Authenticate: Basic realm="{REALM}"\r\n')
@@ -111,6 +122,10 @@ class FakeRtspCamera:
         if fields.get('nonce') != NONCE or not fields.get('uri'):
             return False
         ha1 = _h(f'{USER}:{REALM}:{self.password}')
+        if self.algorithm.upper() == 'MD5-SESS':
+            if not fields.get('cnonce'):
+                return False  # the client hashed a cnonce it did not send
+            ha1 = _h(f'{ha1}:{NONCE}:{fields["cnonce"]}')
         ha2 = _h(f'{method}:{fields["uri"]}')
         if self.qop:
             if fields.get('qop') != 'auth' or not fields.get('cnonce') or not fields.get('nc'):
@@ -136,7 +151,7 @@ class FakeRtspCamera:
                 }
                 cseq = headers.get('cseq', '0')
                 auth = headers.get('authorization', '')
-                if not auth or not self._authorised(method, auth):
+                if not self.open_access and (not auth or not self._authorised(method, auth)):
                     writer.write(
                         f'RTSP/1.0 401 Unauthorized\r\nCSeq: {cseq}\r\n'
                         f'{self._challenge()}\r\n'.encode()
@@ -144,7 +159,7 @@ class FakeRtspCamera:
                 elif method != 'DESCRIBE' or not uri.endswith(STREAM_PATH):
                     writer.write(f'RTSP/1.0 404 Not Found\r\nCSeq: {cseq}\r\n\r\n'.encode())
                 else:
-                    body = SDP.encode()
+                    body = self.sdp.encode()
                     writer.write(
                         f'RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nContent-Type: application/sdp\r\n'
                         f'Content-Base: {uri}/\r\nContent-Length: {len(body)}\r\n\r\n'.encode()
@@ -347,3 +362,78 @@ def test_the_command_promises_only_what_it_checks(stream: Any) -> None:
     doc = (stream.check_rtsp.__doc__ or '') + (stream.__doc__ or '')
     assert 'DESCRIBE' in doc and 'does not' in doc
     assert 'ffprobe' not in doc.lower()
+
+
+# --- council pass B (M2-M4): fail closed, say what was proved, print nothing the camera chose --
+
+
+async def test_basic_is_never_sent_when_the_camera_offered_digest(stream: Any, sock: Path) -> None:
+    """A Digest challenge this probe cannot answer is a refusal, not a reason to send Basic."""
+    async with FakeRtspCamera(
+        sock, password=FAKE_PASSWORD, schemes=('Digest', 'Basic'), qop=False, algorithm='SHA-512'
+    ) as cam:
+        with pytest.raises(stream.RtspError) as excinfo:
+            await stream.rtsp_describe(
+                _bare_uri(), USER, FAKE_PASSWORD, timeout=5, open_connection=cam.open
+            )
+    assert 'SHA-512' in str(excinfo.value)
+    assert not any(b'Authorization: Basic' in raw for raw in cam.received)
+
+
+async def test_md5_sess_without_qop_sends_the_cnonce_it_hashed(stream: Any, sock: Path) -> None:
+    async with FakeRtspCamera(
+        sock, password=FAKE_PASSWORD, qop=False, algorithm='MD5-sess'
+    ) as cam:
+        result = await stream.rtsp_describe(
+            _bare_uri(), USER, FAKE_PASSWORD, timeout=5, open_connection=cam.open
+        )
+    assert result.status == 200 and result.auth == 'digest'
+
+
+async def test_a_camera_that_never_asks_for_credentials_is_not_assessed(
+    stream: Any, sock: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unauthenticated 200 proves nothing about the account and must not read as accepted."""
+
+    async def _get_camera(camera_config: Any) -> Any:
+        return _fake_camera(_bare_uri())
+
+    monkeypatch.setattr(stream, 'get_camera', _get_camera)
+    async with FakeRtspCamera(sock, password=FAKE_PASSWORD, qop=False, open_access=True) as cam:
+        monkeypatch.setattr(stream, 'OPEN_CONNECTION', cam.open)
+        await stream.check_rtsp(_camera_config(stream))
+    out = capsys.readouterr().out
+    assert 'authentication not assessed' in out
+    assert 'accepted' not in out
+
+
+async def test_camera_supplied_sdp_text_is_redacted_and_stripped_before_printing(
+    stream: Any, sock: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    hostile = f'v=0\r\nm=video 0 RTP/AVP 96 {FAKE_PASSWORD}\x1b[2J\r\na=rtpmap:96 H264/90000\r\n'
+
+    async def _get_camera(camera_config: Any) -> Any:
+        return _fake_camera(_bare_uri())
+
+    monkeypatch.setattr(stream, 'get_camera', _get_camera)
+    async with FakeRtspCamera(sock, password=FAKE_PASSWORD, qop=True, sdp=hostile) as cam:
+        monkeypatch.setattr(stream, 'OPEN_CONNECTION', cam.open)
+        await stream.check_rtsp(_camera_config(stream))
+    captured = capsys.readouterr()
+    assert FAKE_PASSWORD not in captured.out + captured.err
+    assert '\x1b' not in captured.out + captured.err
+
+
+async def test_a_200_without_usable_sdp_is_not_reported_as_metadata(
+    stream: Any, sock: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def _get_camera(camera_config: Any) -> Any:
+        return _fake_camera(_bare_uri())
+
+    monkeypatch.setattr(stream, 'get_camera', _get_camera)
+    async with FakeRtspCamera(sock, password=FAKE_PASSWORD, qop=True, sdp='not sdp at all') as cam:
+        monkeypatch.setattr(stream, 'OPEN_CONNECTION', cam.open)
+        await stream.check_rtsp(_camera_config(stream))
+    out = capsys.readouterr().out
+    assert 'no SDP' in out
+    assert 'SDP returned' not in out
