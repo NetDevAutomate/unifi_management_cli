@@ -594,6 +594,19 @@ def test_the_run_scan_sees_a_connection_however_it_was_bound() -> None:
     assert _ssh_run_uses(ast.parse(sample)) == [2, 4, 8, 10, 15]
 
 
+async def test_the_ssh_fake_refuses_a_command_its_replies_do_not_name() -> None:
+    """Issue 076 item 16: with ``replies`` set, the fake answered an unknown command with a
+    success-shaped ping reply, so a test could pass on a command it never scripted."""
+    scripted = FakeSSH({'ping': 'pong\n'})
+    conn = await scripted('192.0.2.1')
+    assert (await conn.run('ping -c 1 192.0.2.10')).stdout == 'pong\n'
+    with pytest.raises(AssertionError, match='traceroute'):
+        await conn.run('traceroute 192.0.2.10')
+    unscripted = await FakeSSH()('192.0.2.1')  # no replies: the ping and iperf3 defaults stay
+    assert 'packets transmitted' in (await unscripted.run('ping -c 1 192.0.2.10')).stdout
+    assert 'bits_per_second' in (await unscripted.run('iperf3 -c 192.0.2.10 -J')).stdout
+
+
 async def test_a_real_connect_fails_in_every_test() -> None:
     with pytest.raises(AssertionError, match='live SSH in a test'):
         await asyncssh.connect('192.0.2.1')

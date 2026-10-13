@@ -15,7 +15,7 @@ import pytest
 import shlex
 import typer
 from tests.fake_controller import API, FakeController, legacy, route_cli, serving
-from tests.fake_ssh import FakeSSH
+from tests.fake_ssh import PING_OK, FakeSSH
 from tests.fixtures_unifi import FAKE_TOKEN
 from typer.testing import CliRunner
 from typing import Any
@@ -112,6 +112,7 @@ CLIENTS = [
     {'name': 'Phone A', 'hostname': 'phone-a', 'mac': '02:00:00:00:02:01', 'ip': '192.0.2.50'},
 ]
 REPLIES: dict[str, Any] = {
+    'ping': PING_OK,  # scripted: the fake no longer answers an unnamed program (issue 076/16)
     'traceroute': TRACEROUTE_OUTPUT,
     'conntrack': CONNTRACK_OUTPUT,
     'nslookup': NSLOOKUP_OK,

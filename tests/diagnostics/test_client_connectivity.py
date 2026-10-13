@@ -16,6 +16,7 @@ import pytest
 import shlex
 import typer
 from tests.fake_controller import API, FakeController, legacy, route_cli, serving
+from tests.fake_ssh import PING_OK as SSH_PING_OK
 from tests.fake_ssh import FakeSSH
 from tests.fixtures_unifi import FAKE_TOKEN
 from typer.testing import CliRunner
@@ -146,6 +147,7 @@ CONNTRACK = (
     'src=203.0.113.10 dst=192.0.2.2 sport=443 dport=52341 [ASSURED] mark=0 use=1\n'
 )
 REPLIES: dict[str, Any] = {
+    'ping': SSH_PING_OK,  # scripted: the fake no longer answers an unnamed program (076/16)
     'nslookup': NSLOOKUP_OK,
     'curl': '200 0.050000 203.0.113.10',
     'conntrack': CONNTRACK,
