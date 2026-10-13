@@ -46,7 +46,10 @@ from unittest.mock import AsyncMock
 SITE_ID = '550e8400-e29b-41d4-a716-446655440000'
 NETWORK_HOST = '192.0.2.1'
 PROTECT_HOST = '192.0.2.10'
-INTEGRATION = f'/proxy/network/integrations/v1/sites/{SITE_ID}/'
+API = '/proxy/network/integration/v1/'
+INTEGRATION = f'{API}sites/{SITE_ID}/'
+# The client's one base-path probe per connection (issue 003): a GET the guard lets through.
+PROBE = ('GET', f'{API}info')
 NETWORK_TOOLS = [
     'get_firewall_zones',
     'get_firewall_policies',
@@ -179,8 +182,8 @@ async def test_each_network_tool_sends_only_audited_gets(
     result = await getattr(network_tools, tool)()
     assert (result['clients'] if tool == 'get_clients' else result) == []  # a page of none
 
-    assert recorder.calls, 'the tool sent no request'
-    assert all(m == 'GET' and p.startswith(INTEGRATION) for m, p in recorder.calls), recorder.calls
+    assert recorder.calls[0] == PROBE and len(recorder.calls) > 1, 'the tool sent no request'
+    assert all(m == 'GET' and p.startswith(API) for m, p in recorder.calls), recorder.calls
     lines = _audit_lines(sink)
     assert [(line['method'], line['path']) for line in lines] == recorder.calls
     assert all(set(line) == {'t', 'method', 'path'} for line in lines)
@@ -271,8 +274,9 @@ async def test_network_writes_are_refused_before_any_io(
     async with network_tools._read_only_client() as client:
         with pytest.raises(ReadOnlyViolation):
             await getattr(client, method)(*args, **kwargs)
-    assert recorder.calls == []
-    assert _audit_lines(sink) == []
+    # Only the base-path probe went out; the write itself never reached the transport.
+    assert recorder.calls == [PROBE]
+    assert [(line['method'], line['path']) for line in _audit_lines(sink)] == [PROBE]
 
 
 async def test_a_write_inside_a_network_tool_is_read_only_violation(
@@ -293,7 +297,7 @@ async def test_a_write_inside_a_network_tool_is_read_only_violation(
 
     assert out.structuredContent is not None
     assert out.structuredContent['error_code'] == ErrorCodes.READ_ONLY_VIOLATION
-    assert recorder.calls == []
+    assert recorder.calls == [PROBE]
 
 
 # --- protect --------------------------------------------------------------------------------
