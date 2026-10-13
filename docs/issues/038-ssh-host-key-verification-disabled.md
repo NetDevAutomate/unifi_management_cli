@@ -102,3 +102,12 @@ rejected values. README, SECURITY, the CLI reference, the runbook, `.env.example
 architecture overview describe the new default; the runbook shows the refusal and the one
 command that clears it. Breaking for anyone who never ran `ssh` to the gateway from the same
 account (decision D-038 of the 0.3.0 release council).
+
+The connection-level tests above stub `asyncssh.connect`, which proves the arguments and the
+error mapping but not the library's ordering. `tests/analysis/test_gateway_ssh_handshake.py`
+(added after the release council's validation pass) runs a real asyncssh server over a Unix
+socket pair, counts every password it is offered, and calls the real `asyncssh.connect` with
+`gateway_connect_options`, the exact keyword set `gateway_session` uses: a missing and a
+changed host key both end the handshake with `HostKeyNotVerifiable` and zero passwords received,
+and a trusted key authenticates. With `known_hosts` forced back to `None` both refusal tests
+fail, so they guard the defect this issue fixed.

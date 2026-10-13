@@ -25,6 +25,7 @@ from collections.abc import AsyncIterator, Container, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from loguru import logger
+from typing import Any
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.redact import redact_text
@@ -168,6 +169,31 @@ def _host_key_error(username: str, target: str, suggestion: str) -> ToolError:
     )
 
 
+def gateway_connect_options(
+    username: str, password: str, *, known_hosts: tuple[()] | str | None
+) -> dict[str, Any]:
+    """The keyword arguments ``gateway_session`` passes to ``asyncssh.connect``.
+
+    One place, so the real-handshake test (``tests/analysis/test_gateway_ssh_handshake.py``)
+    connects with exactly what production uses.
+
+    Args:
+        username: The SSH user.
+        password: The SSH password; asyncssh offers it only after the host key is accepted.
+        known_hosts: ``()`` for asyncssh's default files, a path, or ``None`` for no checking.
+
+    Returns:
+        The options, without the host.
+    """
+    return {
+        'username': username,
+        'password': password,
+        'known_hosts': known_hosts,
+        'client_keys': [],  # don't try local SSH keys
+        'preferred_auth': 'keyboard-interactive,password',
+    }
+
+
 @asynccontextmanager
 async def gateway_session(
     host: str | None = None,
@@ -206,12 +232,7 @@ async def gateway_session(
     try:
         async with asyncio.timeout(connect_timeout):
             conn = await asyncssh.connect(
-                target,
-                username=username,
-                password=password,
-                known_hosts=known_hosts,
-                client_keys=[],  # don't try local SSH keys
-                preferred_auth='keyboard-interactive,password',
+                target, **gateway_connect_options(username, password, known_hosts=known_hosts)
             )
     except TimeoutError:
         raise ToolError(
