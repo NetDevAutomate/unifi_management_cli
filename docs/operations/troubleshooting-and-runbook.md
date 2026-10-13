@@ -1440,7 +1440,7 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_TIMEOUT` | No | `10` | `1`-`300` (seconds) | Per-request connection timeout. Clamped to 1-300. |
 | `UNIFI_MAX_RETRIES` | No | `3` | `1`-`10` | Parsed and clamped, but no effect on `unifi-mapper` yet ([issue 042](../issues/042-settings-with-no-effect.md)); requests keep 3 attempts. |
 | `UNIFI_RETRY_DELAY` | No | `1.0` | `0.1`-`10.0` (seconds) | Parsed and clamped, but no effect on `unifi-mapper` yet (issue 042); the back-off starts at 1.0 s. |
-| `UNIFI_DEFAULT_FORMAT` | No | `png` | `png`, `svg`, `html`, `mermaid`, `dot` | No effect on `unifi-mapper` (issue 042): only the legacy `python -m unifi_mapper.cli` reads it. `mermaid` and `dot` write a placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)). |
+| `UNIFI_DEFAULT_FORMAT` | No | `png` | `png`, `svg`, `html`, `mermaid`, `dot` | No effect on `unifi-mapper` (issue 042): only the legacy `python -m unifi_mapper.cli` reads it. |
 | `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
 | `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
 | `UNIFI_CONFIG` | No | XDG search | File path | The env file to read, like `--config` (see section 1). |
@@ -1490,7 +1490,7 @@ Root options (before any subcommand):
 | `--apply` / `--dry-run` | Write port names to the controller; `--dry-run` previews | Preview |
 | `--connected-devices` | Include non-UniFi connected devices | Off |
 | `--verify-updates` | Verify that port name updates persist | Off |
-| `--format FORMAT` | Diagram format: `png`, `svg`, `html`, `mermaid`, `dot`. `png` and `svg` need Graphviz's `dot` program (`brew install graphviz`); `html` needs none. `mermaid` and `dot` currently write a one-line placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)) | `png` |
+| `--format FORMAT` | Diagram format: `png`, `svg`, `html`, `mermaid`, `dot`. `png` and `svg` need Graphviz's `dot` program (`brew install graphviz`); `html`, `mermaid` (bare Mermaid source) and `dot` (the Graphviz source) need none | `png` |
 | `--output PATH`, `-o` | Markdown report path | `./reports/port_mapping_report.md` |
 | `--diagram PATH`, `-d` | Diagram path | `./diagrams/network_diagram.<format>` |
 

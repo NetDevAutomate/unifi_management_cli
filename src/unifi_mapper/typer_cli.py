@@ -301,7 +301,11 @@ def discover(
         Optional[Path], typer.Option('--diagram', '-d', help='🖼️ Output path for diagram')
     ] = None,
     format: Annotated[
-        str, typer.Option('--format', help='🎨 Diagram format (png, svg, html, mermaid, dot)')
+        str,
+        typer.Option(
+            '--format',
+            help='🎨 Diagram format: png, svg (Graphviz), html, mermaid or dot (source files)',
+        ),
     ] = 'png',
     apply: Annotated[
         bool,

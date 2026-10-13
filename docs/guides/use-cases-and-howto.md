@@ -279,10 +279,11 @@ uv run unifi-mapper diagram --format svg --output ~/diagrams/network.svg
 uv run unifi-mapper diagram --format html --output ~/diagrams/network.html
 ```
 
-`discover --format` also lists `mermaid` and `dot`, but both currently write a one-line
-placeholder instead of a diagram
-([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)); use `svg` or
-`html`.
+`discover --format mermaid` writes the topology as bare Mermaid `graph TB` source (wrap it
+in a ```mermaid fence to embed it in Markdown, or feed it to `mmdc -i`), and
+`--format dot` writes the Graphviz source the PNG and SVG renderers use, for `dot` on
+another machine. Neither needs Graphviz
+([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)).
 
 **Scenario E: Override output paths**
 

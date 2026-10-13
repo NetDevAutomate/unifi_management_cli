@@ -941,24 +941,71 @@ class NetworkTopology:
         return 'unknown'
 
     def generate_dot_diagram(self, output_path: str) -> None:
-        """Generate a DOT diagram of the network topology.
+        """Write the Graphviz DOT source of the network topology (issue 044).
+
+        The same source the PNG and SVG renderers hand to ``dot``, for ``dot`` on another
+        machine or any other Graphviz tool.
 
         Args:
             output_path: Path to save the DOT file
         """
-        # Create a simple text file as a placeholder
         with open(output_path, 'w') as f:
-            f.write('DOT diagram would be generated here')
+            f.write(self._generate_dot_source() + '\n')
+        log.info(f'Generated DOT source: {output_path}')
+
+    def _mermaid_topology_data(self) -> dict:
+        """The devices and links in the shape ``render_mermaid``'s topology renderer takes.
+
+        One parent per device: the first connection that targets it names ``connected_to``
+        (the source's node key) and ``port_idx`` (the source's port). The node key is the
+        MAC, or the device id when the MAC is not one (an unadopted AP from the client list
+        can carry ``Unknown MAC``, and a space breaks a Mermaid node id).
+        """
+        kinds = {'router': 'gateway', 'switch': 'switch', 'ap': 'ap', 'unknown': 'client'}
+
+        def node_key(device_id: str) -> str:
+            mac = self.devices[device_id].mac or ''
+            return mac if mac and not any(c.isspace() for c in mac) else device_id
+
+        parents: dict[str, tuple[str, Optional[int]]] = {}
+        for conn in self.connections:
+            src = conn.get('source_device_id', '')
+            tgt = conn.get('target_device_id', '')
+            if src in self.devices and tgt in self.devices and tgt not in parents:
+                parents[tgt] = (node_key(src), conn.get('source_port_idx'))
+
+        devices = []
+        for device_id, device in self.devices.items():
+            parent = parents.get(device_id)
+            devices.append(
+                {
+                    'mac': node_key(device_id),
+                    'name': device.name,
+                    'model': device.model,
+                    'type': kinds[self._determine_device_type(device)],
+                    'connected_to': parent[0] if parent else None,
+                    'port_idx': parent[1] if parent else None,
+                }
+            )
+        return {'devices': devices}
 
     def generate_mermaid_diagram(self, output_path: str) -> None:
-        """Generate a Mermaid diagram of the network topology.
+        """Write the network topology as Mermaid ``graph`` source (issue 044).
+
+        Drawn by the topology renderer in ``utility/render_mermaid.py``; the file holds the
+        bare source (no Markdown fence), so ``mmdc -i`` reads it and a ```mermaid fence
+        embeds it.
 
         Args:
             output_path: Path to save the Mermaid file
         """
-        # Create a simple text file as a placeholder
+        from .utility.render_mermaid import _render_topology_diagram
+
+        block = _render_topology_diagram(self._mermaid_topology_data())
+        lines = [line for line in block.splitlines() if not line.startswith('```')]
         with open(output_path, 'w') as f:
-            f.write('Mermaid diagram would be generated here')
+            f.write('\n'.join(lines) + '\n')
+        log.info(f'Generated Mermaid source: {output_path}')
 
     def generate_html_diagram(
         self, output_path: str, show_connected_devices: bool = False
