@@ -93,5 +93,5 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [075](075-discover-needs-graphviz-dot-undocumented.md) | `discover` needs Graphviz's `dot` program for its PNG and SVG diagrams and exits 1 without it, writing no report (the docs now name it) | open |
 | [076](076-0.2.0-port-final-review-follow-ups.md) | Follow-ups from the 0.2.0 port's final review that were not fixed on the branch | open, decision needed |
 | [077](077-update-firmware-confirms-instead-of-previewing.md) | `inventory update-firmware` writes after a confirmation prompt, not a preview | open, decision needed |
-| [078](078-cli-and-mcp-feature-parity-is-not-enforced.md) | The CLI and the MCP server do not have feature parity, and nothing checks that they do | open, in progress |
+| [078](078-cli-and-mcp-feature-parity-is-not-enforced.md) | The CLI and the MCP server do not have feature parity, and nothing checks that they do | resolved (`4d55fa0`) |
 | [079](079-security-audit-counts-every-neighbour-ap-as-a-critical-rogue.md) | `security_audit` counts every neighbouring AP as a critical rogue | open, decision needed |

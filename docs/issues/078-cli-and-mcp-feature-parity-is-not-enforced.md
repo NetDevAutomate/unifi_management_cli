@@ -1,7 +1,8 @@
 ---
 title: "The CLI and the MCP server do not have feature parity, and nothing checks that they do"
 date: 2026-10-12
-status: open, in progress
+status: resolved
+resolved_by: 4d55fa0
 severity: medium
 components: [typer_cli, inventory_cli, mcp/manifests, tests/mcp]
 found_by: maintainer's question after the 0.2.0 readiness work
@@ -107,12 +108,24 @@ latency-matrix`, `bandwidth`, `client-connectivity`), kept off MCP by issue
 (decision D4, a run can last 10 h). Lifting D1 is a decision for the maintainer, not a parity
 gap.
 
-Still open: the 20 MCP tools declared `cli_gap: not yet built`, listed by
-`tests/test_surface_parity.py` (`analyze_mac_table`, `audit_stp_path_costs`,
-`check_device_freshness`, `detect_foreign_bridges`, `detect_ip_conflicts`, `detect_storms`,
-`diagnose_vlans`, `get_capacity_report`, `monitor_lags`, `summarise_freshness`,
-`validate_qos`, `firewall_check`, `path_analysis`, `traceroute`, `connectivity_analysis`,
-`performance_analysis`, `security_audit`, `client_trace`, `find_ip`, `find_mac`). Each needs a
-`unifi-mapper` command, in the order a terminal user would want them (`detect_ip_conflicts`,
-`security_audit`, `detect_storms`, `diagnose_vlans` first); each one removes its `cli_gap`
-and lowers `NOT_YET_BUILT_MCP_TOOLS`.
+The 20 MCP tools declared `cli_gap: not yet built` were closed on 2026-10-13 in three steps,
+each pinning the count down: `235d767` (`analyze ip-conflicts`, `diagnose security`, which
+also found and fixed `security_audit`'s wrong endpoint, issue
+[079](079-security-audit-counts-every-neighbour-ap-as-a-critical-rogue.md) for what it
+reported next), `38b6b6b` (`analyze storms`, `mac-table`, `qos`, `capacity`, `lags`,
+`foreign-bridges`, `diagnose vlans`, `diagnose freshness` for both freshness tools, `stp
+path-costs`) and `4d55fa0` (`diagnose performance`, `connectivity`, `firewall`, `path` for
+`traceroute` and `path_analysis`, `client-path`, `find ip`, `find mac`). 98 commands; both
+`NOT_YET_BUILT_*` pins in `tests/test_surface_parity.py` are 0.
+
+## Resolution
+
+Resolved on 2026-10-13 (`4d55fa0`). Parity is a rule: `tests/test_surface_parity.py` fails on
+any manifest entry without `cli:` or `cli_gap:`, any command without a tool or a reason in
+`CLI_ONLY`, and any "not yet built" gap on either side (both pinned at 0). What remains
+CLI-only or MCP-only is a recorded decision, each with its reason in
+`src/unifi_mapper/mcp/parity.py` or the manifest: the writers, the terminal-only commands, the
+eight SSH probes (issue [060](060-decisions-from-the-0.2.0-port.md) D1, until issue
+[038](038-ssh-host-key-verification-disabled.md)), `diagnose ap-health` (D4), and the eleven
+raw `network` and `protect` reads. A new command or tool must declare its counterpart or its
+reason before the suite passes.

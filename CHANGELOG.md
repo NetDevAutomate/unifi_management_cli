@@ -76,6 +76,20 @@ asked GitHub Support to purge the superseded commits from the server's object st
   absolute and end in `.json`). 96 tools, 82 on the direct surface.
 - `inventory firmware-skew --json` (the `get_firmware_drift` shape), `capabilities --json` and
   `diagnose all --json`.
+- Eighteen `unifi-mapper` commands for the twenty MCP tools that had none, each with `--json`
+  equal to the tool's result: `analyze ip-conflicts`, `storms`, `mac-table`, `qos`,
+  `capacity`, `lags` and `foreign-bridges`; `diagnose security`, `vlans`, `freshness`
+  (`--sample` for the two-read check), `performance`, `connectivity`, `firewall SRC DST`,
+  `path SRC DST` (`--analyze` for the path analysis; from controller data, no packet sent) and
+  `client-path CLIENT`; `stp path-costs`; `find ip` and `find mac`. Both sides of the parity
+  gate now report no gap that is not a recorded decision. 98 commands in all.
+
+### Fixed
+
+- `security_audit` (and the new `diagnose security`) read the rogue-AP list from
+  `rest/rogueap`, which UniFi Network answers with `400 api.err.InvalidObject`, so every call
+  failed with `API_ERROR`. It reads the passive `stat/rogueap` list now. Its habit of counting
+  every neighbouring AP as a critical rogue is issue 079.
 
 ### Removed
 
