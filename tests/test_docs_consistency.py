@@ -1386,14 +1386,101 @@ PREFIXED_READERS = (
 )
 # Python constants that only look like environment variables.
 NOT_ENV_VARS = frozenset({'UNIFI_AES_KEY', 'UNIFI_AES_IV', 'UNIFI_LTE'})
+# An expression that is the environment: ``os.environ``, ``environ``, an ``env`` parameter
+# (``load_server_settings(env=None)``) or ``(os.environ if env is None else env)``.
+ENVIRONMENT = re.compile(r'\benviron\b|^env$')
+MAPPING_READS = frozenset({'get', 'pop', 'setdefault'})
+
+
+def _is_environment(node: ast.expr) -> bool:
+    """True when ``node`` evaluates to the process environment or an injected env mapping."""
+    return bool(ENVIRONMENT.search(ast.unparse(node)))
+
+
+def _env_key_nodes(tree: ast.Module) -> list[ast.expr]:
+    """Return the expressions the source reads from the environment by key.
+
+    A read is the subscript of ``os.environ[...]``, the first argument of ``.get``, ``.pop``
+    or ``.setdefault`` on the environment, of ``os.getenv`` / ``getenv`` and of a same-file
+    helper whose parameter is itself read that way (``_bounded_number(env, key, ...)``), the
+    left side of ``in`` / ``not in`` against the environment, and an option's ``envvar=``.
+    """
+    keys: list[ast.expr] = []
+    helpers: dict[str, int] = {}  # helper name -> the index of its key parameter
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            names = [a.arg for a in (*node.args.posonlyargs, *node.args.args)]
+            for inner in ast.walk(node):
+                for key in _direct_env_keys(inner):
+                    if isinstance(key, ast.Name) and key.id in names:
+                        helpers[node.name] = names.index(key.id)
+    for node in ast.walk(tree):
+        keys += _direct_env_keys(node)
+        if isinstance(node, ast.Call):
+            name = getattr(node.func, 'id', None) or getattr(node.func, 'attr', None)
+            index = helpers.get(name or '')
+            if index is not None and len(node.args) > index:
+                keys.append(node.args[index])
+        elif isinstance(node, ast.keyword) and node.arg == 'envvar':
+            keys.append(node.value)
+    return keys
+
+
+def _direct_env_keys(node: ast.AST) -> list[ast.expr]:
+    """Return the key expressions of one environment access node (none for other nodes)."""
+    if isinstance(node, ast.Subscript) and _is_environment(node.value):
+        return [node.slice]
+    if isinstance(node, ast.Compare) and len(node.comparators) == 1:
+        if isinstance(node.ops[0], (ast.In, ast.NotIn)) and _is_environment(node.comparators[0]):
+            return [node.left]
+    if isinstance(node, ast.Call) and node.args:
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            if func.attr in MAPPING_READS and _is_environment(func.value):
+                return [node.args[0]]
+            if func.attr == 'getenv':
+                return [node.args[0]]
+        elif isinstance(func, ast.Name) and func.id == 'getenv':
+            return [node.args[0]]
+    return []
+
+
+def _module_constants(tree: ast.Module) -> dict[str, list[str]]:
+    """Return ``{name: variable names}`` for each module-level assignment of exact names.
+
+    ``CALL_AUDIT_ENV = 'UNIFI_MCP_CALL_AUDIT'`` and a table such as ``CREDENTIAL_KEYS``
+    bind the keys the code reads later, by the constant's name or by iterating the table; a
+    message constant (``'set UNIFI_URL first'``) is not an exact name and does not count.
+    """
+    constants: dict[str, list[str]] = {}
+    for statement in tree.body:
+        names = _assigned(statement)
+        value = getattr(statement, 'value', None)
+        if not names or value is None:
+            continue
+        exact = [
+            n.value
+            for n in ast.walk(value)
+            if isinstance(n, ast.Constant)
+            and isinstance(n.value, str)
+            and ENV_VAR.fullmatch(n.value)
+        ]
+        for name in names:
+            constants[name] = exact
+    return constants
 
 
 def env_vars_read(path: str, text: str) -> frozenset[str]:
     """Return the ``UNIFI_*``, ``PROTECT_*`` and ``XDG_*`` names one source file reads.
 
-    In Python only string constants count, never a docstring or a comment, so a variable the
-    code stopped reading fails the docs guard even while a docstring still names it. In a
-    shell script or YAML file every line but a comment counts.
+    In Python a variable counts as read when its name is the key of an environment read
+    (``os.environ[...]``, ``os.environ.get``, ``os.getenv``, an injected ``env`` mapping,
+    ``in os.environ``, a same-file helper's key parameter, an option's ``envvar=``), given as
+    a string or as a module-level constant, or when it is one of the exact names a
+    module-level constant or table binds. A name that appears only in a message, hint, help
+    text, docstring or comment is not read, so a variable the code stopped reading fails the
+    docs guard even while a message still names it. In a shell script or YAML file every
+    line but a comment counts.
 
     Args:
         path: The repo-relative file name.
@@ -1406,20 +1493,13 @@ def env_vars_read(path: str, text: str) -> frozenset[str]:
         code = '\n'.join(ln for ln in text.splitlines() if not ln.lstrip().startswith('#'))
         return frozenset(ENV_VAR.findall(code))
     tree = ast.parse(text)
-    docstrings: set[int] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            first = node.body[0] if node.body else None
-            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
-                docstrings.add(id(first.value))
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-            and id(node) not in docstrings
-        ):
-            names.update(ENV_VAR.findall(node.value))
+    constants = _module_constants(tree)
+    names: set[str] = {n for exact in constants.values() for n in exact}
+    for key in _env_key_nodes(tree):
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            names.update(ENV_VAR.findall(key.value))
+        elif isinstance(key, ast.Name):
+            names.update(constants.get(key.id, ()))
     return frozenset(names)
 
 
@@ -1478,6 +1558,59 @@ def test_env_reader_ignores_docstrings_and_comments() -> None:
     shell = '# UNIFI_SHELL_COMMENT\nexport UNIFI_SHELL_READ="${UNIFI_SHELL_READ:-x}"\n'
     assert env_vars_read('src/demo.py', source) == {'UNIFI_READ_HERE'}
     assert env_vars_read('scripts/demo.sh', shell) == {'UNIFI_SHELL_READ'}
+
+
+def test_env_reader_counts_reads_but_not_messages() -> None:
+    """A variable named only in a message, hint or help text is not read (issue 055)."""
+    source = (
+        'import os\n'
+        'from os import environ, getenv\n'
+        '\n'
+        "KEY = 'UNIFI_VIA_CONSTANT'\n"
+        "TABLE = {'controller': (('UNIFI_IN_A_TABLE',),)}\n"
+        "HINT = 'set UNIFI_IN_A_HINT in the config file'\n"
+        '\n'
+        '\n'
+        'def _number(env, key, low):\n'
+        '    return env.get(key)\n'
+        '\n'
+        '\n'
+        'def read(env=None):\n'
+        '    env = os.environ if env is None else env\n'
+        "    a = os.environ['UNIFI_SUBSCRIPT']\n"
+        "    b = os.environ.get('UNIFI_GET', '')\n"
+        "    c = os.getenv('UNIFI_GETENV')\n"
+        "    d = getenv('UNIFI_BARE_GETENV')\n"
+        "    e = environ.get('UNIFI_BARE_ENVIRON')\n"
+        "    f = env.get('UNIFI_INJECTED_ENV')\n"
+        "    g = (os.environ if env is None else env).get('UNIFI_EITHER_ENV')\n"
+        "    h = _number(env, 'UNIFI_VIA_HELPER', 1)\n"
+        "    if 'UNIFI_MEMBERSHIP' not in os.environ:\n"
+        '        raise ValueError(\n'
+        "            f'{KEY} and UNIFI_IN_A_MESSAGE are unset; see UNIFI_IN_AN_FSTRING'\n"
+        '        )\n'
+        "    option(envvar='UNIFI_VIA_OPTION', help='or set UNIFI_IN_HELP_TEXT')\n"
+        "    warn('UNIFI_IN_A_WARNING is deprecated', suggestion='use UNIFI_IN_A_SUGGESTION')\n"
+        '    return a, b, c, d, e, f, g, h\n'
+    )
+    read = env_vars_read('src/demo.py', source)
+    assert read == {
+        'UNIFI_VIA_CONSTANT',
+        'UNIFI_IN_A_TABLE',
+        'UNIFI_SUBSCRIPT',
+        'UNIFI_GET',
+        'UNIFI_GETENV',
+        'UNIFI_BARE_GETENV',
+        'UNIFI_BARE_ENVIRON',
+        'UNIFI_INJECTED_ENV',
+        'UNIFI_EITHER_ENV',
+        'UNIFI_VIA_HELPER',
+        'UNIFI_MEMBERSHIP',
+        'UNIFI_VIA_OPTION',
+    }
+    for message_only in ('UNIFI_IN_A_HINT', 'UNIFI_IN_A_MESSAGE', 'UNIFI_IN_AN_FSTRING'):
+        assert message_only not in read
+    assert not {'UNIFI_IN_HELP_TEXT', 'UNIFI_IN_A_WARNING', 'UNIFI_IN_A_SUGGESTION'} & read
 
 
 def test_documented_env_vars_are_read_by_the_code() -> None:
