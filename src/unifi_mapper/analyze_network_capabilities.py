@@ -1,92 +1,39 @@
-"""Analyze network device capabilities for port naming support."""
+"""Print the port-naming compatibility report (``python -m unifi_mapper.analyze_network_capabilities``).
 
-import logging
+A thin script over :mod:`unifi_mapper.analysis.port_naming_capabilities`, the core that
+``unifi-mapper capabilities`` and the MCP tool ``get_port_naming_capabilities`` share. It
+reads the config the CLI would (``UNIFI_CONFIG``, then the usual search), not a fixed path.
+"""
+
+import asyncio
 import sys
-from pathlib import Path
+from unifi_mapper.analysis.port_naming_capabilities import (
+    get_port_naming_capabilities,
+    render_text,
+)
+from unifi_mapper.cli import get_default_config_path, load_env_from_config
+from unifi_mapper.core.utils.errors import ToolError
+from unifi_mapper.core.utils.redact import redact_text
 
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+def main() -> int:
+    """Read the devices, print the compatibility report and return the exit code.
 
-from unifi_mapper.api_client import UnifiApiClient
-from unifi_mapper.cli import load_env_from_config
-from unifi_mapper.config import UnifiConfig
-from unifi_mapper.device_capabilities import DeviceCapabilityDetector
-
-
-logging.basicConfig(level=logging.INFO)
-log = logging.getLogger(__name__)
-
-
-def main():
-    """Analyze all devices in network for port naming capabilities."""
-    # Load config. Derived from the running user's home rather than hardcoded, so
-    # this works on any machine and does not bake one developer's username in.
-    config_path = str(Path.home() / '.config' / 'unifi_management_cli' / 'prod.env')
-    load_env_from_config(config_path)
-    config = UnifiConfig.from_env(config_path)
-
-    # Create API client
-    api_client = UnifiApiClient(
-        base_url=config.base_url,
-        site=config.site,
-        api_token=config.api_token,
-        verify_ssl=config.verify_ssl,
-    )
-
-    if not api_client.login():
-        log.error('Failed to authenticate')
-        return
-
-    # Get all devices
-    devices_response = api_client.get_devices(config.site)
-    if not devices_response or 'data' not in devices_response:
-        log.error('Failed to get devices')
-        return
-
-    # Filter network devices
-    network_devices = [
-        d for d in devices_response['data'] if d.get('type') in ['ugw', 'usg', 'udm', 'usw']
-    ]
-
-    log.info(f'Analyzing {len(network_devices)} network devices...')
-
-    # Analyze capabilities
-    detector = DeviceCapabilityDetector()
-    report = detector.generate_compatibility_report(network_devices)
-
-    print('\n' + report)
-
-    # Identify specific problematic devices
-    print(f'\n{"=" * 80}')
-    print('DEVICE-SPECIFIC ANALYSIS')
-    print('=' * 80)
-
-    for device in network_devices:
-        model = device.get('model', 'Unknown')
-        firmware = device.get('version', 'Unknown')
-        name = device.get('name', 'Unknown')
-        ip = device.get('ip', 'Unknown')
-
-        should_attempt, reason = detector.should_attempt_port_naming(model, firmware)
-        strategy = detector.get_recommended_strategy(model, firmware)
-
-        print(f'\n📍 {name} ({model}) - {ip}')
-        print(f'   Firmware: {firmware}')
-        print(f'   Port Naming: {"✅ ATTEMPT" if should_attempt else "❌ AVOID"}')
-        print(f'   Reason: {reason}')
-        print(f'   Strategy: {strategy["strategy"]}')
-
-        if 'alternatives' in strategy:
-            print('   Alternatives:')
-            for alt in strategy['alternatives']:
-                print(f'     - {alt}')
-
-        if 'recommendations' in strategy:
-            print('   Recommendations:')
-            for rec in strategy['recommendations']:
-                print(f'     - {rec}')
+    Returns:
+        0 on success, 1 when the devices could not be read.
+    """
+    load_env_from_config(str(get_default_config_path()))
+    try:
+        report = asyncio.run(get_port_naming_capabilities())
+    except ToolError as e:
+        print(f'Error: {e.message}', file=sys.stderr)
+        return 1
+    except Exception as e:  # noqa: BLE001 - a script: one redacted line, exit 1
+        print(f'Error: {redact_text(e)}', file=sys.stderr)
+        return 1
+    print(render_text(report))
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

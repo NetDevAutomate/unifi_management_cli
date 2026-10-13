@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.local_paths import check_snapshot_path
 
 
 DEFAULT_ROAMING_PATH = 'reports/client-roaming-history.json'
@@ -433,3 +434,24 @@ def build_mobility_graph(
             graph.setdefault(client_mac, set()).add(ap_name)
 
     return graph
+
+
+async def analyze_roaming_mcp(history_path: str) -> dict[str, Any]:
+    """Roaming and sticky clients from a history `analyze roaming --snapshot` built up.
+
+    Needs at least two snapshots in the file. Reports clients that roamed between APs (with
+    the APs used and their mean RSSI) and sticky clients (low RSSI, not roaming). Compare
+    only: this tool never records a snapshot. Read-only.
+
+    Args:
+        history_path: Absolute path of the history .json file.
+
+    Returns:
+        The roaming report.
+
+    Raises:
+        ToolError: CONFIG_INVALID for a path that is not an absolute .json file; NO_DATA when
+            the history is missing or holds fewer than two snapshots.
+    """
+    path = check_snapshot_path(history_path, what='history')
+    return await analyze_roaming(str(path))

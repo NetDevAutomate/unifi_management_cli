@@ -4,6 +4,7 @@ Provides inventory listing, firmware version reporting, and firmware update capa
 Integrated into the main unifi-mapper CLI as subcommands.
 """
 
+import json
 import logging
 import os
 import time
@@ -21,6 +22,12 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from typing import Optional
+from unifi_mapper.analysis.device_inventory import (  # noqa: F401 - re-exported names
+    categorize_devices,
+    find_firmware_skew,
+    firmware_drift,
+    get_device_type,
+)
 
 
 log = logging.getLogger(__name__)
@@ -58,42 +65,6 @@ def parse_filter(filter_str: str) -> set[str]:
             console.print(f"[yellow]Warning: Unknown device type '{item}', ignoring[/yellow]")
 
     return types if types else {'all'}
-
-
-def get_device_type(model: str, device_type_field: str = '') -> str:
-    """Determine device type from model string."""
-    model_lower = model.lower()
-    type_lower = device_type_field.lower() if device_type_field else ''
-
-    # Check type field first if available
-    if type_lower in ('ugw', 'udm', 'usg'):
-        return 'firewall'
-    if type_lower == 'usw':
-        return 'switch'
-    if type_lower == 'uap':
-        return 'ap'
-
-    # Routers/Gateways/Firewalls
-    if any(x in model_lower for x in ['udm', 'usg', 'ugw', 'gateway', 'router', 'dream']):
-        return 'firewall'
-
-    # Switches - comprehensive patterns
-    if any(
-        x in model_lower
-        for x in ['usw', 'switch', 'us-', 'usl', 'usm', 'us8', 'us16', 'us24', 'us48']
-    ):
-        return 'switch'
-    if model_lower.startswith('us') and len(model_lower) > 2 and model_lower[2].isdigit():
-        return 'switch'
-
-    # Access Points
-    if any(
-        x in model_lower
-        for x in ['uap', 'u6', 'u7', 'ac', 'nano', 'litebeam', 'flexhd', 'ualr', 'uacc']
-    ):
-        return 'ap'
-
-    return 'other'
 
 
 def _config_from_root(ctx: typer.Context, own: Optional[str]) -> Optional[str]:
@@ -144,49 +115,14 @@ def get_api_client(config_path: Optional[str] = None) -> tuple[UnifiApiClient, s
 
 
 def fetch_and_categorize_devices(client: UnifiApiClient, site: str) -> dict[str, list[dict]]:
-    """Fetch all devices and categorize by type."""
+    """Fetch all devices and categorize by type (``categorize_devices`` does the grouping)."""
     devices_response = client.get_devices(site)
 
     if not devices_response or 'data' not in devices_response:
         console.print('[red]Error: Failed to retrieve devices from controller[/red]')
         raise typer.Exit(1)
 
-    categorized: dict[str, list[dict]] = {
-        'firewall': [],
-        'switch': [],
-        'ap': [],
-        'other': [],
-    }
-
-    for device in devices_response['data']:
-        model = device.get('model', 'Unknown')
-        type_field = device.get('type', '')
-        device_type = get_device_type(model, type_field)
-
-        device_info = {
-            'name': device.get('name', 'Unnamed'),
-            'model': model,
-            'model_name': device.get('model_name', model),
-            'version': device.get('version', 'Unknown'),
-            'ip': device.get('ip', 'N/A'),
-            'mac': device.get('mac', 'N/A'),
-            'id': device.get('_id', ''),
-            'adopted': device.get('adopted', False),
-            'state': device.get('state', 0),
-            'uptime': device.get('uptime', 0),
-            'upgradable': device.get('upgradable', False),
-            'upgrade_to_firmware': device.get('upgrade_to_firmware', ''),
-            'type': device_type,
-            'raw_type': type_field,
-        }
-
-        categorized[device_type].append(device_info)
-
-    # Sort each category by name
-    for category in categorized:
-        categorized[category].sort(key=lambda x: x['name'].lower())
-
-    return categorized
+    return categorize_devices(devices_response['data'])
 
 
 def display_device_table(devices: list[dict], title: str, show_upgrade: bool = False):
@@ -266,26 +202,6 @@ def display_model_summary(devices: list[dict], device_type: str):
         console.print(f'  • {model}: {len(names)} device(s)')
 
     console.print()
-
-
-def find_firmware_skew(
-    categorized: dict[str, list[dict]],
-    filter_types: set[str],
-) -> dict[str, dict[str, list[str]]]:
-    """Group devices by model and return models with mixed firmware versions."""
-    show_all = 'all' in filter_types
-    by_model: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
-
-    for device_type, devices in categorized.items():
-        if not show_all and device_type not in filter_types:
-            continue
-        for device in devices:
-            model = device.get('model', 'Unknown')
-            version = device.get('version', 'Unknown')
-            name = device.get('name', 'Unnamed')
-            by_model[model][version].append(name)
-
-    return {model: dict(versions) for model, versions in by_model.items() if len(versions) > 1}
 
 
 def _save_inventory_report(categorized: dict, filter_types: set, output_path: str, show_all: bool):
@@ -613,8 +529,16 @@ def firmware_skew(
         '-c',
         help='Path to .env config file',
     ),
+    as_json: bool = typer.Option(
+        False, '--json', help='Print the drift report as JSON (the MCP get_firmware_drift shape)'
+    ),
 ):
-    """📦 Report firmware version skew by model."""
+    """📦 Report firmware version skew by model.
+
+    Per model running more than one version: each version's devices. --json prints the full
+    drift report (fleet-newest version, devices behind it, offered upgrades, offline devices),
+    the same shape as the MCP tool `get_firmware_drift`.
+    """
     filter_types = parse_filter(filter)
 
     with Progress(
@@ -628,6 +552,12 @@ def firmware_skew(
 
         progress.add_task('Fetching devices...', total=None)
         categorized = fetch_and_categorize_devices(client, site)
+
+    if as_json:
+        client.logout()
+        report = firmware_drift(categorized, filter_types, timestamp=datetime.now().isoformat())
+        print(json.dumps(report.model_dump(mode='json'), indent=2))
+        return
 
     skew = find_firmware_skew(categorized, filter_types)
 

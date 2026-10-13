@@ -26,7 +26,7 @@ C4Component
         Component(registry, "mcp/registry.py / ToolRegistry", "Python", "Loads manifests lazily, indexes metadata, supports category/tag/query search")
         Component(proxy, "mcp/registry.py / ToolProxy", "Python", "Thread-safe lazy import and sync/async handler execution")
         Component(metadata, "mcp/registry.py / ToolMetadata", "dataclass", "Tool contract: name, module, handler, description, category, priority, tags, parameters")
-        Component(manifests, "mcp/manifests/*.yaml", "YAML", "87 registered tool contracts across analysis, connectivity, diagnostics, discovery, network, observability and protect")
+        Component(manifests, "mcp/manifests/*.yaml", "YAML", "96 registered tool contracts across analysis, connectivity, diagnostics, discovery, network, observability and protect")
         Component(network_tools, "mcp/tools/network.py", "Python", "Network control tool handlers")
         Component(protect_tools, "mcp/tools/protect.py", "Python", "Protect inventory tool handlers")
     }

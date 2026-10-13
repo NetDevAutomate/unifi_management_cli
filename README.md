@@ -15,7 +15,7 @@ What it is good at:
   priority placement, single-uplink switches, DHCP pool use.
 - **Port names from LLDP**: preview the names a switch's ports should carry, then write them
   only when you say so.
-- **An MCP server** with 73 read-only tools, so Claude, Codex or any MCP client can answer
+- **An MCP server** with 82 read-only tools, so Claude, Codex or any MCP client can answer
   "why is my phone slow?" against your own controller.
 
 ## Safety model
@@ -162,13 +162,15 @@ reads, and the port-naming write is opt-in.
 
 ## MCP server
 
-`unifi-mcp` serves the tool catalog over stdio. The catalog holds 87 entries in 7 categories:
-73 are read-only tools a client can call, 11 are pipeline steps that pass in-process objects
+`unifi-mcp` serves the tool catalog over stdio. The catalog holds 96 entries in 7 categories:
+82 are read-only tools a client can call, 11 are pipeline steps that pass in-process objects
 between those tools, and 3 are the CLI's write operations, which the server refuses to run. By
 default a client sees 4 discovery meta-tools (`search_tools`, `get_tool_info`,
 `list_categories`, `execute_tool`); with `UNIFI_MCP_TOOL_SURFACE=direct` it sees those 4 plus
-the 73 tools, 77 in all. It reads the same config file. Results flow to the AI host you connect
-it to, so the same "reports are sensitive" rule applies.
+the 82 tools, 86 in all. It reads the same config file. Results flow to the AI host you connect
+it to, so the same "reports are sensitive" rule applies. Every read-only CLI command has an MCP
+tool or a recorded reason (the SSH probes and the long-running AP sampler are CLI-only by
+decision); a test enforces it, so the two surfaces cannot drift apart silently.
 
 > [!WARNING]
 > `unifi-mcp` on PyPI is an unrelated third-party package. Always run this one from the

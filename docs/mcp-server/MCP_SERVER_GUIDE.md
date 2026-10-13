@@ -3,7 +3,7 @@
 ## Overview
 
 `unifi-mcp` is a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server over
-the same Python modules the `unifi-mapper` CLI uses. It registers **87 tools** in seven
+the same Python modules the `unifi-mapper` CLI uses. It registers **96 tools** in seven
 categories (see [Tool categories](#tool-categories) and the [tool index](#tool-index)). Every
 tool it will run is read-only against the controller. The three tools that would change it
 are refused over MCP (see [Control boundary](#mcp-control-boundary)); those changes go through
@@ -282,7 +282,7 @@ the private `_get_versions_from_api`. No tool uses either.
 | Surface | `tools/list` shows | Size (measured at this commit) |
 | --- | --- | --- |
 | `discovery` (default) | the four meta-tools: `search_tools`, `list_categories`, `get_tool_info`, `execute_tool` | 4 tools, about 6.4k characters |
-| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 77 tools (4 + 73), about 198k characters |
+| `direct` | the four meta-tools plus every catalog tool that is not mutating and not a pipeline tool, each with its own input schema, output schema, title and annotations | 86 tools (4 + 82), about 215k characters |
 
 On either surface every catalog tool runs through the same `ToolRunner`, so arguments are
 validated, credentials gated, results masked and errors coded identically. The 11 pipeline
@@ -291,7 +291,7 @@ are reachable only through `execute_tool`; the 3 mutating tools are never listed
 `--check` prints `listed_tools` for both surfaces.
 
 Use `direct` with hosts that defer tool schemas (kiro-cli, Claude Code tool search): the
-host keeps the 77 schemas out of context until needed and the model calls tools by name. Use
+host keeps the 86 schemas out of context until needed and the model calls tools by name. Use
 `discovery` with hosts that load every schema up front (Codex): the model searches, reads one
 schema with `get_tool_info`, then calls `execute_tool`.
 
@@ -324,20 +324,20 @@ tools that compute from their input, and for `get_wan_speedtest_history` and
 
 ## Tool Categories
 
-Counted from `ToolRegistry()` at this commit (87 tools):
+Counted from `ToolRegistry()` at this commit (96 tools):
 
 | Category | Tools | Covers |
 | --- | ---: | --- |
-| analysis | 49 | IP conflicts, storms, MAC table, VLAN diagnostics and coverage, STP topology, priority audit, guard, path costs, drift, preflight and snapshots, link quality and link-speed audit, port-profile usage and validation, MTU, QoS, SFP, LAG, PoE and power budgets, uplink redundancy and transparency, client density, DHCP pools, device freshness, capacity, firmware, Wi-Fi radio, traffic matrix, per-VLAN traffic reports and store coverage, foreign bridges, 10G readiness |
+| analysis | 57 | IP conflicts, storms, MAC table, VLAN diagnostics and coverage, STP topology, priority audit, guard, path costs, drift, preflight and snapshots, link quality and link-speed audit, port-profile usage and validation, MTU, QoS, SFP, LAG, PoE and power budgets, uplink redundancy and transparency, client density, DHCP pools, device freshness, capacity, firmware and firmware drift, the device inventory, port-naming capabilities, Wi-Fi radio, neighbouring APs and their baseline, traffic matrix, per-VLAN traffic reports and store coverage, foreign bridges, 10G readiness, and the config-drift, link-error and roaming baseline comparisons |
 | connectivity | 4 | Firewall check, path analysis, traceroute, inter-VLAN routing |
-| diagnostics | 11 | Health, performance, security, connectivity, single-port inspection, all-ports view, port-profile diff, port evidence bundle, WAN health, the recorded speedtest history and offline backup verification |
+| diagnostics | 12 | Health, the all-diagnostics summary, performance, security, connectivity, single-port inspection, all-ports view, port-profile diff, port evidence bundle, WAN health, the recorded speedtest history and offline backup verification |
 | discovery | 5 | Find device, IP or MAC; client trace; client history |
 | network | 6 | Firewall zones and policies, ACLs, DNS policies, clients, networks (Network Integration API, `network_api` family) |
 | observability | 7 | Event, alarm, system-log and admin-audit history; port counter rates and history; site-wide recent events; one device's stats, AP retry rates, raw config objects and the config-change timeline |
 | protect | 5 | Cameras, NVR, sensors, lights, doorbells (`protect` family) |
 
-Of the 87: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
-`restore_radio_config`) and 11 are pipeline tools, leaving 73 on the direct surface.
+Of the 96: 3 are mutating (`apply_stp_changes`, `apply_radio_optimization`,
+`restore_radio_config`) and 11 are pipeline tools, leaving 82 on the direct surface.
 
 Some tools overlap on purpose, and their descriptions say which to use. `get_device_stats`
 repeats the CPU, memory, load and uptime that `find_device` reports, and one AP's share of
@@ -556,14 +556,14 @@ The design rationale and the decisions still open are in the
 
 ## Tool Index
 
-All 87 registered tools by category, generated from `ToolRegistry()`. **Family** is
+All 96 registered tools by category, generated from `ToolRegistry()`. **Family** is
 the credential family a tool needs (`none`: it computes from its input). **Marks**:
 *mutating* tools are never listed or run over MCP; *pipeline* tools are reachable only
 through `execute_tool`; *writes a local file* drops `readOnlyHint`. Every tool that is
 neither mutating nor a pipeline tool is listed on the direct surface,
 `snapshot_radio_config` (which writes a local file) included.
 
-### analysis (49)
+### analysis (57)
 
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
@@ -603,6 +603,14 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `generate_stp_report` | `controller` | pipeline | Generate comprehensive STP optimization report |
 | `get_capacity_report` | `controller` |  | Network capacity planning and utilization report |
 | `get_firmware_report` | `controller` |  | Firmware security assessment and update recommendations |
+| `get_device_inventory` | `controller` |  | Every device the controller lists, grouped as firewall (gateways), switch, ap or other, with model, firmware, address, state and the upgrade the controller offers; per type, firmware versions and models with counts. The counts cover the whole site, the devices and summaries the type asked for. Read-only. |
+| `get_firmware_drift` | `controller` |  | Models whose devices run mixed firmware versions: each version's devices, the newest version any of them runs and the devices behind it, the upgrades the controller currently offers, and the kept devices that are not connected (their version is the last one reported). Read-only. |
+| `get_port_naming_capabilities` | `controller` |  | Port-naming support per gateway and switch, from model and firmware: full API support, UI-only, limited, auto-resetting firmware or unsupported, with the known issues and workarounds for each flagged device, and whether automated port naming (the CLI's discover and ports refresh) is recommended for this network. Read-only. |
+| `detect_config_drift` | `controller` |  | Compare device configuration against a baseline `unifi-mapper analyze config-drift --snapshot` wrote: every tracked field that changed, was removed or was added since, per device, and devices the baseline knows that are gone. Compare only, never writes a baseline. The baseline path must be absolute and end in .json. Read-only. |
+| `compare_link_errors` | `controller` |  | Port error counters now against the baseline `unifi-mapper analyze link-errors --snapshot` wrote: per port the error and drop deltas and the rate per minute, ports over the threshold flagged, devices that rebooted since the baseline listed (shown, not flagged). Compare only, never writes the baseline or the counter history. Omit the path for the default under the XDG state directory. Read-only. |
+| `analyze_client_roaming` | `controller` |  | Roaming and sticky clients from the history `unifi-mapper analyze roaming --snapshot` builds up (at least two snapshots): clients that roamed between APs with the APs used and their mean RSSI, and sticky clients that stay on a weak AP. Compare only, never records a snapshot. The history path must be absolute and end in .json. Read-only. |
+| `scan_neighbour_aps` | `controller` |  | Neighbouring access points and interference sources from the controller's passive background scan (stat/rogueap): per neighbour the SSID, BSSID, channel, band, signal and the UniFi AP that hears it, with per-channel congestion. No scan is triggered and nothing waits; the data is what the APs reported last. Read-only. |
+| `compare_neighbour_baseline` | `controller` |  | The neighbouring APs seen now against the baseline `unifi-mapper analyze neighbours --snapshot` wrote: new and disappeared neighbours, channel moves and signal changes of at least the threshold. Read live and compared in memory; never writes a baseline. The baseline path must be absolute and end in .json. Read-only. |
 | `get_radio_channel_report` | `controller` |  | Generate a channel utilization report showing current state and recommended changes for all APs. For one device's radio and VAP counters, use get_device_stats. |
 | `get_vlan_traffic_report` | `none` |  | Per-VLAN average and peak receive and transmit bits per second over a period, from the local store that `unifi-mapper vlan-traffic sample` fills by reading the gateway's bridge byte counters (a CLI command, run by a person; nothing here starts a sample). now, 1d and 1w read raw samples (kept 8 days), 1m hourly rollups and 1y daily rollups (whose peaks are smoothed), each up to the newest complete hour or day that `unifi-mapper vlan-traffic rollup` has rolled; methodology names the tier. Needs no credentials and sends no request; a missing store is NO_DATA. analyze_traffic_matrix reads the controller's own traffic statistics instead. Read-only. |
 | `list_vlan_traffic_periods` | `none` |  | What the local VLAN traffic store holds per tier (raw, hourly, daily): earliest and latest time, row count and gaps over 5 minutes, so an idle VLAN (0 bps) can be told from a window with no samples. Needs no credentials and sends no request; a missing store is NO_DATA. Read-only. |
@@ -626,7 +634,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `path_analysis` | `controller` |  | Network path analysis between two endpoints |
 | `traceroute` | `controller` |  | Layer 3 path tracing to destination |
 
-### diagnostics (11)
+### diagnostics (12)
 
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
@@ -638,6 +646,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `get_wan_speedtest_history` | `none` |  | WAN speedtest results recorded by `unifi-mapper diagnose wan --record` (hourly when scheduled), newest first, from the history file under the XDG state directory. Needs no credentials and sends no request; an empty history returns a note on how to record. Read-only. |
 | `inspect_switch_port` | `controller` |  | Deep inspection of a single switch port: link state, effective VLAN and port profile, the connected device (UniFi or third-party, with fingerprint model and confidence), DHCP lease vs static addressing verdict, LLDP neighbour resolved to an adopted device, error counters and PoE state |
 | `network_health_check` | `controller` |  | Overall infrastructure health monitoring and assessment |
+| `run_all_diagnostics` | `controller` |  | Every read-only diagnostic in one run, with a PASS, WARN or FAIL per check: the fifteen infrastructure checks `unifi-mapper diagnose all` runs (link quality, capacity, port profiles, MTU, SFP, radio, firmware, DHCP pools, PoE and power budgets, client density, uplink redundancy and VLAN transparency, foreign bridges, telemetry freshness), each naming the tool that gives its detail. A check that cannot run is a FAIL with a one-line reason; the others still run. Fifteen controller reads, so slower than one tool. Read-only. |
 | `performance_analysis` | `controller` |  | Network performance analysis and bottleneck identification |
 | `security_audit` | `controller` |  | Security configuration review and vulnerability assessment |
 | `verify_config_backup` | `none` |  | Check a downloaded UniFi config backup (.unf) offline: does it decrypt, extract and decompress, and how many documents does each collection hold (device, networkconf, wlanconf, setting and the rest)? The backup is not valid when a document fails to decode or bytes follow the last whole document (a truncated download). Reports structure only, never document contents: known collection names (others counted as other) and the version only when it is a version number. The path must be absolute, end in .unf and name a regular file of at most 512 MiB; the database member and the decompressed database are each capped at 1 GiB, an oversized member is refused before it is inflated, and a database of more than 64 gzip members is refused. Contacts no controller. Read-only. |

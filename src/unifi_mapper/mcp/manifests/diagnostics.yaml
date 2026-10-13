@@ -11,6 +11,22 @@ tools:
     priority: P1
     tags: [health, infrastructure, monitoring, diagnostic]
 
+  run_all_diagnostics:
+    module: unifi_mapper.diagnostics.run_all
+    handler: run_all_diagnostics
+    title: Run All Diagnostics
+    cli: diagnose all
+    description: >-
+      Every read-only diagnostic in one run, with a PASS, WARN or FAIL per check: the fifteen
+      infrastructure checks `unifi-mapper diagnose all` runs (link quality, capacity, port
+      profiles, MTU, SFP, radio, firmware, DHCP pools, PoE and power budgets, client density,
+      uplink redundancy and VLAN transparency, foreign bridges, telemetry freshness), each
+      naming the tool that gives its detail. A check that cannot run is a FAIL with a
+      one-line reason; the others still run. Fifteen controller reads, so slower than one
+      tool. Read-only.
+    priority: P1
+    tags: [health, summary, diagnostic, composite, read-only]
+
   performance_analysis:
     module: unifi_mapper.diagnostics.performance_analysis
     handler: performance_analysis

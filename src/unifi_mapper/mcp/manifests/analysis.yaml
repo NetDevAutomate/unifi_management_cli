@@ -366,6 +366,148 @@ tools:
     priority: P3
     tags: [firmware, security, update, advisory]
 
+  get_device_inventory:
+    module: unifi_mapper.analysis.device_inventory
+    handler: get_device_inventory
+    title: Get Device Inventory
+    cli: inventory list
+    description: >-
+      Every device the controller lists, grouped as firewall (gateways), switch, ap or
+      other, with model, firmware, address, state and the upgrade the controller offers;
+      per type, firmware versions and models with counts. The counts cover the whole site,
+      the devices and summaries the type asked for. Read-only.
+    priority: P1
+    tags: [inventory, devices, firmware, model, read-only]
+    parameters:
+      device_type:
+        type: string
+        description: all, firewall, switch, ap or other (default all)
+
+  get_firmware_drift:
+    module: unifi_mapper.analysis.device_inventory
+    handler: get_firmware_drift
+    title: Get Firmware Drift
+    cli: inventory firmware-skew
+    description: >-
+      Models whose devices run mixed firmware versions: each version's devices, the newest
+      version any of them runs and the devices behind it, the upgrades the controller
+      currently offers, and the kept devices that are not connected (their version is the
+      last one reported). Read-only.
+    priority: P2
+    tags: [firmware, skew, drift, inventory, upgrade, read-only]
+    parameters:
+      device_type:
+        type: string
+        description: all, firewall, switch or ap (default all)
+
+  get_port_naming_capabilities:
+    module: unifi_mapper.analysis.port_naming_capabilities
+    handler: get_port_naming_capabilities
+    title: Get Port Naming Capabilities
+    cli: capabilities
+    description: >-
+      Port-naming support per gateway and switch, from model and firmware: full API support,
+      UI-only, limited, auto-resetting firmware or unsupported, with the known issues and
+      workarounds for each flagged device, and whether automated port naming (the CLI's
+      discover and ports refresh) is recommended for this network. Read-only.
+    priority: P2
+    tags: [capabilities, port-naming, firmware, model, compatibility, read-only]
+
+  detect_config_drift:
+    module: unifi_mapper.analysis.config_drift
+    handler: detect_drift_mcp
+    title: Detect Config Drift
+    cli: analyze config-drift
+    description: >-
+      Compare device configuration against a baseline `unifi-mapper analyze config-drift
+      --snapshot` wrote: every tracked field that changed, was removed or was added since,
+      per device, and devices the baseline knows that are gone. Compare only, never writes a
+      baseline. The baseline path must be absolute and end in .json. Read-only.
+    priority: P2
+    tags: [config, drift, baseline, change, audit, read-only]
+    parameters:
+      baseline_path:
+        type: string
+        required: true
+        description: Absolute path of the baseline .json file
+
+  compare_link_errors:
+    module: unifi_mapper.analysis.link_error_tracking
+    handler: compare_link_errors_mcp
+    title: Compare Link Errors
+    cli: analyze link-errors
+    description: >-
+      Port error counters now against the baseline `unifi-mapper analyze link-errors
+      --snapshot` wrote: per port the error and drop deltas and the rate per minute, ports
+      over the threshold flagged, devices that rebooted since the baseline listed (shown, not
+      flagged). Compare only, never writes the baseline or the counter history. Omit the path
+      for the default under the XDG state directory. Read-only.
+    priority: P2
+    tags: [port, errors, counters, baseline, degradation, read-only]
+    parameters:
+      baseline_path:
+        type: string
+        description: Absolute path of the baseline .json file (default the XDG state baseline)
+      threshold_errors_per_min:
+        type: number
+        description: Flag ports above this error rate (0.1-100000, default 10)
+
+  analyze_client_roaming:
+    module: unifi_mapper.analysis.roaming_analysis
+    handler: analyze_roaming_mcp
+    title: Analyze Client Roaming
+    cli: analyze roaming
+    description: >-
+      Roaming and sticky clients from the history `unifi-mapper analyze roaming --snapshot`
+      builds up (at least two snapshots): clients that roamed between APs with the APs used
+      and their mean RSSI, and sticky clients that stay on a weak AP. Compare only, never
+      records a snapshot. The history path must be absolute and end in .json. Read-only.
+    priority: P2
+    tags: [wifi, roaming, sticky, clients, rssi, read-only]
+    parameters:
+      history_path:
+        type: string
+        required: true
+        description: Absolute path of the roaming history .json file
+
+  scan_neighbour_aps:
+    module: unifi_mapper.analysis.neighbour_scan
+    handler: scan_neighbours
+    title: Scan Neighbour APs
+    cli: analyze neighbours
+    description: >-
+      Neighbouring access points and interference sources from the controller's passive
+      background scan (stat/rogueap): per neighbour the SSID, BSSID, channel, band, signal
+      and the UniFi AP that hears it, with per-channel congestion. No scan is triggered and
+      nothing waits; the data is what the APs reported last. Read-only.
+    priority: P2
+    tags: [wifi, neighbours, interference, channel, rogue, read-only]
+    parameters:
+      ap_name:
+        type: string
+        description: Only the neighbours one AP hears (default every AP)
+
+  compare_neighbour_baseline:
+    module: unifi_mapper.analysis.neighbour_trend
+    handler: detect_neighbour_trend_mcp
+    title: Compare Neighbour Baseline
+    cli: analyze neighbours
+    description: >-
+      The neighbouring APs seen now against the baseline `unifi-mapper analyze neighbours
+      --snapshot` wrote: new and disappeared neighbours, channel moves and signal changes of
+      at least the threshold. Read live and compared in memory; never writes a baseline. The
+      baseline path must be absolute and end in .json. Read-only.
+    priority: P3
+    tags: [wifi, neighbours, baseline, trend, interference, read-only]
+    parameters:
+      baseline_path:
+        type: string
+        required: true
+        description: Absolute path of the baseline .json file
+      signal_delta_threshold:
+        type: integer
+        description: dB change that counts as a signal change (1-60, default 10)
+
   discover_stp_topology:
     module: unifi_mapper.analysis.stp_optimizer
     handler: discover_stp_topology

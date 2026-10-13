@@ -22,6 +22,7 @@ from unifi_mapper.analysis.port_counter_baseline import (
 )
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.local_paths import check_snapshot_path
 
 
 LINK_ERROR_BASELINE_FILENAME = 'link-error-baseline.json'
@@ -255,3 +256,35 @@ async def compare_link_errors(
         'all_deltas': all_deltas[:20],  # Top 20
         'rebooted_devices': list(rebooted_devices.values()),
     }
+
+
+async def compare_link_errors_mcp(
+    baseline_path: Optional[str] = None, threshold_errors_per_min: float = 10.0
+) -> dict[str, Any]:
+    """Port error counters now against the baseline `analyze link-errors --snapshot` wrote.
+
+    Per port, the error and drop deltas and the rate per minute since the baseline; ports
+    over the threshold are flagged, and devices that rebooted since the baseline are listed
+    (their deltas are shown but not flagged). Compare only: this tool never writes the
+    baseline or the counter history. Read-only.
+
+    Args:
+        baseline_path: Absolute path of the baseline .json file; omit for the default under
+            the XDG state directory (a legacy ./reports baseline is still read).
+        threshold_errors_per_min: Flag ports above this rate (0.1-100000, default 10).
+
+    Returns:
+        The comparison report.
+
+    Raises:
+        ToolError: CONFIG_INVALID for a bad path or threshold; NO_DATA when no baseline
+            exists yet.
+    """
+    if not 0.1 <= threshold_errors_per_min <= 100000:
+        raise ToolError(
+            message='threshold_errors_per_min must be between 0.1 and 100000',
+            error_code=ErrorCodes.CONFIG_INVALID,
+            suggestion='Use the default of 10 errors per minute unless the links are noisy.',
+        )
+    path = check_snapshot_path(baseline_path, what='baseline') if baseline_path else None
+    return await compare_link_errors(path, threshold_errors_per_min)

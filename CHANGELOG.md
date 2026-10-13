@@ -36,6 +36,11 @@ asked GitHub Support to purge the superseded commits from the server's object st
   comment; a quoted value keeps everything inside the quotes and drops what follows them. A
   value that held a bare `#` without a preceding space is unchanged.
 - `unifi-mapper inventory …` honours the root `--config` and `UNIFI_CONFIG` (issue 043).
+- `unifi-mapper capabilities` and `python -m unifi_mapper.analyze_network_capabilities` read the
+  config the CLI would (`--config`, `UNIFI_CONFIG`, then the search) and run behind the read-only
+  guard; both used to read a fixed `~/.config/unifi_management_cli/prod.env` whatever was given.
+- `diagnose all` names the MCP tool behind each check and exits 2 on a failed check as before;
+  its fifteen checks are the shared `diagnostics/run_all.py` table.
 - `unifi-network-toolkit` and `python -m unifi_mapper.cli` honour `UNIFI_CONFIG` and the same XDG
   search as `unifi-mapper`; the toolkit's `--config` default was a hard-coded `prod.env` path.
 - `inventory update-firmware` previews by default and triggers the upgrades only with `--apply`,
@@ -58,6 +63,19 @@ asked GitHub Support to purge the superseded commits from the server's object st
 - `--version` on every entry point; `unifi-mapper version` prints the installed version.
 - A missing default config lists every path that was searched and the keys a minimal file needs.
 - GitHub Actions CI running the pre-push gates; `CONTRIBUTING.md`; `SECURITY.md`.
+- A parity gate between the CLI and the MCP server (`tests/test_surface_parity.py`): every
+  manifest entry names its `unifi-mapper` command (`cli:`) or says why there is none
+  (`cli_gap:`), and every command has a tool or a categorised reason in
+  `src/unifi_mapper/mcp/parity.py`; the gate pins how many gaps are "not yet built" (issue 078).
+- Nine MCP tools for read-only commands that had none: `get_device_inventory` (`inventory
+  list`), `get_firmware_drift` (`inventory firmware-skew`, issue 017), `get_port_naming_capabilities`
+  (`capabilities`), `run_all_diagnostics` (`diagnose all`), `detect_config_drift`,
+  `compare_link_errors`, `analyze_client_roaming`, `scan_neighbour_aps` and
+  `compare_neighbour_baseline` (the compare halves of `analyze config-drift`, `link-errors`,
+  `roaming` and `neighbours`; the snapshot writers stay on the CLI, and a baseline path must be
+  absolute and end in `.json`). 96 tools, 82 on the direct surface.
+- `inventory firmware-skew --json` (the `get_firmware_drift` shape), `capabilities --json` and
+  `diagnose all --json`.
 
 ### Removed
 

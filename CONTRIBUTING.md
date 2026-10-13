@@ -28,7 +28,9 @@ in `pyproject.toml` is a ratchet: raise it only to a value the whole suite meets
 
 - **Reads become CLI commands and read-only MCP tools. Writes are CLI-only, preview by default,
   and need `--apply` (or `--no-dry-run`).** The MCP server never writes to the controller and
-  never opens SSH.
+  never opens SSH. `tests/test_surface_parity.py` enforces the first half: a manifest entry
+  names its `unifi-mapper` command (`cli:`) or says why there is none (`cli_gap:`), and a
+  command with no tool needs a categorised reason in `src/unifi_mapper/mcp/parity.py`.
 - **Secrets are stripped, never masked**, from every payload that can be printed, logged or
   saved (`core/utils/redact.py`), and only the paths of what was removed are reported.
 - **Fixtures use documentation values**: RFC 5737 addresses (`192.0.2.x`, `198.51.100.x`,

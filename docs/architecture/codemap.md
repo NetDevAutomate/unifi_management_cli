@@ -80,7 +80,7 @@ The UniFi Management CLI is a Python package (`unifi_mapper`) that provides thre
 
 1. **CLI tools** - argparse and Typer-based command-line interfaces for network operators
 2. **Analysis and diagnostics tools** - 54 analysis modules plus the diagnostics, discovery and connectivity packages
-3. **MCP server** - A FastMCP server that exposes 87 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
+3. **MCP server** - A FastMCP server that exposes 96 registered tools to AI agents via the Model Context Protocol, all of them read-only against the controller
 
 The codebase contains two generations of API client code. The legacy synchronous path (`api_client.py`, `port_mapper.py`, `run_methods.py`) handles the original port-mapping workflow. The modern async path (`core/utils/client.py`, `network/client.py`, `protect/client.py`) serves the analysis, network control, and Protect integration packages.
 
@@ -114,8 +114,8 @@ graph TB
     end
 
     subgraph "Domain Packages"
-        ANA["analysis/\n54 modules, 49 tools"]
-        DIA["diagnostics/\n10 modules, 11 tools"]
+        ANA["analysis/\n56 modules, 57 tools"]
+        DIA["diagnostics/\n11 modules, 12 tools"]
         DIS["discovery/\n4 modules, 5 tools"]
         CON["connectivity/\n5 modules, 4 tools"]
         NET["network/\n12 modules"]
@@ -592,7 +592,7 @@ classDiagram
 | `DeviceCapability` (dataclass) | Per-device record: known issues, workarounds, max name length |
 | `DeviceCapabilityDetector` | Lookup class with `detect_capabilities`, `should_attempt_port_naming`, `get_recommended_strategy` |
 
-`analyze_network_capabilities.py` (`uv run python -m unifi_mapper.analyze_network_capabilities`) runs the detector over the live device list and prints the compatibility report; `unifi-mapper capabilities` does the same through the Typer CLI.
+`analysis/port_naming_capabilities.py` runs the detector over the live device list (`get_port_naming_capabilities`, the MCP tool) and renders the compatibility report; `unifi-mapper capabilities` and the script `analyze_network_capabilities.py` (`uv run python -m unifi_mapper.analyze_network_capabilities`) print it, both reading the config the CLI would.
 
 **Dependencies.** Standard library only.
 
@@ -1256,7 +1256,7 @@ classDiagram
 
 **Lazy loading.** `ToolProxy._load_implementation()` calls `importlib.import_module` and `getattr` on first `execute()` call, not at startup. `ToolRegistry.execute(name, params)` is the registry's own refuse-mutation choke point over the proxies; the MCP server runs tools through `ToolCatalog` and `ToolRunner` instead (§17.4), which import each handler the same lazy way.
 
-**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (49 tools), `connectivity.yaml` (4), `diagnostics.yaml` (11), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (7), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
+**Manifest files.** Seven YAML files under `mcp/manifests/`: `analysis.yaml` (57 tools), `connectivity.yaml` (4), `diagnostics.yaml` (12), `discovery.yaml` (5), `network.yaml` (6), `observability.yaml` (7), `protect.yaml` (5). Each declares a `category` and a `tools` mapping of name to `{module, handler, title, description, priority, tags, parameters, credentials, mutates, pipeline, writes_local, idempotent, open_world, mcp, aliases}`; the [MCP server guide](../mcp-server/MCP_SERVER_GUIDE.md#adding-a-tool) lists each key's default.
 
 ---
 

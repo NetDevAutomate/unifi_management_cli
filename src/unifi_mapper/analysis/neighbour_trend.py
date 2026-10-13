@@ -19,6 +19,7 @@ from typing import Any
 from unifi_mapper.analysis.neighbour_scan import filter_live_rogue_entries
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.local_paths import check_snapshot_path
 
 
 DEFAULT_BASELINE_PATH = 'reports/neighbour-baseline.json'
@@ -187,3 +188,33 @@ async def detect_neighbour_trend(
     }
 
     return _compare_snapshots(baseline, current, signal_delta_threshold)
+
+
+async def detect_neighbour_trend_mcp(
+    baseline_path: str, signal_delta_threshold: int = DEFAULT_SIGNAL_DELTA_DB
+) -> dict[str, Any]:
+    """Compare the neighbouring APs seen now against a baseline `analyze neighbours --snapshot` wrote.
+
+    New and disappeared neighbours, neighbours that moved channel, and those whose signal
+    changed by at least the threshold. The current landscape is read live and compared in
+    memory: this tool never writes a baseline. Read-only.
+
+    Args:
+        baseline_path: Absolute path of the baseline .json file.
+        signal_delta_threshold: dB change that counts as a signal change (1-60, default 10).
+
+    Returns:
+        The trend report.
+
+    Raises:
+        ToolError: CONFIG_INVALID for a bad path or threshold; NO_DATA when no baseline
+            exists there yet.
+    """
+    if not 1 <= signal_delta_threshold <= 60:
+        raise ToolError(
+            message='signal_delta_threshold must be between 1 and 60 dB',
+            error_code=ErrorCodes.CONFIG_INVALID,
+            suggestion='Use the default of 10 dB unless the scan is noisy.',
+        )
+    path = check_snapshot_path(baseline_path, what='baseline')
+    return await detect_neighbour_trend(str(path), signal_delta_threshold)

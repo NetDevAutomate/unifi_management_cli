@@ -132,7 +132,6 @@ exclude = [
     "**/node_modules",
     "**/dist",
     "**/build",
-    "src/unifi_mapper/analyze_network_capabilities.py",
     "src/unifi_mapper/browser_verification.py",
 ]
 pythonVersion = "3.12"

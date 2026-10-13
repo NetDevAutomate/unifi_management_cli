@@ -1522,133 +1522,50 @@ def analyze_traffic_matrix_cmd(
 
 
 @diagnose_app.command('all')
-def diagnose_all():
-    """🏥 Run ALL diagnostics and print a pass/warn/fail summary table."""
-    import asyncio
-    from typing import Callable, Coroutine
+def diagnose_all(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of the table'),
+):
+    """🏥 Run ALL diagnostics and print a pass/warn/fail summary table.
 
-    config = state.config_path
-    debug = state.debug
+    Runs the same fifteen read-only checks as the MCP tool `run_all_diagnostics`, in order,
+    and names the analysis behind each one. A check that cannot run is a FAIL with a one-line
+    reason; the others still run. Exits 2 when any check failed.
+    """
+    from .diagnostics.run_all import DiagnosticCheck, run_diagnostics
 
-    if not state.debug:
-        setup_logging(debug=False)
+    style_of = {'PASS': 'green', 'WARN': 'yellow', 'FAIL': 'red'}
 
-    console.print('🏥 [bold]Comprehensive Diagnostics Runner[/bold]\n')
+    def progress(check: DiagnosticCheck) -> None:
+        if as_json:
+            return
+        detail = f' ({escape(check.detail)})' if check.detail else ''
+        console.print(
+            f'  ▶ {escape(check.name)}... [{style_of[check.status]}]{check.status}[/]{detail}'
+        )
 
-    try:
-        load_env_from_config(str(config))
-
-        from .analysis.capacity_planning import get_capacity_report
-        from .analysis.client_density import analyze_client_density
-        from .analysis.device_freshness import summarise_freshness
-        from .analysis.dhcp_pool import check_dhcp_pool_utilization
-        from .analysis.firmware_advisor import get_firmware_report
-        from .analysis.foreign_bridges import detect_foreign_bridges
-        from .analysis.link_quality import analyze_link_quality
-        from .analysis.mtu_audit import audit_mtu_consistency
-        from .analysis.poe_budget import check_poe_budget
-        from .analysis.port_profile_validation import validate_port_profiles
-        from .analysis.power_budget import audit_power_budget
-        from .analysis.radio_optimization import analyze_radio_optimization
-        from .analysis.sfp_diagnostics import audit_sfp_diagnostics
-        from .analysis.uplink_redundancy import check_uplink_redundancy
-        from .analysis.uplink_transparency import audit_uplink_transparency
-
-        # Each check: (name, async callable, result → status extractor)
-        checks: list[tuple[str, Callable[[], Coroutine]]] = [
-            ('Link Quality', analyze_link_quality),
-            ('Capacity Planning', get_capacity_report),
-            ('Port Profiles', validate_port_profiles),
-            ('MTU Consistency', audit_mtu_consistency),
-            ('SFP Diagnostics', audit_sfp_diagnostics),
-            ('Radio Optimization', analyze_radio_optimization),
-            ('Firmware Skew', get_firmware_report),
-            ('DHCP Pool', check_dhcp_pool_utilization),
-            ('PoE Budget', check_poe_budget),
-            ('Client Density', analyze_client_density),
-            ('Uplink Redundancy', check_uplink_redundancy),
-            ('Uplink VLAN Transparency', audit_uplink_transparency),
-            ('Device Power Budget', audit_power_budget),
-            ('Foreign Bridges', detect_foreign_bridges),
-            ('Telemetry Freshness', summarise_freshness),
-        ]
-
-        results: list[tuple[str, str]] = []
-
-        for name, coro_fn in checks:
-            console.print(f'  ▶ {name}...', end=' ')
-            try:
-                report = asyncio.run(coro_fn())
-                status = _extract_status(report)
-                results.append((name, status))
-                style = {'PASS': 'green', 'WARN': 'yellow', 'FAIL': 'red'}.get(status, 'white')
-                console.print(f'[{style}]{status}[/]')
-            except Exception as exc:
-                results.append((name, 'FAIL'))
-                console.print(f'[red]FAIL[/] ({_error_text(exc)})')
-
-        # Summary table
+    if not as_json:
+        console.print('🏥 [bold]Comprehensive Diagnostics Runner[/bold]\n')
+    summary = _run_analysis(lambda: run_diagnostics(progress=progress))
+    if as_json:
+        _emit_json(summary.model_dump(mode='json'))
+    else:
         console.print()
         table = Table(title='Diagnostics Summary', show_header=True)
         table.add_column('Check', style='cyan')
         table.add_column('Result', style='bold')
-        for name, status in results:
-            style = {'PASS': 'green', 'WARN': 'yellow', 'FAIL': 'red'}.get(status, 'white')
-            table.add_row(name, f'[{style}]{status}[/]')
+        table.add_column('Detail tool', style='dim')
+        for check in summary.checks:
+            table.add_row(
+                escape(check.name),
+                f'[{style_of[check.status]}]{check.status}[/]',
+                escape(check.tool),
+            )
         console.print(table)
-
-        pass_count = sum(1 for _, s in results if s == 'PASS')
-        warn_count = sum(1 for _, s in results if s == 'WARN')
-        fail_count = sum(1 for _, s in results if s == 'FAIL')
-        console.print(f'\n✅ {pass_count} passed  ⚠️ {warn_count} warnings  ❌ {fail_count} failed')
-
-        if fail_count > 0:
-            raise typer.Exit(2)
-
-    except typer.Exit:
-        raise
-    except Exception as e:
-        console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
-        if debug:
-            _print_debug_traceback(console)
-        raise typer.Exit(1)
-
-
-def _extract_status(report: object) -> str:
-    """Extract pass/warn/fail from a report object by inspecting common fields."""
-    # Check explicit validation_passed field
-    if hasattr(report, 'validation_passed'):
-        if not report.validation_passed:  # type: ignore[union-attr]
-            return 'FAIL'
-
-    # Check for warnings list
-    warnings = getattr(report, 'warnings', None)
-    if isinstance(warnings, list) and warnings:
-        return 'WARN'
-
-    # Check overall_health field
-    health = getattr(report, 'overall_health', None)
-    if health == 'CRITICAL':
-        return 'FAIL'
-    if health == 'DEGRADED':
-        return 'WARN'
-
-    # Check network_healthy field
-    healthy = getattr(report, 'network_healthy', None)
-    if healthy is False:
-        return 'FAIL'
-
-    # Check findings_count
-    findings = getattr(report, 'findings_count', None)
-    if isinstance(findings, int) and findings > 0:
-        return 'WARN'
-
-    # Check recommendations list as a soft signal
-    recs = getattr(report, 'recommendations', None)
-    if isinstance(recs, list) and recs:
-        return 'WARN'
-
-    return 'PASS'
+        console.print(
+            f'\n✅ {summary.passed} passed  ⚠️ {summary.warned} warnings  ❌ {summary.failed} failed'
+        )
+    if summary.failed > 0:
+        raise typer.Exit(2)
 
 
 @diagnose_app.command('health')
@@ -2052,19 +1969,23 @@ def version():
 
 
 @app.command()
-def capabilities():
-    """🧠 Analyze device capabilities for port naming support."""
+def capabilities(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of the report'),
+):
+    """🧠 Analyze device capabilities for port naming support.
+
+    Each gateway and switch, by model and firmware: full API support, UI-only, limited,
+    auto-resetting firmware or unsupported, with known issues and workarounds. The same
+    verdict as the MCP tool `get_port_naming_capabilities`. Read-only.
+    """
+    from .analysis.port_naming_capabilities import get_port_naming_capabilities, render_text
+
+    report = _run_analysis(get_port_naming_capabilities)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
     console.print('🧠 [bold]Device Capability Analysis[/bold]')
-
-    try:
-        # Run the capability analysis
-        from .analyze_network_capabilities import main as analyze_main
-
-        analyze_main()
-
-    except Exception as e:
-        console.print(f'❌ [bold red]Capability analysis failed: {_error_text(e)}[/bold red]')
-        raise typer.Exit(1)
+    console.print(escape(render_text(report)), soft_wrap=True)
 
 
 @app.command()

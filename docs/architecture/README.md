@@ -28,10 +28,10 @@ Intelligence Layer
 API Integration Layer
 ├── UniFi Network API Client
 ├── UniFi Protect Client
-└── MCP Server (87 tools via the MCP SDK's FastMCP)
+└── MCP Server (96 tools via the MCP SDK's FastMCP)
 
 Analysis Toolkit
-├── Analysis Tools (49 tools)
+├── Analysis Tools (57 tools)
 ├── Diagnostics (11 tools)
 ├── Discovery (5 tools)
 ├── Observability (7 tools)

@@ -781,3 +781,68 @@ class LatencyMatrixReport(BaseModel):
         default_factory=list,
         description='Targets not pinged because their IP is not a plain IPv4 or IPv6 address',
     )
+
+
+# --- device inventory and firmware drift (inventory list / firmware-skew over MCP) ---------
+
+
+class InventoryDevice(BaseModel):
+    """One adopted device as the inventory lists it."""
+
+    name: str = Field(description='Device name (Unnamed when the controller has none)')
+    model: str = Field(description='Model code, e.g. USW-Pro-24-PoE')
+    model_name: str = Field(description='Marketing model name when known, else the code')
+    version: str = Field(description='Installed firmware version')
+    ip: str = Field(description='Management address (N/A when unknown)')
+    mac: str = Field(description='MAC address (N/A when unknown)')
+    id: str = Field(description="The controller's device id")
+    type: str = Field(description='firewall, switch, ap or other')
+    raw_type: str = Field(description="The controller's type code (udm, usw, uap, ...)")
+    adopted: bool = Field(description='Whether the controller has adopted the device')
+    state: int = Field(description="The controller's state code (1 is connected)")
+    online: bool = Field(description='True when the state code is 1')
+    uptime: int = Field(description='Uptime in seconds, 0 when unknown')
+    upgradable: bool = Field(description='Whether the controller offers a firmware upgrade')
+    upgrade_to_firmware: str = Field(description='The offered firmware version, if any')
+
+
+class DeviceInventoryReport(BaseModel):
+    """The device inventory by type (`unifi-mapper inventory list`)."""
+
+    timestamp: str = Field(description='When the inventory was read')
+    device_type: str = Field(description='The filter applied: all, firewall, switch, ap or other')
+    total: int = Field(description='Devices on the site, before the filter')
+    counts: dict[str, int] = Field(description='Devices per type on the site, before the filter')
+    devices: list[InventoryDevice] = Field(description='The devices the filter keeps')
+    firmware_summary: dict[str, dict[str, int]] = Field(
+        description='Per kept type: firmware version -> device count'
+    )
+    model_summary: dict[str, dict[str, int]] = Field(
+        description='Per kept type: model code -> device count'
+    )
+
+
+class FirmwareDriftModel(BaseModel):
+    """One model whose devices run more than one firmware version."""
+
+    model: str = Field(description='Model code')
+    versions: dict[str, list[str]] = Field(description='Firmware version -> device names')
+    fleet_newest: str = Field(description='The newest version any device of this model runs')
+    devices_behind: list[str] = Field(description='Devices on an older version than fleet_newest')
+
+
+class FirmwareDriftReport(BaseModel):
+    """Firmware skew by model (`unifi-mapper inventory firmware-skew`)."""
+
+    timestamp: str = Field(description='When the inventory was read')
+    device_type: str = Field(
+        description='The filter applied: all, or the kept types comma-separated (switch,ap)'
+    )
+    devices_analyzed: int = Field(description='Devices the filter kept')
+    models_with_skew: int = Field(description='Models running more than one version')
+    models: list[FirmwareDriftModel] = Field(description='The skewed models, by model code')
+    upgradable: dict[str, str] = Field(
+        description='Device name -> the firmware the controller offers, for kept devices'
+    )
+    offline: list[str] = Field(description='Kept devices the controller reports as not connected')
+    recommendations: list[str] = Field(default_factory=list, description='Recommendations')

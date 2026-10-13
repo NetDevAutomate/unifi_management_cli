@@ -7,8 +7,10 @@ manual UI changes or unexpected configuration drift.
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.local_paths import check_snapshot_path
 
 
 DEFAULT_CONFIG_PATH = 'reports/config-baseline.json'
@@ -185,3 +187,24 @@ async def detect_drift(baseline_path: str = DEFAULT_CONFIG_PATH) -> dict:
         'drifts_detected': len(drifts),
         'drifts': drifts,
     }
+
+
+async def detect_drift_mcp(baseline_path: str) -> dict[str, Any]:
+    """Compare device configuration against a baseline `analyze config-drift --snapshot` wrote.
+
+    Reports every tracked field that changed, was removed or was added since the baseline,
+    per device, and devices the baseline knows that are gone. Compare only: this tool never
+    writes a baseline. Read-only.
+
+    Args:
+        baseline_path: Absolute path of the baseline .json file.
+
+    Returns:
+        The drift report.
+
+    Raises:
+        ToolError: CONFIG_INVALID for a path that is not an absolute .json file; NO_DATA when
+            no baseline exists there yet.
+    """
+    path = check_snapshot_path(baseline_path, what='baseline')
+    return await detect_drift(str(path))

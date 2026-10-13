@@ -63,15 +63,6 @@ CLI_ONLY: dict[str, str] = {
     'diagnose client-connectivity': 'active probe: gateway probes over SSH (issue 060 D1)',
     # Longer than an MCP call.
     'diagnose ap-health': 'long-running: samples for up to 10 h (issue 060 D4, issue 008)',
-    # Read-only commands with no tool yet (issue 078).
-    'analyze config-drift': 'not yet built: compare device config against a baseline file',
-    'analyze link-errors': 'not yet built: compare port error counters against a baseline',
-    'analyze neighbours': 'not yet built: neighbouring APs from the passive scan',
-    'analyze roaming': 'not yet built: roaming and sticky clients from a history file',
-    'capabilities': 'not yet built: port-naming support per device',
-    'diagnose all': 'not yet built: the pass/warn/fail summary of every diagnostic',
-    'inventory list': 'not yet built: the device inventory by type',
-    'inventory firmware-skew': 'not yet built: models running mixed firmware versions',
 }
 
 

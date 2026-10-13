@@ -705,23 +705,10 @@ CHECK_LIST = re.compile(r'`diagnose all`[^\n]*?\bruns (\d+) [^:\n]*?: (?P<items>
 
 @functools.cache
 def _diagnose_all_checks() -> tuple[str, ...]:
-    """Return the check names ``typer_cli.diagnose_all`` runs, read from its source."""
-    source = (REPO / 'src/unifi_mapper/typer_cli.py').read_text(encoding='utf-8')
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.FunctionDef) and node.name == 'diagnose_all':
-            for statement in ast.walk(node):
-                if (
-                    isinstance(statement, ast.AnnAssign)
-                    and isinstance(statement.target, ast.Name)
-                    and statement.target.id == 'checks'
-                    and isinstance(statement.value, ast.List)
-                ):
-                    return tuple(
-                        ast.literal_eval(item.elts[0])
-                        for item in statement.value.elts
-                        if isinstance(item, ast.Tuple)
-                    )
-    raise AssertionError('diagnose_all no longer builds a checks list: has it moved?')
+    """Return the check names ``diagnose all`` and ``run_all_diagnostics`` run."""
+    from unifi_mapper.diagnostics.run_all import CHECKS
+
+    return tuple(check.name for check in CHECKS)
 
 
 def _check_key(name: str) -> str:

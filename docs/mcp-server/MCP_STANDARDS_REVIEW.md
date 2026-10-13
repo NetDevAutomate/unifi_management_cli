@@ -97,9 +97,9 @@ C4Container
 
 ## Verification
 
-- Registry: 87 tools in 7 categories; 3 mutating, 11 pipeline, 73 on the direct catalog.
-- `unifi-mcp --check` (offline): `tool_count` 87; `listed_tools` 4 on `discovery`, 77 on
-  `direct`. The 77 are the 73 direct catalog tools plus the 4 meta-tools.
+- Registry: 96 tools in 7 categories; 3 mutating, 11 pipeline, 82 on the direct catalog.
+- `unifi-mcp --check` (offline): `tool_count` 96; `listed_tools` 4 on `discovery`, 86 on
+  `direct`. The 86 are the 82 direct catalog tools plus the 4 meta-tools.
 - Offline suite at `d6a4aaa`: 2964 passed, 3 skipped (the three `slow`-marked packaging tests,
   two of which are also `network`-marked). With the slow tests opted in,
   `uv run pytest --run-slow tests/mcp/test_packaging.py`: 4 passed.
@@ -110,7 +110,7 @@ C4Container
   `tests/test_docs_consistency.py` now fails when a documented MCP count stops matching the
   registry.
 - Re-checked offline at `89c000a` (2026-10-05), after the 0.2.0 port (A14, A18, D4 and D5 above
-  describe it): 87 tools in 7 categories; `unifi-mcp --check` lists 4 on `discovery` and 77 on
+  describe it): 96 tools in 7 categories; `unifi-mcp --check` lists 4 on `discovery` and 86 on
   `direct`, and reports the call log (`call_audit`); the suite has 4084 passed, 5 skipped (the
   three `slow` packaging tests and two privacy guards that need captures, none in
   `tests/network`).

@@ -98,9 +98,9 @@ def test_manifest_descriptions_use_folded_blocks(name):
 
 def test_registry_totals(registry):
     categories = registry.get_categories()
-    assert len(registry) == 87
-    assert len(categories['analysis']) == 49
-    assert len(categories['diagnostics']) == 11
+    assert len(registry) == 96
+    assert len(categories['analysis']) == 57
+    assert len(categories['diagnostics']) == 12
     assert len(categories['discovery']) == 5
     assert len(categories['observability']) == 7
 
