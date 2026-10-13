@@ -238,12 +238,14 @@ other write permission, the log turns off with one warning and writes nothing th
 The log is capped at 16 MiB (compacted to 80%, oldest lines first) and locked per write, so
 several server processes can share it. A write waits at most 5 s to take the lock. If the lock
 is still held then, that write's lines (the call line and any buffered request lines) are
-dropped with one warning (once per process), and the log stays on, so later calls are written
-once the lock is free. The 5 s covers only that wait, so it is not a limit on a call's total
-time: the append and any compaction after the lock is taken, a wait for a worker thread when
-many calls run at once, and the last write of buffered request lines when the server exits
-(which waits for the lock the same way) are outside it. A lock that is never released costs
-every logged call up to 5 s, and after the first warning the dropped lines leave no trace.
+dropped with one warning (once per process), and the log stays on. For the next 60 s, writes
+drop their lines without trying the lock, so a lock that is never released does not cost
+every logged call 5 s; the next write that takes the lock starts with a
+`{"kind": "lock_timeout", "dropped": N}` line counting the lines dropped since the last one
+written, so a gap leaves a trace. The 5 s covers only the wait, so it is not a limit on a
+call's total time: the append and any compaction after the lock is taken, a wait for a worker
+thread when many calls run at once, and the last write of buffered request lines when the
+server exits (which waits for the lock the same way) are outside it.
 
 Any other write that fails (an unwritable path, no home directory, another user's file, lock
 or directory, a symbolic link, a given directory others can write to) logs one warning and

@@ -482,7 +482,10 @@ def test_a_given_path_in_a_searchable_directory_leaves_a_private_lock(tmp_path: 
 def test_a_held_lock_drops_the_write_with_one_warning_and_keeps_the_log_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, warned: list[str]
 ) -> None:
+    import time
+
     monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2)
+    monkeypatch.setattr(call_audit_module, 'LOCK_COOLDOWN_S', 0.3)
     directory = tmp_path / 'logs'
     directory.mkdir()
     os.chmod(directory, 0o755)
@@ -495,8 +498,13 @@ def test_a_held_lock_drops_the_write_with_one_warning_and_keeps_the_log_on(
             assert held.error is None and held.elapsed < 0.2 + LOCK_SLACK_S
     assert log.enabled is True and not path.exists()
     assert len(_lock_warnings(warned)) == 1
-    _record(log)  # the lock is free again: the next call is written
-    assert [line['tool'] for line in _lines(path)] == ['find_device']
+    time.sleep(0.35)  # the lock is free and the cool-down over: the next call is written
+    _record(log)
+    assert [(line['kind'], line.get('tool')) for line in _lines(path)] == [
+        ('lock_timeout', None),
+        ('call', 'find_device'),
+    ]
+    assert _lines(path)[0]['dropped'] == 2  # the timed-out write and the one in the cool-down
     assert len(_lock_warnings(warned)) == 1
     assert not [w for w in warned if 'call log disabled' in w]
 
@@ -517,6 +525,60 @@ def test_a_held_lock_never_holds_a_tool_result_past_the_limit(
     assert held.error is None and held.elapsed < 0.2 + LOCK_SLACK_S
     assert getattr(held.result, 'structuredContent', None) == {'ok': True, 'result': {'ok': True}}
     assert runner.call_audit is not None and runner.call_audit.enabled is True
+
+
+def test_after_a_lock_timeout_the_lock_is_not_tried_again_during_the_cool_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, warned: list[str]
+) -> None:
+    """Issue 076 item 33: a lock that is never released cost every logged call the whole
+    limit; after a timeout the next writes skip the lock attempt for LOCK_COOLDOWN_S."""
+    monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2)
+    monkeypatch.setattr(call_audit_module, 'LOCK_COOLDOWN_S', 60.0)
+    directory = tmp_path / 'logs'
+    directory.mkdir()
+    log = _given(directory)
+    path = directory / CALL_AUDIT_FILENAME
+    with held_read_only(Path(f'{path}.lock')):
+        timed_out = run_bounded(lambda: _record(log), join_s=5)
+        assert timed_out.done and timed_out.error is None
+        assert 0.2 <= timed_out.elapsed < 0.2 + LOCK_SLACK_S
+        for _ in range(3):  # in the cool-down: no wait at all
+            skipped = run_bounded(lambda: _record(log), join_s=5)
+            assert skipped.done and skipped.error is None
+            assert skipped.elapsed < 0.1, 'a write in the cool-down waited on the lock'
+    assert log.enabled is True and not path.exists()
+    assert len(_lock_warnings(warned)) == 1
+    assert call_audit_module.LOCK_COOLDOWN_S == 60.0  # patched; see the shipped value below
+
+
+def test_the_shipped_cool_down_is_one_minute() -> None:
+    assert call_audit_module.LOCK_COOLDOWN_S == 60.0
+
+
+def test_the_next_write_after_the_cool_down_records_how_many_lines_were_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue 076 item 33: after the first warning the dropped lines left no trace; now the
+    next successful write starts with a ``lock_timeout`` line counting them, as
+    ``request_overflow`` does for request lines."""
+    import time
+
+    monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2)
+    monkeypatch.setattr(call_audit_module, 'LOCK_COOLDOWN_S', 0.3)
+    directory = tmp_path / 'logs'
+    directory.mkdir()
+    log = _given(directory)
+    path = directory / CALL_AUDIT_FILENAME
+    with held_read_only(Path(f'{path}.lock')):
+        log.note_request('GET', '/x')  # a buffered request line is dropped with its call line
+        assert run_bounded(lambda: _record(log), join_s=5).done  # times out: 2 lines dropped
+        assert run_bounded(lambda: _record(log), join_s=5).done  # in the cool-down: 1 more
+    time.sleep(0.35)  # past the cool-down; the lock is free again
+    _record(log)
+    kinds = [(line['kind'], line.get('dropped')) for line in _lines(path)]
+    assert kinds == [('lock_timeout', 3), ('call', None)]
+    _record(log)  # the count was reset: no second marker
+    assert [line['kind'] for line in _lines(path)] == ['lock_timeout', 'call', 'call']
 
 
 # --- request lines -------------------------------------------------------------------------
