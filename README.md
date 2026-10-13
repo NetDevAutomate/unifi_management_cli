@@ -205,8 +205,6 @@ reasoning. The ones that affect use today:
   as well (037); `monitor_lags` misses LAGs on current switch firmware (061).
 - PNG and SVG diagrams need Graphviz's `dot`; without it `discover` writes a placeholder and
   its report (075). MQTT needs the `mqtt` extra: `uv sync --extra mqtt` (074).
-- Radio snapshots and some baselines are written under `./reports/` in the working directory
-  rather than the state directory (010).
 
 ## Documentation
 

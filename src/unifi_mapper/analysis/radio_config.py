@@ -7,12 +7,42 @@ so changes are always reversible.
 import json
 import os
 import re
+import shlex
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
+from unifi_mapper.analysis.port_counter_baseline import state_dir
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+
+
+# Snapshot files live under the XDG state directory (``state_dir()``, issue 010), never the
+# working directory: under uvx the MCP server's CWD is whatever the client chose.
+RADIO_SNAPSHOT_FILENAME = 'radio-snapshot.json'
+RADIO_PRE_OPTIMIZATION_FILENAME = 'radio-pre-optimization.json'
+RADIO_PRE_AUTOCHANNEL_FILENAME = 'radio-pre-autochannel.json'
+
+
+def default_radio_snapshot_path(filename: str = RADIO_SNAPSHOT_FILENAME) -> Path:
+    """Return ``state_dir() / filename`` (read at call time; nothing is created).
+
+    Args:
+        filename: The snapshot's file name; the plain ``radio snapshot`` default unless given.
+
+    Returns:
+        The absolute path under ``$XDG_STATE_HOME/unifi_mapper/``.
+    """
+    return state_dir() / filename
+
+
+def restore_command(snapshot_path: str | Path) -> str:
+    """Return the exact CLI command that previews a restore from ``snapshot_path``.
+
+    The path is shell-quoted, so the command can be pasted as is; ``radio restore`` previews
+    by default and needs ``--apply`` to write.
+    """
+    return f'unifi-mapper radio restore --snapshot {shlex.quote(str(snapshot_path))}'
 
 
 CHANNEL_MOVES_VAR = 'UNIFI_RADIO_CHANNEL_MOVES'
@@ -57,10 +87,11 @@ def channel_moves_from_env() -> list[ChannelMove]:
     return moves
 
 
-async def snapshot_radio_config(output_path: str | None = None) -> dict:
+async def snapshot_radio_config(output_path: str | Path | None = None) -> dict:
     """Snapshot current radio configuration for all APs.
 
-    Returns dict and optionally writes to file for later restore.
+    Returns dict and, when ``output_path`` is given, writes it there for a later restore
+    (the callers' default is :func:`default_radio_snapshot_path`).
     """
     async with UniFiClient() as client:
         devices = await client.get_devices()
@@ -265,17 +296,20 @@ async def apply_radio_config(
     return results
 
 
-async def restore_radio_config(snapshot_path: str, dry_run: bool = True) -> list[dict]:
+async def restore_radio_config(
+    snapshot_path: str | Path | None = None, dry_run: bool = True
+) -> list[dict]:
     """Restore radio configuration from a snapshot file.
 
     Args:
-        snapshot_path: Path to snapshot JSON file
+        snapshot_path: Path to snapshot JSON file; ``None`` means the XDG default
+            (:func:`default_radio_snapshot_path`).
         dry_run: If True, only report what would change
     """
-    path = Path(snapshot_path)
+    path = Path(snapshot_path) if snapshot_path else default_radio_snapshot_path()
     if not path.exists():
         raise ToolError(
-            message=f'Snapshot file not found: {snapshot_path}',
+            message=f'Snapshot file not found: {path}',
             error_code=ErrorCodes.BACKUP_NOT_FOUND,
         )
 
@@ -416,13 +450,18 @@ async def snapshot_radio_config_mcp() -> dict:
     - As part of a change management workflow
 
     Returns:
-        Snapshot data with AP count and file path
+        Snapshot data: AP count, the absolute path written (under
+        ``$XDG_STATE_HOME/unifi_mapper/``, never the working directory) and the exact
+        ``unifi-mapper radio restore --snapshot <path>`` command, path shell-quoted. The
+        restore previews by default.
     """
-    snapshot = await snapshot_radio_config(output_path='reports/radio-snapshot.json')
+    path = default_radio_snapshot_path()
+    snapshot = await snapshot_radio_config(output_path=path)
     return {
         'status': 'saved',
         'aps_captured': len(snapshot['aps']),
-        'file': 'reports/radio-snapshot.json',
+        'file': str(path),
+        'restore_command': restore_command(path),
         'timestamp': snapshot['timestamp'],
     }
 
@@ -443,8 +482,10 @@ async def apply_radio_optimization_mcp() -> list[dict]:
     """
     from unifi_mapper.core.utils.client import UniFiClient
 
-    # Snapshot first
-    await snapshot_radio_config(output_path='reports/radio-pre-optimization.json')
+    # Snapshot first, under the XDG state directory
+    await snapshot_radio_config(
+        output_path=default_radio_snapshot_path(RADIO_PRE_OPTIMIZATION_FILENAME)
+    )
 
     # Get devices and build plan
     async with UniFiClient() as client:
@@ -457,9 +498,7 @@ async def apply_radio_optimization_mcp() -> list[dict]:
     return await apply_radio_config(changes, dry_run=False)
 
 
-async def restore_radio_config_mcp(
-    snapshot_path: str = 'reports/radio-snapshot.json',
-) -> list[dict]:
+async def restore_radio_config_mcp(snapshot_path: str | None = None) -> list[dict]:
     """Restore radio configuration from a snapshot file.
 
     When to use this tool:
@@ -468,7 +507,9 @@ async def restore_radio_config_mcp(
     - When Wi-Fi performance degraded after optimization
 
     Args:
-        snapshot_path: Path to snapshot JSON file (default: reports/radio-snapshot.json)
+        snapshot_path: Path to snapshot JSON file (default:
+            ``$XDG_STATE_HOME/unifi_mapper/radio-snapshot.json``, the file
+            ``snapshot_radio_config`` writes)
 
     Returns:
         List of per-device restore results

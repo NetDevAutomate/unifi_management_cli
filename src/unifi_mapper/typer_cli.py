@@ -4804,24 +4804,34 @@ def ports_diagnose(
 
 @radio_app.command('snapshot')
 def radio_snapshot(
-    output: str = typer.Option(
-        'reports/radio-snapshot.json', '--output', '-o', help='Output file path'
+    output: Optional[str] = typer.Option(
+        None,
+        '--output',
+        '-o',
+        help='Output file path (default: $XDG_STATE_HOME/unifi_mapper/radio-snapshot.json)',
     ),
 ):
-    """📸 Snapshot current radio config for all APs (backup before changes)."""
-    from unifi_mapper.analysis.radio_config import snapshot_radio_config
+    """📸 Snapshot current radio config for all APs (backup before changes).
+
+    Without --output the snapshot goes under the XDG state directory, where `radio restore`
+    and the MCP `snapshot_radio_config` tool look by default; never the working directory.
+    """
+    from unifi_mapper.analysis.radio_config import (
+        default_radio_snapshot_path,
+        restore_command,
+        snapshot_radio_config,
+    )
 
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('📸 [bold]Radio Configuration Snapshot[/bold]\n')
 
-    snapshot = _run_analysis(lambda: snapshot_radio_config(output_path=output))
+    path = Path(output) if output else default_radio_snapshot_path()
+    snapshot = _run_analysis(lambda: snapshot_radio_config(output_path=path))
     console.print(f'APs captured: [cyan]{len(snapshot["aps"])}[/cyan]')
-    console.print(f'Saved to: [green]{output}[/green]')
-    console.print(
-        f'\n💡 Use [cyan]unifi-mapper radio restore --snapshot {output}[/cyan] to revert changes'
-    )
+    console.print(f'Saved to: [green]{path}[/green]')
+    console.print(f'\n💡 Use [cyan]{restore_command(path)}[/cyan] to revert changes')
 
 
 @radio_app.command('optimize')
@@ -4829,8 +4839,11 @@ def radio_optimize(
     dry_run: bool = typer.Option(
         True, '--dry-run/--apply', help='Preview changes without applying'
     ),
-    snapshot: str = typer.Option(
-        'reports/radio-snapshot.json', '--snapshot', '-s', help='Auto-snapshot before apply'
+    snapshot: Optional[str] = typer.Option(
+        None,
+        '--snapshot',
+        '-s',
+        help='Auto-snapshot before apply (default: $XDG_STATE_HOME/unifi_mapper/radio-snapshot.json)',
     ),
 ):
     """⚡ Apply recommended radio optimisations (80MHz 5GHz, reduce 2.4GHz power, min RSSI)."""
@@ -4840,6 +4853,7 @@ def radio_optimize(
         apply_radio_config,
         build_optimisation_plan,
         channel_moves_from_env,
+        default_radio_snapshot_path,
         snapshot_radio_config,
     )
     from unifi_mapper.core.utils.client import UniFiClient
@@ -4891,7 +4905,8 @@ def radio_optimize(
 
     # Take snapshot before applying (a read, behind the guard); the apply must write.
     console.print(f'\n📸 Saving snapshot to [cyan]{snapshot}[/cyan]...')
-    _run_analysis(lambda: snapshot_radio_config(output_path=snapshot))
+    snapshot_file = Path(snapshot) if snapshot else default_radio_snapshot_path()
+    _run_analysis(lambda: snapshot_radio_config(output_path=snapshot_file))
 
     # Apply
     console.print('⚡ Applying changes...')
@@ -4907,8 +4922,11 @@ def radio_optimize(
 
 @radio_app.command('restore')
 def radio_restore(
-    snapshot_path: str = typer.Option(
-        'reports/radio-snapshot.json', '--snapshot', '-s', help='Snapshot file to restore from'
+    snapshot_path: Optional[str] = typer.Option(
+        None,
+        '--snapshot',
+        '-s',
+        help='Snapshot file to restore from (default: $XDG_STATE_HOME/unifi_mapper/radio-snapshot.json)',
     ),
     dry_run: bool = typer.Option(
         True, '--dry-run/--apply', help='Preview restore without applying'
@@ -4916,16 +4934,20 @@ def radio_restore(
 ):
     """🔄 Restore radio config from a snapshot file."""
     import asyncio
-    from unifi_mapper.analysis.radio_config import restore_radio_config
+    from unifi_mapper.analysis.radio_config import (
+        default_radio_snapshot_path,
+        restore_radio_config,
+    )
 
     load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
 
+    snapshot_file = Path(snapshot_path) if snapshot_path else default_radio_snapshot_path()
     console.print('🔄 [bold]Radio Configuration Restore[/bold]\n')
-    console.print(f'Snapshot: [cyan]{snapshot_path}[/cyan]\n')
+    console.print(f'Snapshot: [cyan]{snapshot_file}[/cyan]\n')
 
-    results = asyncio.run(restore_radio_config(snapshot_path, dry_run=dry_run))
+    results = asyncio.run(restore_radio_config(snapshot_file, dry_run=dry_run))
 
     for r in results:
         status = r['status']
@@ -4967,7 +4989,13 @@ def radio_auto_channel(
         optimize_5ghz,
         optimize_24ghz,
     )
-    from unifi_mapper.analysis.radio_config import apply_radio_config, snapshot_radio_config
+    from unifi_mapper.analysis.radio_config import (
+        RADIO_PRE_AUTOCHANNEL_FILENAME,
+        apply_radio_config,
+        default_radio_snapshot_path,
+        restore_command,
+        snapshot_radio_config,
+    )
 
     if not state.debug:
         setup_logging(debug=False)
@@ -5051,7 +5079,8 @@ def radio_auto_channel(
 
     # Snapshot before applying (a read, behind the guard); the apply must write.
     console.print('\n📸 Saving snapshot...')
-    _run_analysis(lambda: snapshot_radio_config(output_path='reports/radio-pre-autochannel.json'))
+    pre_snapshot = default_radio_snapshot_path(RADIO_PRE_AUTOCHANNEL_FILENAME)
+    _run_analysis(lambda: snapshot_radio_config(output_path=pre_snapshot))
 
     # Build change list
     changes = []
@@ -5071,9 +5100,7 @@ def radio_auto_channel(
         icon = '✅' if r['status'] == 'APPLIED' else '❌'
         console.print(f'  {icon} {r["name"]} ({r["radio"]}): {r["status"]}')
 
-    console.print(
-        '\n💡 To revert: [cyan]unifi-mapper radio restore -s reports/radio-pre-autochannel.json --apply[/cyan]'
-    )
+    console.print(f'\n💡 To revert: [cyan]{restore_command(pre_snapshot)} --apply[/cyan]')
 
 
 @radio_app.command('report')
@@ -5313,31 +5340,36 @@ def analyze_link_errors(
 @analyze_app.command('roaming')
 def analyze_roaming_cmd(
     snapshot: bool = typer.Option(False, '--snapshot', help='Record current client associations'),
-    history: str = typer.Option(
-        'reports/client-roaming-history.json', '--history', '-h', help='History file path'
+    history: Optional[str] = typer.Option(
+        None,
+        '--history',
+        '-h',
+        help='History file path (default: $XDG_STATE_HOME/unifi_mapper/client-roaming-history.json)',
     ),
 ):
     """📡 Analyze client roaming patterns and detect sticky clients."""
     from rich.table import Table
     from unifi_mapper.analysis.roaming_analysis import (
         analyze_roaming,
+        default_roaming_history_path,
         snapshot_client_associations,
     )
 
     if not state.debug:
         setup_logging(debug=False)
+    history_file = Path(history) if history else default_roaming_history_path()
 
     if snapshot:
         console.print('📸 [bold]Client Association Snapshot[/bold]\n')
-        result = _run_analysis(lambda: snapshot_client_associations(history))
+        result = _run_analysis(lambda: snapshot_client_associations(history_file))
         console.print(f'Clients tracked: {result["clients_tracked"]}')
         console.print(f'Snapshots stored: {result["snapshots_stored"]}')
-        console.print(f'History: [green]{history}[/green]')
+        console.print(f'History: [green]{history_file}[/green]')
         console.print('\n💡 Run periodically (every 5 min) to build roaming history')
         return
 
     console.print('📡 [bold]Client Roaming Analysis[/bold]\n')
-    report = _run_analysis(lambda: analyze_roaming(history))
+    report = _run_analysis(lambda: analyze_roaming(history_file))
 
     console.print(f'Snapshots analyzed: {report["snapshots_analyzed"]}')
     console.print(f'Time span: {report["time_span"]}')
@@ -5379,27 +5411,35 @@ def analyze_roaming_cmd(
 @analyze_app.command('config-drift')
 def analyze_config_drift(
     snapshot: bool = typer.Option(False, '--snapshot', help='Take a config baseline snapshot'),
-    baseline: str = typer.Option(
-        'reports/config-baseline.json', '--baseline', '-b', help='Baseline file path'
+    baseline: Optional[str] = typer.Option(
+        None,
+        '--baseline',
+        '-b',
+        help='Baseline file path (default: $XDG_STATE_HOME/unifi_mapper/config-baseline.json)',
     ),
 ):
     """🔍 Detect configuration drift from baseline (catches manual UI changes)."""
     from rich.table import Table
-    from unifi_mapper.analysis.config_drift import detect_drift, snapshot_config
+    from unifi_mapper.analysis.config_drift import (
+        default_config_baseline_path,
+        detect_drift,
+        snapshot_config,
+    )
 
     if not state.debug:
         setup_logging(debug=False)
+    baseline_file = Path(baseline) if baseline else default_config_baseline_path()
 
     if snapshot:
         console.print('📸 [bold]Configuration Baseline Snapshot[/bold]\n')
-        result = _run_analysis(lambda: snapshot_config(baseline))
+        result = _run_analysis(lambda: snapshot_config(baseline_file))
         console.print(f'Devices captured: {len(result["devices"])}')
-        console.print(f'Saved to: [green]{baseline}[/green]')
+        console.print(f'Saved to: [green]{baseline_file}[/green]')
         console.print('\n💡 Run without --snapshot to detect drift from this baseline')
         return
 
     console.print('🔍 [bold]Configuration Drift Detection[/bold]\n')
-    report = _run_analysis(lambda: detect_drift(baseline))
+    report = _run_analysis(lambda: detect_drift(baseline_file))
 
     console.print(f'Baseline: {report["baseline_timestamp"]}')
     console.print(f'Devices checked: {report["devices_checked"]}')
@@ -5444,8 +5484,11 @@ def analyze_neighbours(
     diff: bool = typer.Option(
         False, '--diff', help='Compare current landscape against the baseline snapshot'
     ),
-    baseline: str = typer.Option(
-        'reports/neighbour-baseline.json', '--baseline', '-b', help='Baseline snapshot file path'
+    baseline: Optional[str] = typer.Option(
+        None,
+        '--baseline',
+        '-b',
+        help='Baseline snapshot file path (default: $XDG_STATE_HOME/unifi_mapper/neighbour-baseline.json)',
     ),
     signal_delta: int = typer.Option(
         10, '--signal-delta', help='dB change threshold for signal-change flagging'
@@ -5455,9 +5498,12 @@ def analyze_neighbours(
     from rich.table import Table
     from unifi_mapper.analysis.neighbour_scan import scan_neighbours
     from unifi_mapper.analysis.neighbour_trend import (
+        default_neighbour_baseline_path,
         detect_neighbour_trend,
         snapshot_neighbours,
     )
+
+    baseline_file = Path(baseline) if baseline else default_neighbour_baseline_path()
 
     if not state.debug:
         setup_logging(debug=False)
@@ -5470,16 +5516,16 @@ def analyze_neighbours(
     # ── Snapshot mode ────────────────────────────────────────────────────
     if snapshot:
         console.print('📸 [bold]Neighbour Baseline Snapshot[/bold]\n')
-        result = _run_analysis(lambda: snapshot_neighbours(baseline))
+        result = _run_analysis(lambda: snapshot_neighbours(baseline_file))
         console.print(f'Captured: {result["entry_count"]} neighbour entries')
-        console.print(f'Saved to: [green]{baseline}[/green]')
+        console.print(f'Saved to: [green]{baseline_file}[/green]')
         console.print('\n💡 Run again with --diff to compare future scans against this baseline')
         return
 
     # ── Diff mode ────────────────────────────────────────────────────────
     if diff:
         console.print('📊 [bold]Neighbour Landscape Trend[/bold]\n')
-        report = _run_analysis(lambda: detect_neighbour_trend(baseline, signal_delta))
+        report = _run_analysis(lambda: detect_neighbour_trend(baseline_file, signal_delta))
 
         console.print(f'Baseline: {report["baseline_timestamp"]}')
         console.print(f'Current:  {report["current_timestamp"]}\n')

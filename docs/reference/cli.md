@@ -455,6 +455,30 @@ unifi-mapper analyze neighbours --diff --signal-delta 15
 - `scripts/unifi-cron.sh` runs `analyze link-errors --record` every 5 minutes (the task is
   still named `link-error-snapshot`).
 
+### Radio snapshots and the other baselines
+
+The remaining state files default to the same directory,
+`${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/` (a relative `XDG_STATE_HOME` is ignored),
+never the working directory ([issue 010](../issues/010-cwd-relative-state-files.md)):
+
+| File | Written by | Read by |
+|---|---|---|
+| `radio-snapshot.json` | `radio snapshot`, `radio optimize --apply`, the MCP `snapshot_radio_config` tool | `radio restore` |
+| `radio-pre-optimization.json` | the MCP `apply_radio_optimization` handler, before it writes | `radio restore --snapshot <path>` |
+| `radio-pre-autochannel.json` | `radio auto-channel --apply`, before it writes | `radio restore --snapshot <path>` |
+| `config-baseline.json` | `analyze config-drift --snapshot` | `analyze config-drift` |
+| `client-roaming-history.json` | `analyze roaming --snapshot` | `analyze roaming`, the RF strategy plan |
+| `neighbour-baseline.json` | `analyze neighbours --snapshot` | `analyze neighbours --diff` |
+
+- An explicit `--output`, `--snapshot`, `--baseline` or `--history` path is used as given;
+  only the defaults moved. Each command's `--help` names its default.
+- The MCP `snapshot_radio_config` tool returns the absolute path it wrote (`file`) and the
+  exact command to preview a restore from it (`restore_command`, path shell-quoted):
+  `unifi-mapper radio restore --snapshot <path>`; add `--apply` to write.
+- Files written by earlier releases under `./reports/` are **not** moved or read. Pass the
+  old path once (`analyze config-drift --baseline ./reports/config-baseline.json`) or move the
+  file into the state directory.
+
 ## Command Reference
 
 Every command on the `unifi-mapper` entry point. All are read-only unless noted.

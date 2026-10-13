@@ -18,6 +18,7 @@ from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
+from pathlib import Path
 from typing import Any
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
@@ -870,7 +871,7 @@ class _PlanInputs:
 
 
 async def _collect_inputs(
-    history_path: str,
+    history_path: str | Path | None,
     min_history_hours: float,
 ) -> _PlanInputs:
     """Gather all shared data needed by the scorecard, one controller pass.
@@ -954,7 +955,7 @@ async def _collect_inputs(
 
 async def generate_plan(
     site: str = 'default',
-    history_path: str = 'reports/client-roaming-history.json',
+    history_path: str | Path | None = None,
     min_history_hours: float = MIN_HISTORY_HOURS,
 ) -> RFStrategyPlan:
     """Compose a full RF strategy plan from current controller state + history.
@@ -967,7 +968,8 @@ async def generate_plan(
         site: UniFi site name (reserved for multi-site support; currently
             informational, stamped on the plan).
         history_path: Path to the roaming snapshot history file (written
-            by :func:`snapshot_client_associations`).
+            by :func:`snapshot_client_associations`); ``None`` means its XDG
+            default, ``$XDG_STATE_HOME/unifi_mapper/client-roaming-history.json``.
         min_history_hours: Refuse to emit recommendations when the history
             file spans fewer hours than this. Default 48h (Q1 locked
             decision); override via CLI ``--min-history-hours`` for local
