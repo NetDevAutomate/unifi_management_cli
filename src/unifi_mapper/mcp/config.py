@@ -481,7 +481,11 @@ class ServerSettings:
     log_level: str = 'WARNING'
     credential_timeout: float = 15.0
     max_concurrency: int = 4
-    tool_timeout: float | None = None  # unset = no per-call deadline
+    # UNIFI_MCP_TOOL_TIMEOUT: the per-call deadline, 300 s by default (issue 012 D11): above
+    # any fleet read and the 100 s counter-sampling window, below the 330 s the guide's client
+    # snippets allow, so a wedged controller is [TIMEOUT] before the client gives up. None
+    # (programmatic only; the variable cannot unset it) means no deadline.
+    tool_timeout: float | None = 300.0
     # UNIFI_MCP_CALL_AUDIT: the call log is on by default (issue 013 D5).
     call_audit: CallAuditSetting = CallAuditSetting('default')
 
@@ -547,7 +551,7 @@ def load_server_settings(
         max_concurrency=(
             defaults.max_concurrency if max_concurrency is None else int(max_concurrency)
         ),
-        tool_timeout=tool_timeout,
+        tool_timeout=defaults.tool_timeout if tool_timeout is None else tool_timeout,
         call_audit=call_audit,
     )
 

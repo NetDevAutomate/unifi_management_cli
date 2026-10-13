@@ -176,12 +176,19 @@ async def test_success_text_contract(runner) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_no_deadline_by_default(runner) -> None:
+async def test_default_deadline_is_300_seconds_and_a_quick_call_passes(runner) -> None:
+    assert runner.settings.tool_timeout == 300.0  # issue 012 (D11)
     out = await _envelope(runner, 'sleeper', {'seconds': 0.1})
     assert out == {'ok': True, 'result': {'slept': 0.1}}
 
 
-async def test_timeout_only_when_configured(make_runner) -> None:
+async def test_no_deadline_when_tool_timeout_is_none(make_runner) -> None:
+    runner = make_runner(tool_timeout=None)
+    out = await _envelope(runner, 'sleeper', {'seconds': 0.1})
+    assert out == {'ok': True, 'result': {'slept': 0.1}}
+
+
+async def test_a_configured_timeout_is_the_timeout_code(make_runner) -> None:
     out = await make_runner(tool_timeout=0.05).run('sleeper', {'seconds': 0.5})
     assert out.structuredContent['error_code'] == 'TIMEOUT'
     assert 'UNIFI_MCP_TOOL_TIMEOUT' in out.structuredContent['message']

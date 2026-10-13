@@ -601,8 +601,22 @@ async def test_op_is_spawned_with_stdin_from_devnull(monkeypatch: pytest.MonkeyP
 
 def test_server_settings_defaults() -> None:
     assert config.load_server_settings({}, warn=pytest.fail) == config.ServerSettings(
-        log_level='WARNING', credential_timeout=15.0, max_concurrency=4, tool_timeout=None
+        log_level='WARNING', credential_timeout=15.0, max_concurrency=4, tool_timeout=300.0
     )
+
+
+def test_tool_timeout_defaults_to_300_seconds() -> None:
+    """Issue 012 (D11): a wedged controller becomes [TIMEOUT], not a client-side hang."""
+    assert config.ServerSettings().tool_timeout == 300.0
+    assert config.load_server_settings({}, warn=pytest.fail).tool_timeout == 300.0
+    unset = {'UNIFI_MCP_TOOL_TIMEOUT': ''}
+    assert config.load_server_settings(unset, warn=pytest.fail).tool_timeout == 300.0
+    messages, warn = _collect()
+    assert (
+        config.load_server_settings({'UNIFI_MCP_TOOL_TIMEOUT': '2'}, warn=warn).tool_timeout
+        == 300.0
+    )
+    assert len(messages) == 1 and 'UNIFI_MCP_TOOL_TIMEOUT' in messages[0]
 
 
 def test_server_settings_valid_values() -> None:
