@@ -13,7 +13,6 @@ import os
 import pytest
 import stat
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tests.lock_helpers import held_read_only, run_bounded, umask
@@ -140,20 +139,41 @@ def test_concurrent_appends_of_the_same_run_write_it_once(tmp_path: Path) -> Non
     assert _epochs(path) == [1]
 
 
-def test_append_waits_for_the_lock(tmp_path: Path) -> None:
+class _SignallingFcntl:
+    """``jsonl``'s ``fcntl`` for one test: the real ``flock``, signalling each attempt first."""
+
+    LOCK_EX = fcntl.LOCK_EX
+    LOCK_NB = fcntl.LOCK_NB
+    LOCK_UN = fcntl.LOCK_UN
+
+    def __init__(self) -> None:
+        self.at_the_lock = threading.Event()
+
+    def flock(self, fd: int, operation: int) -> None:
+        if operation & fcntl.LOCK_EX:
+            self.at_the_lock.set()
+        fcntl.flock(fd, operation)
+
+
+def test_append_waits_for_the_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Issue 076 item 21: the test slept a fixed 0.2 s and hoped the worker had reached the
+    lock by then; it now waits for the worker's own signal that it is at the lock."""
     path = tmp_path / 'h.jsonl'
+    signalling = _SignallingFcntl()
+    monkeypatch.setattr(jsonl, 'fcntl', signalling)  # the holder below keeps the real one
     done = threading.Event()
+
+    def _append() -> None:
+        append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
+        done.set()
+
     with (tmp_path / 'h.jsonl.lock').open('a') as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        worker = threading.Thread(
-            target=lambda: (
-                append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH),
-                done.set(),
-            )
-        )
+        worker = threading.Thread(target=_append, daemon=True)
         worker.start()
-        time.sleep(0.2)
-        assert not done.is_set() and not path.exists()
+        assert signalling.at_the_lock.wait(timeout=5), 'the worker never reached the lock'
+        assert not done.wait(timeout=0.1), 'the append went through a held lock'
+        assert not path.exists()
         fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
     worker.join(timeout=5)
     assert done.is_set() and _epochs(path) == [1]
@@ -310,25 +330,11 @@ def test_enforced_modes_refuse_a_directory_owned_by_another_user(
     assert list(directory.iterdir()) == [] and _mode(directory) == 0o755
 
 
-def test_enforced_modes_refuse_a_file_owned_by_another_user(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / 'state' / 'h.jsonl'
-    _private(path, _line(1))
-    os.chmod(path, 0o644)
-    real_fstat = os.fstat
-
-    def someone_elses(fd: int) -> os.stat_result:
-        st = real_fstat(fd)
-        fields = list(st[:10])
-        fields[stat.ST_UID] = st.st_uid + 1
-        return os.stat_result(fields)
-
-    with monkeypatch.context() as patched:
-        patched.setattr(os, 'fstat', someone_elses)
-        with pytest.raises(jsonl.NotOwnedError, match='file is owned by another user'):
-            _private(path, _line(2))
-    assert _epochs(path) == [1] and _mode(path) == 0o644
+# Issue 076 item 34: a test here faked the owner of every descriptor and matched 'file is
+# owned by another user' unanchored, so once the lock was checked first it passed on the
+# lock's message ('the lock file is owned by another user') and no longer tested the file's
+# check. test_enforced_modes_refuse_a_lock_or_file_owned_by_another_user[file] below fakes
+# the file's descriptor alone and anchors the match; the old test is gone.
 
 
 def test_without_enforcement_an_existing_file_keeps_its_mode(tmp_path: Path) -> None:
