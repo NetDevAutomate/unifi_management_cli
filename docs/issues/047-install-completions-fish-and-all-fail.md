@@ -1,7 +1,8 @@
 ---
 title: "`unifi-mapper install-completions` accepts `fish` and `all` but installs only bash and zsh"
 date: 2026-10-04
-status: open
+status: resolved
+resolved_by: 3951920
 severity: low
 components: [typer_cli, completions]
 found_by: docs and repo hygiene review (README install section)
@@ -38,3 +39,19 @@ Recommended: map `all` to the installer's `both`, refuse `fish` with a pointer t
 `--install-completion` (or add a fish installer), exit 1 when installation fails, and make
 the argument help list what works. A test should run each accepted value through the
 command with the installers faked.
+
+## Resolution
+
+Resolved on 2026-10-13 (`3951920`). `unifi-mapper install-completions` now takes `bash`,
+`zsh` or `all` (`both`, the installer's and `unifi-network-toolkit`'s name for the same
+thing, is accepted too); `all` maps to the installer's `both`, so bash and zsh are installed
+together. `fish` is refused with a pointer to `unifi-mapper --install-completion`, Typer's
+own installer, which is the one path that covers fish; no fish script was added, because
+Typer already generates one. An installer that returns `False` or raises now exits 1 instead
+of printing the failure and exiting 0. The argument help, the command docstring and the
+`docs/reference/cli.md` and runbook rows list what works.
+
+Deliberately not changed: the manual bash and zsh scripts themselves (`completions.py`),
+which still complete only the legacy `discover` options; `--install-completion` is the
+complete alternative. Tests: `tests/test_install_completions.py`, each accepted value
+through the command with both installers faked.
