@@ -1187,9 +1187,8 @@ Connect to a UniFi Protect controller, enumerate cameras and devices, subscribe 
   not support API tokens). The MCP Protect tools haven't been verified against a live console
   yet ([issue 034](../issues/034-protect-has-no-live-account.md)).
 - For MQTT bridge: a running MQTT broker (e.g., Mosquitto)
-- Python `aiomqtt` package for MQTT bridge, which the project does not declare yet
-  ([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md)): `uv add aiomqtt`, or
-  `uv run --with aiomqtt` for one run
+- The `mqtt` extra for the MQTT bridge: `uv sync --extra mqtt` installs `aiomqtt`
+  ([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md))
 
 ### Step-by-Step Instructions
 
@@ -1367,7 +1366,7 @@ sensor.back_door_sensor_battery
 |---------|-------|-----|
 | `AuthenticationError` | Cloud SSO account used | Create a local controller account (System > Administrators) |
 | `ConnectionError` on connect | Protect not reachable | Verify host IP and that Protect is active on the NVR |
-| MQTT bridge `ImportError` | `aiomqtt` not installed | Run `uv add aiomqtt` |
+| MQTT bridge `ImportError` | `aiomqtt` not installed | Run `uv sync --extra mqtt` |
 | HA entities not appearing | Wrong discovery prefix | Ensure `discovery_prefix` matches HA's MQTT integration prefix (default: `homeassistant`) |
 | Smart detection events missing | Third-party camera not paired to AI Port | Configure AI Port pairing in Protect UI |
 

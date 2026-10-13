@@ -43,6 +43,10 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 
+[project.optional-dependencies]
+# The Home Assistant MQTT bridge (protect/mqtt.py): uv sync --extra mqtt (issue 074)
+mqtt = ["aiomqtt>=2,<3"]
+
 [project.urls]
 Homepage = "https://github.com/NetDevAutomate/unifi_management_cli"
 Documentation = "https://github.com/NetDevAutomate/unifi_management_cli/tree/main/docs"

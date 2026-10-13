@@ -2,8 +2,8 @@
 
 The Protect library, its Home Assistant MQTT bridge and the Protect monitor, and the AXIS device
 provisioning script, moved here from the README. The Protect MCP tools are unverified against a
-live console ([issue 034](../issues/034-protect-has-no-live-account.md)); MQTT needs `aiomqtt`,
-which the project does not declare ([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md)).
+live console ([issue 034](../issues/034-protect-has-no-live-account.md)); MQTT needs the `mqtt`
+extra ([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md)).
 
 # UniFi Protect Integration
 
@@ -42,11 +42,10 @@ async with UniFiProtectClient(config) as client:
 
 ## MQTT Bridge for Home Assistant
 
-The bridge needs the `aiomqtt` package, which the project does not declare yet
-([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md)), so `uv sync` leaves it
-out and `bridge.start()` raises `ImportError`. Add it to your project with `uv add aiomqtt`,
-or run a script with `uv run --with aiomqtt python your_script.py`, which changes no
-project file.
+The bridge needs the `aiomqtt` package, declared as the optional `mqtt` extra
+([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md)): a plain `uv sync`
+leaves it out and `bridge.start()` raises `ImportError` naming the command. Install it with
+`uv sync --extra mqtt`.
 
 ```python
 from unifi_mapper.protect import MQTTBridge, MQTTConfig

@@ -687,7 +687,9 @@ class TestMQTTBridgeLifecycle:
         with patch.dict('sys.modules', {'aiomqtt': None}):
             with pytest.raises(ImportError, match='aiomqtt is required') as raised:
                 await bridge.start()
-        assert 'uv add aiomqtt' in str(raised.value)
+        # Issue 074: the hint is the command that installs the declared extra.
+        assert 'uv sync --extra mqtt' in str(raised.value)
+        assert 'uv add aiomqtt' not in str(raised.value)
         assert 'pip' not in str(raised.value)
 
     @pytest.mark.asyncio

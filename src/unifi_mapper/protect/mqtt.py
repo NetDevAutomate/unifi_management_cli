@@ -426,7 +426,7 @@ class MQTTBridge:
             import aiomqtt  # type: ignore[import-untyped]
         except ImportError as e:
             raise ImportError(
-                'aiomqtt is required for MQTT support. Add it with: uv add aiomqtt'
+                'aiomqtt is required for MQTT support. Install it with: uv sync --extra mqtt'
             ) from e
 
         password = self._config.password.get_secret_value() if self._config.password else None
