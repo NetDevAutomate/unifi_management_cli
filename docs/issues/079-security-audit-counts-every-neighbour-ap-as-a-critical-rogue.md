@@ -1,7 +1,8 @@
 ---
 title: "security_audit counts every neighbouring AP as a critical rogue"
 date: 2026-10-13
-status: open, decision needed
+status: resolved
+resolved_by: 2f8d2a8
 severity: medium
 components: [diagnostics/security_audit, typer_cli]
 found_by: running the new `diagnose security` command against a live controller
@@ -53,3 +54,32 @@ interference view, so the audit should not duplicate it.
 Whether a neighbour broadcasting an open network with a very strong signal (above about
 -50 dBm, i.e. inside the building) should still be flagged as medium, as a possible
 unauthorised AP on the premises, or left to `analyze neighbours`.
+
+## Resolution
+
+Resolved on 2026-10-13 (`2f8d2a8`). `classify_rogue_aps` in `diagnostics/security_audit.py`
+splits the passive scan into rogues and neighbours against the site's own radios
+(`vap_table` BSSIDs, shared with `analyze neighbours` through
+`neighbour_scan.own_bssids_from_devices`) and own SSIDs (`rest/wlanconf` names plus the
+ESSIDs the radios broadcast). Two refinements of the fix as recommended above, both from the
+live data of 2026-10-13:
+
+1. **Wired on our LAN** is the controller's own `is_rogue` flag (the `stat/rogueap` entries
+   carry it; UniFi sets it when a neighbour's BSSID is also seen on the wire). No guessing at
+   a field name.
+2. **Unadopted UniFi hardware** is medium, not high, and only when heard at -60 dBm or
+   louder. The site hears twelve Ubiquiti BSSIDs, all between -69 and -90 dBm: the
+   neighbours' own UniFi gear. "High for every Ubiquiti BSSID" would have shrunk the noise,
+   not removed it.
+
+The open question is answered the way the recommendation already leaned: a strong open
+neighbour stays a neighbour. The three loudest entries on the site (-16, -19 and -31 dBm) are
+hidden Sonos and Wi-Fi Direct networks, the household's own IoT radios; signal alone is not a
+rogue signal. They are listed in `strongest_neighbours` for context and the count in
+`neighbour_aps`; `analyze neighbours` is the interference view.
+
+Live before and after, same site, same hour: 748 devices (619 unauthorised, 619 critical,
+195 MAC anomalies, 2334 lines of table) became 129 devices (0 unauthorised, 0 critical,
+2 high, 48 medium, 11 MAC anomalies, 618 neighbours, 232 lines). The 184 MAC anomalies that
+vanished were neighbour BSSIDs a few hex digits apart, read as "suspiciously similar MACs".
+Tests: `tests/diagnostics/test_security_audit_rogues.py`.
