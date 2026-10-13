@@ -159,9 +159,9 @@ second 401 is reported as an error. Credentials are re-resolved for that login, 
 config file is read into the process environment at start-up, so a token or password
 changed in the file still needs a server restart (issue 020). The sync port-diagnostics tools (`diagnose_switch_port`, `get_switch_ports`,
 `diff_port_profiles`, `get_client_history`, `get_device_events`, `get_port_counter_rates`,
-`audit_link_speeds`, `audit_port_profile_usage`) keep one guarded login per call.
-`inspect_switch_port` also logs in per call, through its own sync client behind the same
-read-only guard. The `network_api` and `protect` tools open their own guarded client per call
+`audit_link_speeds`, `audit_port_profile_usage`, `inspect_switch_port`) keep one guarded login
+per call through the same `_readonly_sync_client()` helper (issue 021 step 1 brought
+`inspect_switch_port` onto it). The `network_api` and `protect` tools open their own guarded client per call
 (the Integration API's GET-only transport, and `ReadOnlyProtectApiClient`).
 
 `get_clients` returns one page, `{total, returned, offset, limit, next_offset, truncated,

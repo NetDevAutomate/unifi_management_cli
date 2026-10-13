@@ -1,7 +1,13 @@
-"""inspect_switch_port runs behind the read-only guard and the opt-in request audit (issue 021)."""
+"""inspect_switch_port runs behind the read-only guard and the opt-in request audit (issue 021).
+
+Since the issue's step 1 it takes the same path as its sibling port-diagnostics tools:
+``port_diagnostics_tools._readonly_sync_client()`` (one guarded login per call) under
+``_mapped``, keeping its own error codes and its result shape.
+"""
 
 import json
 import pytest
+from contextlib import contextmanager
 from pathlib import Path
 from tests.fixtures_unifi import (
     BASE_URL,
@@ -17,6 +23,7 @@ from unifi_mapper import api_client, port_inspect
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.readonly import ReadOnlySession, configure_request_audit
 from unifi_mapper.diagnostics import inspect_port
+from unifi_mapper.diagnostics import port_diagnostics_tools as sibling_tools
 
 
 pytestmark = pytest.mark.usefixtures('block_network')
@@ -114,3 +121,53 @@ async def test_existing_error_codes_are_kept(made):
     with pytest.raises(ToolError) as missing_port:
         await inspect_port.inspect_switch_port(SWITCH_NAME, 99)
     assert missing_port.value.error_code == ErrorCodes.INVALID_PORT
+
+
+# --- issue 021 step 1: the sibling tools' client and error mapping -----------------------
+
+
+async def test_inspect_switch_port_uses_the_siblings_readonly_sync_client(monkeypatch):
+    """The one guarded, audited login path every sync port-diagnostics tool takes."""
+    client = fake_client(FakeSession(default_routes()))
+    entered: list[str] = []
+
+    @contextmanager
+    def recording_client():
+        entered.append('in')
+        try:
+            yield client, SITE
+        finally:
+            entered.append('out')
+
+    monkeypatch.setattr(sibling_tools, '_readonly_sync_client', recording_client)
+    result = await inspect_port.inspect_switch_port(SWITCH_NAME, 2)
+
+    assert entered == ['in', 'out']
+    assert result['port_idx'] == 2
+
+
+async def test_a_login_exception_is_controller_unreachable(monkeypatch):
+    """Before, only ``login() -> False`` was mapped; an exception escaped as TOOL_FAILED."""
+    monkeypatch.setenv('UNIFI_URL', BASE_URL)
+    monkeypatch.setenv('UNIFI_CONSOLE_API_TOKEN', FAKE_TOKEN)  # pragma: allowlist secret
+
+    def broken_login(self: Any) -> bool:
+        raise RuntimeError('tls handshake failed')
+
+    monkeypatch.setattr(api_client.UnifiApiClient, 'login', broken_login)
+    with pytest.raises(ToolError) as excinfo:
+        await inspect_port.inspect_switch_port(SWITCH_NAME, 2)
+
+    assert excinfo.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    assert 'tls handshake failed' in excinfo.value.message
+
+
+async def test_a_false_login_keeps_the_controller_unreachable_message(monkeypatch):
+    monkeypatch.setenv('UNIFI_URL', BASE_URL)
+    monkeypatch.setenv('UNIFI_CONSOLE_API_TOKEN', FAKE_TOKEN)  # pragma: allowlist secret
+    monkeypatch.setattr(api_client.UnifiApiClient, 'login', lambda self: False)
+    with pytest.raises(ToolError) as excinfo:
+        await inspect_port.inspect_switch_port(SWITCH_NAME, 2)
+
+    assert excinfo.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    assert excinfo.value.message.startswith('Could not authenticate to the UniFi controller at ')
