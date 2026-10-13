@@ -18,7 +18,6 @@ reports it as ``TOOL_FAILED``.
 from __future__ import annotations
 
 import httpx
-from loguru import logger
 from pydantic import Field
 from typing import Annotated, Any
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
@@ -26,7 +25,7 @@ from unifi_mapper.core.utils.readonly import (
     ReadOnlyAsyncTransport,
     get_only_request_allowed,
 )
-from unifi_mapper.core.utils.redact import redact_text
+from unifi_mapper.mcp.failure_text import tool_failure
 from unifi_mapper.network.acl import ACLManager
 from unifi_mapper.network.client import (
     NetworkAuthenticationError,
@@ -41,23 +40,9 @@ from unifi_mapper.network.firewall import FirewallManager
 from unifi_mapper.network.networks import NetworkManager
 
 
-# Long enough that a real message is never cut (the runner caps errors at 2,000).
-FAILURE_TEXT_LIMIT = 2000
-
 CONNECTION_SUGGESTION = 'Check UNIFI_NETWORK_HOST and that the controller is reachable.'
 AUTHENTICATION_SUGGESTION = 'Check UNIFI_NETWORK_API_KEY and its permissions.'
 API_SUGGESTION = 'Check the controller status and try again.'
-
-
-def _failure(action: str, error: Exception) -> str:
-    """Log a tool's failure and return its error text, both redacted.
-
-    A lower layer's message can carry a credential, and the server's stderr ends up in the
-    MCP client's own logs, so neither the log line nor the returned ``error`` shows it raw.
-    """
-    text = redact_text(error, limit=FAILURE_TEXT_LIMIT)
-    logger.error('Failed to {}: {}', action, text)
-    return text
 
 
 def _tool_error(action: str, error: NetworkClientError) -> ToolError:
@@ -76,7 +61,7 @@ def _tool_error(action: str, error: NetworkClientError) -> ToolError:
         code, suggestion = ErrorCodes.CONTROLLER_UNREACHABLE, CONNECTION_SUGGESTION
     else:
         code, suggestion = ErrorCodes.API_ERROR, API_SUGGESTION
-    return ToolError(message=_failure(action, error), error_code=code, suggestion=suggestion)
+    return ToolError(message=tool_failure(action, error), error_code=code, suggestion=suggestion)
 
 
 def _network_config() -> NetworkConfig:

@@ -32,6 +32,7 @@ from .config import (
     ensure_controller_credentials,
     family_status,
 )
+from .failure_text import ERROR_TEXT_LIMIT
 from .registry import InvalidParamsError, MutationRefusedError, ToolRegistry, UnknownToolError
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, is_dataclass
@@ -53,7 +54,6 @@ from unifi_mapper.core.utils.redact import (
 Surface = Literal['execute_tool', 'direct']
 
 TOOL_FAILED_TEXT_LIMIT = 500
-ERROR_TEXT_LIMIT = 2000
 # Plan decision P1 (design D1): failures carry isError: true. One constant to revert.
 ERRORS_SET_IS_ERROR = True
 
