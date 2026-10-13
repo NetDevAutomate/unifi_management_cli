@@ -46,6 +46,22 @@ asked GitHub Support to purge the superseded commits from the server's object st
 - Every MCP tool call has a 270 s deadline by default (`UNIFI_MCP_TOOL_TIMEOUT`, 5-3600 s,
   `[TIMEOUT]`), chosen so the server's code reaches a client whose own limit is 300 s, as the
   guide's snippets are; set the variable higher for a slower controller (issue 012).
+- `diagnose ap-health --essid <name>` exits 2 after the discovery read when the target's 2.4 GHz
+  radio does not carry that SSID (it used to measure the busiest VAP under that name); an AP
+  without the tracked SSID shows `no rate (SSID not present)`, the JSON rows gain `retry_note`,
+  and the ping note appears only with `--ping-clients` (issue 076).
+- `diagnose latency-matrix`: a `ping` the gateway could not run is reported as that target's
+  error instead of 100% loss; `LatencyResult.packet_loss` may be `null`, and `LatencyResult.error`
+  and `LatencyMatrixReport.targets_failed` are new fields (issue 076).
+- `diagnose wan --record` and `analyze link-errors --record` wait at most 5 s for the history
+  lock, then exit 1 (`diagnose wan --record` exited 0 with a warning before) naming the lock file
+  and who may hold it; histories and locks are `0o600` and the default state directory `0o700` on
+  every run, a file owned by another user is refused, and a `--history` path's existing directory
+  is left alone. A schedule that relied on exit 0 after a failed record should read the exit
+  status (issue 076).
+- MCP call log: after a lock timeout the log skips the lock for 30 s and the next successful
+  write starts with a `{"kind": "lock_timeout", "dropped": N}` line; writes use a dedicated
+  4-thread pool so a failing log can never slow every call (issue 076).
 
 ### Changed (behaviour)
 
@@ -203,6 +219,19 @@ asked GitHub Support to purge the superseded commits from the server's object st
   and exiting 1 (issue 064).
 - Docs: Diagnostics has 12 MCP tools, not 11; the direct catalog is 82 tools, not 73; the
   registry holds 96 tools, not 87 (issue 053).
+- `stp audit-priorities` / `audit_stp_priorities` warn on a lowest-priority tie that includes a
+  core-class switch, naming the switches that are not core-class; a core switch tied with an
+  access switch went unwarned (issue 076).
+- `vlan-traffic report --help`, `get_vlan_traffic_report`'s description and the daily caveat no
+  longer say peaks are smoothed: each tier's peak is the largest sample rate in its window
+  (issue 076).
+- Keys and free text spelt `pre-shared`, `pre_shared` or `pre shared` are stripped and masked
+  like `preshared` (issue 076).
+- `vlan-traffic sample` on a gateway without `br*` interfaces ends as "Nothing was stored"
+  instead of a message about a bridge line without two integer counters (issue 076).
+- Two concurrent call-log write failures warn once, not twice, and a failure on a file other than
+  the log names that file; `get_wan_speedtest_history`'s description names
+  `unifi-mapper diagnose wan-history` (issue 076).
 
 ### Removed
 
