@@ -9,9 +9,9 @@ are reported. That proves the stripping was complete without leaking a value.
 Rules:
     * A key is removed together with its value when it starts with ``x_`` or
       contains ``password``, ``secret``, ``token``, ``authkey``, ``psk``,
-      ``preshared``, ``passphrase``, ``api_key`` or ``private_key``
-      (case-insensitive). This applies at every depth, including dicts nested
-      inside lists.
+      ``preshared`` (also spelt ``pre-shared``, ``pre_shared`` or ``pre shared``),
+      ``passphrase``, ``api_key`` or ``private_key`` (case-insensitive). This applies at
+      every depth, including dicts nested inside lists.
     * So is a key that is, or ends in ``_`` followed by, ``community`` (the SNMP
       community string), ``syslog_key`` or ``lcm_tracker_seed``, in any case:
       ``snmp_community`` and ``my_syslog_key`` go, while ``community_id`` and
@@ -36,10 +36,12 @@ from collections.abc import Mapping
 from typing import Any
 
 
-SECRET_KEY_RE = re.compile(
-    r'password|secret|token|authkey|psk|preshared|passphrase|api[_-]?key|private[_-]?key',
-    re.IGNORECASE,
+# The keywords a secret's name holds; `pre[-_ ]?shared` covers the four spellings of
+# pre-shared (issue 076 item 6).
+_SECRET_KEYWORDS = (
+    r'password|secret|token|authkey|psk|pre[-_ ]?shared|passphrase|api[_-]?key|private[_-]?key'
 )
+SECRET_KEY_RE = re.compile(_SECRET_KEYWORDS, re.IGNORECASE)
 # Names that hold a credential although no keyword matches them: the whole key, or its end
 # after an '_' (so snmp_community goes and community_id stays), in any case.
 SUFFIX_SECRET_KEYS = ('community', 'syslog_key', 'lcm_tracker_seed')
@@ -59,7 +61,7 @@ _SECRET_NAME = (
     r'(?<![A-Za-z0-9_.\-])'
     r'(?:x_[A-Za-z0-9_.\-]*'
     r'|[A-Za-z0-9_.\-]*'
-    r'(?:password|secret|token|authkey|psk|preshared|passphrase|api[_-]?key|private[_-]?key)'
+    r'(?:' + _SECRET_KEYWORDS + r')'
     r'[A-Za-z0-9_.\-]*'
     r'|(?:[A-Za-z0-9_.\-]*_)?(?:syslog_key|lcm_tracker_seed)(?![A-Za-z0-9_.\-]))'
 )

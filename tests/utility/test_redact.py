@@ -311,6 +311,42 @@ def test_preshared_values_are_masked_in_free_text() -> None:
     assert 'peer=203.0.113.9' in redact_text(text)
 
 
+# Issue 076 item 6: the hyphen, underscore and space spellings of "pre-shared" were not matched.
+PRE_SHARED_KEYS = [
+    'pre-shared-key',
+    'pre_shared_key',
+    'wireguard_pre_shared_key',
+    'Pre-Shared',
+    'pre shared key',
+]
+
+
+@pytest.mark.parametrize('key', PRE_SHARED_KEYS)
+def test_pre_shared_spellings_are_stripped_and_masked(key: str) -> None:
+    assert is_secret_key(key) is True
+    assert strip_secrets({'peer': {key: FAKE, 'name': 'site-b'}}) == (
+        {'peer': {'name': 'site-b'}},
+        [f'peer.{key}'],
+    )
+    assert mask_secrets({key: FAKE}, frozenset())[key] == REDACTED
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        f'tunnel failed: pre-shared-key={FAKE} peer=203.0.113.9',
+        f'pre_shared_key: {FAKE}',
+        f'PRE-SHARED-KEY="{FAKE}"',
+        f'{{"pre shared": "{FAKE}"}}',
+        f"{{'wireguard_pre-shared_key': '{FAKE}'}}",
+    ],
+    ids=['hyphen', 'underscore', 'upper-case quoted', 'space in a JSON key', 'mixed in a dict'],
+)
+def test_pre_shared_spellings_are_masked_in_free_text(text: str) -> None:
+    redacted = redact_text(text)
+    assert FAKE not in redacted and REDACTED in redacted
+
+
 def test_community_is_an_ordinary_word_in_free_text() -> None:
     text = 'see community.ui.com for the release notes; community=public'
     assert redact_text(text) == text

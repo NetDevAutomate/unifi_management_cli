@@ -33,7 +33,8 @@ Read this before pointing it at a production network.
   secrets from every result.
 - **Secrets are stripped, not masked**, from anything the tool prints, logs or saves. The
   stripping is by key name (`x_*`, and keys containing password, secret, token, authkey, psk,
-  preshared, passphrase, api_key, private_key, plus the SNMP community and syslog key); only
+  preshared or pre-shared, passphrase, api_key, private_key, plus the SNMP community and
+  syslog key); only
   the paths of what was removed are reported. A credential typed into a free-text field under
   some other key would not be caught. **Reports are still sensitive**: device names, MAC and IP
   addresses and your topology remain in them. Review before you post one anywhere.
