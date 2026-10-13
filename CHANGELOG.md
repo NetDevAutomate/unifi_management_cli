@@ -105,6 +105,9 @@ asked GitHub Support to purge the superseded commits from the server's object st
 - `search_tools` summary results carry `mutates: true` for the three mutating tools, and the
   redacted-failure helper and the 2,000-character error cap live once in `mcp/failure_text.py`
   (issues 022, 067).
+- The `analyze`, `stp`, `radio`, `ports` and `diagnose` read commands that moved onto the shared
+  read-only runner print a controller failure as `❌ Error: ...` on stderr (was stdout, same
+  text) and exit 1; a script that grepped stdout for it should read stderr (issue 064).
 
 ### Added
 
@@ -144,6 +147,13 @@ asked GitHub Support to purge the superseded commits from the server's object st
   (issues 061, 071, 072, 030, 073).
 - `tests/mcp/test_docstring_tool_names.py`: a new phantom tool name in any docstring or string
   constant fails the suite (issue 028).
+- Docs guards: backticked CamelCase names and Mermaid classDiagram classes must exist under
+  `src/` or in `KNOWN_EXTERNAL_TYPES` (issue 052); a free-text tool count must be the registry
+  total unless its sentence names a category, surface or kind (issue 053); an environment
+  variable counts as read only at a real read, never in a message (issue 055); the MCP-name
+  check knows only bindings a doc may describe, not locals or keyword arguments (issue 056).
+  Privacy guard: public IPv4 addresses from address fields and link-local IPv6 addresses in the
+  local captures are identifiers tests and scripts must not hold (issue 054).
 
 ### Fixed
 
@@ -186,6 +196,13 @@ asked GitHub Support to purge the superseded commits from the server's object st
   (`analyze_link_quality`, `performance_analysis`, `get_switch_ports`, `discover_stp_topology`,
   `inspect_switch_port`, `security_audit`, `audit_uplink_transparency`, `audit_vlan_coverage`);
   three `CONTROLLER_UNREACHABLE` hints naming controller tools were dropped (issue 028).
+- Every CLI read command runs behind the read-only transport: the 39 direct `asyncio.run` reads
+  go through `_run_analysis`, and only the seven write paths keep their own client; a
+  write-refusal test pins 32 command invocations on the shared mock transport (issue 064).
+- `stp optimize` exits 0 when the apply confirmation is declined instead of printing "Error:"
+  and exiting 1 (issue 064).
+- Docs: Diagnostics has 12 MCP tools, not 11; the direct catalog is 82 tools, not 73; the
+  registry holds 96 tools, not 87 (issue 053).
 
 ### Removed
 

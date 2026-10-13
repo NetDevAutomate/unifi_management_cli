@@ -67,11 +67,11 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [049](049-lines-over-99-characters.md) | At `3ea7243`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it | open, decision needed |
 | [050](050-latency-matrix-errors-bypass-the-ssh-error-path.md) | `diagnose latency-matrix` reports errors on stdout and unredacted, unlike `diagnose bandwidth` | resolved (`7b1ef78`) |
 | [051](051-verify-cli-help-example-held-a-password.md) | `verify_cli`'s help example held a real-looking password, and it is in pushed history | resolved (`2650809`) |
-| [052](052-class-names-outside-the-docs-guard.md) | Class names in the docs are outside the docs-drift guard | open |
-| [053](053-mcp-counts-in-prose-match-any-registry-count.md) | A tool count in prose only has to match one of the registry's counts | open |
-| [054](054-identifier-guard-skips-public-and-link-local-addresses.md) | The identifier guard skips public IPv4 and link-local IPv6 addresses from the captures | open |
-| [055](055-env-guard-counts-a-mention-as-a-read.md) | The env-var guard counts a variable as read when any string in the code names it | open |
-| [056](056-mcp-name-guard-knows-every-assigned-name.md) | The MCP-name guard counts any name assigned in `src/` as known, local variables included | open |
+| [052](052-class-names-outside-the-docs-guard.md) | Class names in the docs are outside the docs-drift guard | resolved (`9b5af8b`) |
+| [053](053-mcp-counts-in-prose-match-any-registry-count.md) | A tool count in prose only has to match one of the registry's counts | resolved (`b131da0`) |
+| [054](054-identifier-guard-skips-public-and-link-local-addresses.md) | The identifier guard skips public IPv4 and link-local IPv6 addresses from the captures | resolved (`bc73af8`) |
+| [055](055-env-guard-counts-a-mention-as-a-read.md) | The env-var guard counts a variable as read when any string in the code names it | resolved (`ff69dc6`) |
+| [056](056-mcp-name-guard-knows-every-assigned-name.md) | The MCP-name guard counts any name assigned in `src/` as known, local variables included | resolved (`16dda92`) |
 | [057](057-onvif-test-rtsp-puts-the-password-on-argv.md) | `onvif_stream.py test-rtsp` passes the ONVIF password to ffprobe on its command line | open, decision needed |
 | [058](058-tracebacks-print-frame-values.md) | Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on | resolved (`779c14e`) |
 | [059](059-prototype-work-not-ported.md) | Prototype work that was not ported, and why | open |
@@ -79,7 +79,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [061](061-monitor-lags-misses-current-firmware-lags.md) | `monitor_lags` misses LAGs on current switch firmware | resolved (`b314c77`) |
 | [062](062-open-items-from-the-archived-plans.md) | Open items from the archived improvement and STP plans | open |
 | [063](063-execute-tool-result-cap.md) | No cap on `execute_tool` result size | open, decision needed |
-| [064](064-cli-reads-outside-the-read-only-transport.md) | CLI read commands that reach the controller outside the read-only transport | open |
+| [064](064-cli-reads-outside-the-read-only-transport.md) | CLI read commands that reach the controller outside the read-only transport | resolved (`02bec3a`) |
 | [065](065-pre-push-coverage-floor.md) | The pre-push pytest hook fails the 90% coverage floor | resolved (`1a7f2d7`) |
 | [066](066-backup-collections-unverified-on-a-real-backup.md) | `backup verify` names collections by `_type`, unverified on a real backup | open |
 | [067](067-mcp-tool-failure-helper-duplicated.md) | The network and Protect tools each carry a copy of the redacted-failure helper | resolved (`681497f`) |
