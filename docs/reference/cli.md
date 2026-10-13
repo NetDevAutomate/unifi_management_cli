@@ -477,6 +477,12 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `ports counters` | Sample a port's error counters: per-minute rates with a trust verdict, baselines and recorded history |
 | `ports diagnose` | JSON evidence bundle for one port, with a request audit (for vendor tickets) |
 | `analyze ip-conflicts` | Addresses claimed by more than one client, with each client's connection and VLAN |
+| `analyze storms` | Broadcast and multicast storms and high-risk ports from per-port packet counters |
+| `analyze mac-table` | Flapping MACs, access ports learning too many MACs, and MAC-learning alerts |
+| `analyze qos` | QoS validation: DSCP and CoS trust, storm control, rate limits and the voice VLAN |
+| `analyze capacity` | Port and PoE utilisation per switch, bottlenecks and whether expansion is due |
+| `analyze lags` | Link aggregation health: members, LACP state, bandwidth and issues per LAG |
+| `analyze foreign-bridges` | Third-party switches and bridges on the wired network, and their loop risk |
 | `analyze link-quality` | Port statistics and error rates |
 | `analyze link-errors` | Error-rate baseline (`--snapshot`), counter history (`--record`) and read-only delta comparison |
 | `analyze port-profiles` | Validate STP Edge, BPDU Guard and uplink safety |
@@ -500,6 +506,8 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `diagnose all` | Run every diagnostic with a pass/warn/fail summary |
 | `diagnose health` | Overall network health check |
 | `diagnose security` | Security audit: unknown and anomalous devices, rogue APs, guest and VLAN violations |
+| `diagnose vlans` | Every VLAN, the trunk ports that carry them, and the VLAN diagnostic checks |
+| `diagnose freshness` | How old each device's telemetry is; `--sample` compares two reads a gap apart |
 | `diagnose wan` | WAN health and the controller's last scheduled speedtest (`--record` appends it to the history) |
 | `diagnose wan-history` | The recorded WAN speedtest results, newest first |
 | `diagnose device-stats` | One device's CPU, memory, load, uptime, radios and per-VAP TX counters |
@@ -530,6 +538,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `stp preflight` | Simulate adding planned switches and report expected root state |
 | `stp validate-10g` | Validate 10G readiness before adding switches |
 | `stp guard` | Guard placement checks |
+| `stp path-costs` | Inter-switch ports whose STP path cost does not match their link speed |
 | `stp drift` | Compare live STP state against an intent file |
 | `stp snapshot` | Capture an STP baseline |
 | `stp diff` | Diff live state against a baseline |

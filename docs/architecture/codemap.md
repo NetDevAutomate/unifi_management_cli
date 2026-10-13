@@ -411,7 +411,7 @@ AsyncClient --> Errors
 
 ### 5.2 `typer_cli.py`
 
-**Purpose.** The `unifi-mapper` console script: a Typer + Rich CLI over the port-mapping logic and the analysis packages. Registers the top-level commands (`discover`, `diagram`, `verify`, `capabilities`, `version`, `install-completions`) and the `find`, `analyze`, `diagnose`, `inventory`, `stp`, `radio`, `ports`, `controller`, `backup`, `gateway` and `vlan-traffic` groups, 82 commands in all.
+**Purpose.** The `unifi-mapper` console script: a Typer + Rich CLI over the port-mapping logic and the analysis packages. Registers the top-level commands (`discover`, `diagram`, `verify`, `capabilities`, `version`, `install-completions`) and the `find`, `analyze`, `diagnose`, `inventory`, `stp`, `radio`, `ports`, `controller`, `backup`, `gateway` and `vlan-traffic` groups, 91 commands in all.
 
 **Key objects.**
 

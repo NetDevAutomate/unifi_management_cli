@@ -1693,6 +1693,648 @@ def diagnose_security(
     _print_list('Recommendations', [str(r) for r in report.security_recommendations])
 
 
+@analyze_app.command('storms')
+def analyze_storms(
+    device: Optional[str] = typer.Option(
+        None, '--device', help='One switch: its device _id or MAC'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🌩️ Broadcast and multicast storms from per-port packet counters.
+
+    Flags ports whose broadcast or multicast share of traffic is over the thresholds, as an
+    active storm or a high-risk port, with the thresholds used. The same report as the MCP
+    tool `detect_storms`. Read-only.
+    """
+    from .analysis.storm_detection import detect_storms
+
+    report = _run_analysis(lambda: detect_storms(device_id=device))
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🌩️ [bold]Storm Detection[/bold]')
+    verdict = '[green]healthy[/green]' if report.network_healthy else '[red]storms[/red]'
+    console.print(
+        f'Devices: [cyan]{report.devices_analyzed}[/cyan]  '
+        f'Ports: [cyan]{report.ports_analyzed}[/cyan]  '
+        f'Storms: [{"red" if report.storms_detected else "green"}]{report.storms_detected}[/]  '
+        f'Verdict: {verdict}'
+    )
+    if report.active_storms:
+        table = Table(title='Active Storms', show_header=True)
+        table.add_column('Device', style='cyan')
+        table.add_column('Port', style='yellow')
+        table.add_column('Type')
+        table.add_column('Severity', style='bold')
+        table.add_column('Broadcast %', justify='right')
+        table.add_column('Multicast %', justify='right')
+        table.add_column('Recommendation')
+        for storm in report.active_storms:
+            table.add_row(
+                escape(storm.device_name),
+                str(storm.port_idx) if storm.port_idx is not None else '—',
+                escape(str(getattr(storm.storm_type, 'value', storm.storm_type))),
+                _severity_cell(storm.severity),
+                f'{storm.broadcast_percent:.1f}',
+                f'{storm.multicast_percent:.1f}',
+                escape(storm.recommendation),
+            )
+        console.print(table)
+    if report.high_risk_ports:
+        table = Table(title='High-Risk Ports', show_header=True)
+        table.add_column('Port', style='yellow')
+        table.add_column('Name')
+        table.add_column('Broadcast %', justify='right')
+        table.add_column('Multicast %', justify='right')
+        table.add_column('RX packets', justify='right')
+        for port in report.high_risk_ports:
+            table.add_row(
+                str(port.port_idx),
+                escape(port.port_name),
+                f'{port.broadcast_percent:.1f}',
+                f'{port.multicast_percent:.1f}',
+                str(port.rx_packets),
+            )
+        console.print(table)
+    thresholds = ', '.join(f'{k} {v:g}' for k, v in sorted(report.thresholds.items()))
+    if thresholds:
+        console.print(f'[dim]Thresholds: {escape(thresholds)}[/dim]')
+
+
+@analyze_app.command('mac-table')
+def analyze_mac_table(
+    device: Optional[str] = typer.Option(
+        None, '--device', help='One switch: its device _id or MAC'
+    ),
+    max_macs_per_port: int = typer.Option(
+        5,
+        '--max-macs-per-port',
+        min=1,
+        help='MACs a non-trunk port may learn before it is flagged',
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🧾 MAC table analysis: flapping addresses, busy access ports and learning alerts.
+
+    Reads where each client MAC is learned, reports MACs that move between ports, access
+    ports learning more MACs than the threshold (a hidden switch or hub) and the alerts the
+    analysis raises. The same report as the MCP tool `analyze_mac_table`. Read-only.
+    """
+    from .analysis.mac_analyzer import analyze_mac_table as run_mac_table
+
+    report = _run_analysis(
+        lambda: run_mac_table(device_id=device, max_macs_per_port=max_macs_per_port)
+    )
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🧾 [bold]MAC Table Analysis[/bold]')
+    console.print(
+        f'Devices: [cyan]{report.devices_analyzed}[/cyan]  '
+        f'Entries: [cyan]{report.total_mac_entries}[/cyan]  '
+        f'Unique MACs: [cyan]{report.unique_mac_addresses}[/cyan]  '
+        f'Static: [cyan]{report.static_mac_count}[/cyan]  '
+        f'Ports over threshold: [{"yellow" if report.ports_exceeding_threshold else "green"}]'
+        f'{report.ports_exceeding_threshold}[/]'
+    )
+    if report.flapping_events:
+        table = Table(title='Flapping MACs', show_header=True)
+        table.add_column('MAC', style='cyan')
+        table.add_column('Device')
+        table.add_column('Ports', style='yellow')
+        table.add_column('Flaps', justify='right')
+        table.add_column('Window s', justify='right')
+        table.add_column('Severity', style='bold')
+        table.add_column('Recommendation')
+        for event in report.flapping_events:
+            table.add_row(
+                escape(event.mac_address),
+                escape(event.device_name),
+                ', '.join(map(str, event.ports_involved)),
+                str(event.flap_count),
+                str(event.window_seconds),
+                _severity_cell(event.severity),
+                escape(event.recommendation),
+            )
+        console.print(table)
+    if report.alerts:
+        table = Table(title='Alerts', show_header=True)
+        table.add_column('Severity', style='bold')
+        table.add_column('Type')
+        table.add_column('Device', style='cyan')
+        table.add_column('Port', style='yellow')
+        table.add_column('Message')
+        table.add_column('Recommendation')
+        for alert in report.alerts:
+            table.add_row(
+                _severity_cell(alert.severity),
+                escape(str(getattr(alert.alert_type, 'value', alert.alert_type))),
+                escape(alert.device_name),
+                str(alert.port_idx) if alert.port_idx is not None else '—',
+                escape(alert.message),
+                escape(alert.recommendation),
+            )
+        console.print(table)
+    busy = [p for p in report.port_mac_counts if p.exceeds_threshold]
+    if busy:
+        table = Table(title=f'Ports learning more than {max_macs_per_port} MACs', show_header=True)
+        table.add_column('Device', style='cyan')
+        table.add_column('Port', style='yellow')
+        table.add_column('Name')
+        table.add_column('MACs', justify='right')
+        table.add_column('Trunk')
+        for port in busy:
+            table.add_row(
+                escape(port.device_name),
+                str(port.port_idx),
+                escape(port.port_name),
+                str(port.mac_count),
+                'yes' if port.is_trunk else 'no',
+            )
+        console.print(table)
+    _print_list('Recommendations', [str(r) for r in report.recommendations])
+
+
+@analyze_app.command('qos')
+def analyze_qos(
+    device: Optional[str] = typer.Option(
+        None, '--device', help='One switch: its device _id or MAC'
+    ),
+    voice_vlan: bool = typer.Option(
+        True, '--voice-vlan/--no-voice-vlan', help='Also check that a voice VLAN is configured'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🎚️ QoS validation: DSCP and CoS trust, storm control, rate limits and the voice VLAN.
+
+    Reads every switch port's QoS settings, reports the findings by severity with the current
+    and expected values, and summarises DSCP trust and the voice VLAN. The same report as the
+    MCP tool `validate_qos`. Read-only.
+    """
+    from .analysis.qos_validation import validate_qos
+
+    report = _run_analysis(lambda: validate_qos(device_id=device, check_voice_vlan=voice_vlan))
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🎚️ [bold]QoS Validation[/bold]')
+    voice = '[green]yes[/green]' if report.voice_vlan_configured else '[yellow]no[/yellow]'
+    console.print(
+        f'Devices: [cyan]{report.devices_analyzed}[/cyan]  '
+        f'Ports: [cyan]{report.ports_analyzed}[/cyan]  '
+        f'Critical: [red]{report.critical_count}[/red]  Errors: [red]{report.error_count}[/red]  '
+        f'Warnings: [yellow]{report.warning_count}[/yellow]  Info: [dim]{report.info_count}[/dim]  '
+        f'DSCP trust on: [cyan]{report.dscp_trust_enabled_count}[/cyan]  '
+        f'Voice VLAN: {voice}  Overall: {_severity_cell(report.overall_health)}'
+    )
+    if report.findings:
+        table = Table(title='QoS Findings', show_header=True)
+        table.add_column('Severity', style='bold')
+        table.add_column('Category')
+        table.add_column('Device', style='cyan')
+        table.add_column('Port', style='yellow')
+        table.add_column('Message')
+        table.add_column('Current')
+        table.add_column('Expected')
+        table.add_column('Recommendation')
+        for f in report.findings:
+            table.add_row(
+                _severity_cell(f.severity),
+                escape(f.category),
+                escape(f.device_name or '—'),
+                str(f.port_idx) if f.port_idx is not None else '—',
+                escape(f.message),
+                escape(f.current_value or '—'),
+                escape(f.expected_value or '—'),
+                escape(f.recommendation),
+            )
+        console.print(table)
+    _print_list('Recommendations', [str(r) for r in report.recommendations])
+
+
+@analyze_app.command('capacity')
+def analyze_capacity(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """📦 Capacity planning: port and PoE utilisation per switch, bottlenecks and expansion.
+
+    Counts used and free ports and PoE headroom per switch and for the site, names the
+    bottlenecks and says whether expansion is due. The same report as the MCP tool
+    `get_capacity_report`. Read-only.
+    """
+    from .analysis.capacity_planning import get_capacity_report
+
+    report = _run_analysis(get_capacity_report)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('📦 [bold]Capacity Planning[/bold]')
+    verdict = (
+        '[yellow]expansion needed[/yellow]'
+        if report.expansion_needed
+        else '[green]headroom[/green]'
+    )
+    console.print(
+        f'Devices: [cyan]{report.total_devices}[/cyan]  '
+        f'Ports: [cyan]{report.used_ports}[/cyan] of [cyan]{report.total_ports}[/cyan] used '
+        f'({report.overall_utilization:.1f}%), [cyan]{report.available_ports}[/cyan] free  '
+        f'PoE: [cyan]{report.total_poe_used:.0f}[/cyan] of '
+        f'[cyan]{report.total_poe_budget:.0f}[/cyan] W  Verdict: {verdict}'
+    )
+    if report.devices:
+        table = Table(title='Capacity per Switch', show_header=True)
+        table.add_column('Device', style='cyan')
+        table.add_column('Model')
+        table.add_column('Ports used', justify='right')
+        table.add_column('Free', justify='right')
+        table.add_column('% used', justify='right')
+        table.add_column('PoE used W', justify='right')
+        table.add_column('PoE %', justify='right')
+        table.add_column('Uplink Gbps', justify='right')
+        table.add_column('Recommendation')
+        for d in report.devices:
+            poe_used = f'{d.poe_used_watts:.0f}' if d.poe_used_watts is not None else '—'
+            poe_pct = (
+                f'{d.poe_utilization_percent:.0f}'
+                if d.poe_utilization_percent is not None
+                else '—'
+            )
+            table.add_row(
+                escape(d.device_name),
+                escape(d.model),
+                f'{d.used_ports}/{d.total_ports}',
+                str(d.available_ports),
+                f'{d.utilization_percent:.1f}',
+                poe_used,
+                poe_pct,
+                f'{d.uplink_capacity_gbps:g}',
+                escape(d.recommendation or '—'),
+            )
+        console.print(table)
+    _print_list('Bottlenecks', [str(b) for b in report.bottlenecks], style='yellow')
+    _print_list('Recommendations', [str(r) for r in report.recommendations])
+
+
+@analyze_app.command('lags')
+def analyze_lags(
+    device: Optional[str] = typer.Option(
+        None, '--device', help='One switch: its device _id or MAC'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🔗 Link aggregation health: members, LACP state, bandwidth and load balance per LAG.
+
+    For each configured LAG, the expected and active members with their link and LACP
+    state, the bandwidth in use, the partner switch and the issues found. The same report as
+    the MCP tool `monitor_lags`. `analyze lag-candidates` finds links that could become LAGs.
+    Read-only.
+    """
+    from .analysis.lag_monitoring import monitor_lags
+
+    report = _run_analysis(lambda: monitor_lags(device_id=device))
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🔗 [bold]LAG Health[/bold]')
+    console.print(
+        f'Devices: [cyan]{report.devices_analyzed}[/cyan]  LAGs: [cyan]{report.total_lags}[/cyan]  '
+        f'Healthy: [green]{report.healthy_lags}[/green]  '
+        f'Degraded: [yellow]{report.degraded_lags}[/yellow]  '
+        f'Critical: [red]{report.critical_lags}[/red]  '
+        f'Bandwidth: [cyan]{report.active_lag_bandwidth_gbps:g}[/cyan] of '
+        f'[cyan]{report.total_lag_bandwidth_gbps:g}[/cyan] Gbps active'
+    )
+    if report.lag_groups:
+        table = Table(title='Link Aggregation Groups', show_header=True)
+        table.add_column('Device', style='cyan')
+        table.add_column('LAG')
+        table.add_column('Status', style='bold')
+        table.add_column('Members')
+        table.add_column('Partner')
+        table.add_column('Active Mbps', justify='right')
+        table.add_column('Efficiency %', justify='right')
+        table.add_column('Issues')
+        for lag in report.lag_groups:
+            members = ', '.join(
+                f'{m.port_name} ({getattr(m.lacp_state, "value", m.lacp_state)}'
+                f'{"" if m.link_up else ", down"})'
+                for m in lag.members
+            )
+            table.add_row(
+                escape(lag.device_name),
+                escape(lag.lag_name or lag.lag_id),
+                _severity_cell(lag.status),
+                escape(f'{lag.active_members}/{lag.expected_members}: {members}'),
+                escape(lag.partner_device_name or '—'),
+                str(lag.active_bandwidth_mbps),
+                f'{lag.efficiency_percent:.0f}',
+                escape('; '.join(map(str, lag.issues)) or '—'),
+            )
+        console.print(table)
+    issues = [
+        f'{i.get("device_name", "")}: {i.get("message", i)}' if isinstance(i, dict) else str(i)
+        for i in report.issues
+    ]
+    _print_list('Issues', issues, style='yellow')
+    _print_list('Recommendations', [str(r) for r in report.recommendations])
+
+
+@analyze_app.command('foreign-bridges')
+def analyze_foreign_bridges(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🌉 Third-party switches and bridges on the wired network, and the loop risk they carry.
+
+    Finds wired clients that have other clients behind them (an unmanaged switch, a hub, a
+    bridge), where they attach, and whether one is attached to two of our ports or sits
+    behind another bridge. The same report as the MCP tool `detect_foreign_bridges`.
+    Read-only.
+    """
+    from .analysis.foreign_bridges import detect_foreign_bridges
+
+    report = _run_analysis(detect_foreign_bridges)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🌉 [bold]Foreign Bridges[/bold]')
+    console.print(
+        f'Clients analysed: [cyan]{report.clients_analyzed}[/cyan]  Adopted devices: '
+        f'[cyan]{report.adopted_devices}[/cyan]  Bridges: '
+        f'[{"yellow" if report.bridges_found else "green"}]{report.bridges_found}[/]'
+    )
+    if report.bridges:
+        table = Table(title='Foreign Bridges', show_header=True)
+        table.add_column('MAC', style='cyan')
+        table.add_column('Vendor')
+        table.add_column('Address')
+        table.add_column('Host')
+        table.add_column('Clients behind', justify='right')
+        table.add_column('Attached to')
+        table.add_column('Notes')
+        for b in report.bridges:
+            notes = []
+            if b.behind_another_bridge:
+                notes.append('behind another bridge')
+            if b.trunk_ports:
+                notes.append('on trunk ' + ', '.join(map(str, b.trunk_ports)))
+            table.add_row(
+                escape(b.mac),
+                escape(b.oui or '—'),
+                escape(b.ip or '—'),
+                escape(b.hostname or '—'),
+                str(b.downstream_clients),
+                escape(', '.join(f'{n} p{p}' for n, p in b.attached_to) or '—'),
+                escape('; '.join(notes) or '—'),
+            )
+        console.print(table)
+    if report.findings:
+        table = Table(title='Findings', show_header=True)
+        table.add_column('Severity', style='bold')
+        table.add_column('Bridge', style='cyan')
+        table.add_column('Loop risk')
+        table.add_column('Message')
+        table.add_column('Recommendation')
+        for f in report.findings:
+            table.add_row(
+                _severity_cell(f.severity),
+                escape(f.bridge_mac),
+                '[red]yes[/red]' if f.loop_risk else 'no',
+                escape(f.message),
+                escape(f.recommendation),
+            )
+        console.print(table)
+
+
+@diagnose_app.command('vlans')
+def diagnose_vlans_command(
+    source_vlan: Optional[int] = typer.Option(
+        None, '--source-vlan', min=1, max=4094, help='Focus the checks on traffic from this VLAN'
+    ),
+    dest_vlan: Optional[int] = typer.Option(
+        None, '--dest-vlan', min=1, max=4094, help='... to this VLAN'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🔀 VLAN diagnostics: every VLAN, the trunk ports that carry them, and the checks.
+
+    Lists the configured VLANs with subnet, gateway, DHCP and client count, the trunk ports
+    with native and tagged VLANs, and the diagnostic checks with their verdicts. The same
+    report as the MCP tool `diagnose_vlans`; `diagnose inter-vlan` answers one endpoint pair.
+    Read-only.
+    """
+    from .analysis.vlan_diagnostics import diagnose_vlans
+
+    report = _run_analysis(lambda: diagnose_vlans(source_vlan=source_vlan, dest_vlan=dest_vlan))
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🔀 [bold]VLAN Diagnostics[/bold]')
+    console.print(
+        f'VLANs: [cyan]{report.vlans_configured}[/cyan]  Issues: [red]{report.issues_found}[/red]  '
+        f'Warnings: [yellow]{report.warnings_found}[/yellow]  '
+        f'Overall: {_severity_cell(report.overall_health)}'
+    )
+    if report.vlans:
+        table = Table(title='VLANs', show_header=True)
+        table.add_column('VLAN', style='cyan', justify='right')
+        table.add_column('Name')
+        table.add_column('Subnet')
+        table.add_column('Gateway')
+        table.add_column('Enabled')
+        table.add_column('DHCP')
+        table.add_column('Clients', justify='right')
+        for v in report.vlans:
+            table.add_row(
+                str(v.vlan_id),
+                escape(v.name),
+                escape(v.subnet or '—'),
+                escape(v.gateway or '—'),
+                'yes' if v.enabled else 'no',
+                'yes' if v.dhcp_enabled else 'no',
+                str(v.client_count),
+            )
+        console.print(table)
+    trunks = [p for p in report.port_configs if p.is_trunk]
+    if trunks:
+        table = Table(title='Trunk Ports', show_header=True)
+        table.add_column('Device', style='cyan')
+        table.add_column('Port', style='yellow')
+        table.add_column('Name')
+        table.add_column('Profile')
+        table.add_column('Native', justify='right')
+        table.add_column('Tagged')
+        for port in trunks:
+            table.add_row(
+                escape(port.device_name),
+                str(port.port_idx),
+                escape(port.port_name),
+                escape(port.profile_name),
+                str(port.native_vlan),
+                escape(', '.join(map(str, port.tagged_vlans)) or 'all'),
+            )
+        console.print(table)
+    if report.diagnostic_checks:
+        table = Table(title='Checks', show_header=True)
+        table.add_column('Check', style='cyan')
+        table.add_column('Status', style='bold')
+        table.add_column('Message')
+        table.add_column('Recommendations')
+        for check in report.diagnostic_checks:
+            table.add_row(
+                escape(check.check_name),
+                _severity_cell(check.status),
+                escape(check.message),
+                escape('; '.join(map(str, check.recommendations)) or '—'),
+            )
+        console.print(table)
+
+
+@diagnose_app.command('freshness')
+def diagnose_freshness(
+    sample: bool = typer.Option(
+        False, '--sample', help='Take two device samples --gap seconds apart and compare them'
+    ),
+    gap: Optional[int] = typer.Option(
+        None,
+        '--gap',
+        min=10,
+        max=3600,
+        help='Seconds between the two samples (10-3600, default 200)',
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """⏱️ Is the controller's telemetry fresh? Per device, how old its last report is.
+
+    By default one read classifies every device from its last-seen age (the same summary as
+    the MCP tool `summarise_freshness`). --sample reads twice, --gap seconds apart, and reports
+    the devices whose counters did not move while their peers' did (the MCP tool
+    `check_device_freshness`); it blocks for the gap. Read-only.
+    """
+    from .analysis.device_freshness import check_device_freshness, summarise_freshness
+
+    if gap is not None and not sample:
+        _fail('--gap needs --sample', code=2)
+    if sample:
+        seconds = 200 if gap is None else gap
+        err_console.print(f'Expected duration: about {_duration_text(seconds)}', style='dim')
+        report = _run_analysis(lambda: check_device_freshness(sample_gap_seconds=seconds))
+        if as_json:
+            _emit_json(report.model_dump(mode='json'))
+            return
+        console.print('⏱️ [bold]Telemetry Freshness (two samples)[/bold]')
+        console.print(
+            f'Devices compared: [cyan]{report.devices_compared}[/cyan]  '
+            f'Fresh: [green]{report.fresh_count}[/green]  '
+            f'Stale: [{"yellow" if report.stale_count else "green"}]{report.stale_count}[/]  '
+            f'{escape(report.message)}'
+        )
+        if report.disappeared:
+            gone = escape(', '.join(report.disappeared))
+            console.print(f'[yellow]Disappeared between samples: {gone}[/yellow]')
+        if report.rebooted:
+            console.print(
+                f'[yellow]Rebooted between samples: {escape(", ".join(report.rebooted))}[/yellow]'
+            )
+        if report.findings:
+            table = Table(title='Findings', show_header=True)
+            table.add_column('Severity', style='bold')
+            table.add_column('Device', style='cyan')
+            table.add_column('MAC', style='dim')
+            table.add_column('Message')
+            table.add_column('Recommendation')
+            for f in report.findings:
+                table.add_row(
+                    _severity_cell(f.severity),
+                    escape(f.device),
+                    escape(f.mac),
+                    escape(f.message),
+                    escape(f.recommendation),
+                )
+            console.print(table)
+        return
+    summary = _run_analysis(summarise_freshness)
+    if as_json:
+        _emit_json(summary.model_dump(mode='json'))
+        return
+    console.print('⏱️ [bold]Telemetry Freshness[/bold]')
+    trusted = sum(1 for d in summary.devices if d.trustworthy)
+    console.print(
+        f'Devices: [cyan]{len(summary.devices)}[/cyan]  Trustworthy: [green]{trusted}[/green]  '
+        f'Not informing: [{"yellow" if summary.not_informing else "green"}]'
+        f'{len(summary.not_informing)}[/]  '
+        f'Stale data: [{"yellow" if summary.stale_data else "green"}]{len(summary.stale_data)}[/]'
+    )
+    if summary.devices:
+        table = Table(title='Devices', show_header=True)
+        table.add_column('Device', style='cyan')
+        table.add_column('MAC', style='dim')
+        table.add_column('State', justify='right')
+        table.add_column('Data age s', justify='right')
+        table.add_column('Trust', style='bold')
+        table.add_column('Reason')
+        for d in summary.devices:
+            table.add_row(
+                escape(d.device),
+                escape(d.mac),
+                str(d.state) if d.state is not None else '—',
+                f'{d.data_age_seconds:.0f}' if d.data_age_seconds is not None else '—',
+                '[green]yes[/green]' if d.trustworthy else '[yellow]no[/yellow]',
+                escape(d.reason),
+            )
+        console.print(table)
+
+
+@stp_app.command('path-costs')
+def stp_path_costs(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """💰 Audit STP path costs on inter-switch links against their link speed.
+
+    Discovers the STP topology, then flags inter-switch ports whose path cost does not match
+    the long (32-bit) cost for their speed, which makes a 10G link lose to a 1G one. The same
+    audit as the MCP tool `audit_stp_path_costs` over `discover_stp_topology`. Read-only.
+    """
+    from .analysis.stp_optimizer import audit_stp_path_costs, discover_stp_topology
+
+    async def run() -> list[Any]:
+        topology = await discover_stp_topology()
+        return audit_stp_path_costs(topology)
+
+    findings = _run_analysis(run)
+    if as_json:
+        _emit_json(
+            {
+                'findings_count': len(findings),
+                'findings': [f.model_dump(mode='json') for f in findings],
+            }
+        )
+        return
+    console.print('💰 [bold]STP Path Cost Audit[/bold]')
+    console.print(f'Findings: [{"yellow" if findings else "green"}]{len(findings)}[/]')
+    if findings:
+        table = Table(title='Path Cost Findings', show_header=True)
+        table.add_column('Severity', style='bold')
+        table.add_column('Device', style='cyan')
+        table.add_column('Port', style='yellow')
+        table.add_column('Speed Mbps', justify='right')
+        table.add_column('Cost', justify='right')
+        table.add_column('Expected', justify='right')
+        table.add_column('Message')
+        table.add_column('Recommendation')
+        for f in findings:
+            table.add_row(
+                _severity_cell(f.severity),
+                escape(f.device_name),
+                str(f.port_idx),
+                str(f.link_speed_mbps),
+                str(f.path_cost),
+                str(f.expected_long_cost),
+                escape(f.message),
+                escape(f.recommendation),
+            )
+        console.print(table)
+
+
 @diagnose_app.command('all')
 def diagnose_all(
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of the table'),

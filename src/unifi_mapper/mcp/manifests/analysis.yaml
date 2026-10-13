@@ -15,7 +15,7 @@ tools:
     module: unifi_mapper.analysis.storm_detection
     handler: detect_storms
     title: Detect Storms
-    cli_gap: 'not yet built: storm detection has no command'
+    cli: analyze storms
     description: Detect broadcast and multicast storms on network segments
     priority: P1
     tags: [broadcast, multicast, storm, layer2, diagnostic]
@@ -24,7 +24,7 @@ tools:
     module: unifi_mapper.analysis.vlan_diagnostics
     handler: diagnose_vlans
     title: Diagnose VLANs
-    cli_gap: 'not yet built: the VLAN diagnosis has no command'
+    cli: diagnose vlans
     description: Comprehensive VLAN diagnostics and configuration validation
     priority: P1
     tags: [vlan, layer2, configuration, diagnostic]
@@ -42,7 +42,7 @@ tools:
     module: unifi_mapper.analysis.capacity_planning
     handler: get_capacity_report
     title: Get Capacity Report
-    cli_gap: 'not yet built: reached only inside diagnose all'
+    cli: analyze capacity
     description: Network capacity planning and utilization report
     priority: P2
     tags: [capacity, planning, utilization, report]
@@ -51,7 +51,7 @@ tools:
     module: unifi_mapper.analysis.lag_monitoring
     handler: monitor_lags
     title: Monitor LAGs
-    cli_gap: 'not yet built: LAG monitoring has no command'
+    cli: analyze lags
     description: LAG (Link Aggregation Group) health monitoring
     priority: P2
     tags: [lag, aggregation, redundancy, health]
@@ -170,7 +170,7 @@ tools:
     module: unifi_mapper.analysis.foreign_bridges
     handler: detect_foreign_bridges
     title: Detect Foreign Bridges
-    cli_gap: 'not yet built: reached only inside diagnose all'
+    cli: analyze foreign-bridges
     description: >-
       Detect wired third-party (foreign) bridges inside the UniFi L2 domain - consumer mesh
       units and unmanaged switches that forward frames but do not participate in RSTP.
@@ -183,7 +183,7 @@ tools:
     module: unifi_mapper.analysis.device_freshness
     handler: summarise_freshness
     title: Summarise Device Freshness
-    cli_gap: 'not yet built: reached only inside diagnose all'
+    cli: diagnose freshness
     description: >-
       Classify whether each device's reported telemetry is live or a stale snapshot, using
       state plus last_seen age. The controller returns complete plausible port tables for
@@ -195,7 +195,7 @@ tools:
     module: unifi_mapper.analysis.device_freshness
     handler: check_device_freshness
     title: Check Device Freshness
-    cli_gap: 'not yet built: per-device telemetry freshness has no command'
+    cli: diagnose freshness
     idempotent: false
     description: >-
       Authoritative two-sample freshness check - verifies last_seen, uptime and cumulative
@@ -343,7 +343,7 @@ tools:
     module: unifi_mapper.analysis.qos_validation
     handler: validate_qos
     title: Validate QoS
-    cli_gap: 'not yet built: QoS validation has no command'
+    cli: analyze qos
     description: QoS configuration validation and policy checking
     priority: P2
     tags: [qos, quality, policy, validation]
@@ -352,7 +352,7 @@ tools:
     module: unifi_mapper.analysis.mac_analyzer
     handler: analyze_mac_table
     title: Analyze MAC Table
-    cli_gap: 'not yet built: the MAC table analysis has no command'
+    cli: analyze mac-table
     description: MAC address table analysis and flapping detection
     priority: P3
     tags: [mac, layer2, flapping, table]
@@ -610,7 +610,7 @@ tools:
     module: unifi_mapper.analysis.stp_optimizer
     handler: audit_stp_path_costs
     title: Audit STP Path Costs
-    cli_gap: 'not yet built: the path-cost audit has no command'
+    cli: stp path-costs
     pipeline: true
     description: Audit STP path costs for IEEE long-path-cost consistency
     priority: P2

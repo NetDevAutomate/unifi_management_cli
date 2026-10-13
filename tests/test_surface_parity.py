@@ -31,7 +31,7 @@ ENTRIES = sorted(
 # Gaps declared "not yet built" on each side. Closing one lowers the number here; adding one
 # raises it, which is the visible cost of shipping a feature on one surface only.
 NOT_YET_BUILT_CLI_COMMANDS = 0
-NOT_YET_BUILT_MCP_TOOLS = 18
+NOT_YET_BUILT_MCP_TOOLS = 8
 
 
 def test_the_gate_has_no_problems() -> None:

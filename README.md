@@ -114,7 +114,7 @@ settings.
 
 ## What you can do
 
-82 commands in 17 groups; `unifi-mapper --help` lists them and
+91 commands in 17 groups; `unifi-mapper --help` lists them and
 [docs/reference/cli.md](docs/reference/cli.md) has an example for each. The ones people
 reach for first:
 
