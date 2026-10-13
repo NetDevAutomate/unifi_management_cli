@@ -23,6 +23,7 @@ import asyncio
 import asyncssh
 import pytest
 from collections.abc import Awaitable, Callable
+from loguru import logger
 from pathlib import Path
 from tests.fake_ssh import FakeConnection, FakeSSH
 from tests.fixtures_unifi import FAKE_PW, FAKE_TOKEN
@@ -31,7 +32,6 @@ from typing import Any
 from unifi_mapper import typer_cli
 from unifi_mapper.analysis import bandwidth_test, latency_matrix
 from unifi_mapper.analysis.gateway_ssh import (
-    GATEWAY_KNOWN_HOSTS,
     SSH_CONNECT_SUGGESTION,
     SSH_CONNECT_TIMEOUT,
     SSH_PASSWORD_MISSING,
@@ -40,6 +40,7 @@ from unifi_mapper.analysis.gateway_ssh import (
     as_text,
     check_exit_status,
     gateway_session,
+    known_hosts_setting,
     require_bounded_float,
     require_bounded_int,
     require_hostname,
@@ -620,11 +621,100 @@ async def test_gateway_session_logs_in_with_the_ssh_login_and_closes(ssh: FakeSS
     assert kwargs == {
         'username': 'root',
         'password': FAKE_SSH_PW,
-        'known_hosts': GATEWAY_KNOWN_HOSTS,
+        'known_hosts': (),  # asyncssh's default: ~/.ssh/known_hosts, fail closed (issue 038)
         'client_keys': [],
         'preferred_auth': 'keyboard-interactive,password',
     }
-    assert GATEWAY_KNOWN_HOSTS is None  # issue 038: the one line that turns on checking
+
+
+# --- host-key verification (issue 038) -----------------------------------------------------
+
+
+class _RefusingHostKey:
+    """``asyncssh.connect`` as it behaves when the host key is missing or changed.
+
+    asyncssh verifies the server's host key during the handshake, before any client
+    authentication; a failure there means the password was never sent. The fake records what
+    reached it so a test can prove that ordering.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def __call__(self, host: str, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        if kwargs.get('known_hosts') is None:
+            return FakeConnection()
+        raise asyncssh.HostKeyNotVerifiable('Host key is not trusted for 192.0.2.1')
+
+
+async def test_a_missing_or_changed_host_key_is_refused_before_the_password_is_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refusing = _RefusingHostKey()
+    monkeypatch.setattr(asyncssh, 'connect', refusing)
+    with pytest.raises(ToolError) as exc:
+        async with gateway_session('192.0.2.1'):
+            pass
+    assert exc.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    message = f'{exc.value.message} {exc.value.suggestion}'
+    assert 'root@192.0.2.1' in message
+    assert 'ssh root@192.0.2.1' in message  # how to pin the key, once
+    assert 'fingerprint' in message
+    assert 'delete' not in message.lower()  # never "remove the stale key"
+    assert FAKE_SSH_PW not in message
+    # The key check is part of the handshake: asyncssh had the password available but the
+    # handshake failed before authentication, which is what the refusal models.
+    assert refusing.calls[0]['known_hosts'] == ()
+
+
+async def test_a_trusted_host_key_connects(ssh: FakeSSH) -> None:
+    async with gateway_session('192.0.2.1') as conn:
+        assert conn is ssh.connections[0]
+    assert ssh.connects[0][1]['known_hosts'] == ()
+
+
+async def test_known_hosts_off_disables_checking_and_warns_every_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv('UNIFI_SSH_KNOWN_HOSTS', 'off')
+    refusing = _RefusingHostKey()
+    monkeypatch.setattr(asyncssh, 'connect', refusing)
+    warnings: list[str] = []
+    sink = logger.add(lambda m: warnings.append(m.record['message']), level='WARNING')
+    try:
+        async with gateway_session('192.0.2.1'):
+            pass
+        async with gateway_session('192.0.2.1'):
+            pass
+    finally:
+        logger.remove(sink)
+    assert [c['known_hosts'] for c in refusing.calls] == [None, None]
+    assert len(warnings) == 2
+    assert 'not verified' in warnings[0] and 'UNIFI_SSH_KNOWN_HOSTS' in warnings[0]
+
+
+@pytest.mark.parametrize('value', ['no', 'false', '0', 'yes', 'strict', '~/.ssh/known_hosts'])
+@pytest.mark.usefixtures('no_ssh')
+async def test_an_unrecognised_known_hosts_setting_is_rejected_before_connecting(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv('UNIFI_SSH_KNOWN_HOSTS', value)
+    with pytest.raises(ToolError) as exc:
+        async with gateway_session('192.0.2.1'):
+            pass
+    assert exc.value.error_code == ErrorCodes.CONFIG_INVALID
+    assert 'UNIFI_SSH_KNOWN_HOSTS' in exc.value.message
+    assert "'default' or 'off'" in f'{exc.value.message} {exc.value.suggestion}'
+
+
+def test_known_hosts_setting_reads_default_and_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv('UNIFI_SSH_KNOWN_HOSTS', raising=False)
+    assert known_hosts_setting() == ()
+    monkeypatch.setenv('UNIFI_SSH_KNOWN_HOSTS', 'default')
+    assert known_hosts_setting() == ()
+    monkeypatch.setenv('UNIFI_SSH_KNOWN_HOSTS', 'OFF')
+    assert known_hosts_setting() is None
 
 
 async def test_gateway_session_takes_an_explicit_host(ssh: FakeSSH) -> None:

@@ -447,7 +447,7 @@ def test_the_command_has_help() -> None:
     result = runner.invoke(app, ['diagnose', 'client-connectivity', '--help'])
     assert result.exit_code == 0
     flat = ' '.join(result.output.split())
-    assert 'SSH' in flat and 'host key is not verified' in flat and '120' in flat
+    assert 'SSH' in flat and 'host key is verified' in flat and '120' in flat
     assert 'UNIFI_SSH_PASSWORD' in flat  # review finding: what it needs before it runs
     root = typer.main.get_command(app)
     assert isinstance(root, click.Group)

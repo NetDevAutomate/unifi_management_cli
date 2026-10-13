@@ -227,7 +227,7 @@ your config, plus `UNIFI_SSH_USERNAME` if the SSH user isn't `root`. Without
 [issue 038](../issues/038-ssh-host-key-verification-disabled.md)):
 
 ```text
-⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key is not verified (issue 038).
+⚠ This command runs on the gateway over SSH as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
 ❌ [CONFIG_MISSING] UNIFI_SSH_PASSWORD is not set. The gateway SSH login has its own password; UNIFI_PASSWORD (the UniFi OS login) is never sent over SSH
 💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
 ```
@@ -237,10 +237,11 @@ Any other failure of these commands is also a line on stderr, with secrets redac
 `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH. Every address and number is
 checked before it reaches the gateway's command line, which is shell-quoted as well:
 `diagnose bandwidth` refuses a target that isn't an IP address (an IPv6 zone id included),
-and the latency matrix skips such a target and says why. The SSH session doesn't verify the
-gateway's host key yet (`known_hosts=None`,
-[issue 038](../issues/038-ssh-host-key-verification-disabled.md)), so run these only on a
-network you trust.
+and the latency matrix skips such a target and says why. The SSH session verifies the
+gateway's host key against `~/.ssh/known_hosts` and refuses, before the password is sent, a key
+that is missing or has changed: record it once with `ssh <user>@<gateway>`.
+`UNIFI_SSH_KNOWN_HOSTS=off` disables the check with a warning on every run
+([issue 038](../issues/038-ssh-host-key-verification-disabled.md)).
 
 ## Radio Management
 
@@ -531,7 +532,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `analyze neighbours` | Passive neighbour AP detection and trend |
 | `diagnose all` | Run every diagnostic with a pass/warn/fail summary |
 | `diagnose health` | Overall network health check |
-| `diagnose security` | Security audit: unknown and anomalous devices, rogue APs, guest and VLAN violations |
+| `diagnose security` | Security audit: pending adoption, guest overstay, rogue APs, VLAN isolation |
 | `diagnose vlans` | Every VLAN, the trunk ports that carry them, and the VLAN diagnostic checks |
 | `diagnose freshness` | How old each device's telemetry is; `--sample` compares two reads a gap apart |
 | `diagnose performance` | CPU, memory, load and drops per device, scored and ranked, with bottlenecks |

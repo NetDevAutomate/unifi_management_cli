@@ -44,3 +44,10 @@ Do it as one change once the current behaviour is locked by tests (it now is:
    public equivalents; keep `ToolRunner` as the single call path.
 3. Keep the envelope, `isError`, annotations, resources and prompts identical (the contract
    tests above must pass unchanged), then widen the pin rule in `pyproject.toml`.
+
+## Decision (2026-10-13)
+
+No migration to the MCP SDK v2 `MCPServer` API in 0.3.0. The behaviour is locked by the
+protocol-contract tests, so the migration can land as one change in a later release once the
+v2 task support (issue 060 D4) is wanted. Decided by the 0.3.0 release council (D-008); the
+issue stays open.

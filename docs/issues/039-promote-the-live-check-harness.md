@@ -52,3 +52,10 @@ Add a generic read-only live-check tool to the repo (for example `scripts/live_c
 
 Why this needs a decision: it adds a script that talks to the live network (read-only), and
 where it lives and how it is configured is the user's call.
+
+## Decision (2026-10-13)
+
+Promotion of the read-only live-check harness into the repository is deferred to 0.4.0. It is
+maintainer tooling rather than a user-facing feature, the read-only guards it exercises are
+unit-tested, and it is run by hand against the maintainer's controller before each release.
+Decided by the 0.3.0 release council (D-039); the issue stays open.

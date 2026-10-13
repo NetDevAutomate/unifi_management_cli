@@ -87,7 +87,6 @@ SECURITY = SecurityAuditReport(
     authorized_devices=40,
     unauthorized_devices=1,
     anomalous_devices=1,
-    unknown_devices=0,
     critical_risks=[
         SecurityDevice(
             mac='02:00:00:00:00:99',
@@ -124,6 +123,7 @@ SECURITY = SecurityAuditReport(
     ],
     immediate_actions=['Isolate mystery-box'],
     security_recommendations=['Enable 802.1X on access ports'],
+    limitations=['Rogue APs and neighbours: not assessed (stat/rogueap HTTP 500)'],
 )
 
 STORMS = StormDetectionReport.model_validate(
@@ -835,6 +835,8 @@ def test_security_rendering_shows_risks_and_actions(cli: SimpleNamespace) -> Non
     assert 'Enable 802.1X' in text
     assert 'two switches' in text
     assert 'Neighbour APs: 14' in text and 'NextDoor' in text and 'no threat' in text
+    assert 'Limitations' in text and 'not assessed (stat/rogueap HTTP 500)' in text
+    assert 'Unknown:' not in text
 
 
 def test_a_tool_error_prints_red_and_exits_1(cli: SimpleNamespace, monkeypatch) -> None:

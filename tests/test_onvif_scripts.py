@@ -290,14 +290,15 @@ class _FakeCamera:
 @pytest.fixture
 def stream_with_fakes(
     config: Any, cameras_built: list[tuple[object, ...]], monkeypatch: pytest.MonkeyPatch
-) -> tuple[Any, list[list[str]]]:
-    """``onvif_stream`` with fake cameras, a failing ffprobe and ``SENTINEL`` as the password.
+) -> tuple[Any, list[tuple[str, str, str]]]:
+    """``onvif_stream`` with fake cameras, a refusing RTSP probe and ``SENTINEL`` as the password.
 
-    ffprobe exits 1 and echoes its input URI in stderr, as it does on an auth failure. The
-    padding puts the password across the 100-character cut the script applies to stderr.
+    The in-process probe (issue 057) rejects every account with an error whose text carries the
+    authenticated URI, as a camera's 401 text can; the padding puts the password across the
+    100-character cut the script applies to error text.
 
     Returns:
-        The module, and the argument list of every ffprobe call.
+        The module, and the ``(uri, user, password)`` arguments of every probe call.
     """
     stream = load_script('onvif_stream', monkeypatch)
     for var, value in _env(ONVIF_PASSWORD=SENTINEL).items():
@@ -306,23 +307,22 @@ def stream_with_fakes(
     async def _get_camera(camera_config: Any) -> _FakeCamera:
         return _FakeCamera(camera_config.ip)
 
-    calls: list[list[str]] = []
+    calls: list[tuple[str, str, str]] = []
 
-    def _ffprobe(args: list[str], **_kwargs: object) -> Any:
-        calls.append(args)
-        uri = args[-1]
-        pad = 'x' * (96 - uri.index(SENTINEL))  # an unmasked cut would keep 4 characters
-        stderr = f'{pad}{uri}: Server returned 401 Unauthorized'
-        return stream.subprocess.CompletedProcess(args, 1, stdout='', stderr=stderr)
+    async def _describe(uri: str, user: str, password: str, **_kwargs: object) -> Any:
+        calls.append((uri, user, password))
+        authenticated = uri.replace('://', f'://{user}:{password}@')
+        pad = 'x' * (96 - authenticated.index(SENTINEL))  # an unmasked cut keeps 4 characters
+        raise stream.RtspError(f'{pad}{authenticated}: authentication rejected (401)')
 
     monkeypatch.setattr(stream, 'get_camera', _get_camera)
-    monkeypatch.setattr(stream.subprocess, 'run', _ffprobe)
+    monkeypatch.setattr(stream, 'rtsp_describe', _describe)
     return stream, calls
 
 
 @pytest.mark.parametrize('command', ['streams', 'test-rtsp'])
 def test_stream_commands_mask_the_password(
-    stream_with_fakes: tuple[Any, list[list[str]]],
+    stream_with_fakes: tuple[Any, list[tuple[str, str, str]]],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     command: str,
@@ -339,29 +339,29 @@ def test_stream_commands_mask_the_password(
     assert masked in captured.out
 
 
-def test_rtsp_check_passes_the_full_uri_to_ffprobe(
-    stream_with_fakes: tuple[Any, list[list[str]]],
+def test_rtsp_check_hands_the_credentials_to_the_probe_not_a_command_line(
+    stream_with_fakes: tuple[Any, list[tuple[str, str, str]]],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """ffprobe still gets the credentials; only the printed copy and its stderr are masked."""
+    """The probe gets the bare URI and the account as arguments; nothing is spawned (issue 057)."""
     stream, calls = stream_with_fakes
     monkeypatch.setattr(sys, 'argv', ['onvif_stream.py', 'test-rtsp'])
 
     asyncio.run(stream.main())
 
-    assert [args[-1] for args in calls] == [
-        _bare_uri(host).replace('://', '://onvifuser:' + SENTINEL + '@')
-        for host in ('192.0.2.10', '192.0.2.11')
+    assert calls == [
+        (_bare_uri(host), 'onvifuser', SENTINEL) for host in ('192.0.2.10', '192.0.2.11')
     ]
+    assert not hasattr(stream, 'subprocess'), 'test-rtsp must not start another program'
     out = capsys.readouterr().out
-    assert out.count('ffprobe failed:') == 2
+    assert out.count('DESCRIBE failed:') == 2
     assert SENTINEL[:4] not in out
 
 
 @pytest.mark.parametrize('command', ['info', 'streams', 'snapshot', 'test-rtsp'])
 def test_an_error_message_holding_the_password_is_masked(
-    stream_with_fakes: tuple[Any, list[list[str]]],
+    stream_with_fakes: tuple[Any, list[tuple[str, str, str]]],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     command: str,
