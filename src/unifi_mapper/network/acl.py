@@ -13,6 +13,7 @@ from unifi_mapper.network.models import (
     ACLActionType,
     ACLProtocol,
     ACLRule,
+    ACLRuleOrigin,
 )
 
 
@@ -166,7 +167,7 @@ class ACLManager:
             List of user rules.
         """
         rules = await self.get_all_rules()
-        return [r for r in rules if r.origin == 'USER']
+        return [r for r in rules if r.origin == ACLRuleOrigin.USER_DEFINED]
 
     async def get_system_rules(self) -> list[ACLRule]:
         """Get all system ACL rules.
@@ -175,7 +176,7 @@ class ACLManager:
             List of system rules.
         """
         rules = await self.get_all_rules()
-        return [r for r in rules if r.origin == 'SYSTEM']
+        return [r for r in rules if r.origin == ACLRuleOrigin.DERIVED]
 
     async def get_rules_by_protocol(self, protocol: ACLProtocol) -> list[ACLRule]:
         """Get ACL rules filtered by protocol.
@@ -270,7 +271,7 @@ class ACLManager:
         if source_ips or source_ports or source_macs:
             source_filter = {
                 'ipAddressesOrSubnets': source_ips or [],
-                'portsFilter': source_ports or [],
+                'portFilter': source_ports or [],
                 'macAddresses': source_macs or [],
             }
 
@@ -278,7 +279,7 @@ class ACLManager:
         if destination_ips or destination_ports:
             destination_filter = {
                 'ipAddressesOrSubnets': destination_ips or [],
-                'portsFilter': destination_ports or [],
+                'portFilter': destination_ports or [],
             }
 
         protocol_filter = None
@@ -333,14 +334,14 @@ class ACLManager:
         if source_ips or source_ports:
             source_filter = {
                 'ipAddressesOrSubnets': source_ips or [],
-                'portsFilter': source_ports or [],
+                'portFilter': source_ports or [],
             }
 
         destination_filter = None
         if destination_ips or destination_ports:
             destination_filter = {
                 'ipAddressesOrSubnets': destination_ips or [],
-                'portsFilter': destination_ports or [],
+                'portFilter': destination_ports or [],
             }
 
         protocol_filter = None
@@ -416,7 +417,7 @@ class ACLManager:
             rule.source_filter
             and (
                 rule.source_filter.ip_addresses_or_subnets
-                or rule.source_filter.ports_filter
+                or rule.source_filter.port_filter
                 or rule.source_filter.mac_addresses
                 or rule.source_filter.network_ids
             )
@@ -426,7 +427,7 @@ class ACLManager:
             rule.destination_filter
             and (
                 rule.destination_filter.ip_addresses_or_subnets
-                or rule.destination_filter.ports_filter
+                or rule.destination_filter.port_filter
                 or rule.destination_filter.network_ids
             )
         )
@@ -469,21 +470,21 @@ class ACLManager:
             else:
                 summary.allow_rules += 1
 
-            if rule.origin == 'USER':
+            if rule.origin == ACLRuleOrigin.USER_DEFINED:
                 summary.user_rules += 1
-            elif rule.origin == 'SYSTEM':
+            elif rule.origin == ACLRuleOrigin.DERIVED:
                 summary.system_rules += 1
 
             if rule.source_filter and (
                 rule.source_filter.ip_addresses_or_subnets
-                or rule.source_filter.ports_filter
+                or rule.source_filter.port_filter
                 or rule.source_filter.mac_addresses
             ):
                 summary.rules_with_source_filter += 1
 
             if rule.destination_filter and (
                 rule.destination_filter.ip_addresses_or_subnets
-                or rule.destination_filter.ports_filter
+                or rule.destination_filter.port_filter
             ):
                 summary.rules_with_destination_filter += 1
 

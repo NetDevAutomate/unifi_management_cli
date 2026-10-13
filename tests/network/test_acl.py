@@ -13,6 +13,8 @@ from unifi_mapper.network.models import (
     ACLDeviceFilter,
     ACLProtocol,
     ACLRule,
+    ACLRuleMetadata,
+    ACLRuleOrigin,
     ACLTrafficFilter,
 )
 from unittest.mock import AsyncMock, MagicMock
@@ -114,10 +116,10 @@ class TestACLManager:
                 name='Block SSH',
                 enabled=True,
                 action=ACLActionType.BLOCK,
-                origin='USER',
+                metadata=ACLRuleMetadata(origin=ACLRuleOrigin.USER_DEFINED),
                 sourceFilter=ACLTrafficFilter(
                     ipAddressesOrSubnets=['192.0.2.0/24'],
-                    portsFilter=[22],
+                    portFilter=[22],
                 ),
                 destinationFilter=ACLTrafficFilter(
                     ipAddressesOrSubnets=['10.0.0.0/8'],
@@ -130,12 +132,12 @@ class TestACLManager:
                 name='Allow Web',
                 enabled=True,
                 action=ACLActionType.ALLOW,
-                origin='USER',
+                metadata=ACLRuleMetadata(origin=ACLRuleOrigin.USER_DEFINED),
                 sourceFilter=ACLTrafficFilter(
                     networkIds=['net-1'],
                 ),
                 destinationFilter=ACLTrafficFilter(
-                    portsFilter=[80, 443],
+                    portFilter=[80, 443],
                 ),
                 protocolFilter=[ACLProtocol.TCP],
             ),
@@ -145,7 +147,7 @@ class TestACLManager:
                 name='System Rule',
                 enabled=False,
                 action=ACLActionType.BLOCK,
-                origin='SYSTEM',
+                metadata=ACLRuleMetadata(origin=ACLRuleOrigin.DERIVED),
             ),
             ACLRule(
                 id='rule-4',
@@ -153,7 +155,7 @@ class TestACLManager:
                 name='Block DNS',
                 enabled=True,
                 action=ACLActionType.BLOCK,
-                origin='USER',
+                metadata=ACLRuleMetadata(origin=ACLRuleOrigin.USER_DEFINED),
                 protocolFilter=[ACLProtocol.TCP, ACLProtocol.UDP],
                 enforcingDeviceFilter=ACLDeviceFilter(
                     deviceIds=['device-1', 'device-2'],
@@ -286,7 +288,7 @@ class TestACLManager:
         rules = await manager.get_user_rules()
 
         assert len(rules) == 3
-        assert all(r.origin == 'USER' for r in rules)
+        assert all(r.origin == 'USER_DEFINED' for r in rules)
 
     @pytest.mark.asyncio
     async def test_get_system_rules(

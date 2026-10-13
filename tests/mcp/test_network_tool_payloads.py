@@ -16,7 +16,10 @@ from unifi_mapper.mcp.tools import network as network_tools
 
 
 SITE_ID = '550e8400-e29b-41d4-a716-446655440000'
-INTEGRATION = f'/proxy/network/integrations/v1/sites/{SITE_ID}'
+API = '/proxy/network/integration/v1'
+INTEGRATION = f'{API}/sites/{SITE_ID}'
+# The client's one base-path probe per connection (issue 003); the fakes answer it.
+PROBE = ('GET', f'{API}/info')
 
 
 class Pages(httpx.MockTransport):
@@ -29,6 +32,8 @@ class Pages(httpx.MockTransport):
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.calls.append((request.method, request.url.path))
+        if (request.method, request.url.path) == PROBE:
+            return httpx.Response(200, json={'applicationVersion': '10.6.106'})
         data = self._pages.get(request.url.path)
         if data is None:
             return httpx.Response(404, json={'statusCode': 404, 'statusName': 'NOT_FOUND'})
@@ -78,7 +83,7 @@ async def test_get_clients_returns_default_and_user_clients(
 
     assert [c.get('id') for c in result] == ['c-default', 'c-user'], result
     assert [c['access']['type'] for c in result] == ['DEFAULT', 'USER']
-    assert transport.calls == [('GET', f'{INTEGRATION}/clients')]
+    assert transport.calls == [PROBE, ('GET', f'{INTEGRATION}/clients')]
 
 
 @pytest.mark.usefixtures('network_env')
@@ -142,7 +147,7 @@ async def test_acl_and_dns_tools_read_the_served_paths(
     result = await getattr(network_tools, tool)()
 
     assert [r.get('id') for r in result] == [record['id']], result
-    assert transport.calls == [('GET', path)]
+    assert transport.calls == [PROBE, ('GET', path)]
 
 
 # --- get_clients paging (design 4.11) -------------------------------------------------------
@@ -161,6 +166,8 @@ class PagedClients(httpx.MockTransport):
         super().__init__(self._handle)
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
+        if (request.method, request.url.path) == PROBE:
+            return httpx.Response(200, json={'applicationVersion': '10.6.106'})
         self.calls.append((request.method, request.url.path, request.url.query.decode()))
         if request.url.path != f'{INTEGRATION}/clients':
             return httpx.Response(404, json={'statusCode': 404, 'statusName': 'NOT_FOUND'})

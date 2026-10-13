@@ -715,7 +715,7 @@ async def compare_link_errors(baseline_path: str, threshold: int) -> dict:
 
 ## 7. Layer 5: Network Control Plane
 
-The `network/` sub-package is the Integration API path. `client.py` holds `UniFiNetworkClient`, an async `httpx` client for `/proxy/network/integrations/v1`, configured by `config.py`'s `NetworkConfig` (`UNIFI_NETWORK_*`); the other modules are managers over it. Its only caller is the MCP `network` category (`mcp/tools/network.py`), which opens one client per call behind the GET-only `ReadOnlyAsyncTransport`; no CLI command uses it.
+The `network/` sub-package is the Integration API path. `client.py` holds `UniFiNetworkClient`, an async `httpx` client for `/proxy/network/integration/v1` (the documented base, with the undocumented plural as a fallback on a 404; issue 003), configured by `config.py`'s `NetworkConfig` (`UNIFI_NETWORK_*`); the other modules are managers over it. Its only caller is the MCP `network` category (`mcp/tools/network.py`), which opens one client per call behind the GET-only `ReadOnlyAsyncTransport`; no CLI command uses it.
 
 ```mermaid
 graph LR
@@ -735,7 +735,7 @@ graph LR
     end
 ```
 
-Each manager maps to one Integration API resource under `/sites/{siteId}` (`firewall/zones`, `firewall/policies`, `acl-rules`, `dns/policies`, `clients`, `networks`, `traffic-matching-lists`, `devices`) or `/dpi`. The six MCP tools read zones, policies, ACL rules, DNS policies, clients and networks. The client also has write methods (device and port actions, guest authorisation, and creating, updating or deleting networks, firewall policies, ACL rules, DNS policies and traffic-matching lists); no MCP tool calls them, and the guard would refuse them. Its device-statistics and port-action paths aren't served by Network 10.6 ([issue 035](../issues/035-device-statistics-and-port-action-paths.md)).
+Each manager maps to one Integration API resource under `/sites/{siteId}` (`firewall/zones`, `firewall/policies`, `acl-rules`, `dns/policies`, `clients`, `networks`, `traffic-matching-lists`, `devices`) or `/dpi`. The six MCP tools read zones, policies, ACL rules, DNS policies, clients and networks. The client also has write methods (device and port actions, guest authorisation, and creating, updating or deleting networks, firewall policies, ACL rules, DNS policies and traffic-matching lists); no MCP tool calls them, and the guard would refuse them. Its device-statistics and port-action paths follow the reference (`.../statistics/latest`, `.../interfaces/ports/{idx}/actions`; [issue 035](../issues/035-device-statistics-and-port-action-paths.md)).
 
 ---
 

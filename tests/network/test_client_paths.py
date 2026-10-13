@@ -4,8 +4,9 @@ Network 10.6.106 answers 404 for the client's old ``/sites/{siteId}/acls`` and
 ``/sites/{siteId}/dns-policies``. Ubiquiti's Network API reference (v10.6.102) and one guarded
 GET on the console both give ``/sites/{siteId}/acl-rules`` and ``/sites/{siteId}/dns/policies``.
 These tests pin all five call sites of each resource (list, get, create, update, delete) with
-``httpx.MockTransport``, and show the GET-only guard still refuses the writes before any I/O.
-Nothing reaches a network.
+``httpx.MockTransport``, and show the GET-only guard still refuses the writes before they are
+sent. The only request the guard lets through before a refused write is the client's one
+``GET /v1/info`` base-path probe (issue 003). Nothing reaches a network.
 """
 
 import httpx
@@ -24,7 +25,9 @@ from unifi_mapper.network.config import NetworkConfig
 
 
 SITE_ID = '550e8400-e29b-41d4-a716-446655440000'
-SITE = f'/proxy/network/integrations/v1/sites/{SITE_ID}'
+API = '/proxy/network/integration/v1'
+PROBE = ('GET', f'{API}/info')
+SITE = f'{API}/sites/{SITE_ID}'
 ACL_RULES = f'{SITE}/acl-rules'
 DNS_POLICIES = f'{SITE}/dns/policies'
 
@@ -40,6 +43,8 @@ class Recorder(httpx.MockTransport):
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.calls.append((request.method, request.url.path))
+        if (request.method, request.url.path) == PROBE:
+            return httpx.Response(200, json={'applicationVersion': '10.6.106'})
         if request.method == 'GET' and request.url.path in (ACL_RULES, DNS_POLICIES):
             page = {'offset': 0, 'limit': 200, 'count': 0, 'totalCount': 0, 'data': []}
             return httpx.Response(200, json=page)
@@ -91,7 +96,7 @@ async def test_reads_use_the_served_paths(
     recorder = Recorder()
     async with _client(recorder) as client:
         await call(client)
-    assert recorder.calls == [expected]
+    assert recorder.calls == [PROBE, expected]
 
 
 @pytest.mark.parametrize(('name', 'call', 'expected'), WRITES, ids=[w[0] for w in WRITES])
@@ -101,13 +106,13 @@ async def test_writes_use_the_same_paths_and_the_guard_refuses_them(
     unguarded = Recorder()
     async with _client(unguarded) as client:
         await call(client)
-    assert unguarded.calls == [expected]
+    assert unguarded.calls == [PROBE, expected]
 
     behind_guard = Recorder()
     guard = ReadOnlyAsyncTransport(behind_guard, policy=get_only_request_allowed)
     async with _client(guard) as client:
         with pytest.raises(ReadOnlyViolation) as refused:
             await call(client)
-    assert behind_guard.calls == []
+    assert behind_guard.calls == [PROBE]
     method, path = expected
     assert str(refused.value) == f'refused {method} {path!r}: only GET and HEAD are allowed'

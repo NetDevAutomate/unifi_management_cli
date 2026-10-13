@@ -109,13 +109,13 @@ class TestNetworkConfig:
         assert config.base_url == 'https://192.0.2.1:8443'
 
     def test_api_base_url_property(self) -> None:
-        """Test api_base_url property."""
+        """Test api_base_url property: the documented base, singular (issue 003)."""
         config = NetworkConfig(
             host='192.0.2.1',
             api_key=SecretStr('key'),
             site_id='550e8400-e29b-41d4-a716-446655440000',
         )
-        assert config.api_base_url == 'https://192.0.2.1:443/proxy/network/integrations/v1'
+        assert config.api_base_url == 'https://192.0.2.1:443/proxy/network/integration/v1'
 
     def test_get_headers(self) -> None:
         """Test HTTP headers generation."""

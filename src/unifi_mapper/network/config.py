@@ -12,6 +12,12 @@ from pydantic import BaseModel, Field, SecretStr, field_validator, model_validat
 from typing import Annotated
 
 
+# Ubiquiti's Network API spec gives the server as .../proxy/network/integration; Network 10.6
+# also answers on the undocumented plural. The client probes ``{base}/v1/info`` in this order
+# and uses the first base that does not 404, as port_diagnostics does (issue 003).
+INTEGRATION_BASES: tuple[str, ...] = ('/proxy/network/integration', '/proxy/network/integrations')
+
+
 class NetworkConfig(BaseModel):
     """Configuration for connecting to a UniFi Network controller.
 
@@ -89,8 +95,13 @@ class NetworkConfig(BaseModel):
 
     @property
     def api_base_url(self) -> str:
-        """Get the base URL for the Network API."""
-        return f'{self.base_url}/proxy/network/integrations/v1'
+        """Get the documented base URL for the Network Integration API.
+
+        This is ``{base_url}{INTEGRATION_BASES[0]}/v1``. ``UniFiNetworkClient`` tries it
+        first and falls back to the plural base on a 404 (``client.base_path_used`` says
+        which one answered).
+        """
+        return f'{self.base_url}{INTEGRATION_BASES[0]}/v1'
 
     @classmethod
     def from_env(
