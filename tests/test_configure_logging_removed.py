@@ -10,8 +10,8 @@ their own working setup, so the dead one and its two re-exports are deleted.
 from __future__ import annotations
 
 import importlib
-import subprocess
 import pytest
+import subprocess
 from pathlib import Path
 
 
