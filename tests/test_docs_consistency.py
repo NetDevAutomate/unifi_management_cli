@@ -906,6 +906,47 @@ def test_no_doc_names_a_machine_local_path() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The codemap's command total (issue 076 item 31)
+# ---------------------------------------------------------------------------
+
+# "98 commands in all" after the typer_cli.py groups; the figure went stale once (it said 68)
+# because a script outside the repository derived it.
+COMMAND_TOTAL = re.compile(r'\b(\d+) commands in all\b')
+
+
+def _leaf_commands(command: click.Command) -> int:
+    """Return how many runnable commands a Click (Typer) tree holds, groups excluded."""
+    if isinstance(command, click.Group):
+        return sum(_leaf_commands(sub) for sub in command.commands.values())
+    return 1
+
+
+def command_total_problems(path: str, text: str, total: int) -> list[str]:
+    """Return ``path:line: problem`` for every "N commands in all" that is not ``total``."""
+    return [
+        f'{path}:{_line_of(text, m.start())}: {m.group(0)}, not {total}'
+        for m in COMMAND_TOTAL.finditer(text)
+        if int(m.group(1)) != total
+    ]
+
+
+def test_command_total_detector_reports_a_stale_figure() -> None:
+    text = 'the `stp` and `radio` groups, 68 commands in all.\nand 98 commands in all.\n'
+    assert command_total_problems('demo.md', text, 98) == ['demo.md:1: 68 commands in all, not 98']
+    assert command_total_problems('demo.md', 'no total here\n', 98) == []
+
+
+def test_the_codemaps_command_total_matches_the_typer_tree() -> None:
+    """The codemap's "N commands in all" for ``typer_cli.py`` is a walk of the real tree."""
+    total = _leaf_commands(typer.main.get_command(app))
+    assert total > 60, f'the walk found only {total} commands: has the CLI moved?'
+    docs = _current_docs()
+    stated = sum(len(COMMAND_TOTAL.findall(t)) for t in docs.values())
+    assert stated >= 1, 'no doc states "N commands in all": has the codemap wording moved?'
+    assert _all_problems(docs, lambda p, t: command_total_problems(p, t, total)) == []
+
+
+# ---------------------------------------------------------------------------
 # Mermaid
 # ---------------------------------------------------------------------------
 
