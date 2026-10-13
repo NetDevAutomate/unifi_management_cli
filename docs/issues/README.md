@@ -105,3 +105,4 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [087](087-retry-settings-skip-the-credentials-built-clients.md) | `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` do not reach clients built from `Credentials` | open |
 | [088](088-analyze-mac-table-reads-a-field-current-controllers-do-not-send.md) | `analyze mac-table` reads `device['mac_table']`, which current controllers do not send, so it reports nothing | open |
 | [089](089-trunk-detection-rule-exists-in-three-places.md) | The trunk-port rule is written three times and can disagree | open |
+| [090](090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md) | The MCP deadline cannot stop a synchronous handler or a worker thread it started | open |
