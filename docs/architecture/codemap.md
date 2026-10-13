@@ -449,8 +449,8 @@ AsyncClient --> Errors
 | `username` / `password` | `Optional[str]` | Fallback auth |
 | `verify_ssl` | `bool` | Defaults to `False` for self-signed certs |
 | `timeout` | `int` | Clamped to 1-300 seconds |
-| `max_retries` / `retry_delay` | `int` / `float` | Clamped to 1-10 and 0.1-10.0, but no caller passes them on ([issue 042](../issues/042-settings-with-no-effect.md)) |
-| `default_format`, `default_output_dir`, `default_diagram_dir` | `str` / `Optional[str]` | Read only by the legacy `python -m unifi_mapper.cli` (issue 042) |
+| `max_retries` / `retry_delay` | `int` / `float` | Clamped to 1-10 and 0.1-10.0; every CLI client is built with them ([issue 042](../issues/042-settings-with-no-effect.md)) |
+| `default_format`, `default_output_dir`, `default_diagram_dir` | `str` / `Optional[str]` | `discover`'s defaults when `--format`, `--output` or `--diagram` is not given, in `unifi-mapper` and the legacy `python -m unifi_mapper.cli` (issue 042) |
 
 **Key methods.**
 

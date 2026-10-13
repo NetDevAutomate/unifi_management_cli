@@ -114,6 +114,8 @@ def main():
             password=config.password,
             verify_ssl=config.verify_ssl,
             timeout=config.timeout,
+            max_retries=config.max_retries,
+            retry_delay=config.retry_delay,
         )
 
         if not api_client.login():

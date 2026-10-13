@@ -233,7 +233,7 @@ def main(
             discover(
                 output=None,
                 diagram=None,
-                format='png',
+                format=None,
                 apply=apply,
                 verify_updates=verify_updates,
                 connected_devices=connected_devices,
@@ -292,6 +292,13 @@ app.add_typer(gateway_app, name='gateway')
 app.add_typer(vlan_traffic_app, name='vlan-traffic')
 
 
+def _configured_dir(configured: Optional[str], default_name: str) -> Path:
+    """A directory from the config file (``~`` expanded), or ``./<default_name>``."""
+    if configured:
+        return Path(configured).expanduser()
+    return Path.cwd() / default_name
+
+
 @app.command()
 def discover(
     output: Annotated[
@@ -301,12 +308,16 @@ def discover(
         Optional[Path], typer.Option('--diagram', '-d', help='🖼️ Output path for diagram')
     ] = None,
     format: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             '--format',
-            help='🎨 Diagram format: png, svg (Graphviz), html, mermaid or dot (source files)',
+            help=(
+                '🎨 Diagram format: png, svg (Graphviz), html, mermaid or dot (source files) '
+                '[default: UNIFI_DEFAULT_FORMAT, or png]'
+            ),
+            show_default=False,
         ),
-    ] = 'png',
+    ] = None,
     apply: Annotated[
         bool,
         typer.Option(
@@ -362,9 +373,14 @@ def discover(
         # Re-read the same file: a stray ./.env must never override --config.
         unifi_config = UnifiConfig.from_env(str(config))
 
-        # Set default paths
-        output_path = output or Path.cwd() / 'reports' / 'port_mapping_report.md'
-        diagram_path = diagram or Path.cwd() / 'diagrams' / f'network_diagram.{format}'
+        # The config file's output settings apply when the matching option is not given
+        # (issue 042): UNIFI_DEFAULT_FORMAT, UNIFI_OUTPUT_DIR and UNIFI_DIAGRAM_DIR.
+        if format is None:
+            format = unifi_config.default_format or 'png'
+        output_dir = _configured_dir(unifi_config.default_output_dir, 'reports')
+        diagram_dir = _configured_dir(unifi_config.default_diagram_dir, 'diagrams')
+        output_path = output or output_dir / 'port_mapping_report.md'
+        diagram_path = diagram or diagram_dir / f'network_diagram.{format}'
 
         # Ensure directories exist
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -384,6 +400,8 @@ def discover(
             password=unifi_config.password or '',
             verify_ssl=unifi_config.verify_ssl,
             timeout=unifi_config.timeout,
+            max_retries=unifi_config.max_retries,
+            retry_delay=unifi_config.retry_delay,
         )
 
         if verify_updates:
@@ -3117,6 +3135,8 @@ def diagram(
             password=unifi_config.password or '',
             verify_ssl=unifi_config.verify_ssl,
             timeout=unifi_config.timeout,
+            max_retries=unifi_config.max_retries,
+            retry_delay=unifi_config.retry_delay,
         )
 
         # Get ALL UniFi devices for the diagram
@@ -4459,6 +4479,8 @@ def _readonly_client() -> Iterator[tuple[Any, str]]:
         password=unifi_config.password,
         api_token=unifi_config.api_token,
         timeout=unifi_config.timeout,
+        max_retries=unifi_config.max_retries,
+        retry_delay=unifi_config.retry_delay,
     )
     try:
         authenticated = client.login()

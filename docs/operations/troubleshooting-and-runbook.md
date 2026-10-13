@@ -810,7 +810,7 @@ The client implements exponential backoff for retryable errors (`UniFiRetryableE
 - Before attempt 2: `retry_delay * 2^0` (1.0s with the default delay)
 - Before attempt 3: `retry_delay * 2^1` (2.0s)
 
-There is no wait after the last attempt, so with the defaults (`max_retries=3`, `retry_delay=1.0`) a failing request spends 3 seconds backing off, plus up to three request timeouts of `UNIFI_TIMEOUT` each. The CLI always uses those defaults: `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` are read but not applied yet ([issue 042](../issues/042-settings-with-no-effect.md)).
+There is no wait after the last attempt, so with the defaults (`max_retries=3`, `retry_delay=1.0`) a failing request spends 3 seconds backing off, plus up to three request timeouts of `UNIFI_TIMEOUT` each. `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` in the config file set the two values for every CLI client ([issue 042](../issues/042-settings-with-no-effect.md)).
 
 `UniFiAuthenticationError` and `UniFiPermissionError` (4xx errors) are NOT retried and raise immediately.
 
@@ -843,8 +843,8 @@ Adjust this in `~/.config/unifi_management_cli/prod.env`:
 UNIFI_TIMEOUT=30
 ```
 
-`UNIFI_MAX_RETRIES` (1-10) and `UNIFI_RETRY_DELAY` (0.1-10.0 seconds) are parsed and
-clamped, but no client uses them yet, so changing them has no effect on `unifi-mapper`
+`UNIFI_MAX_RETRIES` (1-10) and `UNIFI_RETRY_DELAY` (0.1-10.0 seconds) set the attempts per
+request and the first back-off for every client the CLIs build
 ([issue 042](../issues/042-settings-with-no-effect.md)).
 
 #### Prevention
@@ -1438,11 +1438,11 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_PASSWORD` | One of these two methods | None | String | Admin password. |
 | `UNIFI_VERIFY_SSL` | No | `false` | `true` / `false` | Enable SSL certificate verification. Set `false` for self-signed certs. |
 | `UNIFI_TIMEOUT` | No | `10` | `1`-`300` (seconds) | Per-request connection timeout. Clamped to 1-300. |
-| `UNIFI_MAX_RETRIES` | No | `3` | `1`-`10` | Parsed and clamped, but no effect on `unifi-mapper` yet ([issue 042](../issues/042-settings-with-no-effect.md)); requests keep 3 attempts. |
-| `UNIFI_RETRY_DELAY` | No | `1.0` | `0.1`-`10.0` (seconds) | Parsed and clamped, but no effect on `unifi-mapper` yet (issue 042); the back-off starts at 1.0 s. |
-| `UNIFI_DEFAULT_FORMAT` | No | `png` | `png`, `svg`, `html`, `mermaid`, `dot` | No effect on `unifi-mapper` (issue 042): only the legacy `python -m unifi_mapper.cli` reads it. |
-| `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
-| `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
+| `UNIFI_MAX_RETRIES` | No | `3` | `1`-`10` | Attempts per request, for every client the CLIs build ([issue 042](../issues/042-settings-with-no-effect.md)). |
+| `UNIFI_RETRY_DELAY` | No | `1.0` | `0.1`-`10.0` (seconds) | First back-off; each later retry doubles it (issue 042). |
+| `UNIFI_DEFAULT_FORMAT` | No | `png` | `png`, `svg`, `html`, `mermaid`, `dot` | `discover`'s diagram format when `--format` is not given (issue 042). |
+| `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path (`~` expanded) | Where `discover` writes `port_mapping_report.md` when `--output` is not given (issue 042). |
+| `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path (`~` expanded) | Where `discover` writes `network_diagram.<format>` when `--diagram` is not given (issue 042). |
 | `UNIFI_CONFIG` | No | XDG search | File path | The env file to read, like `--config` (see section 1). |
 | `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients`, `vlan-traffic sample` and the `gateway` probes (see section 2). |
 | `UNIFI_SSH_USERNAME` | No | `root` | String | Gateway SSH user. |

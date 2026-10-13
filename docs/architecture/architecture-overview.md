@@ -490,7 +490,7 @@ The primary synchronous client for the UniFi Network REST API.
 | API token | `X-API-KEY` header | UniFi OS (UDM, UDR, UDM SE) |
 | Username + password | Session cookie (POST `/api/login`) | Legacy controllers |
 
-**Retry with exponential backoff**: The `_retry_request()` method wraps every outbound call. It respects the retryable vs permanent distinction in the exception hierarchy — authentication failures (401/403) and other 4xx errors are not retried; server errors (5xx), 408 and 429 responses, timeouts, and connection failures are retried up to `max_retries` with `delay * 2^attempt` spacing. Callers keep the defaults (3 attempts, 1.0 s); `UnifiConfig`'s retry settings never reach the client ([issue 042](../issues/042-settings-with-no-effect.md)).
+**Retry with exponential backoff**: The `_retry_request()` method wraps every outbound call. It respects the retryable vs permanent distinction in the exception hierarchy — authentication failures (401/403) and other 4xx errors are not retried; server errors (5xx), 408 and 429 responses, timeouts, and connection failures are retried up to `max_retries` with `delay * 2^attempt` spacing. Every CLI client is built with `UnifiConfig`'s `max_retries` and `retry_delay`, so `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` set them ([issue 042](../issues/042-settings-with-no-effect.md)).
 
 ```python
 def _retry_request(self, func, *args, **kwargs):

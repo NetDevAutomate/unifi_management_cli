@@ -145,17 +145,19 @@ UNIFI_CONSOLE_API_TOKEN=your_api_token_here
 UNIFI_VERIFY_SSL=false                  # false for self-signed certificates
 UNIFI_TIMEOUT=10                        # API timeout in seconds
 
-# No effect yet (issue 042): requests keep the built-in 3 attempts and 1.0 s back-off,
-# and discover keeps its --format, --output and --diagram defaults
+# Retries: attempts per request (1-10) and the first back-off in seconds (0.1-10, doubled
+# on each later retry)
 # UNIFI_MAX_RETRIES=3
 # UNIFI_RETRY_DELAY=1.0
+
+# discover's defaults when --format, --output or --diagram is not given (~ is expanded)
 # UNIFI_DEFAULT_FORMAT=png
 # UNIFI_OUTPUT_DIR=~/Documents/network-reports
 # UNIFI_DIAGRAM_DIR=~/Documents/network-diagrams
 ```
 
-These five settings have no effect on `unifi-mapper`
-([issue 042](../issues/042-settings-with-no-effect.md)); `UNIFI_TIMEOUT` does. The optional
+The five optional settings reach every CLI client and `discover`
+([issue 042](../issues/042-settings-with-no-effect.md)). The optional
 credential families (gateway SSH for `diagnose latency-matrix`, `diagnose bandwidth`, the
 `gateway` probes, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and
 `vlan-traffic sample`, `UNIFI_NETWORK_*` and `PROTECT_*` for the MCP network and Protect tools) are
