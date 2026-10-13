@@ -39,8 +39,9 @@ loop thread) are outside it, so it is not a limit on a call's total time. A lock
 never released costs every logged call up to the limit, and after the first warning the dropped
 lines leave no trace. Any other failure to write (an unwritable path, a read-only home, no
 ``HOME``, another user's file, lock or directory, a symbolic link, a given directory others
-can write to) logs one warning and turns the log off for the process; a tool's result is
-never changed.
+can write to) logs one warning and turns the log off for the process (two writes failing
+at once still warn once; when the failing file is not the log, its lock for example, the
+warning names it); a tool's result is never changed.
 """
 
 import errno
@@ -178,6 +179,20 @@ def _error_name(error: BaseException) -> str:
     code = getattr(error, 'errno', None)
     name = errno.errorcode.get(code, '') if isinstance(code, int) else ''
     return f'{type(error).__name__} ({name})' if name else type(error).__name__
+
+
+def _other_file(error: BaseException, target: Path | None) -> str:
+    """`` on <name>`` when the error names a file other than the log (its lock, a temp file).
+
+    A link in the lock's place fails the lock's ``O_NOFOLLOW`` open with ``ELOOP``; without
+    this the warning named the log, which may not exist (issue 076 item 36). Only the base
+    name is added: it shows no more than the path the warning already prints.
+    """
+    filename = getattr(error, 'filename', None)
+    if not isinstance(filename, str | os.PathLike) or target is None:
+        return ''
+    named = Path(filename)
+    return '' if named == target or named.name == target.name else f' on {named.name}'
 
 
 def _given_directory_exists(directory: Path) -> bool:
@@ -363,10 +378,16 @@ class CallAuditLog:
                     LOCK_TIMEOUT_S,
                 )
         except Exception as e:  # noqa: BLE001 - the call log must never affect a tool call
-            self._disabled = True
+            # Two writes already past the enabled check (the runner records in worker
+            # threads) can both fail: only the first to get here warns (issue 076 item 35).
+            with self._lock:
+                first, self._disabled = not self._disabled, True
+            if not first:
+                return
             where = str(target) if target is not None else 'the default path'
             logger.warning(
-                'MCP call log disabled for this process: cannot write {}: {}',
+                'MCP call log disabled for this process: cannot write {}: {}{}',
                 where,
                 str(e) if isinstance(e, NotOwnedError | SharedDirectoryError) else _error_name(e),
+                _other_file(e, target),
             )

@@ -321,6 +321,58 @@ def test_a_call_log_owned_by_another_user_turns_the_log_off_with_one_warning(
     assert not path.exists() and stat.S_IMODE(path.parent.stat().st_mode) == 0o755
 
 
+def test_two_writes_that_fail_together_warn_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, warned: list[str]
+) -> None:
+    """Issue 076 item 35: ``_write`` checked ``_disabled`` outside the lock and the generic
+    handler set it and warned with no guard, so two writes already past the check (the
+    runner records in worker threads) could both fail and both warn."""
+    import errno
+    import threading
+
+    gate = threading.Barrier(2, timeout=5)
+
+    def _both_fail(*_args: object, **_kwargs: object) -> None:
+        gate.wait()  # both writes are past the enabled check before either fails
+        raise OSError(errno.EACCES, 'Permission denied')
+
+    monkeypatch.setattr(call_audit_module, 'append_capped_jsonl', _both_fail)
+    log = CallAuditLog(CallAuditSetting('path', tmp_path / CALL_AUDIT_FILENAME))
+    threads = [threading.Thread(target=_record, args=(log,), daemon=True) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not any(thread.is_alive() for thread in threads)
+    assert log.enabled is False
+    assert len([w for w in warned if 'MCP call log disabled' in w]) == 1
+
+
+@pytest.mark.parametrize('link', ['lock', 'log'])
+def test_a_link_in_the_locks_place_is_named_in_the_warning(
+    tmp_path: Path, warned: list[str], link: str
+) -> None:
+    """Issue 076 item 36: the lock's ``O_NOFOLLOW`` open fails with ELOOP, and the warning
+    named the log (which may not exist), not the lock."""
+    directory = tmp_path / 'logs'
+    directory.mkdir()
+    path = directory / CALL_AUDIT_FILENAME
+    target = tmp_path / 'elsewhere.jsonl'
+    target.write_text('', encoding='utf-8')
+    (Path(f'{path}.lock') if link == 'lock' else path).symlink_to(target)
+    log = _given(directory)
+    _record(log)
+    _record(log)
+    assert log.enabled is False
+    (warning,) = [w for w in warned if 'call log disabled' in w]
+    assert f'cannot write {path}: OSError (ELOOP)' in warning
+    if link == 'lock':
+        assert f'on {CALL_AUDIT_FILENAME}.lock' in warning
+    else:
+        assert '.lock' not in warning  # today's warning, unchanged
+    assert target.read_text(encoding='utf-8') == ''  # nothing written through the link
+
+
 # --- a given path: its directory is the user's, never changed ------------
 
 
