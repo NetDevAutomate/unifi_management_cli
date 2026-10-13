@@ -30,6 +30,22 @@ asked GitHub Support to purge the superseded commits from the server's object st
   file that already set these values will see them applied for the first time (issue 042).
 - `configure_logging` was removed from `unifi_mapper.core` and `unifi_mapper.core.utils`, and
   `UNIFI_MAPPER_DEBUG` is no longer read; nothing in the project called it (issue 045).
+- `diagnose vlans` / `diagnose_vlans` audits every switch port (not only the overridden ones),
+  reports profile names instead of raw `portconf_id`s, judges a trunk from the resolved profile's
+  `forward` and `tagged_vlan_mgmt`, and lists a trunk's tagged VLANs; `analyze mac-table` tells a
+  trunk from an access port the same way. Expect more port rows, names in the consistency check
+  and real trunk-coverage verdicts; both read `rest/portconf` now (issue 030).
+- `vlan-traffic report`: two samples further apart than the gap threshold plus the sampling grace
+  are a gap, not a rate, in every pairing, so one fresh sample after a sampler outage no longer
+  reports days of traffic as the current rate; `valid_sample_pct` drops for such a sample and the
+  raw-tier caveat says so (issue 072).
+- Network and Protect MCP tools raise on failure (`CONTROLLER_UNREACHABLE`,
+  `AUTHENTICATION_FAILED`, `API_ERROR`, `NO_DATA`, or `TOOL_FAILED`) instead of returning
+  `{"error": ...}` inside an `ok: true` result; a client that read the error dict must read
+  `isError` and the error code instead (issue 011).
+- Every MCP tool call has a 270 s deadline by default (`UNIFI_MCP_TOOL_TIMEOUT`, 5-3600 s,
+  `[TIMEOUT]`), chosen so the server's code reaches a client whose own limit is 300 s, as the
+  guide's snippets are; set the variable higher for a slower controller (issue 012).
 
 ### Changed (behaviour)
 
@@ -83,6 +99,12 @@ asked GitHub Support to purge the superseded commits from the server's object st
   install Graphviz (issue 075).
 - The MQTT bridge's `ImportError` hint reads `uv sync --extra mqtt` (was `uv add aiomqtt`)
   (issue 074).
+- `inspect_switch_port` uses the same guarded `_readonly_sync_client()` path as the other sync
+  port-diagnostics tools; a login that raises is `CONTROLLER_UNREACHABLE` rather than
+  `TOOL_FAILED` (issue 021, first step).
+- `search_tools` summary results carry `mutates: true` for the three mutating tools, and the
+  redacted-failure helper and the 2,000-character error cap live once in `mcp/failure_text.py`
+  (issues 022, 067).
 
 ### Added
 
@@ -116,6 +138,12 @@ asked GitHub Support to purge the superseded commits from the server's object st
   `graph TB` of the topology; both were one-line placeholders (issue 044).
 - Optional extra `mqtt` (`aiomqtt>=2,<3`) for the Home Assistant MQTT bridge:
   `uv sync --extra mqtt` (issue 074).
+- `vlan_traffic_store.dirty_buckets` (created on the next writable open of an existing store)
+  and `max_measured_interval`; `monitor_lags_from_data`, `diagnose_vlans_from_data`,
+  `is_trunk_profile` and `gateway_probe.ping_over` as pure, shared seams
+  (issues 061, 071, 072, 030, 073).
+- `tests/mcp/test_docstring_tool_names.py`: a new phantom tool name in any docstring or string
+  constant fails the suite (issue 028).
 
 ### Fixed
 
@@ -140,6 +168,24 @@ asked GitHub Support to purge the superseded commits from the server's object st
 - `unifi-mapper install-completions` installs what its help offers: `all` installs bash and zsh,
   `fish` is refused with a pointer to `--install-completion`, and a failed installation exits 1
   instead of 0 (issue 047).
+- `monitor_lags` / `analyze lags` find LAGs on current switch firmware (`link_aggregation_groups`,
+  the master port's `op_mode: 'aggregate'` override and `lacp_state`), still read legacy
+  `port_aggregates`, surface `partner_system_id`, and never read a masked subordinate's cosmetic
+  `up: false` as a failed member; `find_lag_candidates` no longer proposes a LAG over one that
+  exists (issue 061).
+- `vlan-traffic sample`: a second network without a VLAN ID is listed under unresolved instead
+  of overwriting the first one's row (issue 070).
+- `vlan-traffic rollup` recomputes every hour a sample was written into since the last run, so a
+  sample written late still reaches the monthly and yearly reports; raw samples and hourly rows
+  are pruned on hour and day boundaries only (issue 071).
+- `search_tools` matches every word of a multi-word query against name, description and tags,
+  matches `category` case-insensitively, and ranks results by where the words hit (issue 022).
+- `python -m unifi_mapper.mcp.server` no longer prints runpy's "found in sys.modules"
+  RuntimeWarning (issue 020, first item).
+- Tool docstrings and `path_analysis` recommendations name registered tools
+  (`analyze_link_quality`, `performance_analysis`, `get_switch_ports`, `discover_stp_topology`,
+  `inspect_switch_port`, `security_audit`, `audit_uplink_transparency`, `audit_vlan_coverage`);
+  three `CONTROLLER_UNREACHABLE` hints naming controller tools were dropped (issue 028).
 
 ### Removed
 

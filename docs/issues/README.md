@@ -26,8 +26,8 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [008](008-mcp-sdk-v2-migration.md) | Migrate the MCP server to the SDK v2 `MCPServer` API | open |
 | [009](009-mcp-default-tool-surface.md) | Should the MCP server list every tool (the direct surface) by default? | open, decision needed |
 | [010](010-cwd-relative-state-files.md) | Radio snapshots and several baselines are written relative to the working directory | open, decision needed |
-| [011](011-network-protect-errors-as-success.md) | Network and Protect MCP tools return failures as successful results | open, decision needed |
-| [012](012-mcp-default-tool-deadline.md) | MCP tool calls have no deadline by default | open, decision needed |
+| [011](011-network-protect-errors-as-success.md) | Network and Protect MCP tools return failures as successful results | resolved (`9c57b2e`) |
+| [012](012-mcp-default-tool-deadline.md) | MCP tool calls have no deadline by default | resolved (`8071f7d`) |
 | [013](013-mcp-audit-log-and-result-cap.md) | No default audit log of MCP calls, and no cap on result size | resolved (`e2fbac2`) |
 | [014](014-optional-dependency-extras.md) | Every uvx launch installs the Protect, backup and ONVIF dependencies | open |
 | [015](015-other-discover-entry-points-write-by-default.md) | `unifi-network-toolkit discover` and `python -m unifi_mapper.cli` still write port names by default | resolved (`0ac8d0d`) |
@@ -37,15 +37,15 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [019](019-write-capable-cli-ideas.md) | Write-capable CLI ideas (plan, review, apply; never over MCP) | open, decision needed |
 | [020](020-mcp-protocol-follow-ups.md) | MCP protocol and runtime follow-ups | open |
 | [021](021-sync-diagnostic-path-logs-in-per-call.md) | The sync port-diagnostics MCP tools log in to the controller on every call | open, decision needed |
-| [022](022-search-tools-quality.md) | `search_tools` misses multi-word queries, tags and differently-cased categories | open |
+| [022](022-search-tools-quality.md) | `search_tools` misses multi-word queries, tags and differently-cased categories | resolved (`0c98496`) |
 | [023](023-related-tools-hints-name-missing-tools.md) | Error hints send the model to `get_network_topology` and `vlan_info`, which don't exist | resolved (`a3efa2f`) |
 | [024](024-network-protect-tools-unguarded.md) | Network Integration API and Protect MCP tools run without a read-only guard or request audit | resolved (`e8050fe`) |
 | [025](025-launchd-plists-are-invalid-xml.md) | `unifi-cron.sh` writes launchd plists that are invalid XML, so macOS schedules never load | resolved (`17417f3`) |
 | [026](026-profile-precedence-outside-port-diagnostics.md) | `validate_port_profiles` and three other analyses resolve a port's profile without the override precedence | resolved (`71083e4`) |
 | [027](027-root-flags-dropped-before-a-subcommand.md) | Root `--connected-devices`, `--verify-updates` and `--dry-run` are silently dropped before a subcommand | resolved (`25d6998`) |
-| [028](028-tool-docstrings-name-missing-tools.md) | Tool docstrings and `path_analysis` recommendations name tools that don't exist | open |
+| [028](028-tool-docstrings-name-missing-tools.md) | Tool docstrings and `path_analysis` recommendations name tools that don't exist | resolved (`d9ce545`) |
 | [029](029-async-guard-judges-a-different-path.md) | The async read-only guard judges and audits a different path when the raw path starts with `//` | resolved (`b70b85d`) |
-| [030](030-raw-portconf-id-read-as-a-profile-name.md) | `vlan_diagnostics` and `mac_analyzer` read a raw `portconf_id` as if it were a profile name | open, decision needed |
+| [030](030-raw-portconf-id-read-as-a-profile-name.md) | `vlan_diagnostics` and `mac_analyzer` read a raw `portconf_id` as if it were a profile name | resolved (`b3732d8`) |
 | [031](031-acl-rules-path-not-served.md) | `get_acl_rules` gets a 404: the client's `/acls` path isn't served by Network 10.6 | resolved (`6fd892c`) |
 | [032](032-dns-policies-path-not-served.md) | `get_dns_policies` gets a 404: the client's `/dns-policies` path isn't served | resolved (`6fd892c`) |
 | [033](033-client-access-type-default-rejected.md) | `get_clients` returns no clients: `access.type: DEFAULT` fails validation | resolved (`8828255`) |
@@ -76,19 +76,19 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [058](058-tracebacks-print-frame-values.md) | Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on | resolved (`779c14e`) |
 | [059](059-prototype-work-not-ported.md) | Prototype work that was not ported, and why | open |
 | [060](060-decisions-from-the-0.2.0-port.md) | Decisions from the 0.2.0 port | open, decision needed |
-| [061](061-monitor-lags-misses-current-firmware-lags.md) | `monitor_lags` misses LAGs on current switch firmware | open |
+| [061](061-monitor-lags-misses-current-firmware-lags.md) | `monitor_lags` misses LAGs on current switch firmware | resolved (`b314c77`) |
 | [062](062-open-items-from-the-archived-plans.md) | Open items from the archived improvement and STP plans | open |
 | [063](063-execute-tool-result-cap.md) | No cap on `execute_tool` result size | open, decision needed |
 | [064](064-cli-reads-outside-the-read-only-transport.md) | CLI read commands that reach the controller outside the read-only transport | open |
 | [065](065-pre-push-coverage-floor.md) | The pre-push pytest hook fails the 90% coverage floor | resolved (`1a7f2d7`) |
 | [066](066-backup-collections-unverified-on-a-real-backup.md) | `backup verify` names collections by `_type`, unverified on a real backup | open |
-| [067](067-mcp-tool-failure-helper-duplicated.md) | The network and Protect tools each carry a copy of the redacted-failure helper | open |
+| [067](067-mcp-tool-failure-helper-duplicated.md) | The network and Protect tools each carry a copy of the redacted-failure helper | resolved (`681497f`) |
 | [068](068-relative-xdg-config-home-is-honoured.md) | The config searches honour a relative `XDG_CONFIG_HOME`, so they can read a file under the working directory | open, decision needed |
 | [069](069-vlan-reports-read-tiers-without-recent-data.md) | VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty | resolved (`0b19f3c`) |
-| [070](070-untagged-networks-share-vlan-1-in-the-traffic-store.md) | Two networks without a VLAN ID both sample as VLAN 1, so one overwrites the other in the traffic store | open |
-| [071](071-late-vlan-samples-never-reach-the-rollups.md) | A VLAN traffic sample written two hours or more late, into an hour already rolled, never reaches the hourly or daily rollups | open |
-| [072](072-vlan-intervals-span-a-sampler-outage.md) | A VLAN traffic interval can span a sampler outage, so one fresh sample reports days of traffic as current | open, decision needed |
-| [073](073-gateway-ping-step-duplicated.md) | The gateway ping step is written twice, in gateway ping and in AP-health's client pings | open |
+| [070](070-untagged-networks-share-vlan-1-in-the-traffic-store.md) | Two networks without a VLAN ID both sample as VLAN 1, so one overwrites the other in the traffic store | resolved (`b645b1d`) |
+| [071](071-late-vlan-samples-never-reach-the-rollups.md) | A VLAN traffic sample written two hours or more late, into an hour already rolled, never reaches the hourly or daily rollups | resolved (`1146b22`) |
+| [072](072-vlan-intervals-span-a-sampler-outage.md) | A VLAN traffic interval can span a sampler outage, so one fresh sample reports days of traffic as current | resolved (`5bc743e`) |
+| [073](073-gateway-ping-step-duplicated.md) | The gateway ping step is written twice, in gateway ping and in AP-health's client pings | resolved (`417ff83`) |
 | [074](074-mqtt-needs-an-undeclared-dependency.md) | MQTT support needs aiomqtt, which the project does not declare (its hint and the README now name `uv add aiomqtt`) | resolved (`df3d905`) |
 | [075](075-discover-needs-graphviz-dot-undocumented.md) | `discover` needs Graphviz's `dot` program for its PNG and SVG diagrams and exits 1 without it, writing no report (the docs now name it) | resolved (`21f728b`) |
 | [076](076-0.2.0-port-final-review-follow-ups.md) | Follow-ups from the 0.2.0 port's final review that were not fixed on the branch | open, decision needed |
