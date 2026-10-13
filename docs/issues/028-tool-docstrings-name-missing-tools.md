@@ -1,7 +1,8 @@
 ---
 title: "Tool docstrings and `path_analysis` recommendations name tools that don't exist"
 date: 2026-10-03
-status: open
+status: resolved
+resolved_by: d9ce545
 severity: low
 components: [connectivity, diagnostics, discovery, analysis/storm_detection]
 found_by: review follow-ups (issue 023)
@@ -63,3 +64,23 @@ controller hints cost the model a call that fails the same way.
 3. Extend `tests/mcp/test_related_tools.py` with the docstring scan and the
    every-string-constant scan above (excluding names defined in the package and
    `stdio_server`), so a new phantom name fails the suite.
+
+## Resolution
+
+Resolved on 2026-10-13 (`d9ce545`), as recommended. The scan was re-run against the
+source first and found exactly the 25 docstring references in 11 modules and the 7
+recommendation strings listed above (`security_audit.py`'s hint had moved to line 169 since
+issue 079). All 32 were replaced through the name map in step 1; the three
+`CONTROLLER_UNREACHABLE` hints naming `network_health_check` and `find_device` were dropped
+(step 2). No test pinned the old strings.
+
+Step 3 went into a new file rather than `tests/mcp/test_related_tools.py`:
+`tests/mcp/test_docstring_tool_names.py` scans every module, class and function docstring
+and, separately, every other string constant under `src/unifi_mapper` for `name()` mentions,
+and fails on one that is neither a registered tool nor a name the package defines. Two
+names from outside the package are allowed by a short list: `stdio_server()` (the MCP SDK,
+as the issue says) and `as_uri()` (`Path.as_uri()`, named in
+`analysis/vlan_traffic_store.py`'s module docstring; the issue's scan predates that
+module). It also checks that no mentioned tool mutates and that no `CONTROLLER_UNREACHABLE`
+hint names a `controller`-family tool, so the step 2 class of hint cannot return.
+`test_related_tools.py` keeps the `related_tools` lists and `suggestion` texts (issue 023).
