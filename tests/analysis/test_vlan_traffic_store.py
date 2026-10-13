@@ -650,6 +650,76 @@ def test_pruning_keeps_whole_buckets_only(tmp_path: Path) -> None:
     assert min(hours) == floor_to_day(now - store.HOURLY_RETENTION_SECONDS)
 
 
+# --- issue 072: an interval across a sampler outage is a gap, not a measurement -----------
+
+
+def test_an_interval_longer_than_the_bound_has_no_rate() -> None:
+    prev = {'ts_utc': 1000, 'rx_bytes': 1000, 'tx_bytes': 500}
+    at_the_bound = {'ts_utc': 1600, 'rx_bytes': 2000, 'tx_bytes': 1000}
+    past_it = {**at_the_bound, 'ts_utc': 1601}
+    assert compute_rates(prev, at_the_bound, max_interval=600) is not None
+    assert compute_rates(prev, past_it, max_interval=600) is None
+    assert compute_rates(prev, past_it) is not None  # no bound: the prototype's behaviour
+
+
+def _minute_run(start: int, minutes: int, counter: int, *, step: int = 7_500_000) -> list[Any]:
+    """``minutes`` samples a minute apart from ``start`` at 1 Mbit/s, from ``counter``."""
+    return [(start + i * 60, counter + i * step) for i in range(minutes)]
+
+
+def test_the_raw_reader_treats_an_outage_as_a_gap_before_and_inside_a_window(
+    tmp_path: Path,
+) -> None:
+    """Ten minutes of samples, a six-hour outage, ten more; then a three-day outage and one
+    sample at ``now``. The two intervals across the outages give no rate but their samples
+    count, so ``valid_sample_pct`` drops; the normal cadence beside them is unchanged."""
+    path = tmp_path / 'store.sqlite3'
+    now = FAR_FUTURE - 100
+    first = _minute_run(now - 3 * 86400 - 6 * 3600 - 20 * 60, 10, 10_000)
+    # Across the six-hour outage the counter grows as if at 5 Mbit/s, which must not show.
+    second_start = first[-1][1] + 5 * 7_500_000 * 6 * 60
+    second = _minute_run(first[-1][0] + 6 * 3600 + 60, 10, second_start)
+    with _writable(path) as conn:
+        for ts, counter in first + second:
+            _insert_raw(conn, ts, 20, 'IoT', counter, 0)
+        # One sample three days later: its only pairing is across the outage.
+        _insert_raw(conn, now, 20, 'IoT', second[-1][1] + 10 * 7_500_000 * 3 * 1440, 0)
+    (latest,) = read_vlan_traffic_report('now', path, now=now)['vlans']
+    assert (latest['samples'], latest['valid_sample_pct']) == (1, 0.0)
+    assert (latest['avg_rx_bps'], latest['peak_rx_bps']) == (0.0, 0.0)
+    (week,) = read_vlan_traffic_report('1w', path, now=now)['vlans']
+    # 21 samples: the first has none before it, two intervals span an outage, 18 are valid.
+    assert week['samples'] == 21
+    assert week['valid_sample_pct'] == round(100 * 18 / 21, 1)
+    assert week['avg_rx_bps'] == week['peak_rx_bps'] == 1_000_000.0
+    caption = read_vlan_traffic_report('1w', path, now=now)['methodology']['caveats']
+    assert any('outage' in line for line in caption)
+
+
+def test_the_hourly_carry_across_an_outage_is_a_gap(tmp_path: Path) -> None:
+    """The first hour rolled after a three-day outage must not start from the sample before
+    the outage: that interval is a gap, so the hour holds 59 intervals, not 60, and its peak
+    is the cadence's rate, not the outage's average."""
+    path = tmp_path / 'store.sqlite3'
+    before = _minute_run(START_HOUR, 60, 10_000)
+    resume = START_HOUR + 3 * 86400
+    after_start = before[-1][1] + 5 * 7_500_000 * 3 * 1440  # 5 Mbit/s across the outage
+    after = _minute_run(resume, 60, after_start)
+    with _writable(path) as conn:
+        for ts, counter in before + after:
+            _insert_raw(conn, ts, 20, 'IoT', counter, 0)
+    run_rollups(path, now=resume + 3600 + GRACE)
+    rows = {hour: (count, avg) for hour, count, avg in _hourly(path)}
+    assert rows[START_HOUR] == (59, 1_000_000.0)
+    assert rows[resume] == (59, 1_000_000.0)
+    with sqlite3.connect(path) as conn:
+        peak = conn.execute(
+            'SELECT peak_rx_bps FROM hourly_rollup WHERE hour_utc = ?', (resume,)
+        ).fetchone()[0]
+    assert peak == 1_000_000.0
+    assert set(rows) == {START_HOUR, resume}  # the empty hours of the outage have no row
+
+
 def test_raw_keeps_8_days_and_hourly_60_once_rolled(tmp_path: Path) -> None:
     path = tmp_path / 'store.sqlite3'
     now = START_HOUR + 70 * 86400

@@ -935,7 +935,8 @@ uv run unifi-mapper vlan-traffic coverage
 Rates come from the difference between two samples, so take them regularly (every minute or
 so) for honest averages and peaks. The report's `Valid samples` column (`valid_sample_pct`
 with `--json`) is the share of the window's samples that gave a rate (a first sample with
-none before it, or one after a counter reset, gives none), not how much of the period was
+none before it, one after a counter reset, or one across a sampler outage, gives none), not
+how much of the period was
 sampled: `vlan-traffic coverage` shows each tier's earliest and latest time and its gaps. A sample whose script fails on the gateway (a bridge
 counter it could not read included: nothing is stored, never a partial sample), or that stores
 nothing because no VLAN matched an interface with byte counters, exits 1. `1m` and `1y` show
