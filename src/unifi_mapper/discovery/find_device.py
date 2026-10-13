@@ -23,7 +23,7 @@ async def find_device(
 
     Common workflow:
     1. Use find_device() to locate and verify the device exists
-    2. Use get_port_map() to see its physical connection details
+    2. Use get_switch_ports() to see its physical connection details
     3. Use traceroute() if you need to trace the path to/from this device
 
     What to do next:

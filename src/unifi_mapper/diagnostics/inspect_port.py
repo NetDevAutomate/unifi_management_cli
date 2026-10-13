@@ -103,9 +103,9 @@ async def inspect_switch_port(
 
     Common workflow:
     1. inspect_switch_port() to establish the port's VLAN and addressing state
-    2. If addressing is "no_address", check_uplink_transparency() to verify
+    2. If addressing is "no_address", audit_uplink_transparency() to verify
        every hop carries that VLAN
-    3. vlan_coverage() to confirm trunk membership end to end
+    3. audit_vlan_coverage() to confirm trunk membership end to end
     4. analyze_link_quality() if the fault looks physical rather than logical
 
     Args:
