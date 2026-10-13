@@ -159,23 +159,24 @@ second 401 is reported as an error. Credentials are re-resolved for that login, 
 config file is read into the process environment at start-up, so a token or password
 changed in the file still needs a server restart (issue 020). The sync port-diagnostics tools (`diagnose_switch_port`, `get_switch_ports`,
 `diff_port_profiles`, `get_client_history`, `get_device_events`, `get_port_counter_rates`,
-`audit_link_speeds`, `audit_port_profile_usage`) keep one guarded login per call.
-`inspect_switch_port` also logs in per call, through its own sync client behind the same
-read-only guard. The `network_api` and `protect` tools open their own guarded client per call
+`audit_link_speeds`, `audit_port_profile_usage`, `inspect_switch_port`) keep one guarded login
+per call through the same `_readonly_sync_client()` helper (issue 021 step 1 brought
+`inspect_switch_port` onto it). The `network_api` and `protect` tools open their own guarded client per call
 (the Integration API's GET-only transport, and `ReadOnlyProtectApiClient`).
 
 `get_clients` returns one page, `{total, returned, offset, limit, next_offset, truncated,
 clients}`: `limit` 1-1000 (default 200), sorted by client ID. It reads the controller's whole
 list on every call and filters it first, so `total` counts every client that matches (only
 connected clients while `active_only` is true, the default; every client when it is false);
-pass a page's `next_offset` as the next `offset` until it is null. A failure is `{error}`.
+pass a page's `next_offset` as the next `offset` until it is null. A failure is an error
+result (`CONTROLLER_UNREACHABLE`, `AUTHENTICATION_FAILED` or `API_ERROR`), never a page.
 
 > [!IMPORTANT]
 > **Breaking change in the 0.2.0 port: `get_clients` returns a page object, not a list.**
 > Before, it returned a bare list of client objects, and `[{error}]` on failure. A caller
-> that iterates the result, or reads `result[0]['error']`, must read `result['clients']`
-> and `result['error']` instead, and follow `next_offset` to get more than one page
-> (200 clients by default).
+> that iterates the result must read `result['clients']` instead, and follow `next_offset`
+> to get more than one page (200 clients by default). Since 0.3.0 a failure is an error
+> result with `isError: true` (issue 011), so there is no `error` key to read at all.
 
 ```json
 {
@@ -198,7 +199,7 @@ Call it again with `offset: 200` for the last 30 clients (`next_offset` is then 
 | --- | --- | --- | --- |
 | `UNIFI_CONFIG` | unset | path to a readable env file | stderr warning; no file loaded; server starts |
 | `UNIFI_MCP_TOOL_SURFACE` | `discovery` | `discovery`, `direct` (case-insensitive) | stderr warning; `discovery` |
-| `UNIFI_MCP_TOOL_TIMEOUT` | unset (no deadline) | seconds, 5–3600 | stderr warning; no deadline |
+| `UNIFI_MCP_TOOL_TIMEOUT` | 270 | seconds, 5–3600 | stderr warning; 270 |
 | `UNIFI_MCP_CREDENTIAL_TIMEOUT` | 15 | seconds, 1–120 | stderr warning; 15 |
 | `UNIFI_MCP_MAX_CONCURRENCY` | 4 | integer, 1–32 | stderr warning; 4 |
 | `UNIFI_MCP_LOG_LEVEL` | `WARNING` | a loguru level name | stderr warning; `WARNING` |
@@ -297,8 +298,11 @@ schema with `get_tool_info`, then calls `execute_tool`.
 
 **Meta-tools.**
 
-- `search_tools(query, category, tags, detail_level)`: find tools; `detail_level="full"` adds
-  each tool's `input_schema`.
+- `search_tools(query, category, tags, detail_level)`: find tools. Every word of `query`
+  (split on spaces, `_` and `-`) must appear in a tool's name, description or tags, and
+  results are ranked by where the words hit (name, then tags, then description), then
+  priority; `category` is case-insensitive; a mutating tool's summary carries
+  `mutates: true`. `detail_level="full"` adds each tool's `input_schema`.
 - `list_categories()`: category → tool names.
 - `get_tool_info(tool_name)`: description, parameters, `input_schema`, `output_schema` and
   annotations.
@@ -377,7 +381,7 @@ failed call. On the direct surface a failure is a single text block,
 | `MUTATION_REFUSED` | The tool changes the controller; use the CLI |
 | `INVALID_PARAMETERS` | Unknown key or a type/range error; the envelope adds `parameters` and `input_schema` |
 | `CONFIG_MISSING` | The tool's credential family isn't ready, or the Keychain/1Password lookup didn't finish in time; names the files tried |
-| `TIMEOUT` | The call exceeded `UNIFI_MCP_TOOL_TIMEOUT` (only when set) |
+| `TIMEOUT` | The call exceeded `UNIFI_MCP_TOOL_TIMEOUT` (270 s by default) |
 | `READ_ONLY_VIOLATION` | A tool tried a write and a read-only guard refused it (a bug; nothing was written) |
 | `TOOL_FAILED` | Any other exception, as `ExceptionClass: text` |
 | domain codes | Raised by the tool itself, e.g. `DEVICE_NOT_FOUND`, `PROFILE_NOT_FOUND`, `CONTROLLER_UNREACHABLE`, `AUTHENTICATION_FAILED`, `CONFIG_INVALID`, `NO_DATA` |
@@ -387,10 +391,12 @@ variable is replaced wherever it appears, and values under secret-named keys are
 Error messages are capped at 2,000 characters (`TOOL_FAILED` at 500). A `TOOL_FAILED` call
 (and an unexpected error in the credential check) is also logged on stderr as one ERROR
 line, the tool, the exception's type and its text masked the same way; its traceback,
-masked too, only at `UNIFI_MCP_LOG_LEVEL=DEBUG`. The Network and Protect
-wrappers still return `{"error": …}` inside an `ok: true` result on failure; issue 011 tracks
-turning that into `TOOL_FAILED`. A write their read-only guard refuses is the exception: it is
-reported as `READ_ONLY_VIOLATION`.
+masked too, only at `UNIFI_MCP_LOG_LEVEL=DEBUG`. The Network and Protect wrappers raise
+like every other tool (issue 011): a connection failure is `CONTROLLER_UNREACHABLE`, a 401 or
+403 (or a Protect login failure) `AUTHENTICATION_FAILED`, another API status `API_ERROR`, a
+Protect controller with no NVR `NO_DATA`, and anything else `TOOL_FAILED`; a write their
+read-only guard refuses is `READ_ONLY_VIOLATION`. Before 0.3.0 they returned `{"error": …}`
+inside an `ok: true` result.
 
 ## Client Configuration
 
@@ -399,10 +405,20 @@ config. Replace `/ABS/PATH/TO/unifi_management_cli` with the absolute path of yo
 `/Users/you` with your home directory. These are examples; the server never edits client
 configs.
 
+Every call has a server-side deadline, `UNIFI_MCP_TOOL_TIMEOUT` (270 s by default, 5–3600;
+issue [012](../issues/012-mcp-default-tool-deadline.md)): a wedged controller or a stuck
+helper ends as a `[TIMEOUT]` error result, logged on stderr, and frees its concurrency slot.
+The default is above the longest read-only tools (counter sampling blocks for about 100 s)
+and 30 s below the 300 s per-call limit the snippets below give the client: if the client's
+limit were the lower one, it would give up first and the server's `[TIMEOUT]` would never
+reach the model. If you raise one, keep the client's limit above the server's. The deadline
+interrupts an async handler; a handler that blocks the event loop runs to its end first
+(the issue records which tools and why).
+
 ### kiro-cli
 
 `~/.kiro/settings/mcp.json` (Kiro defers MCP tool schemas, so use the direct surface; `timeout`
-is in milliseconds, and counter sampling can block for about 100 s):
+is in milliseconds, 30 s above the server's 270 s deadline):
 
 ```json
 {
@@ -456,7 +472,7 @@ or the equivalent project-scoped `.mcp.json`:
 command = "uvx"
 args = ["--python", "3.12", "--from", "/ABS/PATH/TO/unifi_management_cli", "unifi-mcp"]
 env = { UNIFI_CONFIG = "/Users/you/.config/unifi_management_cli/prod.env" }
-# Counter sampling (get_port_counter_rates, diagnose_switch_port) blocks for about 100 s.
+# 30 s above the server's own 270 s deadline (UNIFI_MCP_TOOL_TIMEOUT), so [TIMEOUT] arrives.
 tool_timeout_sec = 300
 ```
 

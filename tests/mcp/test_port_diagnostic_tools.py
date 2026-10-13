@@ -123,6 +123,8 @@ def test_registry_totals(registry):
         ('get_device_events', {'device': SWITCH_NAME, 'port': 5, 'clients': [NAS_MAC]}, 'matched'),
         ('get_port_counter_rates', {'switch': SWITCH_NAME, 'port': 5, 'samples': 1}, 'verdict'),
         ('diagnose_switch_port', {'switch': SWITCH_NAME, 'port': 5}, 'request_audit'),
+        # Issue 021 step 1: inspect_switch_port shares the siblings' guarded client.
+        ('inspect_switch_port', {'switch': SWITCH_NAME, 'port': 5}, 'link'),
     ],
 )
 async def test_execute_tool_runs_each_tool_read_only(fake_controller, name, params, key):
@@ -131,7 +133,8 @@ async def test_execute_tool_runs_each_tool_read_only(fake_controller, name, para
     out = _envelope(raw)
     assert out['ok'] is True, out
     assert key in out['result']
-    assert out['result']['schema_version'] == 1
+    if name != 'inspect_switch_port':  # its result predates schema_version (golden-pinned)
+        assert out['result']['schema_version'] == 1
     assert_no_secrets(raw.model_dump(mode='json'))
     assert isinstance(client.session, ReadOnlySession)
     assert {c['method'] for c in session.calls} <= {'GET', 'POST'}

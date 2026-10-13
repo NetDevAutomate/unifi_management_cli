@@ -20,12 +20,12 @@ async def find_mac(
 
     Common workflow:
     1. Use find_mac() to locate the device's switch and port
-    2. Use port_config() to check port settings if needed
+    2. Use inspect_switch_port() to check port settings if needed
     3. Use diagnose_vlans() to verify VLAN assignment
-    4. Use get_device_tree() to see device's position in network hierarchy
+    4. Use discover_stp_topology() to see device's position in network hierarchy
 
     What to do next:
-    - If found on switch port: Use port_config() to check port settings
+    - If found on switch port: Use inspect_switch_port() to check port settings
     - If found on AP: Device is wireless, use client_trace() for wireless path
     - If not found: Device may be offline, check if it was recently connected
 

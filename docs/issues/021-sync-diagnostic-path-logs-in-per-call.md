@@ -1,7 +1,7 @@
 ---
 title: "The sync port-diagnostics MCP tools log in to the controller on every call"
 date: 2026-10-02
-status: open, decision needed
+status: open
 severity: medium
 components: [diagnostics/port_diagnostics_tools, diagnostics/inspect_port, api_client, core/utils/readonly]
 found_by: MCP uvx standards work
@@ -73,3 +73,21 @@ holds `max_events` records. Not done, because it changes what the result reports
 source's `truncated` would turn true. Decision needed: accept that change, or keep the full
 read. The system log's page order has to be checked, read-only, before it could stop early
 too.
+
+## Progress
+
+2026-10-13 (`b37ec46`): step 1 is complete. `inspect_switch_port` runs inside
+`port_diagnostics_tools._readonly_sync_client()` under `_mapped`, like its eight siblings,
+so the one login-and-guard path serves every sync diagnostics tool (and the siblings' test
+seam, patching `port_diagnostics_tools._readonly_sync_client`, now covers it:
+`inspect_switch_port` is in the `execute_tool` read-only matrix of
+`tests/mcp/test_port_diagnostic_tools.py`). Its `DEVICE_NOT_FOUND` and `INVALID_PORT`
+messages, the `CONTROLLER_UNREACHABLE` text for a login that returns `False`,
+`READ_ONLY_VIOLATION` and the result (`tests/data/inspect_switch_port_golden.json`, through
+`tests/analysis/test_link_settings.py`) are unchanged; a login that raises is now
+`CONTROLLER_UNREACHABLE` with the redacted cause rather than `TOOL_FAILED`.
+`tests/mcp/test_inspect_port_guard.py` pins the seam and both login outcomes.
+
+Still open, so the issue stays open: step 2 (one shared sync session with a per-call
+`request_audit` collector in a `ContextVar`, re-login on 401, a two-concurrent-calls test)
+and the `get_recent_events` early-stop decision above. Neither was in this lane's scope.

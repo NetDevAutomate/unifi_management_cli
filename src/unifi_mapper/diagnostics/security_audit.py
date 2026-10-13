@@ -117,7 +117,7 @@ async def security_audit() -> SecurityAuditReport:
     2. Focus on critical_risks and immediate_actions first
     3. Use find_device() to investigate suspicious devices in detail
     4. Use connectivity_analysis() to understand how threats accessed network
-    5. Use network_topology() to assess potential impact scope
+    5. Use discover_stp_topology() to assess potential impact scope
 
     What to do next:
     - If critical_risks found: Isolate or remove devices immediately
@@ -166,7 +166,6 @@ async def security_audit() -> SecurityAuditReport:
                     message='Cannot connect to UniFi controller for security audit',
                     error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
                     suggestion='Verify controller IP, credentials, and network connectivity',
-                    related_tools=['network_health_check', 'find_device'],
                 )
             raise ToolError(
                 message=f'Error performing security audit: {str(e)}',

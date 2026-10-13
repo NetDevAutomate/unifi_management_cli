@@ -38,3 +38,19 @@ Take them one at a time, smallest first: the runpy warning (small, in `mcp/__ini
 the stdlib log level (a decision, then a few lines in `mcp/server.py`), then B12, B11 (as a
 decision: it changes a default), B15 once the live capability read has been tried, B4 with
 the next SDK migration (issue 008), and B2 only on demand.
+
+## Progress
+
+2026-10-13 (`eded7e8`): the runpy warning row is done. `mcp/__init__.py` resolves `mcp`,
+`get_registry`, `search_tools` and `list_categories` lazily (PEP 562 `__getattr__` and
+`__dir__`, with a `TYPE_CHECKING` import so pyright still sees the names in `__all__`), so
+`python -m unifi_mapper.mcp.server` no longer imports `server` through the package first;
+`-W error::RuntimeWarning` exits 0 where it exited 1. `from unifi_mapper.mcp import mcp`
+behaves as before. `tests/mcp/test_module_entry.py` pins both.
+
+The stdlib log-level row was re-verified the same day and is still open: a stdio session
+on the default `UNIFI_MCP_LOG_LEVEL` (WARNING) writes `INFO Processing request of type
+ListToolsRequest` / `CallToolRequest` to stderr for every request. The recommendation
+above (set the stdlib root logger to the loguru level's number in `_configure_logging`) is
+a few lines but changes what every client's log shows, so it waits for the decision this
+row asks for. B2, B4, B11, B12, B15 and the config re-read on 401 are unchanged.

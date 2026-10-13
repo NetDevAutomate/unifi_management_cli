@@ -37,13 +37,13 @@ async def traceroute(
     1. Use find_device() first if you don't know exact device identifiers
     2. Run traceroute() to see the complete L2 and L3 path
     3. If path shows DENY: Use firewall_check() for detailed rule analysis
-    4. If high latency: Use link_quality() and system_load() on slow hops
-    5. Use get_port_map() to verify physical connections
+    4. If high latency: Use analyze_link_quality() and performance_analysis() on slow hops
+    5. Use get_switch_ports() to verify physical connections
 
     What to do next:
     - If path shows FIREWALL BLOCKED: Use firewall_check() for specific blocking rules
     - If path incomplete: Check if destination device is online with find_device()
-    - If high latency: Use link_quality() on interfaces showing slow response
+    - If high latency: Use analyze_link_quality() on interfaces showing slow response
     - If crosses VLANs: Verify inter-VLAN routing with check_inter_vlan_routing()
 
     Args:

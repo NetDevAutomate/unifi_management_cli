@@ -12,6 +12,7 @@ import httpx
 import pytest
 from tests.fixtures_unifi import FAKE_TOKEN
 from typing import Any
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.mcp.tools import network as network_tools
 
 
@@ -236,16 +237,19 @@ async def test_an_offset_past_the_end_is_an_empty_last_page(paged: PagedClients)
     assert page['clients'] == [] and page['total'] == 250
 
 
-async def test_a_failure_is_one_error_object(
+async def test_a_failure_is_raised_not_returned(
     monkeypatch: pytest.MonkeyPatch, network_env: None
 ) -> None:
+    """Issue 011: an unreachable Integration API is a ToolError, not a page with an error key."""
+
     def _down(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError('controller unreachable', request=request)
 
     transport = httpx.MockTransport(_down)
     monkeypatch.setattr(network_tools, '_inner_transport', lambda _config: transport)
-    result = await network_tools.get_clients()
-    assert set(result) == {'error'}
+    with pytest.raises(ToolError) as info:
+        await network_tools.get_clients()
+    assert info.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
 
 
 @pytest.mark.parametrize(

@@ -4,8 +4,9 @@
 
 1. lookup, 2. mutation gate, 3. lazy catalog build, 4. alias rewrite,
 5. unknown-key check, 6. argument validation against the handler signature,
-7. credential gate by the tool's family, 8. execution under a concurrency cap (and a
-deadline only when ``UNIFI_MCP_TOOL_TIMEOUT`` is set), 9. error mapping to stable codes,
+7. credential gate by the tool's family, 8. execution under a concurrency cap and the
+per-call deadline (``UNIFI_MCP_TOOL_TIMEOUT``, 270 s by default), 9. error mapping to stable
+codes,
 10. masking of every result and error text, 11. the result for the surface, then one line
 in the call log (``mcp/call_audit.py``) when the server gave the runner one.
 
@@ -32,6 +33,7 @@ from .config import (
     ensure_controller_credentials,
     family_status,
 )
+from .failure_text import ERROR_TEXT_LIMIT
 from .registry import InvalidParamsError, MutationRefusedError, ToolRegistry, UnknownToolError
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, is_dataclass
@@ -53,7 +55,6 @@ from unifi_mapper.core.utils.redact import (
 Surface = Literal['execute_tool', 'direct']
 
 TOOL_FAILED_TEXT_LIMIT = 500
-ERROR_TEXT_LIMIT = 2000
 # Plan decision P1 (design D1): failures carry isError: true. One constant to revert.
 ERRORS_SET_IS_ERROR = True
 
@@ -257,7 +258,7 @@ class ToolRunner:
 
         Args:
             registry: The manifest registry.
-            settings: Concurrency cap, credential timeout and optional tool deadline.
+            settings: Concurrency cap, credential timeout and per-call deadline.
             config: Returns the resolved MCP config (for the paths tried), if any.
             catalog: The SDK tool catalog; built from ``registry`` when omitted.
             call_audit: Where each call is logged (the server's; None logs nothing).
@@ -460,7 +461,7 @@ class ToolRunner:
     # --- steps 8-9 --------------------------------------------------------------------
 
     async def _execute(self, name: str, tool: Tool, kwargs: dict[str, Any]) -> Any:
-        """Run the handler under the concurrency cap and the optional deadline."""
+        """Run the handler under the concurrency cap and the deadline (None: no deadline)."""
         timeout = self.settings.tool_timeout
         scope: anyio.CancelScope | None = None
         try:

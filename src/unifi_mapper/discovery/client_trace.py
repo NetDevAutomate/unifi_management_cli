@@ -22,9 +22,9 @@ async def client_trace(
 
     Common workflow:
     1. Use client_trace() to see the complete path from client to gateway
-    2. Use link_quality() if you see performance issues on any hop
+    2. Use analyze_link_quality() if you see performance issues on any hop
     3. Use firewall_check() to verify the client can reach desired destinations
-    4. Use system_load() if any device in the path shows high latency
+    4. Use performance_analysis() if any device in the path shows high latency
 
     What to do next:
     - If path incomplete: Check if client is online and authenticated

@@ -83,7 +83,7 @@ async def performance_analysis() -> NetworkPerformanceReport:
     1. Run performance_analysis() to get detailed performance metrics
     2. Focus on poor_performers and critical_alerts first
     3. Use find_device() to get detailed information about problematic devices
-    4. Use port_map() to understand physical connections of bottleneck devices
+    4. Use get_switch_ports() to understand physical connections of bottleneck devices
     5. Consider connectivity_analysis() if network congestion is suspected
 
     What to do next:
@@ -120,7 +120,6 @@ async def performance_analysis() -> NetworkPerformanceReport:
                     message='Cannot connect to UniFi controller for performance analysis',
                     error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
                     suggestion='Verify controller IP, credentials, and network connectivity',
-                    related_tools=['network_health_check', 'find_device'],
                 )
             raise ToolError(
                 message=f'Error performing performance analysis: {str(e)}',

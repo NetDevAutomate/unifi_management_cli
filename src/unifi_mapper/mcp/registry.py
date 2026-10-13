@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.resources
+import re
 import yaml
 from dataclasses import dataclass, field
 from loguru import logger
@@ -212,6 +213,50 @@ def _type_name(expected: type | tuple[type, ...]) -> str:
     return expected.__name__
 
 
+# --- search (issue 022) ---------------------------------------------------------------
+
+_QUERY_SPLIT = re.compile(r'[\s_\-]+')
+
+
+def _query_tokens(query: str) -> list[str]:
+    """Split a search query into lower-case words, on whitespace, ``_`` and ``-``."""
+    return [token for token in _QUERY_SPLIT.split(query.lower()) if token]
+
+
+def _match_rank(name: str, meta: ToolMetadata, tokens: list[str]) -> tuple[Any, ...] | None:
+    """Return a tool's sort key for ``tokens``, or None when one of them hits nothing.
+
+    Each token is looked for in the name (``_`` read as a space), then the tags, then the
+    description. The key puts more name hits first, then more tag hits, then more
+    description hits, then priority (``P0`` first), then ``(category, name)``; with no
+    tokens every tool matches and the key is ``(category, name)`` alone.
+
+    Args:
+        name: The tool's registered name.
+        meta: Its manifest metadata.
+        tokens: The query's words, lower-case (``[]`` for no query).
+
+    Returns:
+        The sort key, or None.
+    """
+    if not tokens:
+        return (meta.category, name)
+    name_text = name.replace('_', ' ').lower()
+    tags_text = ' '.join(meta.tags).lower()
+    description = meta.description.lower()
+    name_hits = tag_hits = description_hits = 0
+    for token in tokens:
+        if token in name_text:
+            name_hits += 1
+        elif token in tags_text:
+            tag_hits += 1
+        elif token in description:
+            description_hits += 1
+        else:
+            return None
+    return (-name_hits, -tag_hits, -description_hits, meta.priority, meta.category, name)
+
+
 class ToolProxy:
     """Proxy for lazy loading tool implementations.
 
@@ -376,39 +421,47 @@ class ToolRegistry:
         tags: list[str] | None = None,
         detail_level: str = 'summary',
     ) -> list[dict[str, Any]]:
-        """Search tools with progressive disclosure.
+        """Search tools with progressive disclosure (issue 022).
 
         Args:
-            query: Text search in tool names and descriptions
-            category: Filter by category
-            tags: Filter by tags (match any)
-            detail_level: "summary" (name + description) or "full" (includes parameters)
+            query: Words to find; split on whitespace, ``_`` and ``-``, and every word must
+                appear in the tool's name (``_`` read as a space), description or tags,
+                case-insensitively.
+            category: Filter by category (case-insensitive).
+            tags: Filter by tags (match any, exact).
+            detail_level: "summary" (name + description, and ``mutates: true`` for a
+                mutating tool) or "full" (includes parameters).
 
         Returns:
-            List of matching tools with requested detail level, sorted by
-            ``(category, name)``.
+            Matching tools at the requested detail level. With a ``query`` they are ranked
+            by where its words hit (name, then tags, then description), then by priority
+            (P0 first), then by ``(category, name)``; without one, by ``(category, name)``.
         """
         self._load_manifests()
 
-        results: list[dict[str, Any]] = []
+        tokens = _query_tokens(query) if query else []
+        wanted_category = category.lower() if category else None
+        ranked: list[tuple[tuple[Any, ...], str, ToolMetadata]] = []
 
-        for name, meta in sorted(self._metadata.items(), key=lambda i: (i[1].category, i[0])):
-            # Filter by category
-            if category and meta.category != category:
+        for name, meta in self._metadata.items():
+            if wanted_category and meta.category.lower() != wanted_category:
                 continue
-
-            # Filter by tags (match any)
             if tags and not any(t in meta.tags for t in tags):
                 continue
+            rank = _match_rank(name, meta, tokens)
+            if rank is None:
+                continue
+            ranked.append((rank, name, meta))
 
-            # Filter by query
-            if query:
-                search_text = f'{name} {meta.description}'.lower()
-                if query.lower() not in search_text:
-                    continue
+        ranked.sort(key=lambda item: item[0])
 
+        results: list[dict[str, Any]] = []
+        for _, name, meta in ranked:
             if detail_level == 'summary':
-                results.append({'name': name, 'description': meta.description})
+                summary: dict[str, Any] = {'name': name, 'description': meta.description}
+                if meta.mutates:
+                    summary['mutates'] = True
+                results.append(summary)
             else:
                 results.append(
                     {
