@@ -462,6 +462,22 @@ def _facts() -> McpFacts:
     )
 
 
+def src_known_names(bindings: SrcBindings) -> frozenset[str]:
+    """Return the names a Python source binds that a doc may use as a tool-like name.
+
+    Functions, classes, module-level names, class attributes (model and result fields) and
+    parameters: the bindings a doc can legitimately describe. A local variable or a keyword
+    argument is not one, so a stale tool name that happens to match one is still reported.
+    """
+    return (
+        bindings.defs
+        | bindings.classes
+        | bindings.module_names
+        | bindings.class_attributes
+        | bindings.parameters
+    )
+
+
 @functools.cache
 def _known_names() -> frozenset[str]:
     """Return the backticked names a doc may use: tools, meta-tools, prompts, src names."""
@@ -469,10 +485,8 @@ def _known_names() -> frozenset[str]:
     names = {n for v in registry.get_categories().values() for n in v}
     names |= set(mcp_server.META_TOOLS) | set(CREDENTIAL_FAMILIES)
     names |= {p.name for p in anyio.run(mcp_server.create_server('discovery').list_prompts)}
+    names |= src_known_names(_src_bindings())
     for path in sorted(p for p in _tracked() if p.startswith('src/') and p.endswith('.py')):
-        source = (REPO / path).read_text(encoding='utf-8')
-        names |= set(re.findall(r'\b(?:def|class)\s+([A-Za-z_]\w*)', source))
-        names |= set(re.findall(r'^\s*([a-z_][a-z0-9_]*)\s*[:=]', source, re.M))
         names.add(Path(path).stem)
     for path in sorted(_tracked()):
         if path.startswith('src/unifi_mapper/mcp/manifests/') and path.endswith('.yaml'):
@@ -774,6 +788,33 @@ def test_mcp_count_detector_requires_the_total_unless_the_sentence_qualifies_it(
         'docs/mcp-demo.md:8',  # Diagnostics names a category; the pipeline count is not its count
         'docs/mcp-demo.md:10',
         'docs/mcp-demo.md:11',
+    ]
+
+
+def test_mcp_name_detector_reports_a_name_bound_only_as_a_local_variable() -> None:
+    """A tool-like name that src/ binds only as a local or keyword argument is unknown."""
+    source = (
+        'check_module_level = 1\n'
+        'check_annotated: int = 2\n'
+        '\n'
+        '\n'
+        'class Result:\n'
+        '    check_field: int = 0\n'
+        '\n'
+        '    def run(self, check_parameter):\n'
+        '        check_local_only = call(\n'
+        '            check_keyword=2,\n'
+        '        )\n'
+        '        return check_local_only\n'
+    )
+    known = src_known_names(src_bindings(source))
+    text = (
+        '`check_local_only`, `check_keyword`, `check_module_level`, `check_annotated`,\n'
+        '`check_field`, `check_parameter`, `run`, `Result`.\n'
+    )
+    assert mcp_name_problems('demo.md', text, known, frozenset()) == [
+        'demo.md:1: unknown tool-like name check_local_only',
+        'demo.md:1: unknown tool-like name check_keyword',
     ]
 
 
