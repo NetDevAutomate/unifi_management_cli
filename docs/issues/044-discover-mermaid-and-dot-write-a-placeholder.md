@@ -1,7 +1,8 @@
 ---
 title: "`discover --format mermaid` and `--format dot` write a placeholder, not a diagram"
 date: 2026-10-04
-status: open, decision needed
+status: resolved
+resolved_by: 9b403ab
 severity: low
 components: [run_methods, enhanced_network_topology, typer_cli, network_cli, cli]
 found_by: docs and repo hygiene review (runbook command check)
@@ -54,3 +55,26 @@ entry points, so they refuse the two formats instead of writing a placeholder.
 
 Why this needs a decision: either option changes what `discover` writes for an existing
 command line, or what its `--format` help offers.
+
+## Resolution
+
+Resolved on 2026-10-13 (`9b403ab`), the recommended way: both formats are implemented, the
+`--format` choices of the three entry points are unchanged.
+
+- **DOT**: `generate_dot_diagram` writes `_generate_dot_source()`, the source the PNG and SVG
+  renderers hand to `dot`, with a trailing newline. Infrastructure only, as those renderers
+  draw it.
+- **Mermaid**: `generate_mermaid_diagram` maps the topology onto the shape
+  `utility/render_mermaid._render_topology_diagram` takes (`mac`, `name`, `model`, `type`
+  in gateway/switch/ap/client from `_determine_device_type`, `connected_to` and `port_idx`
+  from the first connection that targets the device) and writes the bare `graph TB` source.
+  The ```mermaid fence the MCP renderer adds for chat output is stripped: the file is what
+  `mmdc -i` reads and what a Markdown fence wraps. A device whose MAC is not one (an unadopted
+  AP from the client list carries `Unknown MAC`) is keyed by its device id, because a space
+  breaks a Mermaid node id.
+
+Deliberately not changed: `unifi-mapper diagram` still offers `png`, `svg` and `html` only;
+and `_determine_device_type` classifies a `UXG` gateway as an AP (`xg` is in its AP
+patterns), which colours it wrongly in every format and is listed for the coordinator.
+Tests: `tests/test_diagram_text_formats.py`, each format read back from a fake topology
+and checked for its nodes and edges.
