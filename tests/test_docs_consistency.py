@@ -23,10 +23,11 @@ from ``docs/artefacts/``, and ``scripts/*.sh``), offline and without a controlle
   IPv4 address appears in a doc, and no device or client name from the local captures
   (``reports/*.json``, when they exist) appears in a doc, under ``src/unifi_mapper/``, or in a
   tracked file under ``tests/`` or ``scripts/``. Tests and scripts also hold no MAC address,
-  serial number, 24-hex or UUID device or site ID, address in a captured /24 or IPv6 address
-  in a captured /48 from those captures (decision 11: the repository is public). The docs'
-  MAC rule can't apply there, since a fixture may keep a public vendor OUI; a name equal to a
-  model string the code classifies (``analysis/model_capabilities``) is generic.
+  serial number, 24-hex or UUID device or site ID, address in a captured /24, IPv6 address
+  in a captured /48, public IPv4 address from an address field (the WAN address) or
+  link-local IPv6 address from those captures (decision 11: the repository is public). The
+  docs' MAC rule can't apply there, since a fixture may keep a public vendor OUI; a name
+  equal to a model string the code classifies (``analysis/model_capabilities``) is generic.
 
 Each detector is a pure function over ``(path, text)`` and has a negative self-test on a
 synthetic snippet, so no guard can pass because it matched nothing. Failures name
@@ -1740,6 +1741,40 @@ NOT_AN_ADDRESS = re.compile(r'version|firmware|build', re.I)
 # Global unicast and unique-local IPv6, minus the documentation prefix.
 SITE_V6 = tuple(ipaddress.IPv6Network(n) for n in ('2000::/3', 'fc00::/7'))
 DOC_V6 = ipaddress.IPv6Network('2001:db8::/32')
+LINK_LOCAL_V6 = ipaddress.IPv6Network('fe80::/10')
+# A public IPv4 address identifies the site by value, but only when it sits in a field that
+# holds an address of the site (the WAN and gateway fields of stat/device and stat/health,
+# a VPN peer); a vendor's cloud or update host, or a resolver, is in some other field.
+ADDRESS_KEY = re.compile(r'^(?:ip|ip6|ipv6|gateway|gw)$|_(?:ip|ip6|ipv6|gateway|gw)$|^wan\d?$')
+NOT_A_SITE_ADDRESS_KEY = re.compile(r'dns|ntp|server|host|resolver|speedtest', re.I)
+# Public resolvers a capture holds in its DNS fields: Cloudflare, Google, Quad9, OpenDNS.
+PUBLIC_RESOLVERS = frozenset(
+    ipaddress.IPv4Address(a)
+    for a in (
+        '1.1.1.1',
+        '1.0.0.1',
+        '8.8.8.8',
+        '8.8.4.4',
+        '9.9.9.9',
+        '149.112.112.112',
+        '208.67.222.222',
+        '208.67.220.220',
+    )
+)
+# Space no site's WAN address lies in: the documentation ranges, loopback, multicast,
+# reserved, "this network" and the broadcast address (PRIVATE_NETWORKS covers the rest).
+NOT_PUBLIC_V4 = tuple(
+    ipaddress.IPv4Network(n)
+    for n in (
+        '192.0.2.0/24',
+        '198.51.100.0/24',
+        '203.0.113.0/24',
+        '0.0.0.0/8',
+        '127.0.0.0/8',
+        '224.0.0.0/4',
+        '240.0.0.0/4',
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -1752,6 +1787,8 @@ class CapturedIdentifiers:
         ids: 24-hex object IDs and UUIDs (device and site IDs), lower case.
         subnets: The /24 of every private, link-local or CGNAT address.
         prefixes: The /48 of every global or unique-local IPv6 address.
+        addresses: Every public IPv4 address in an address field, by value (the WAN address).
+        link_local: Every link-local IPv6 address, by value (it can embed a MAC address).
     """
 
     macs: frozenset[str]
@@ -1759,10 +1796,20 @@ class CapturedIdentifiers:
     ids: frozenset[str]
     subnets: frozenset[ipaddress.IPv4Network]
     prefixes: frozenset[ipaddress.IPv6Network]
+    addresses: frozenset[ipaddress.IPv4Address] = frozenset()
+    link_local: frozenset[ipaddress.IPv6Address] = frozenset()
 
     def __bool__(self) -> bool:
         """True when the captures held any identifier."""
-        return bool(self.macs or self.serials or self.ids or self.subnets or self.prefixes)
+        return bool(
+            self.macs
+            or self.serials
+            or self.ids
+            or self.subnets
+            or self.prefixes
+            or self.addresses
+            or self.link_local
+        )
 
 
 def _mac_digits(token: str) -> str | None:
@@ -1782,8 +1829,17 @@ def _json_strings(node: object, key: str = '') -> list[tuple[str, str]]:
     return [(key, node.strip())] if isinstance(node, str) else []
 
 
+def _is_site_public_v4(key: str, address: ipaddress.IPv4Address) -> bool:
+    """True for a public address in a field that holds an address of the site (the WAN)."""
+    if not ADDRESS_KEY.search(key.lower()) or NOT_A_SITE_ADDRESS_KEY.search(key):
+        return False
+    if address in PUBLIC_RESOLVERS or any(address in n for n in NOT_PUBLIC_V4):
+        return False
+    return not any(address in network for network in PRIVATE_NETWORKS)
+
+
 def captured_identifiers(reports: Path) -> CapturedIdentifiers:
-    """Collect the MACs, serials, IDs, subnets and IPv6 prefixes in ``reports/*.json``.
+    """Collect the identifiers in ``reports/*.json``: MACs, serials, IDs, networks, addresses.
 
     Args:
         reports: The directory holding the captures.
@@ -1796,6 +1852,8 @@ def captured_identifiers(reports: Path) -> CapturedIdentifiers:
     ids: set[str] = set()
     subnets: set[ipaddress.IPv4Network] = set()
     prefixes: set[ipaddress.IPv6Network] = set()
+    addresses: set[ipaddress.IPv4Address] = set()
+    link_local: set[ipaddress.IPv6Address] = set()
     for capture in sorted(reports.glob('*.json')):
         try:
             document = json.loads(capture.read_text(encoding='utf-8'))
@@ -1824,6 +1882,10 @@ def captured_identifiers(reports: Path) -> CapturedIdentifiers:
             if isinstance(address, ipaddress.IPv4Address):
                 if any(address in network for network in PRIVATE_NETWORKS):
                     subnets.add(ipaddress.IPv4Network(f'{address}/24', strict=False))
+                elif _is_site_public_v4(key, address):
+                    addresses.add(address)
+            elif address in LINK_LOCAL_V6:
+                link_local.add(address)
             elif any(address in network for network in SITE_V6) and address not in DOC_V6:
                 prefixes.add(ipaddress.IPv6Network(f'{address}/48', strict=False))
     return CapturedIdentifiers(
@@ -1832,18 +1894,24 @@ def captured_identifiers(reports: Path) -> CapturedIdentifiers:
         frozenset(ids),
         frozenset(subnets),
         frozenset(prefixes),
+        frozenset(addresses),
+        frozenset(link_local),
     )
 
 
 def _address_kind(token: str, captured: CapturedIdentifiers) -> str | None:
-    """Return the problem kind when an IPv4 or IPv6 token lies in a captured network."""
+    """Return the problem kind when an IPv4 or IPv6 token is, or lies in, a captured one."""
     try:
         address = ipaddress.ip_address(token)
     except ValueError:
         return None
     if isinstance(address, ipaddress.IPv4Address):
+        if address in captured.addresses:
+            return 'public IPv4 address'
         if any(address in subnet for subnet in captured.subnets):
             return 'address in a captured subnet'
+    elif address in captured.link_local:
+        return 'link-local IPv6 address'
     elif any(address in prefix for prefix in captured.prefixes):
         return 'IPv6 address in a captured prefix'
     return None
@@ -1889,7 +1957,7 @@ def captured_identifier_problems(path: str, text: str, captured: CapturedIdentif
 
 
 def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: Path) -> None:
-    """Captured MACs, serials, IDs, subnets and prefixes are reported; look-alikes are not."""
+    """Captured MACs, serials, IDs, subnets, prefixes and addresses are reported; look-alikes not."""
     # Built at run time, so this file holds no literal a privacy scan could take for real.
     mac = ':'.join(['3c', '22', 'fb', '12', '34', '56'])  # universally administered
     host = '.'.join(['10', '20', '30', '40'])
@@ -1901,6 +1969,13 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
     version_neighbour = '.'.join(['10', '99', '0', '7'])
     prefix_host = ':'.join(['3fff', '1', '2', '0', '0', '0', '0', '10'])
     neighbour_v6 = ':'.join(['3fff', '1', '2', 'ab', '0', '0', '0', '1'])
+    # The WAN address is public and identifies the site by value; its /24 neighbour does not.
+    wan = '.'.join(['11', '22', '33', '44'])
+    wan_neighbour = '.'.join(['11', '22', '33', '45'])
+    resolver = '.'.join(['1', '1', '1', '1'])  # a public resolver: never an identifier
+    # A public address outside an address field (a vendor's update host, say) is not collected.
+    update_host = '.'.join(['11', '22', '34', '1'])
+    link_local = ':'.join(['fe80', '', '1a2b', '3c4d', '5e6f', '7a8b'])
     serial = 'SYN' + '0123456789'
     object_id = '5f0e1d2c' + '3b4a5968' + '77665544'
     site_id = '-'.join(['12345678', '90ab', '4cde', '8f01', '23456789abcd'])
@@ -1908,6 +1983,7 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
         'devices': [
             {'mac': mac, 'ip': host, 'serial': serial, '_id': object_id, 'ip6': prefix_host},
             {'version': version, 'site_id': site_id},
+            {'wan_ip': wan, 'dns1': resolver, 'update_host': update_host, 'ipv6': link_local},
         ]
     }
     (tmp_path / 'capture.json').write_text(json.dumps(capture), encoding='utf-8')
@@ -1919,6 +1995,8 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
         f'Serial {serial.lower()}, object {object_id.upper()}, site {site_id}.\n'
         f'IPv6 {neighbour_v6}; documentation 2001:db8::1.\n'
         f'Next to the version string: {version_neighbour}.\n'
+        f'WAN {wan}; next door {wan_neighbour}; resolver {resolver}; update host {update_host}.\n'
+        f'Link-local {link_local.upper()}; another fe80::1.\n'
     )
     assert captured_identifier_problems('demo.py', text, captured) == [
         'demo.py:1: MAC address from the local captures',
@@ -1926,6 +2004,8 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
         'demo.py:4: device or site ID from the local captures',
         'demo.py:4: serial number from the local captures',
         'demo.py:5: IPv6 address in a captured prefix from the local captures',
+        'demo.py:7: public IPv4 address from the local captures',
+        'demo.py:8: link-local IPv6 address from the local captures',
     ]
 
 
