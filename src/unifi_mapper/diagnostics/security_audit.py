@@ -4,8 +4,15 @@ import re
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
+from unifi_mapper.analysis.neighbour_scan import MAX_ROGUE_AGE_SECONDS, own_bssids_from_devices
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+
+
+# A neighbour AP heard this loud is probably inside the building (issue 079).
+STRONG_SIGNAL_DBM = -60
+# Neighbours listed for interference context; the rest are counted only.
+STRONGEST_NEIGHBOURS = 3
 
 
 class SecurityDevice(BaseModel):
@@ -36,6 +43,18 @@ class VLANSecurityInfo(BaseModel):
     unauthorized_devices: List[str] = Field(description='Unauthorized devices in this VLAN')
 
 
+class NeighbourAP(BaseModel):
+    """A neighbouring access point the passive scan hears: context, not a threat."""
+
+    bssid: str = Field(description='The BSSID heard')
+    essid: str = Field(description='The SSID it broadcasts (empty when hidden)')
+    channel: int = Field(description='Channel')
+    band: str = Field(description="Band as the controller names it ('ng', 'na', '6e')")
+    signal: int = Field(description='Signal in dBm at the AP that heard it')
+    security: str = Field(description='Security as the controller reports it')
+    heard_by: str = Field(description='The AP of this site that heard it')
+
+
 class SecurityAuditReport(BaseModel):
     """Comprehensive network security audit report."""
 
@@ -58,8 +77,22 @@ class SecurityAuditReport(BaseModel):
     # Specific security issues
     mac_anomalies: List[str] = Field(description='MAC address anomalies detected')
     new_devices: List[SecurityDevice] = Field(description='Recently appeared devices (last 24h)')
-    rogue_aps: List[SecurityDevice] = Field(description='Potential rogue access points')
+    rogue_aps: List[SecurityDevice] = Field(
+        description=(
+            'Access points that threaten this site: broadcasting one of its SSIDs from '
+            'hardware that is not ours (critical), flagged by the controller as seen on the '
+            'wired network (high), or UniFi hardware not adopted here heard on the premises '
+            '(medium). Neighbours are counted in neighbour_aps, not listed here.'
+        )
+    )
     guest_violations: List[SecurityDevice] = Field(description='Guest network violations')
+    neighbour_aps: int = Field(
+        default=0, description='Neighbouring APs heard by the passive scan that are no threat'
+    )
+    strongest_neighbours: List[NeighbourAP] = Field(
+        default_factory=list,
+        description='The three loudest neighbours, for interference context (see analyze neighbours)',
+    )
 
     # VLAN security
     vlan_analysis: List[VLANSecurityInfo] = Field(description='VLAN security analysis')
@@ -88,7 +121,10 @@ async def security_audit() -> SecurityAuditReport:
 
     What to do next:
     - If critical_risks found: Isolate or remove devices immediately
-    - If rogue_aps detected: Locate and eliminate unauthorized access points
+    - If rogue_aps lists an impersonator (our SSID from foreign hardware) or a wired rogue:
+      locate it with the AP that heard it and the port the controller saw it on
+    - neighbour_aps are the neighbours' own networks: no action; analyze neighbours shows
+      the interference picture
     - If new_devices: Verify legitimacy and authorize or block
     - If vlan_violations: Review and correct VLAN configurations
     - Document findings and update security policies
@@ -109,14 +145,20 @@ async def security_audit() -> SecurityAuditReport:
             # controller serves (HTTP 400 api.err.InvalidObject), which failed every audit.
             rogue_aps = await client.get_rogue_aps()
 
-            # Get VLAN configuration if available
+            # The site's WLAN names (to spot an impersonated SSID) and VLANs, when readable.
+            try:
+                wlans_data = await client.get(client.build_path('rest/wlanconf'))
+            except Exception:
+                wlans_data = []
             try:
                 networks_data = await client.get(client.build_path('rest/networkconf'))
             except Exception:
                 networks_data = []
 
             # Perform security analysis
-            return _perform_security_analysis(devices_data, clients_data, rogue_aps, networks_data)
+            return _perform_security_analysis(
+                devices_data, clients_data, rogue_aps, networks_data, wlans_data=wlans_data
+            )
 
         except Exception as e:
             if 'connection' in str(e).lower():
@@ -139,12 +181,23 @@ def _perform_security_analysis(
     clients_data: List[Dict[str, Any]],
     rogue_aps: List[Dict[str, Any]],
     networks_data: List[Dict[str, Any]],
+    wlans_data: Optional[List[Dict[str, Any]]] = None,
 ) -> SecurityAuditReport:
-    """Perform comprehensive security analysis on network data."""
+    """Perform comprehensive security analysis on network data.
+
+    Args:
+        devices_data: ``stat/device`` records.
+        clients_data: ``stat/sta`` records.
+        rogue_aps: ``stat/rogueap`` records, the passive neighbour scan.
+        networks_data: ``rest/networkconf`` records (VLANs), or empty.
+        wlans_data: ``rest/wlanconf`` records (this site's SSIDs), or None.
+
+    Returns:
+        The report.
+    """
     security_devices = []
     mac_anomalies = []
     new_devices = []
-    rogue_ap_devices = []
     guest_violations = []
 
     # Current time for "new device" detection (last 24 hours)
@@ -177,11 +230,14 @@ def _perform_security_analysis(
         if _is_guest_violation(client_data):
             guest_violations.append(security_device)
 
-    # Analyze rogue APs
-    for rogue_data in rogue_aps:
-        rogue_device = _analyze_rogue_ap(rogue_data)
-        rogue_ap_devices.append(rogue_device)
-        security_devices.append(rogue_device)
+    # Rogue APs versus neighbours: only a rogue is a security device.
+    own_bssids = own_bssids_from_devices(devices_data)
+    own_ssids = _own_ssids(devices_data, wlans_data or [])
+    rogue_ap_devices, neighbours = classify_rogue_aps(
+        rogue_aps, own_bssids=own_bssids, own_ssids=own_ssids
+    )
+    security_devices.extend(rogue_ap_devices)
+    strongest = sorted(neighbours, key=lambda n: n.signal, reverse=True)[:STRONGEST_NEIGHBOURS]
 
     # Check for MAC address anomalies
     mac_anomalies = _detect_mac_anomalies([d.mac for d in security_devices])
@@ -202,7 +258,12 @@ def _perform_security_analysis(
 
     # Generate immediate actions and recommendations
     immediate_actions, recommendations = _generate_security_recommendations(
-        critical_risks, high_risks, rogue_ap_devices, new_devices, mac_anomalies
+        critical_risks,
+        high_risks,
+        rogue_ap_devices,
+        new_devices,
+        mac_anomalies,
+        neighbour_count=len(neighbours),
     )
 
     return SecurityAuditReport(
@@ -219,10 +280,106 @@ def _perform_security_analysis(
         new_devices=new_devices,
         rogue_aps=rogue_ap_devices,
         guest_violations=guest_violations,
+        neighbour_aps=len(neighbours),
+        strongest_neighbours=strongest,
         vlan_analysis=vlan_analysis,
         immediate_actions=immediate_actions,
         security_recommendations=recommendations,
     )
+
+
+def _own_ssids(devices_data: List[Dict[str, Any]], wlans_data: List[Dict[str, Any]]) -> set[str]:
+    """The SSIDs this site owns: every WLAN's name plus every ESSID its radios broadcast."""
+    ssids = {str(w.get('name')) for w in wlans_data if w.get('name')}
+    for device in devices_data:
+        if device.get('type') != 'uap':
+            continue
+        for vap in device.get('vap_table', []):
+            if vap.get('essid'):
+                ssids.add(str(vap['essid']))
+    return ssids
+
+
+def classify_rogue_aps(
+    rogue_aps: List[Dict[str, Any]], *, own_bssids: set[str], own_ssids: set[str]
+) -> tuple[List[SecurityDevice], List[NeighbourAP]]:
+    """Split the passive scan into rogues (a threat to this site) and neighbours (pure).
+
+    A rogue, in order of certainty: it broadcasts one of this site's SSIDs from a BSSID that is
+    not one of ours (an impersonator; critical); the controller flags it ``is_rogue``, meaning
+    it was also seen on our wired network (high); or it is UniFi hardware (``is_ubnt`` or
+    ``is_unifi``) not adopted here, heard at :data:`STRONG_SIGNAL_DBM` or louder, so probably
+    on the premises (medium). The rules are cumulative: the strongest sets the risk, the others
+    are still listed as flags. Our own radios (heard by another of our APs) and entries older
+    than :data:`MAX_ROGUE_AGE_SECONDS` are ignored. Everything else is a neighbour.
+
+    Args:
+        rogue_aps: ``stat/rogueap`` records.
+        own_bssids: The BSSIDs this site's radios broadcast (any case).
+        own_ssids: The SSIDs this site owns.
+
+    Returns:
+        ``(rogues, neighbours)``.
+    """
+    own = {b.lower() for b in own_bssids}
+    rogues: List[SecurityDevice] = []
+    neighbours: List[NeighbourAP] = []
+    for entry in rogue_aps:
+        bssid = str(entry.get('bssid') or '').lower()
+        if not bssid or bssid in own or (entry.get('age') or 0) > MAX_ROGUE_AGE_SECONDS:
+            continue
+        essid = str(entry.get('essid') or '')
+        signal = int(entry.get('signal') or -100)
+        heard_by = str(entry.get('ap_name') or entry.get('ap_mac') or 'an AP of this site')
+        flags: List[str] = []
+        risk = ''
+        if essid and essid in own_ssids:
+            risk = 'critical'
+            flags.append(
+                f"Broadcasts this site's SSID '{essid}' from {bssid}, which is not one of "
+                "this site's radios: a possible evil twin"
+            )
+        if entry.get('is_rogue'):
+            risk = risk or 'high'
+            flags.append("Flagged by the controller as seen on this site's wired network")
+        unifi_hardware = bool(entry.get('is_ubnt') or entry.get('is_unifi'))
+        if unifi_hardware and signal >= STRONG_SIGNAL_DBM:
+            risk = risk or 'medium'
+            flags.append(
+                f'UniFi hardware not adopted by this controller, heard at {signal} dBm '
+                f"(probably on the premises): adopt it, or confirm it is a neighbour's"
+            )
+        if not risk:
+            neighbours.append(
+                NeighbourAP(
+                    bssid=bssid,
+                    essid=essid,
+                    channel=int(entry.get('channel') or 0),
+                    band=str(entry.get('band') or ''),
+                    signal=signal,
+                    security=str(entry.get('security') or ''),
+                    heard_by=heard_by,
+                )
+            )
+            continue
+        flags.append(f'Heard by {heard_by} at {signal} dBm on channel {entry.get("channel", "?")}')
+        vendor = str(entry.get('model_display') or entry.get('oui') or 'Unknown')
+        rogues.append(
+            SecurityDevice(
+                mac=bssid,
+                name=essid or '<hidden SSID>',
+                ip=None,
+                type='rogue_ap',
+                vendor=vendor,
+                first_seen=None,
+                last_seen=None,
+                is_authorized=False,
+                is_anomalous=True,
+                security_flags=flags,
+                risk_level=risk,
+            )
+        )
+    return rogues, neighbours
 
 
 def _analyze_device_security(device_data: Dict[str, Any], device_type: str) -> SecurityDevice:
@@ -319,38 +476,6 @@ def _analyze_device_security(device_data: Dict[str, Any], device_type: str) -> S
         is_anomalous=is_anomalous,
         security_flags=security_flags,
         risk_level=risk_level,
-    )
-
-
-def _analyze_rogue_ap(rogue_data: Dict[str, Any]) -> SecurityDevice:
-    """Analyze rogue access point security threat."""
-    mac = rogue_data.get('bssid', '')
-    name = rogue_data.get('essid', 'Rogue AP')
-
-    security_flags = [
-        'Rogue access point detected',
-        'Potential security threat - unauthorized wireless access',
-    ]
-
-    # Check signal strength - closer rogues are more dangerous
-    signal = rogue_data.get('signal', -100)
-    if signal > -50:
-        security_flags.append('Strong signal - rogue AP is very close')
-    elif signal > -70:
-        security_flags.append('Medium signal - rogue AP in vicinity')
-
-    return SecurityDevice(
-        mac=mac,
-        name=name,
-        ip=None,
-        type='rogue_ap',
-        vendor='Unknown',
-        first_seen=None,
-        last_seen=None,
-        is_authorized=False,
-        is_anomalous=True,
-        security_flags=security_flags,
-        risk_level='critical',
     )
 
 
@@ -514,29 +639,52 @@ def _generate_security_recommendations(
     rogue_aps: List[SecurityDevice],
     new_devices: List[SecurityDevice],
     mac_anomalies: List[str],
+    *,
+    neighbour_count: int = 0,
 ) -> tuple[List[str], List[str]]:
     """Generate immediate actions and general recommendations."""
     immediate_actions = []
     recommendations = []
+    rogue_macs = {r.mac for r in rogue_aps}
 
-    # Critical immediate actions
-    if critical_risks:
+    # Critical immediate actions (rogue APs have their own, more specific lines below)
+    critical_devices = [d for d in critical_risks if d.mac not in rogue_macs]
+    if critical_devices:
         immediate_actions.append(
-            f'CRITICAL: Investigate {len(critical_risks)} high-risk devices immediately'
+            f'CRITICAL: Investigate {len(critical_devices)} high-risk devices immediately'
         )
         immediate_actions.extend(
-            [f'Isolate or remove device: {d.name} ({d.mac})' for d in critical_risks[:3]]
+            [f'Isolate or remove device: {d.name} ({d.mac})' for d in critical_devices[:3]]
         )
 
-    if rogue_aps:
-        immediate_actions.append(
-            f'CRITICAL: {len(rogue_aps)} rogue access points detected - locate and eliminate'
-        )
+    for rogue in rogue_aps:
+        where = next((f for f in rogue.security_flags if f.startswith('Heard by')), '')
+        if rogue.risk_level == 'critical':
+            immediate_actions.append(
+                f"CRITICAL: '{rogue.name}' is broadcast by {rogue.mac}, which is not one of "
+                f"this site's APs (a possible evil twin). Locate it: {where or 'see flags'}"
+            )
+        elif rogue.risk_level == 'high':
+            immediate_actions.append(
+                f"HIGH: '{rogue.name}' ({rogue.mac}) is a neighbouring AP the controller also "
+                f'saw on the wired network. Find the switch port it is plugged into'
+            )
+        else:
+            immediate_actions.append(
+                f"MEDIUM: UniFi hardware {rogue.vendor} ({rogue.mac}, '{rogue.name}') is not "
+                f"adopted here but heard on the premises. Adopt it or confirm it is a neighbour's"
+            )
 
     if mac_anomalies:
         immediate_actions.append('Investigate MAC address anomalies - possible spoofing detected')
 
     # General security recommendations
+    if neighbour_count:
+        recommendations.append(
+            f'{neighbour_count} neighbouring APs heard, none a threat to this site; '
+            '`unifi-mapper analyze neighbours` (MCP scan_neighbour_aps) shows the interference'
+        )
+
     if new_devices:
         recommendations.append(
             f'Review and authorize {len(new_devices)} new devices detected in last 24h'

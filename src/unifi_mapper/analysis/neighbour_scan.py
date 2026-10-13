@@ -240,7 +240,18 @@ async def get_our_ap_bssids(client: UniFiClient) -> set[str]:
     unexpected ``vap_table`` — the filter is on device type, not presence
     of the field.
     """
-    devices = await client.get_devices()
+    return own_bssids_from_devices(await client.get_devices())
+
+
+def own_bssids_from_devices(devices: list[dict[str, Any]]) -> set[str]:
+    """Return the lowercased BSSIDs of every ``vap_table`` entry of the adopted APs (pure).
+
+    Args:
+        devices: ``stat/device`` records.
+
+    Returns:
+        The BSSIDs this site's own radios broadcast; non-AP devices are skipped.
+    """
     bssids: set[str] = set()
     for device in devices:
         if device.get('type') != 'uap':

@@ -41,7 +41,11 @@ tools:
     handler: security_audit
     title: Security Audit
     cli: diagnose security
-    description: Security configuration review and vulnerability assessment
+    description: >-
+      Security audit: unknown, unauthorised and anomalous devices, MAC anomalies, guest and
+      VLAN violations, and rogue APs told apart from neighbours (a rogue impersonates one of
+      this site's SSIDs, is flagged on the wired network by the controller, or is unadopted
+      UniFi hardware heard on the premises)
     priority: P1
     tags: [security, audit, vulnerability, compliance]
 

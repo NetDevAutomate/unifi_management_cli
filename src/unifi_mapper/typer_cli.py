@@ -1635,7 +1635,9 @@ def diagnose_security(
         f'Authorised: [green]{report.authorized_devices}[/green]  '
         f'Unauthorised: [red]{report.unauthorized_devices}[/red]  '
         f'Anomalous: [yellow]{report.anomalous_devices}[/yellow]  '
-        f'Unknown: [yellow]{report.unknown_devices}[/yellow]'
+        f'Unknown: [yellow]{report.unknown_devices}[/yellow]  '
+        f'Rogue APs: [{"red" if report.rogue_aps else "green"}]{len(report.rogue_aps)}[/]  '
+        f'Neighbour APs: [dim]{report.neighbour_aps}[/dim]'
     )
     risks = [
         *report.critical_risks,
@@ -1686,6 +1688,28 @@ def diagnose_security(
                 str(v.devices_count),
                 escape(', '.join(map(str, v.isolation_violations)) or '—'),
                 escape(', '.join(map(str, v.unauthorized_devices)) or '—'),
+            )
+        console.print(table)
+    if report.strongest_neighbours:
+        table = Table(
+            title=f'Strongest Neighbours (of {report.neighbour_aps}; no threat)', show_header=True
+        )
+        table.add_column('SSID', style='dim')
+        table.add_column('BSSID', style='dim')
+        table.add_column('Channel', justify='right')
+        table.add_column('Band')
+        table.add_column('Signal dBm', justify='right')
+        table.add_column('Security')
+        table.add_column('Heard by')
+        for n in report.strongest_neighbours:
+            table.add_row(
+                escape(n.essid or '<hidden>'),
+                escape(n.bssid),
+                str(n.channel),
+                escape(n.band),
+                str(n.signal),
+                escape(n.security),
+                escape(n.heard_by),
             )
         console.print(table)
     _print_list('MAC anomalies', [str(a) for a in report.mac_anomalies], style='yellow')

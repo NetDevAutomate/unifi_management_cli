@@ -88,8 +88,13 @@ asked GitHub Support to purge the superseded commits from the server's object st
 
 - `security_audit` (and the new `diagnose security`) read the rogue-AP list from
   `rest/rogueap`, which UniFi Network answers with `400 api.err.InvalidObject`, so every call
-  failed with `API_ERROR`. It reads the passive `stat/rogueap` list now. Its habit of counting
-  every neighbouring AP as a critical rogue is issue 079.
+  failed with `API_ERROR`. It reads the passive `stat/rogueap` list now, and tells a rogue
+  from a neighbour: a rogue broadcasts one of this site's SSIDs from hardware that is not ours
+  (critical), is flagged by the controller as seen on the wired network (high), or is UniFi
+  hardware not adopted here heard at -60 dBm or louder (medium); every other neighbour is
+  counted in `neighbour_aps`, the three loudest listed for context, none a risk or an action
+  (issue 079). On a home site this took the report from 619 critical "rogues" and 195 MAC
+  anomalies to none and 11.
 
 ### Removed
 

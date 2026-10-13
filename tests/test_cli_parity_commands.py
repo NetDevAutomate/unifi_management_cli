@@ -110,6 +110,18 @@ SECURITY = SecurityAuditReport(
     rogue_aps=[],
     guest_violations=[],
     vlan_analysis=[],
+    neighbour_aps=14,
+    strongest_neighbours=[
+        {
+            'bssid': '02:00:00:00:00:d1',
+            'essid': 'NextDoor',
+            'channel': 6,
+            'band': 'ng',
+            'signal': -61,
+            'security': 'WPA2-Personal (AES/CCMP)',
+            'heard_by': 'Hall AP',
+        }
+    ],
     immediate_actions=['Isolate mystery-box'],
     security_recommendations=['Enable 802.1X on access ports'],
 )
@@ -822,6 +834,7 @@ def test_security_rendering_shows_risks_and_actions(cli: SimpleNamespace) -> Non
     assert 'Isolate mystery-box' in text
     assert 'Enable 802.1X' in text
     assert 'two switches' in text
+    assert 'Neighbour APs: 14' in text and 'NextDoor' in text and 'no threat' in text
 
 
 def test_a_tool_error_prints_red_and_exits_1(cli: SimpleNamespace, monkeypatch) -> None:
