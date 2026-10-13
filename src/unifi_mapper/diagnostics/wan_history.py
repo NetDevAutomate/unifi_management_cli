@@ -3,10 +3,12 @@
 ``unifi-mapper diagnose wan --record`` appends the controller's last scheduled speedtest to
 ``state_dir() / 'wan-speedtest-history.jsonl'`` through the shared capped writer: one JSON
 line per run, deduplicated by the run's time under the writer's lock, at most 1 MiB, the
-file and its lock ``0o600`` in a ``0o700`` directory, kept so on every append (a history,
-lock or directory owned by another user is refused and nothing is written). The writer waits
-at most :data:`HISTORY_LOCK_TIMEOUT_S` for the lock, so a lock another account holds fails
-the run instead of stalling it. Reading never writes. This module imports no
+file and its lock ``0o600`` and the default state directory ``0o700``, kept so on every
+append (a history, lock or default directory owned by another user is refused, never
+chmod'ed, and nothing is written; a directory an explicit ``path`` names is left as it is).
+The writer waits at most :data:`HISTORY_LOCK_TIMEOUT_S` (5 s) for the lock, so a lock
+another account holds fails the run, naming the lock, instead of stalling it. Reading never
+writes. This module imports no
 controller client, so the MCP tool over it (``credentials: none``) can run with no
 credentials at all; it only reads what was recorded.
 """
@@ -86,21 +88,26 @@ def append_speedtest(
         result has no run time and nothing was written.
 
     Raises:
-        OSError: The history cannot be written: ``LockTimeoutError`` when its lock stayed
-            held past :data:`HISTORY_LOCK_TIMEOUT_S`, ``NotOwnedError`` when the history,
-            its lock or its directory is another user's, or any other write failure.
+        OSError: The history cannot be written: ``LockTimeoutError`` (naming the lock and
+            who may hold it) when its lock stayed held past :data:`HISTORY_LOCK_TIMEOUT_S`,
+            ``NotOwnedError`` when the history, its lock or its default directory is another
+            user's, or any other write failure.
     """
     line = speedtest_line(last_speedtest)
     if line is None:
         return None
+    target = path or default_speedtest_history_path()
+    # The default directory is the tool's own: kept 0o700 on every append. An explicit
+    # path's existing directory is the user's: never changed (a missing one is made 0o700).
+    keep_dir = path is not None and target.parent.exists()
     return append_capped_jsonl(
-        path or default_speedtest_history_path(),
+        target,
         [line],
         max_bytes=SPEEDTEST_HISTORY_MAX_BYTES,
         epoch_of=epoch_field('epoch'),
         dedup_key=_run_time,
         file_mode=0o600,
-        dir_mode=0o700,
+        dir_mode=None if keep_dir else 0o700,
         enforce_modes=True,
         lock_timeout_s=HISTORY_LOCK_TIMEOUT_S,
     )

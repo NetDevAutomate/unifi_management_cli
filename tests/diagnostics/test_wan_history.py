@@ -87,20 +87,40 @@ def test_append_dedups_by_run_time_and_sets_modes(tmp_path: Path) -> None:
     assert append_speedtest(_speedtest(run_epoch=None), path) is None
 
 
-def test_append_tightens_a_permissive_history_and_directory(tmp_path: Path) -> None:
-    """Issue 076 item 7: the modes applied on creation only, so an existing history or
-    directory with group or other bits stayed readable (the gap the MCP call log had)."""
-    path = tmp_path / 'state' / 'history.jsonl'
-    path.parent.mkdir()
+def _loosen(path: Path) -> Path:
+    """An existing history, lock and directory with group and other bits; the lock's path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(path.parent, 0o755)
     path.write_text('', encoding='utf-8')
     os.chmod(path, 0o644)
     lock = Path(f'{path}.lock')
     lock.write_text('', encoding='utf-8')
     os.chmod(lock, 0o644)
-    assert append_speedtest(_speedtest(), path) is not None
+    return lock
+
+
+def test_append_tightens_a_permissive_history_lock_and_default_directory() -> None:
+    """Issue 076 item 7: the modes applied on creation only, so an existing history or
+    directory with group or other bits stayed readable (the gap the MCP call log had). The
+    default state directory is the tool's own, so it is kept 0o700 too."""
+    path = default_speedtest_history_path()  # under the test's XDG_STATE_HOME
+    lock = _loosen(path)
+    assert append_speedtest(_speedtest()) is not None
     modes = [stat.S_IMODE(p.stat().st_mode) for p in (path.parent, path, lock)]
     assert modes == [0o700, 0o600, 0o600]
+
+
+def test_append_never_tightens_the_directory_of_an_explicit_path(tmp_path: Path) -> None:
+    """Council decision on item 7: a directory the caller named is the user's; only the
+    history and its lock are made private there."""
+    path = tmp_path / 'theirs' / 'history.jsonl'
+    lock = _loosen(path)
+    assert append_speedtest(_speedtest(), path) is not None
+    modes = [stat.S_IMODE(p.stat().st_mode) for p in (path.parent, path, lock)]
+    assert modes == [0o755, 0o600, 0o600]
+    new = tmp_path / 'new' / 'history.jsonl'  # a missing directory is created private
+    assert append_speedtest(_speedtest(), new) is not None
+    assert stat.S_IMODE(new.parent.stat().st_mode) == 0o700
 
 
 def test_append_refuses_a_history_owned_by_another_user(
@@ -135,12 +155,14 @@ def test_append_gives_up_on_a_held_lock_after_the_bound(
         held = run_bounded(lambda: append_speedtest(_speedtest(run_epoch=1_790_003_600), path), 5)
     assert held.done, 'the append waited on the held lock past its limit'
     assert isinstance(held.error, LockTimeoutError) and held.elapsed < 1.5
+    assert f'the lock {path}.lock was held for more than 0.2 s' in str(held.error)
+    assert 'any account that can open that file' in str(held.error)  # who may hold it
     assert len(path.read_text().splitlines()) == 1
-    assert wan_history.HISTORY_LOCK_TIMEOUT_S == 0.2  # patched here; the shipped bound is 15 s
 
 
-def test_the_shipped_lock_bound_is_fifteen_seconds() -> None:
-    assert wan_history.HISTORY_LOCK_TIMEOUT_S == 15.0
+def test_the_shipped_lock_bound_is_five_seconds() -> None:
+    """Council decision on item 32: bounded at 5 s, never unbounded."""
+    assert wan_history.HISTORY_LOCK_TIMEOUT_S == 5.0
 
 
 def test_concurrent_appends_of_one_run_write_it_once(tmp_path: Path) -> None:

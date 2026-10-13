@@ -139,7 +139,8 @@ def test_record_fails_with_a_clear_message_when_the_lock_is_held(controller, mon
     result = run.result
     assert result is not None and result.exit_code == 1, getattr(result, 'output', None)
     flat = _plain(result)
-    assert 'Not recorded' in flat and 'lock was held for more than 0.2 s' in flat
+    assert 'Not recorded' in flat and f'the lock {lock} was held for more than 0.2 s' in flat
+    assert 'any account that can open that file' in flat  # who may hold it
     assert 'Traceback' not in result.output
     assert not (state_dir() / HISTORY_FILENAME).exists()
 

@@ -200,7 +200,8 @@ def test_a_held_lock_fails_the_record_after_the_bound_with_the_reason(
     assert run.done, 'the command waited on the held lock past its limit'
     result = run.result
     assert result is not None and result.exit_code == 1, getattr(result, 'output', None)
-    assert 'Not recorded' in result.stderr and 'lock was held for more than 0.2 s' in result.stderr
+    flat = ' '.join(result.stderr.split())
+    assert 'Not recorded' in flat and f'the lock {path}.lock was held for more than 0.2 s' in flat
     assert not path.exists()
 
 

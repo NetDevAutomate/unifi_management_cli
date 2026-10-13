@@ -5213,8 +5213,9 @@ def analyze_link_errors(
     baseline; --record appends to the counter history read by `ports counters`,
     `ports diagnose` and the MCP port tools. Both write only under the XDG state
     directory and can be combined (one controller read). A record that cannot be written
-    (its lock held by another account for over 15 s, a file owned by another user) exits 1
-    with the reason, so a schedule notices.
+    (its lock held by another run or account for over 5 s, a file owned by another user)
+    exits 1 naming the lock and the reason, so a schedule notices. A --history path's
+    existing directory is left as it is; the default state directory is kept private.
     """
     import asyncio
     import time
@@ -5263,7 +5264,10 @@ def analyze_link_errors(
             target = Path(history) if history else default_history_path()
             try:
                 written = append_history(
-                    records, path=target, retention_days=retention_days, now=epoch
+                    records,
+                    path=Path(history) if history else None,  # None: the default's directory
+                    retention_days=retention_days,
+                    now=epoch,
                 )
             except OSError as e:  # a held lock past its bound, another user's file, no space
                 _fail(f'Not recorded: {target}: {_os_error_reason(e)}')
@@ -5952,9 +5956,9 @@ def diagnose_wan(
     drops and the result of the controller's own scheduled speedtest. Never starts a
     speedtest. --record appends that result to a history file under the XDG state
     directory (skipped when the run is already recorded); diagnose wan-history lists it. A
-    record that cannot be written (its lock held by another account for over 15 s, a file
-    owned by another user) exits 1 with the reason after the report, so a schedule notices.
-    Read-only towards the controller.
+    record that cannot be written (its lock held by another run or account for over 5 s, a
+    file owned by another user) exits 1 after the report, naming the lock and the reason, so
+    a schedule notices. Read-only towards the controller.
     """
     from .diagnostics.wan_health import get_wan_health
 

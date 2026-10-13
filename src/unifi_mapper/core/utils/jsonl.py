@@ -46,10 +46,11 @@ from pathlib import Path
 # rewritten on every append.
 COMPACT_LOW_WATER_RATIO = 0.8
 # The longest a CLI history (the port counter and speedtest histories) waits for its lock:
-# well past a compaction of a full file; a held lock then fails the run with a clear message
-# instead of stalling a scheduled command for good (issue 076 item 32). The MCP call log has
-# its own, shorter bound (mcp/call_audit.LOCK_TIMEOUT_S).
-HISTORY_LOCK_TIMEOUT_S = 15.0
+# well past a compaction of a full file; a held lock then fails the run, non-zero, with a
+# message naming the lock and who may hold it, instead of stalling a scheduled command for
+# good (issue 076 item 32, council decision: 5 s, never unbounded). The MCP call log uses the
+# same bound (mcp/call_audit.LOCK_TIMEOUT_S).
+HISTORY_LOCK_TIMEOUT_S = 5.0
 
 EpochOf = Callable[[str], float | None]
 # The permission bits a private file or directory must not have.
@@ -238,11 +239,13 @@ def _open_for_append(
     return fd
 
 
-def _lock_exclusively(fd: int, timeout_s: float | None) -> None:
+def _lock_exclusively(fd: int, timeout_s: float | None, lock_path: Path) -> None:
     """Take ``LOCK_EX`` on ``fd``: wait as long as it takes, or at most ``timeout_s``.
 
     Raises:
-        LockTimeoutError: The lock was still held when ``timeout_s`` ran out.
+        LockTimeoutError: The lock was still held when ``timeout_s`` ran out. The message
+            names the lock file and who may hold it, so a scheduled command's failure line
+            is actionable on its own.
     """
     if timeout_s is None:
         fcntl.flock(fd, fcntl.LOCK_EX)
@@ -256,7 +259,9 @@ def _lock_exclusively(fd: int, timeout_s: float | None) -> None:
             remaining = deadline - time.monotonic()
             if not remaining > 0:
                 raise LockTimeoutError(
-                    f'the lock was held for more than {timeout_s:g} s'
+                    f'the lock {lock_path} was held for more than {timeout_s:g} s: another '
+                    'run of this command, or any account that can open that file, holds it; '
+                    'nothing was appended'
                 ) from None
             time.sleep(min(_LOCK_RETRY_S, remaining))
 
@@ -335,7 +340,7 @@ def append_capped_jsonl(
     lock_path = path.with_name(path.name + '.lock')
     lock_fd = _open_for_append(lock_path, file_mode, enforce_modes, 'lock file')
     with os.fdopen(lock_fd, 'ab') as lock:
-        _lock_exclusively(lock.fileno(), lock_timeout_s)
+        _lock_exclusively(lock.fileno(), lock_timeout_s, lock_path)
         try:
             if dedup_key is not None:
                 seen: set[str] = set()
