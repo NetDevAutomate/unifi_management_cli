@@ -145,3 +145,12 @@ Deliberately not changed, each still open and recorded in this file above:
   Bounding each read and capping the interval changes that tool's contract; not done here.
 - **`get_recent_events` pages everything before it keeps the newest** (issue 021's note);
   a decision on `matched_total`.
+
+## Live timings (2026-10-13, B14)
+
+Measured through the CLI on the maintainer's controller (13 switches, ~130 clients), wall clock
+including process start: `diagnose security` 1.4 s, `diagnose performance` 0.5 s, `diagnose all`
+2.3 s (15 checks), `analyze link-speeds` 1.3 s, `analyze capacity` 0.5 s. The 270 s default
+leaves two orders of magnitude of headroom for every read-only tool measured; the sampling tools
+(`get_ap_retry_rates`, AP health) are bounded by their own `interval_seconds` and stay the
+documented exception.
