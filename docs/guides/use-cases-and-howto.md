@@ -940,10 +940,10 @@ sampled: `vlan-traffic coverage` shows each tier's earliest and latest time and 
 counter it could not read included: nothing is stored, never a partial sample), or that stores
 nothing because no VLAN matched an interface with byte counters, exits 1. `1m` and `1y` show
 what `rollup` has rolled: an hour or a day counts once it ended twice the sampling interval
-ago (at least 5 minutes), and each run recomputes the newest two hours and the newest day, so
-a sample written late still counts if `rollup` runs less than two hours after its hour is
-complete; a later one stays in the raw samples (`now`, `1d`, `1w`) and never reaches `1m` or
-`1y` ([issue 071](../issues/071-late-vlan-samples-never-reach-the-rollups.md)). As ported
+ago (at least 5 minutes), and each run recomputes the newest two hours and the newest day and
+every hour a sample has been written into since the last run (and its day), so a sample
+written late still reaches `1m` and `1y`, however late
+([issue 071](../issues/071-late-vlan-samples-never-reach-the-rollups.md)). As ported
 from the prototype these reports were broken: it rolled
 an hour only once it was 8 days old, so `1w` was always empty and `1m` and `1y` left out the
 newest 8 and about 61 days ([issue 069](../issues/069-vlan-reports-read-tiers-without-recent-data.md)).

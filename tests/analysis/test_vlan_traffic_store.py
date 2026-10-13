@@ -488,9 +488,11 @@ def test_a_late_sample_is_counted_on_the_next_run(tmp_path: Path) -> None:
 def test_a_late_sample_counts_only_inside_the_trailing_window(
     tmp_path: Path, delay: int, counted: bool
 ) -> None:
-    """Review finding: a run recomputes only the newest TRAILING_HOURS complete hours, so a
-    sample written into an hour that became complete that long before the run never reaches
-    the hourly tier (issue 071); the raw tier keeps it for now, 1d and 1w."""
+    """A row written straight into ``raw_samples`` (not through ``insert_samples``, so no
+    dirty bucket) is caught only by the trailing window: a run recomputes the newest
+    TRAILING_HOURS complete hours whatever the dirty table says. Past that window such a row
+    stays in the raw tier (now, 1d, 1w) only. The sampler's own writes go through
+    ``insert_samples`` and are always counted (issue 071, the tests below)."""
     path = tmp_path / 'store.sqlite3'
     end = _seed_hours(path, hours=3)
     newest = end - 3600
@@ -512,6 +514,142 @@ def test_a_late_sample_counts_only_inside_the_trailing_window(
         assert kept.fetchone()[0] == 1
 
 
+# --- issue 071: the rollups follow the data (dirty buckets), not the clock ----------------
+
+
+def _dirty(path: Path) -> list[tuple[str, int]]:
+    with sqlite3.connect(path) as conn:
+        return list(conn.execute('SELECT tier, bucket FROM dirty_buckets ORDER BY tier, bucket'))
+
+
+def _minute_rows(start: int, end: int, *, step: int = 7_500_000) -> list[dict[str, Any]]:
+    """Samples a minute apart from ``start`` to ``end`` at 1 Mbit/s, as the sampler writes them."""
+    return [
+        {
+            'ts_utc': ts,
+            'vlan_id': 20,
+            'network_name': 'IoT',
+            'iface': 'br20',
+            'rx_bytes': i * step,
+            'tx_bytes': 0,
+        }
+        for i, ts in enumerate(range(start, end, 60))
+    ]
+
+
+def test_insert_samples_records_each_hour_it_writes_into_as_dirty(tmp_path: Path) -> None:
+    path = tmp_path / 'store.sqlite3'
+    hour = START_HOUR + 5 * 3600
+    store.insert_samples(
+        path,
+        [
+            {**_minute_rows(hour + 60, hour + 120)[0], 'vlan_id': 20},
+            {**_minute_rows(hour + 60, hour + 120)[0], 'vlan_id': 30, 'network_name': 'Lab'},
+            {**_minute_rows(hour + 3660, hour + 3720)[0], 'vlan_id': 20},
+        ],
+    )
+    assert _dirty(path) == [('hourly', hour), ('hourly', hour + 3600)]
+
+
+def test_a_sample_written_a_day_late_reaches_the_hourly_and_daily_rows(tmp_path: Path) -> None:
+    """A sample stamped in an hour rolled a day earlier (past the trailing window) changes
+    that hour's row and its day's row on the next run; two runs still give identical rows."""
+    path = tmp_path / 'store.sqlite3'
+    day = floor_to_day(START_HOUR) + 86400
+    store.insert_samples(path, _minute_rows(day - 86400, day + 86400))  # two days, 1 Mbit/s
+    rolled_at = day + 86400 + GRACE  # the day [day, day + 1 d) is complete
+    run_rollups(path, now=rolled_at)
+    assert _dirty(path) == []  # every dirty bucket rolled was cleared
+    target = day + 3 * 3600  # 03:00 of the rolled day: complete since long before the run
+    with sqlite3.connect(path) as conn:
+        before = conn.execute(
+            'SELECT sample_count, peak_rx_bps FROM hourly_rollup WHERE hour_utc = ?', (target,)
+        ).fetchone()
+        day_before = conn.execute(
+            'SELECT peak_rx_bps, sample_count FROM daily_rollup WHERE day_utc = ?', (day,)
+        ).fetchone()
+    assert before == (60, 1_000_000.0) and day_before == (1_000_000.0, 24)
+    # A day later a stalled sampler writes a sample it read at 03:10:30: 90% of the next
+    # minute's bytes in 30 s, so the split interval is 1.8 and 0.2 Mbit/s.
+    i = (target + 600 - (day - 86400)) // 60
+    late = {**_minute_rows(target + 630, target + 690)[0], 'rx_bytes': i * 7_500_000 + 6_750_000}
+    store.insert_samples(path, [late])
+    assert _dirty(path) == [('hourly', target)]
+    a_day_later = rolled_at + 86400
+    result = run_rollups(path, now=a_day_later)
+    with sqlite3.connect(path) as conn:
+        after = conn.execute(
+            'SELECT sample_count, peak_rx_bps FROM hourly_rollup WHERE hour_utc = ?', (target,)
+        ).fetchone()
+        day_after = conn.execute(
+            'SELECT peak_rx_bps, sample_count FROM daily_rollup WHERE day_utc = ?', (day,)
+        ).fetchone()
+    assert after == (61, 1_800_000.0)
+    assert day_after == (1_800_000.0, 24)
+    assert result['hourly_rows_written'] >= 1 and result['daily_rows_written'] >= 1
+    assert _dirty(path) == []
+    snapshot = _tables(path)
+    run_rollups(path, now=a_day_later)
+    assert _tables(path) == snapshot
+
+
+def test_a_late_sample_into_a_pruned_hour_is_dropped_not_rolled_from_part_of_its_data(
+    tmp_path: Path,
+) -> None:
+    """Raw samples are pruned on hour boundaries, so an hour is either whole or gone; a
+    sample written into a pruned hour is pruned with it and never rewrites that hour's row."""
+    path = tmp_path / 'store.sqlite3'
+    end = _seed_hours(path, hours=9 * 24)  # 9 days, a sample a minute
+    now = end + GRACE
+    run_rollups(path, now=now)
+    cutoff = floor_to_hour(now - RAW_RETENTION_SECONDS)
+    pruned_hour = cutoff - 3600  # holds only the carry sample now
+    with sqlite3.connect(path) as conn:
+        row = 'SELECT sample_count, avg_rx_bps FROM hourly_rollup WHERE hour_utc = ?'
+        before = conn.execute(row, (pruned_hour,)).fetchone()
+        kept = conn.execute(
+            'SELECT COUNT(*) FROM raw_samples WHERE ts_utc >= ? AND ts_utc < ?',
+            (pruned_hour, cutoff),
+        ).fetchone()[0]
+    assert before == (60, 1_000_000.0) and kept == 1
+    late_ts = pruned_hour + 630
+    counter = 10_000 + (late_ts - START_HOUR) // 60 * 7_500_000 + 3_750_000  # as _seed_hours
+    store.insert_samples(
+        path,
+        [
+            {
+                'ts_utc': late_ts,
+                'vlan_id': 20,
+                'network_name': 'IoT',
+                'iface': 'br20',
+                'rx_bytes': counter,
+                'tx_bytes': counter * 2,
+            }
+        ],
+    )
+    run_rollups(path, now=now)
+    with sqlite3.connect(path) as conn:
+        assert conn.execute(row, (pruned_hour,)).fetchone() == before
+        gone = conn.execute('SELECT COUNT(*) FROM raw_samples WHERE ts_utc = ?', (late_ts,))
+        assert gone.fetchone()[0] == 0
+    assert _dirty(path) == []
+
+
+def test_pruning_keeps_whole_buckets_only(tmp_path: Path) -> None:
+    path = tmp_path / 'store.sqlite3'
+    now = START_HOUR + 70 * 86400 + 1234  # not on an hour or a day boundary
+    with _writable(path) as conn:  # 70 days, one sample an hour
+        for i, ts in enumerate(range(START_HOUR, now + 1, 3600)):
+            _insert_raw(conn, ts, 20, 'IoT', i * 450_000_000, 0)
+    run_rollups(path, now=now)
+    with sqlite3.connect(path) as conn:
+        raw = [r[0] for r in conn.execute('SELECT ts_utc FROM raw_samples ORDER BY ts_utc')]
+        hours = [r[0] for r in conn.execute('SELECT hour_utc FROM hourly_rollup')]
+    raw_cutoff = floor_to_hour(now - RAW_RETENTION_SECONDS)
+    assert [ts for ts in raw if ts < raw_cutoff] == [raw_cutoff - 3600]  # the carry only
+    assert min(hours) == floor_to_day(now - store.HOURLY_RETENTION_SECONDS)
+
+
 def test_raw_keeps_8_days_and_hourly_60_once_rolled(tmp_path: Path) -> None:
     path = tmp_path / 'store.sqlite3'
     now = START_HOUR + 70 * 86400
@@ -523,10 +661,12 @@ def test_raw_keeps_8_days_and_hourly_60_once_rolled(tmp_path: Path) -> None:
         raw = [r[0] for r in conn.execute('SELECT ts_utc FROM raw_samples ORDER BY ts_utc')]
         hours = [r[0] for r in conn.execute('SELECT hour_utc FROM hourly_rollup')]
         days = [r[0] for r in conn.execute('SELECT day_utc FROM daily_rollup ORDER BY day_utc')]
-    cutoff = now - RAW_RETENTION_SECONDS
+    cutoff = now - RAW_RETENTION_SECONDS  # on an hour boundary: START_HOUR is, and so is now
     assert [ts for ts in raw if ts < cutoff] == [cutoff - 3600]  # the one kept to pair from
     assert min(ts for ts in raw if ts >= cutoff) == cutoff
-    assert min(hours) == now - store.HOURLY_RETENTION_SECONDS
+    # Hourly rows are pruned on day boundaries (issue 071), so the day holding the 60-day
+    # cutoff is kept whole.
+    assert min(hours) == floor_to_day(now - store.HOURLY_RETENTION_SECONDS)
     assert days[0] == floor_to_day(START_HOUR) and days[-1] == floor_to_day(now) - 86400
     assert result['raw_rows_pruned'] > 0 and result['hourly_rows_pruned'] > 0
 

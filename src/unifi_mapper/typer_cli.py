@@ -6682,13 +6682,13 @@ def vlan_traffic_rollup(
 
     Every complete hour of raw samples becomes an hourly row and every complete day a daily
     row; a bucket is complete once it ended twice the sampling interval ago, and at least 5
-    minutes. Each run also recomputes the newest two hours and the newest day, so two runs
-    give the same rows, and a sample written late still counts if a run comes less than two
-    hours after its hour became complete; a later one stays in the raw samples (now, 1d,
-    1w) but never reaches 1m or 1y. Raw samples are kept 8 days and hourly rows 60 days, and
-    none is pruned before its hour or day is rolled. Run it hourly, say, to keep the 1m and
-    1y reports current. Opening the store to write also rolls back what a crashed sample
-    left, so this is the fix a report's "store needs recovery" asks for. Contacts nothing.
+    minutes. Each run also recomputes the newest two hours and the newest day, and every
+    hour a sample has been written into since the last run (and that hour's day), so two
+    runs give the same rows and a sample written late still reaches 1m and 1y, however late.
+    Raw samples are kept 8 days and hourly rows 60 days, pruned on hour and day boundaries,
+    and none before its hour or day is rolled. Run it hourly, say, to keep the 1m and 1y
+    reports current. Opening the store to write also rolls back what a crashed sample left,
+    so this is the fix a report's "store needs recovery" asks for. Contacts nothing.
     """
     from .analysis.vlan_traffic_store import run_rollups
 

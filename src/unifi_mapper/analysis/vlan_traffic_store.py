@@ -54,9 +54,9 @@ HOURLY_RETENTION_SECONDS = 60 * 24 * 3600
 # A bucket is complete, and rolled, once it ended at least twice the sampling interval ago,
 # and never less than this, so a sample written just after the bucket's end is counted.
 MIN_GRACE_SECONDS = 300
-# Every run also recomputes the newest complete hours and day, so a sample written late into
-# one of them still counts; one written into an older bucket that a run has already rolled
-# never does (issue 071).
+# Every run also recomputes the newest complete hours and day, so a row written straight into
+# the table (not through insert_samples, which marks its hour dirty) still counts when a run
+# comes soon enough; the sampler's own late writes are caught by the dirty buckets (issue 071).
 TRAILING_HOURS = 2
 TRAILING_DAYS = 1
 # The newest raw timestamps the sampling interval (their median gap) is measured over.
@@ -147,6 +147,12 @@ CREATE TABLE IF NOT EXISTS rollup_state (
     tier TEXT PRIMARY KEY,
     last_rolled_bucket INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS dirty_buckets (
+    tier TEXT NOT NULL,
+    bucket INTEGER NOT NULL,
+    PRIMARY KEY (tier, bucket)
+);
 """
 
 
@@ -233,7 +239,12 @@ def open_store(path: Path, *, writable: bool) -> sqlite3.Connection:
 
 
 def insert_samples(path: Path, rows: list[dict[str, Any]]) -> None:
-    """Write one sample's rows (``ts_utc, vlan_id, network_name, iface, rx/tx_bytes``) at once."""
+    """Write one sample's rows (``ts_utc, vlan_id, network_name, iface, rx/tx_bytes``) at once.
+
+    The same transaction marks each hour a row lands in dirty (``dirty_buckets``), so the
+    next :func:`run_rollups` recomputes that hour, and its day, however late the row is
+    written (issue 071).
+    """
     conn = open_store(path, writable=True)
     try:
         with conn:
@@ -243,6 +254,7 @@ def insert_samples(path: Path, rows: list[dict[str, Any]]) -> None:
                 'VALUES (:ts_utc, :vlan_id, :network_name, :iface, :rx_bytes, :tx_bytes)',
                 rows,
             )
+            _mark_dirty(conn, 'hourly', (floor_to_hour(int(row['ts_utc'])) for row in rows))
     except sqlite3.Error as e:
         raise _store_error(e, path, writing=True) from None
     finally:
@@ -352,6 +364,27 @@ def _set_high_water_mark(conn: sqlite3.Connection, tier: str, bucket: int) -> No
         'INSERT OR REPLACE INTO rollup_state (tier, last_rolled_bucket) VALUES (?, ?)',
         (tier, bucket),
     )
+
+
+def _mark_dirty(conn: sqlite3.Connection, tier: str, buckets: Iterable[int]) -> None:
+    """Record buckets of ``tier`` whose source rows changed, so a run recomputes them."""
+    conn.executemany(
+        'INSERT OR IGNORE INTO dirty_buckets (tier, bucket) VALUES (?, ?)',
+        [(tier, bucket) for bucket in sorted(set(buckets))],
+    )
+
+
+def _dirty_buckets(conn: sqlite3.Connection, tier: str, upto: int) -> list[int]:
+    """The dirty buckets of ``tier`` that are complete (``<= upto``), oldest first."""
+    rows = conn.execute(
+        'SELECT bucket FROM dirty_buckets WHERE tier = ? AND bucket <= ? ORDER BY bucket',
+        (tier, upto),
+    ).fetchall()
+    return [int(row[0]) for row in rows]
+
+
+def _clear_dirty(conn: sqlite3.Connection, tier: str, upto: int) -> None:
+    conn.execute('DELETE FROM dirty_buckets WHERE tier = ? AND bucket <= ?', (tier, upto))
 
 
 def sampling_grace(stamps: Iterable[int]) -> int:
@@ -529,12 +562,28 @@ def _run_rollups(conn: sqlite3.Connection, now: int) -> dict[str, int]:
         3600,
         TRAILING_HOURS,
     )
+    # Hours from here on are whole: no earlier run can have pruned them (its cutoff was no
+    # later than this one's). A dirty hour before it was pruned, or is about to be, so it is
+    # dropped rather than rewritten from the carry sample alone.
+    whole_hours_from = None if hour_mark is None else _raw_cutoff(now, hour_mark)
+    dirty_days: set[int] = set()
     if first_hour is not None:
         counts['raw_rows_rolled'], counts['hourly_rows_written'] = _roll_hours(
             conn, first_hour, last_hour
         )
         hour_mark = last_hour if hour_mark is None else max(hour_mark, last_hour)
         _set_high_water_mark(conn, 'hourly', hour_mark)
+    for hour in _dirty_buckets(conn, 'hourly', last_hour):
+        if first_hour is not None and hour >= first_hour:
+            continue  # recomputed above, and its day by the daily range below
+        if whole_hours_from is not None and hour < whole_hours_from:
+            continue
+        read, written = _roll_hours(conn, hour, hour)
+        counts['raw_rows_rolled'] += read
+        counts['hourly_rows_written'] += written
+        dirty_days.add(floor_to_day(hour))
+    _clear_dirty(conn, 'hourly', last_hour)
+    _mark_dirty(conn, 'daily', dirty_days)
 
     day_mark = _get_high_water_mark(conn, 'daily')
     earliest_hour = conn.execute('SELECT MIN(hour_utc) FROM hourly_rollup').fetchone()[0]
@@ -545,21 +594,41 @@ def _run_rollups(conn: sqlite3.Connection, now: int) -> dict[str, int]:
         86400,
         TRAILING_DAYS,
     )
+    whole_days_from = None if day_mark is None else _hourly_cutoff(now, day_mark)
     if first_day is not None:
         counts['hourly_rows_rolled'], counts['daily_rows_written'] = _roll_days(
             conn, first_day, last_day
         )
         day_mark = last_day if day_mark is None else max(day_mark, last_day)
         _set_high_water_mark(conn, 'daily', day_mark)
+    for day in _dirty_buckets(conn, 'daily', last_day):
+        if first_day is not None and day >= first_day:
+            continue  # recomputed above
+        if whole_days_from is not None and day < whole_days_from:
+            continue
+        read, written = _roll_days(conn, day, day)
+        counts['hourly_rows_rolled'] += read
+        counts['daily_rows_written'] += written
+    _clear_dirty(conn, 'daily', last_day)
 
-    # Retention, but never a row whose hour (or day) has not been rolled yet.
+    # Retention on bucket boundaries, and never a row whose hour (or day) is not rolled yet,
+    # so an hour (or a day) is kept whole or not at all and no bucket is ever recomputed
+    # from part of its data.
     if hour_mark is not None:
-        cutoff = min(now - RAW_RETENTION_SECONDS, hour_mark + 3600)
-        counts['raw_rows_pruned'] = _prune_raw(conn, cutoff)
+        counts['raw_rows_pruned'] = _prune_raw(conn, _raw_cutoff(now, hour_mark))
     if day_mark is not None:
-        cutoff = min(now - HOURLY_RETENTION_SECONDS, day_mark + 86400)
-        counts['hourly_rows_pruned'] = _prune_hourly(conn, cutoff)
+        counts['hourly_rows_pruned'] = _prune_hourly(conn, _hourly_cutoff(now, day_mark))
     return counts
+
+
+def _raw_cutoff(now: int, hour_mark: int) -> int:
+    """The hour boundary before which raw samples are past retention and rolled."""
+    return floor_to_hour(min(now - RAW_RETENTION_SECONDS, hour_mark + 3600))
+
+
+def _hourly_cutoff(now: int, day_mark: int) -> int:
+    """The day boundary before which hourly rows are past retention and rolled."""
+    return floor_to_day(min(now - HOURLY_RETENTION_SECONDS, day_mark + 86400))
 
 
 def run_rollups(path: Path | None = None, *, now: int | None = None) -> dict[str, int]:
@@ -567,20 +636,20 @@ def run_rollups(path: Path | None = None, *, now: int | None = None) -> dict[str
 
     Every complete hour of raw samples becomes an hourly row and every complete day of hourly
     rows a daily row; raw samples are pruned after 8 days and hourly rows after 60, once
-    rolled. A bucket is complete once it ended at least the grace ago (:func:`sampling_grace`:
-    twice the sampling interval, at least 5 minutes). Each run computes every complete bucket
-    after a tier's high-water mark (``rollup_state``) and recomputes the newest
-    :data:`TRAILING_HOURS` hours and :data:`TRAILING_DAYS` day as well, each row in full from
-    the tier below and written with ``INSERT OR REPLACE``, so two runs give identical rows,
-    and every sample written before its hour is first rolled is counted whatever the
-    cadence. A sample written after that is counted only by a run less than
-    :data:`TRAILING_HOURS` hours after its hour became complete (its day's row follows); a
-    later one stays in the raw tier, which ``now``, ``1d`` and ``1w`` read, but never reaches
-    the hourly or daily rows (issue 071). A store the prototype's code left (hours rolled only once
-    8 days old) upgrades in place on its first run: no schema change, every hour after its
-    mark is rolled from raw, so none is skipped. Opening the store writable also rolls back a
-    hot journal a crashed sampler left, so this recovers a store a read reported as needing
-    recovery.
+    rolled, and on hour and day boundaries only. A bucket is complete once it ended at least
+    the grace ago (:func:`sampling_grace`: twice the sampling interval, at least 5 minutes).
+    Each run computes every complete bucket after a tier's high-water mark (``rollup_state``),
+    recomputes the newest :data:`TRAILING_HOURS` hours and :data:`TRAILING_DAYS` day, and
+    recomputes every complete hour that :func:`insert_samples` has marked dirty since the last
+    run (``dirty_buckets``), and the day of each, so a sample reaches its hourly and daily rows
+    however late the sampler wrote it (issue 071). Each row is computed in full from the tier
+    below and written with ``INSERT OR REPLACE``, so two runs give identical rows, whatever
+    the cadence. A dirty hour whose samples are past retention is dropped, never rewritten
+    from the carry sample alone. A store the prototype's code left (hours rolled only once
+    8 days old) upgrades in place on its first run: every hour after its mark is rolled from
+    raw, so none is skipped; a store made before the dirty table existed gains it on its
+    first writable open. Opening the store writable also rolls back a hot journal a crashed
+    sampler left, so this recovers a store a read reported as needing recovery.
 
     Args:
         path: The store (default :func:`default_db_path`).
