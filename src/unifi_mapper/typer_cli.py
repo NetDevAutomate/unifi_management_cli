@@ -6530,7 +6530,12 @@ def diagnose_ap_health(
         None, '--reference', help='A known-good AP to sample alongside it'
     ),
     essid: Optional[str] = typer.Option(
-        None, '--essid', help='The SSID whose 2.4 GHz VAP to track (default the busiest)'
+        None,
+        '--essid',
+        help=(
+            "The SSID whose 2.4 GHz VAP to track (default the busiest); one the target's "
+            '2.4 GHz radio carries, else exit 2 naming the SSIDs it has'
+        ),
     ),
     samples: int = typer.Option(6, '--samples', min=1, max=60, help='Samples to take (1-60)'),
     interval: int = typer.Option(
@@ -6553,8 +6558,11 @@ def diagnose_ap_health(
 
     Takes --samples reads --interval seconds apart (60 reads 600 s apart take about 10 h; the
     expected duration is printed first) and reports each sample and the mean interval retry
-    rate, beside a --reference AP when given. A sample whose read times out or fails is recorded
-    as missing. Read-only, with no power-cycle step. --ping-clients also pings up to 4 of each
+    rate, beside a --reference AP when given. An AP whose 2.4 GHz radio does not carry the
+    tracked SSID gets no rate ("SSID not present"), never another SSID's; an --essid the target
+    does not carry exits 2 after the discovery read, naming the SSIDs it has. A sample whose
+    read times out or fails is recorded as missing. Read-only, with no power-cycle step.
+    --ping-clients also pings up to 4 of each
     AP's wireless clients from the gateway over SSH: those on 2.4 GHz, the radio the report
     measures, and those whose radio the controller doesn't report (5 and 6 GHz clients are
     left out), as the SSH user (the gateway's host key is not verified). --output is checked
@@ -6573,6 +6581,7 @@ def diagnose_ap_health(
         render_markdown,
         run_ap_health_capture,
     )
+    from .core.utils.errors import ErrorCodes, ToolError
 
     output = _file_option(output, '--output')
     if output is not None:
@@ -6590,10 +6599,17 @@ def diagnose_ap_health(
         note = ' (missing)' if info['missing'] else ''
         err_console.print(f'Sample {info["sample"]} of {info["of"]}{note}', style='dim')
 
-    def run() -> Coroutine[Any, Any, dict]:
-        return run_ap_health_capture(
-            target, reference, essid, samples, interval, ping_clients, progress, sink=capture
-        )
+    usage_error = False  # a refused argument before any sample (an --essid the AP lacks)
+
+    async def run() -> dict:
+        nonlocal usage_error
+        try:
+            return await run_ap_health_capture(
+                target, reference, essid, samples, interval, ping_clients, progress, sink=capture
+            )
+        except ToolError as e:
+            usage_error = e.error_code == ErrorCodes.CONFIG_INVALID and not capture.samples
+            raise
 
     failure_code = 0
     try:
@@ -6602,7 +6618,7 @@ def diagnose_ap_health(
         report = build_report(capture, partial=True)
     except typer.Exit as e:  # the error line is printed; keep the samples taken so far
         if not capture.samples:
-            raise
+            raise typer.Exit(2) if usage_error else e
         failure_code = e.exit_code or 1
         report = build_report(capture, partial=True)
     markdown = render_markdown(report)

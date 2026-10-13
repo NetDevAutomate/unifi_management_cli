@@ -184,6 +184,52 @@ def test_a_partial_report_says_so() -> None:
     assert 'Partial' in render_markdown(report)
 
 
+def test_the_ping_note_appears_only_with_ping_clients() -> None:
+    """Issue 076 item 2: the retry note always ended with "Pings run from the gateway...",
+    whether or not --ping-clients was given, and the pings' selection was not stated."""
+    without = build_report(_capture(), partial=False)
+    assert not any('Pings run' in note for note in without['notes'])
+    assert 'Pings run' not in render_markdown(without)
+    capture = _capture()
+    capture.ping_clients = True
+    with_pings = build_report(capture, partial=False)
+    (ping_note,) = [note for note in with_pings['notes'] if 'Pings run' in note]
+    assert 'radio the controller does not report' in ping_note  # worded as clients_on_ap selects
+    assert '5 and 6 GHz clients are left out' in ping_note
+    assert ping_note in render_markdown(with_pings)
+    assert any('reset-aware' in note for note in with_pings['notes'])  # the retry note stays
+
+
+def test_an_ap_without_the_tracked_ssid_has_no_rate_not_another_ssids() -> None:
+    """Issue 076 item 1: ``pick_vap`` fell back to the busiest VAP, so an AP (a reference,
+    or a target whose WLAN went away mid-run) without the tracked SSID was measured on
+    another SSID under the tracked SSID's name."""
+    other = [VapCounters(essid='SSID B', tx_packets=1000, tx_retries=500)]
+    samples = [
+        _sample(1, 1000, 100),
+        _sample(2, 2000, 300),
+        ApSample(role='reference', ts=1, vaps=[VapCounters('SSID B', 1000, 100)]),
+        ApSample(role='reference', ts=2, vaps=[VapCounters('SSID B', 2000, 1100)]),
+        ApSample(role='target', ts=3, vaps=other),  # the WLAN left the target's 2.4 GHz radio
+    ]
+    rows = interval_rows(samples, 'SSID A')
+    target = [r for r in rows if r['role'] == 'target']
+    reference = [r for r in rows if r['role'] == 'reference']
+    assert [r['retry_pct'] for r in target] == [None, 20.0, None]
+    assert [r['retry_note'] for r in target] == [None, None, 'SSID not present']
+    assert [r['retry_pct'] for r in reference] == [None, None]
+    assert [r['retry_note'] for r in reference] == ['SSID not present'] * 2
+    assert reference[1]['delta_tx_packets'] is None  # never another SSID's counters
+    summary = {row['role']: row for row in summarize_samples(samples, 'SSID A')}
+    assert summary['reference']['mean_retry_pct'] is None
+    assert summary['reference']['retry_intervals'] == 0
+    assert summary['target']['mean_retry_pct'] == 20.0
+    capture = _capture(samples)
+    capture.reference = ap_health.device_block(_ap('AP 2', REF_MAC, 1, 1))
+    markdown = render_markdown(build_report(capture, partial=False))
+    assert 'no rate (SSID not present)' in markdown
+
+
 def test_the_expected_duration_counts_the_pauses_between_samples() -> None:
     # The first sample is taken at once; the capture pauses only before each later one.
     assert expected_duration_seconds(60, 600) == 35_400  # 9 h 50 min at the bounds
@@ -398,6 +444,53 @@ async def test_the_reference_must_be_another_ap(pauses: list[float]) -> None:
     assert caught.value.error_code == ErrorCodes.CONFIG_INVALID
 
 
+@pytest.mark.parametrize(
+    'essid', ['SSID C', 'ssid a', 'No such SSID'], ids=['5 GHz only', 'case', 'unknown']
+)
+async def test_an_essid_not_on_the_targets_2_4_ghz_radio_is_refused_before_any_sample(
+    pauses: list[float], essid: str
+) -> None:
+    """Issue 076 item 1: a mistyped or 5 GHz-only --essid was accepted, and the busiest VAP
+    measured under its name."""
+    controller = _controller()
+    with pytest.raises(ToolError) as caught:
+        await _run(controller, target='AP 1', essid=essid, samples=2, interval=30)
+    assert caught.value.error_code == ErrorCodes.CONFIG_INVALID
+    assert repr(essid) in caught.value.message and 'AP 1' in caught.value.message
+    assert 'SSID A, SSID B' in caught.value.message  # the SSIDs the radio has
+    assert pauses == []
+    assert [path for _, path in controller.reads] == [f'{API}/stat/device', f'{API}/rest/wlanconf']
+
+
+async def test_a_reference_without_the_tracked_ssid_has_no_rate(
+    pauses: list[float],
+) -> None:
+    reads = _Counters()
+
+    def _devices(request: Any) -> dict[str, Any]:
+        body = legacy(reads(request)['data'])
+        reference = next(d for d in body['data'] if d['mac'] == REF_MAC)
+        reference['vap_table'] = [v for v in reference['vap_table'] if v['essid'] != 'SSID A']
+        return body
+
+    controller = FakeController(
+        {
+            f'{API}/stat/device': _devices,
+            f'{API}/stat/sta': legacy(CLIENTS),
+            f'{API}/rest/wlanconf': legacy(WLANS),
+        }
+    )
+    report, _ = await _run(
+        controller, target='AP 1', reference='AP 2', essid='SSID A', samples=3, interval=30
+    )
+    reference = [r for r in report['rows'] if r['role'] == 'reference']
+    assert [r['retry_pct'] for r in reference] == [None, None, None]
+    assert [r['retry_note'] for r in reference] == ['SSID not present'] * 3
+    target = [r for r in report['rows'] if r['role'] == 'target']
+    assert [r['retry_pct'] for r in target] == [None, 10.0, 10.0]
+    assert 'no rate (SSID not present)' in render_markdown(report)
+
+
 async def test_client_pings_run_in_one_gateway_session(pauses: list[float], ssh: FakeSSH) -> None:
     report, capture = await _run(
         _controller(), target='AP 1', samples=2, interval=30, ping_clients=True
@@ -417,6 +510,17 @@ def cli(monkeypatch: pytest.MonkeyPatch, ssh: FakeSSH) -> FakeController:
     controller = _controller()
     route_cli(monkeypatch, controller)
     return controller
+
+
+def test_an_essid_the_target_does_not_have_is_a_usage_error(
+    cli: FakeController, pauses: list[float]
+) -> None:
+    args = ['diagnose', 'ap-health', 'AP 1', '--essid', 'SSID C', '--samples', '2']
+    result = runner.invoke(app, args)
+    assert result.exit_code == 2, result.output
+    assert result.stdout == ''  # no report: nothing was sampled
+    assert "'SSID C'" in result.stderr and 'SSID A, SSID B' in result.stderr
+    assert pauses == []
 
 
 def test_the_command_prints_json_and_the_expected_duration(
