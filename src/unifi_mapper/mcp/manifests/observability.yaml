@@ -6,6 +6,7 @@ tools:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: get_device_events
     title: Get Device Events
+    cli: ports events
     description: >-
       Events, alarms, system log and admin audit entries that mention a device,
       one of its ports, or a client. Pages stat/event, reads list/alarm and pages
@@ -38,6 +39,7 @@ tools:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: get_port_counter_rates
     title: Get Port Counter Rates
+    cli: ports counters
     idempotent: false
     description: >-
       Sample one port's error, drop, CRC and link-down counters and report
@@ -68,6 +70,7 @@ tools:
     module: unifi_mapper.diagnostics.observability
     handler: get_device_stats
     title: Get Device Stats
+    cli: diagnose device-stats
     description: >-
       One device's CPU, memory, 1-minute load, uptime and reboot time, per-radio channel
       utilisation and per-VAP TX counters with the cumulative retry percentage (2.4, 5 and
@@ -86,6 +89,7 @@ tools:
     module: unifi_mapper.diagnostics.observability
     handler: get_ap_retry_rates
     title: Get AP Retry Rates
+    cli: diagnose ap-retries
     idempotent: false
     description: >-
       Every AP's per-VAP TX retry percentage over a sampling interval, from two device
@@ -111,6 +115,7 @@ tools:
     module: unifi_mapper.diagnostics.observability
     handler: get_config_object
     title: Get Config Object
+    cli: controller config
     description: >-
       The controller's raw legacy config objects of one kind (wlanconf, networkconf,
       setting or apgroup) with every secret key removed and listed by path in
@@ -132,6 +137,7 @@ tools:
     module: unifi_mapper.diagnostics.observability
     handler: find_recent_config_changes
     title: Find Recent Config Changes
+    cli: controller config-changes
     description: >-
       Timeline, newest first, of the WLAN, network, setting and AP-group objects created
       in the last since_hours, from the creation time each object's _id records. Creation
@@ -152,6 +158,7 @@ tools:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: get_recent_events
     title: Get Recent Events
+    cli: controller events
     description: >-
       Site-wide events, alarms and system-log entries from the last since_hours, newest
       first, with optional category, severity and text filters. Reads stat/event, list/alarm

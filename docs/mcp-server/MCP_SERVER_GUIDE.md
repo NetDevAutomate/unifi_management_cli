@@ -538,10 +538,16 @@ uv run unifi-mcp --check
    | `open_world` | `true` | `false` when the tool only computes from its input |
    | `mcp` | `true` | `false` keeps it off the direct surface |
    | `aliases` | none | Deprecated parameter name → handler parameter name |
+   | `cli` | none | The `unifi-mapper` command this tool is the counterpart of (`cli: analyze poe-budget`). Every entry carries `cli` or `cli_gap`, exactly one |
+   | `cli_gap` | none | Why no command exists: `raw read: ...` (an agent-facing read of objects the UI shows) or `not yet built: ...` (a gap issue 078 tracks) |
 
-3. **Run** `uv run pytest tests/mcp -q`. `tests/mcp/test_manifest_parity.py` checks every
-   entry against its handler (import, parameters, schemas, pipeline and sampling rules,
-   title, credential family), so a new tool needs no edit there.
+3. **Run** `uv run pytest tests/mcp tests/test_surface_parity.py -q`.
+   `tests/mcp/test_manifest_parity.py` checks every entry against its handler (import,
+   parameters, schemas, pipeline and sampling rules, title, credential family), so a new tool
+   needs no edit there. `tests/test_surface_parity.py` is the parity gate: the entry must name
+   its `unifi-mapper` command or say why there is none, and a new CLI command must have a tool
+   or a reason in `CLI_ONLY` (`src/unifi_mapper/mcp/parity.py`); the gate pins how many gaps
+   are "not yet built", so closing or opening one is a visible edit.
 4. **Update the docs**: the category counts in this guide and in the README, and the
    [tool index](#tool-index) below.
 

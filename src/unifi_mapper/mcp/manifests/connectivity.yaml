@@ -6,6 +6,7 @@ tools:
     module: unifi_mapper.connectivity.firewall_check
     handler: firewall_check
     title: Firewall Check
+    cli_gap: 'not yet built: the firewall verdict has no command'
     description: Verify firewall rules and policies affecting traffic flow
     priority: P1
     tags: [firewall, rules, policy, security]
@@ -30,6 +31,7 @@ tools:
     module: unifi_mapper.connectivity.path_analysis
     handler: path_analysis_mcp
     title: Path Analysis
+    cli_gap: 'not yet built: path analysis has no command'
     description: Network path analysis between two endpoints
     priority: P1
     tags: [path, analysis, routing, layer3]
@@ -48,6 +50,7 @@ tools:
     module: unifi_mapper.connectivity.inter_vlan
     handler: check_inter_vlan_routing
     title: Check Inter-VLAN Routing
+    cli: diagnose inter-vlan
     description: Check endpoint VLANs and firewall verdict for inter-VLAN routing
     priority: P1
     tags: [vlan, inter-vlan, routing, firewall, endpoint]
@@ -73,6 +76,7 @@ tools:
     module: unifi_mapper.connectivity.traceroute
     handler: traceroute
     title: Traceroute
+    cli_gap: 'not yet built: the controller-data trace has no command (gateway traceroute is the SSH probe)'
     description: Layer 3 path tracing to destination
     priority: P2
     tags: [traceroute, path, hops, layer3]

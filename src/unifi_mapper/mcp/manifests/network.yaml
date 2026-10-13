@@ -6,6 +6,7 @@ tools:
     module: unifi_mapper.mcp.tools.network
     handler: get_firewall_zones
     title: Get Firewall Zones
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: network_api
     description: List all firewall zones and their configurations
     priority: P1
@@ -15,6 +16,7 @@ tools:
     module: unifi_mapper.mcp.tools.network
     handler: get_firewall_policies
     title: Get Firewall Policies
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: network_api
     description: List firewall policies between zones
     priority: P1
@@ -24,6 +26,7 @@ tools:
     module: unifi_mapper.mcp.tools.network
     handler: get_acl_rules
     title: Get ACL Rules
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: network_api
     description: List ACL rules and their configurations
     priority: P1
@@ -33,6 +36,7 @@ tools:
     module: unifi_mapper.mcp.tools.network
     handler: get_dns_policies
     title: Get DNS Policies
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: network_api
     description: List DNS policies and configurations
     priority: P2
@@ -42,6 +46,7 @@ tools:
     module: unifi_mapper.mcp.tools.network
     handler: get_clients
     title: Get Clients
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: network_api
     description: >-
       List connected clients with fingerprinting data, one page at a time, sorted by client
@@ -66,6 +71,7 @@ tools:
     module: unifi_mapper.mcp.tools.network
     handler: get_networks
     title: Get Networks
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: network_api
     description: >-
       List networks/VLANs and their configurations. For the full legacy network object,

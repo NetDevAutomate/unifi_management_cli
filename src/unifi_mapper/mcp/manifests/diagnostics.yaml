@@ -6,6 +6,7 @@ tools:
     module: unifi_mapper.diagnostics.network_health
     handler: network_health_check
     title: Network Health Check
+    cli: diagnose health
     description: Overall infrastructure health monitoring and assessment
     priority: P1
     tags: [health, infrastructure, monitoring, diagnostic]
@@ -14,6 +15,7 @@ tools:
     module: unifi_mapper.diagnostics.performance_analysis
     handler: performance_analysis
     title: Performance Analysis
+    cli_gap: 'not yet built: the performance analysis has no command'
     description: Network performance analysis and bottleneck identification
     priority: P1
     tags: [performance, bottleneck, analysis, throughput]
@@ -22,6 +24,7 @@ tools:
     module: unifi_mapper.diagnostics.security_audit
     handler: security_audit
     title: Security Audit
+    cli_gap: 'not yet built: the security audit has no command'
     description: Security configuration review and vulnerability assessment
     priority: P1
     tags: [security, audit, vulnerability, compliance]
@@ -30,6 +33,7 @@ tools:
     module: unifi_mapper.diagnostics.connectivity_analysis
     handler: connectivity_analysis
     title: Connectivity Analysis
+    cli_gap: 'not yet built: the connectivity analysis has no command'
     description: Connection troubleshooting and path analysis
     priority: P2
     tags: [connectivity, troubleshooting, path, diagnostic]
@@ -38,6 +42,7 @@ tools:
     module: unifi_mapper.diagnostics.inspect_port
     handler: inspect_switch_port
     title: Inspect Switch Port
+    cli: ports inspect
     description: >-
       Deep inspection of a single switch port: link state, effective VLAN and
       port profile, the connected device (UniFi or third-party, with fingerprint
@@ -59,6 +64,7 @@ tools:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: diagnose_switch_port
     title: Diagnose Switch Port
+    cli: ports diagnose
     idempotent: false
     description: >-
       Read-only evidence bundle for one switch port, for vendor tickets. Switch
@@ -103,6 +109,7 @@ tools:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: get_switch_ports
     title: Get Switch Ports
+    cli: ports list
     description: >-
       Every port on one switch with the switch identity. Per port the name,
       media, speed, duplex, autoneg, up, STP state, effective profile and whether
@@ -124,6 +131,7 @@ tools:
     module: unifi_mapper.diagnostics.port_diagnostics_tools
     handler: diff_port_profiles
     title: Diff Port Profiles
+    cli: ports profile-diff
     description: >-
       Key-by-key diff of two port profiles (rest/portconf) with identity and
       attr_* metadata kept separate, referenced networks resolved to names and
@@ -145,6 +153,7 @@ tools:
     module: unifi_mapper.diagnostics.wan_health
     handler: get_wan_health
     title: Get WAN Health
+    cli: diagnose wan
     description: >-
       WAN and internet status from stat/health (ISP, WAN IP, gateway version, latency,
       drops, throughput) and the result of the controller's last scheduled speedtest. Never
@@ -156,6 +165,7 @@ tools:
     module: unifi_mapper.diagnostics.wan_history
     handler: get_wan_speedtest_history
     title: Get WAN Speedtest History
+    cli: diagnose wan-history
     credentials: none
     open_world: false
     description: >-
@@ -174,6 +184,7 @@ tools:
     module: unifi_mapper.backup.verify
     handler: verify_config_backup
     title: Verify Config Backup
+    cli: backup verify
     credentials: none
     open_world: false
     description: >-

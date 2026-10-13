@@ -54,6 +54,8 @@ MANIFEST_KEYS: dict[str, type | tuple[type, ...]] = {
     'aliases': dict,
     'credentials': str,
     'idempotent': bool,
+    'cli': str,
+    'cli_gap': str,
 }
 
 
@@ -153,6 +155,10 @@ class ToolMetadata:
     credentials: str = 'controller'
     # idempotentHint; false for wall-clock sampling or long-blocking tools.
     idempotent: bool = True
+    # The unifi-mapper command this tool is the counterpart of (surface parity, issue 078)...
+    cli: str = ''
+    # ...or why there is none ("category: detail", see unifi_mapper.mcp.parity).
+    cli_gap: str = ''
 
     def __post_init__(self) -> None:
         """Fill the default title."""
@@ -357,6 +363,8 @@ class ToolRegistry:
                 aliases=dict(entry.get('aliases', {})),
                 credentials=entry.get('credentials', 'controller'),
                 idempotent=entry.get('idempotent', True),
+                cli=entry.get('cli', ''),
+                cli_gap=entry.get('cli_gap', ''),
             )
             self._metadata[tool_name] = metadata
             self._categories.setdefault(category, []).append(tool_name)

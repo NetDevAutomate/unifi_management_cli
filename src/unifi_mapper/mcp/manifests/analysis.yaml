@@ -6,6 +6,7 @@ tools:
     module: unifi_mapper.analysis.ip_conflicts
     handler: detect_ip_conflicts
     title: Detect IP Conflicts
+    cli_gap: 'not yet built: IP conflict detection has no command'
     description: Find IP address conflicts between devices on the network
     priority: P1
     tags: [ip, conflict, layer3, diagnostic]
@@ -14,6 +15,7 @@ tools:
     module: unifi_mapper.analysis.storm_detection
     handler: detect_storms
     title: Detect Storms
+    cli_gap: 'not yet built: storm detection has no command'
     description: Detect broadcast and multicast storms on network segments
     priority: P1
     tags: [broadcast, multicast, storm, layer2, diagnostic]
@@ -22,6 +24,7 @@ tools:
     module: unifi_mapper.analysis.vlan_diagnostics
     handler: diagnose_vlans
     title: Diagnose VLANs
+    cli_gap: 'not yet built: the VLAN diagnosis has no command'
     description: Comprehensive VLAN diagnostics and configuration validation
     priority: P1
     tags: [vlan, layer2, configuration, diagnostic]
@@ -30,6 +33,7 @@ tools:
     module: unifi_mapper.analysis.link_quality
     handler: analyze_link_quality
     title: Analyze Link Quality
+    cli: analyze link-quality
     description: Port health and error analysis for link quality assessment
     priority: P2
     tags: [port, health, errors, performance]
@@ -38,6 +42,7 @@ tools:
     module: unifi_mapper.analysis.capacity_planning
     handler: get_capacity_report
     title: Get Capacity Report
+    cli_gap: 'not yet built: reached only inside diagnose all'
     description: Network capacity planning and utilization report
     priority: P2
     tags: [capacity, planning, utilization, report]
@@ -46,6 +51,7 @@ tools:
     module: unifi_mapper.analysis.lag_monitoring
     handler: monitor_lags
     title: Monitor LAGs
+    cli_gap: 'not yet built: LAG monitoring has no command'
     description: LAG (Link Aggregation Group) health monitoring
     priority: P2
     tags: [lag, aggregation, redundancy, health]
@@ -54,6 +60,7 @@ tools:
     module: unifi_mapper.analysis.lag_monitoring
     handler: find_lag_candidates
     title: Find LAG Candidates
+    cli: analyze lag-candidates
     description: Find parallel healthy links that could be configured as LACP LAGs
     priority: P2
     tags: [lag, aggregation, lacp, candidate, capacity]
@@ -62,6 +69,7 @@ tools:
     module: unifi_mapper.analysis.mtu_audit
     handler: audit_mtu_consistency
     title: Audit MTU Consistency
+    cli: analyze mtu
     description: Audit MTU and jumbo-frame consistency across inter-switch links
     priority: P2
     tags: [mtu, jumbo, switch, uplink, validation]
@@ -70,6 +78,7 @@ tools:
     module: unifi_mapper.analysis.radio_optimization
     handler: analyze_radio_optimization
     title: Analyze Radio Optimization
+    cli: analyze radio
     description: Analyze Wi-Fi radio channel reuse and transmit power settings
     priority: P2
     tags: [wifi, radio, channel, transmit-power, optimization]
@@ -78,6 +87,7 @@ tools:
     module: unifi_mapper.analysis.sfp_diagnostics
     handler: audit_sfp_diagnostics
     title: Audit SFP Diagnostics
+    cli: analyze sfp
     description: Pull SFP/SFP+ module identity and DOM diagnostics from UniFi port tables
     priority: P2
     tags: [sfp, transceiver, optics, dom, diagnostics]
@@ -86,6 +96,7 @@ tools:
     module: unifi_mapper.analysis.vlan_coverage
     handler: audit_vlan_coverage
     title: Audit VLAN Coverage
+    cli: analyze vlan-coverage
     description: Check required VLAN coverage on trunk and planned uplink ports
     priority: P2
     tags: [vlan, trunk, uplink, flex-xg, validation]
@@ -102,6 +113,7 @@ tools:
     module: unifi_mapper.analysis.link_speed_audit
     handler: audit_link_speeds
     title: Audit Link Speeds
+    cli: analyze link-speeds
     credentials: controller
     description: >-
       Fleet-wide audit of negotiated switch-port speeds. Flags half duplex,
@@ -130,6 +142,7 @@ tools:
     module: unifi_mapper.analysis.port_profile_usage
     handler: audit_port_profile_usage
     title: Audit Port Profile Usage
+    cli: analyze port-profile-usage
     credentials: controller
     description: >-
       Where every port profile is applied (each port's effective profile, the
@@ -157,6 +170,7 @@ tools:
     module: unifi_mapper.analysis.foreign_bridges
     handler: detect_foreign_bridges
     title: Detect Foreign Bridges
+    cli_gap: 'not yet built: reached only inside diagnose all'
     description: >-
       Detect wired third-party (foreign) bridges inside the UniFi L2 domain - consumer mesh
       units and unmanaged switches that forward frames but do not participate in RSTP.
@@ -169,6 +183,7 @@ tools:
     module: unifi_mapper.analysis.device_freshness
     handler: summarise_freshness
     title: Summarise Device Freshness
+    cli_gap: 'not yet built: reached only inside diagnose all'
     description: >-
       Classify whether each device's reported telemetry is live or a stale snapshot, using
       state plus last_seen age. The controller returns complete plausible port tables for
@@ -180,6 +195,7 @@ tools:
     module: unifi_mapper.analysis.device_freshness
     handler: check_device_freshness
     title: Check Device Freshness
+    cli_gap: 'not yet built: per-device telemetry freshness has no command'
     idempotent: false
     description: >-
       Authoritative two-sample freshness check - verifies last_seen, uptime and cumulative
@@ -193,6 +209,7 @@ tools:
     module: unifi_mapper.analysis.power_budget
     handler: audit_power_budget
     title: Audit Power Budget
+    cli: analyze power-budget
     description: >-
       Audit switch INPUT power headroom - whether a switch's own power source (DC adapter or
       PoE-in) can run its active PHYs. Distinct from PoE output budget. Catches the failure
@@ -205,6 +222,7 @@ tools:
     module: unifi_mapper.analysis.poe_budget
     handler: check_poe_budget
     title: Check PoE Budget
+    cli: analyze poe-budget
     credentials: controller
     description: >-
       PoE OUTPUT budget per switch - watts drawn by powered devices against the
@@ -218,6 +236,7 @@ tools:
     module: unifi_mapper.analysis.uplink_redundancy
     handler: check_uplink_redundancy
     title: Check Uplink Redundancy
+    cli: analyze uplink-redundancy
     credentials: controller
     description: >-
       Count the uplink ports of every switch with their speed and state, and flag
@@ -229,6 +248,7 @@ tools:
     module: unifi_mapper.analysis.client_density
     handler: analyze_client_density
     title: Analyze Client Density
+    cli: analyze client-density
     credentials: controller
     description: >-
       Wireless clients per access point with average signal strength. WARNING above
@@ -240,6 +260,7 @@ tools:
     module: unifi_mapper.analysis.dhcp_pool
     handler: check_dhcp_pool_utilization
     title: Check DHCP Pool Utilization
+    cli: analyze dhcp-pools
     credentials: controller
     description: >-
       DHCP pool utilisation per DHCP-enabled network - active clients against the
@@ -251,6 +272,7 @@ tools:
     module: unifi_mapper.analysis.uplink_transparency
     handler: audit_uplink_transparency
     title: Audit Uplink Transparency
+    cli: analyze uplink-transparency
     description: >-
       Detect switches whose elected uplink port cannot carry tagged VLANs (for example a
       switch that re-homed onto an access port with tagged_vlan_mgmt=block_all), which
@@ -262,6 +284,7 @@ tools:
     module: unifi_mapper.analysis.traffic_matrix
     handler: analyze_traffic_matrix
     title: Analyze Traffic Matrix
+    cli: analyze traffic-matrix
     description: >-
       Analyze available UniFi traffic statistics for top flows and 10G placement hints. For
       per-VLAN throughput history, get_vlan_traffic_report reads the local VLAN traffic store.
@@ -272,6 +295,7 @@ tools:
     module: unifi_mapper.analysis.vlan_traffic_store
     handler: get_vlan_traffic_report
     title: Get VLAN Traffic Report
+    cli: vlan-traffic report
     credentials: none
     open_world: false
     description: >-
@@ -295,6 +319,7 @@ tools:
     module: unifi_mapper.analysis.vlan_traffic_store
     handler: list_vlan_traffic_periods
     title: List VLAN Traffic Periods
+    cli: vlan-traffic coverage
     credentials: none
     open_world: false
     description: >-
@@ -309,6 +334,7 @@ tools:
     module: unifi_mapper.analysis.port_profile_validation
     handler: validate_port_profiles
     title: Validate Port Profiles
+    cli: analyze port-profiles
     description: Validate STP Edge, BPDU Guard, and uplink safety on applied port profiles
     priority: P2
     tags: [port-profile, stp, bpdu-guard, edge, validation]
@@ -317,6 +343,7 @@ tools:
     module: unifi_mapper.analysis.qos_validation
     handler: validate_qos
     title: Validate QoS
+    cli_gap: 'not yet built: QoS validation has no command'
     description: QoS configuration validation and policy checking
     priority: P2
     tags: [qos, quality, policy, validation]
@@ -325,6 +352,7 @@ tools:
     module: unifi_mapper.analysis.mac_analyzer
     handler: analyze_mac_table
     title: Analyze MAC Table
+    cli_gap: 'not yet built: the MAC table analysis has no command'
     description: MAC address table analysis and flapping detection
     priority: P3
     tags: [mac, layer2, flapping, table]
@@ -333,6 +361,7 @@ tools:
     module: unifi_mapper.analysis.firmware_advisor
     handler: get_firmware_report
     title: Get Firmware Report
+    cli: inventory check-updates
     description: Firmware security assessment and update recommendations
     priority: P3
     tags: [firmware, security, update, advisory]
@@ -341,6 +370,7 @@ tools:
     module: unifi_mapper.analysis.stp_optimizer
     handler: discover_stp_topology
     title: Discover STP Topology
+    cli: stp analyze
     description: Discover current STP topology from all switches
     priority: P2
     tags: [stp, spanning-tree, topology, discovery]
@@ -349,6 +379,7 @@ tools:
     module: unifi_mapper.analysis.stp_audit
     handler: audit_stp_priorities
     title: Audit STP Priorities
+    cli: stp audit-priorities
     description: >-
       One-shot STP priority audit for the whole fleet, or narrowed to one switch: each
       switch's current, recommended and delta bridge priority and tier, a warning when two
@@ -369,6 +400,7 @@ tools:
     module: unifi_mapper.analysis.stp_optimizer
     handler: calculate_optimal_priorities
     title: Calculate Optimal Priorities
+    cli: stp optimize
     pipeline: true
     description: Calculate optimal bridge priorities based on network hierarchy
     priority: P2
@@ -383,6 +415,7 @@ tools:
     module: unifi_mapper.analysis.stp_optimizer
     handler: generate_stp_report
     title: Generate STP Report
+    cli: stp report
     pipeline: true
     description: Generate comprehensive STP optimization report
     priority: P2
@@ -401,6 +434,7 @@ tools:
     module: unifi_mapper.analysis.stp_optimizer
     handler: apply_stp_changes
     title: Apply STP Changes
+    cli: stp apply
     mutates: true   # writes live controller config - CLI only, never via MCP execute_tool
     description: Apply STP priority changes via API (supports dry-run mode)
     priority: P2
@@ -419,6 +453,7 @@ tools:
     module: unifi_mapper.analysis.stp_optimizer
     handler: format_stp_report_markdown
     title: Format STP Report as Markdown
+    cli: stp report
     pipeline: true
     description: Format STP report as markdown with mermaid diagrams
     priority: P3
@@ -433,6 +468,7 @@ tools:
     module: unifi_mapper.analysis.stp_optimizer
     handler: audit_stp_path_costs
     title: Audit STP Path Costs
+    cli_gap: 'not yet built: the path-cost audit has no command'
     pipeline: true
     description: Audit STP path costs for IEEE long-path-cost consistency
     priority: P2
@@ -447,6 +483,7 @@ tools:
     module: unifi_mapper.analysis.stp_optimizer
     handler: validate_10g_expansion_readiness
     title: Validate 10G Expansion Readiness
+    cli: stp validate-10g
     description: Validate STP, 10G link readiness, and port errors before adding USW Flex XG switches
     priority: P2
     tags: [stp, spanning-tree, 10g, flex-xg, validation, errors]
@@ -468,6 +505,7 @@ tools:
     module: unifi_mapper.analysis.stp_optimizer
     handler: format_10g_validation_report_markdown
     title: Format 10G Validation Report as Markdown
+    cli: stp validate-10g
     pipeline: true
     description: Format 10G expansion validation report as markdown
     priority: P3
@@ -482,6 +520,7 @@ tools:
     module: unifi_mapper.analysis.stp_change_plan
     handler: create_stp_change_plan
     title: Create STP Change Plan
+    cli: stp optimize
     pipeline: true
     credentials: none
     open_world: false
@@ -498,6 +537,7 @@ tools:
     module: unifi_mapper.analysis.stp_snapshot
     handler: snapshot_stp_topology
     title: Snapshot STP Topology
+    cli: stp snapshot
     pipeline: true
     credentials: none
     open_world: false
@@ -514,6 +554,7 @@ tools:
     module: unifi_mapper.analysis.stp_snapshot
     handler: diff_stp_snapshots
     title: Diff STP Snapshots
+    cli: stp diff
     pipeline: true
     credentials: none
     open_world: false
@@ -534,6 +575,7 @@ tools:
     module: unifi_mapper.analysis.stp_preflight
     handler: stp_preflight_simulate_add
     title: 'STP Preflight: Simulate Switch Additions'
+    cli: stp preflight
     pipeline: true
     credentials: none
     open_world: false
@@ -558,6 +600,7 @@ tools:
     module: unifi_mapper.analysis.stp_guard
     handler: audit_stp_guard_recommendations
     title: Audit STP Guard Recommendations
+    cli: stp guard
     pipeline: true
     credentials: none
     open_world: false
@@ -578,6 +621,7 @@ tools:
     module: unifi_mapper.analysis.stp_drift
     handler: detect_stp_config_drift
     title: Detect STP Config Drift
+    cli: stp drift
     pipeline: true
     credentials: none
     open_world: false
@@ -598,6 +642,7 @@ tools:
     module: unifi_mapper.analysis.channel_optimiser
     handler: optimize_radio_channels_mcp
     title: Optimize Radio Channels
+    cli: radio auto-channel
     description: Auto-optimise Wi-Fi channel assignments based on utilization data. Returns recommendations for both 5GHz and 2.4GHz bands with before/after comparison.
     priority: P2
     tags: [wifi, radio, channel, optimization, auto-channel]
@@ -606,6 +651,7 @@ tools:
     module: unifi_mapper.analysis.channel_optimiser
     handler: get_radio_channel_report_mcp
     title: Get Radio Channel Report
+    cli: radio report
     description: >-
       Generate a channel utilization report showing current state and recommended changes
       for all APs. For one device's radio and VAP counters, use get_device_stats.
@@ -616,6 +662,7 @@ tools:
     module: unifi_mapper.analysis.radio_config
     handler: snapshot_radio_config_mcp
     title: Snapshot Radio Config
+    cli: radio snapshot
     writes_local: true
     description: Snapshot current radio configuration for all APs. Use before making changes to enable rollback.
     priority: P2
@@ -625,6 +672,7 @@ tools:
     module: unifi_mapper.analysis.radio_config
     handler: apply_radio_optimization_mcp
     title: Apply Radio Optimization
+    cli: radio optimize
     mutates: true   # writes live controller config - CLI only, never via MCP execute_tool
     description: Apply recommended radio optimisations (80MHz 5GHz, reduced 2.4GHz power, min RSSI). Auto-snapshots before applying.
     priority: P2
@@ -634,6 +682,7 @@ tools:
     module: unifi_mapper.analysis.radio_config
     handler: restore_radio_config_mcp
     title: Restore Radio Config
+    cli: radio restore
     mutates: true   # writes live controller config - CLI only, never via MCP execute_tool
     description: Restore radio configuration from a previously saved snapshot file.
     priority: P2

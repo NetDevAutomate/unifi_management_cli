@@ -6,6 +6,7 @@ tools:
     module: unifi_mapper.mcp.tools.protect
     handler: get_cameras
     title: Get Cameras
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: protect
     description: List all cameras and their status
     priority: P1
@@ -15,6 +16,7 @@ tools:
     module: unifi_mapper.mcp.tools.protect
     handler: get_nvr_info
     title: Get NVR Info
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: protect
     description: Get NVR (Network Video Recorder) information and status
     priority: P1
@@ -24,6 +26,7 @@ tools:
     module: unifi_mapper.mcp.tools.protect
     handler: get_sensors
     title: Get Sensors
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: protect
     description: List door/window sensors and their status
     priority: P2
@@ -33,6 +36,7 @@ tools:
     module: unifi_mapper.mcp.tools.protect
     handler: get_lights
     title: Get Lights
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: protect
     description: List smart lights and floodlights
     priority: P2
@@ -42,6 +46,7 @@ tools:
     module: unifi_mapper.mcp.tools.protect
     handler: get_doorbells
     title: Get Doorbells
+    cli_gap: 'raw read: controller objects the UniFi UI already shows'
     credentials: protect
     description: List video doorbells and their status
     priority: P2

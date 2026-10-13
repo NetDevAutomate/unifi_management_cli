@@ -149,6 +149,8 @@ def test_allow_list_covers_exactly_the_documented_keys() -> None:
         'aliases',
         'credentials',
         'idempotent',
+        'cli',
+        'cli_gap',
     }
 
 

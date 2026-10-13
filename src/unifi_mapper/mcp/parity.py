@@ -1,0 +1,188 @@
+"""CLI/MCP surface parity: the mapping and the exemptions the gate enforces (issue 078).
+
+The two surfaces must offer the same features, or say why not. Each MCP manifest entry
+declares ``cli:`` (the ``unifi-mapper`` command it is the counterpart of) or ``cli_gap:``
+(why there is no command); each ``unifi-mapper`` command is named by some ``cli:`` or listed
+in :data:`CLI_ONLY` with a reason. Reasons start with a category from
+:data:`CLI_ONLY_CATEGORIES` or :data:`CLI_GAP_CATEGORIES`, so a gap is either a standing
+decision (a writer, an SSH probe, a raw read) or a feature not yet built on the other side.
+``tests/test_surface_parity.py`` fails on any undeclared gap and pins the "not yet built"
+counts, so the gap can only move by an edit here or in a manifest.
+"""
+
+from __future__ import annotations
+
+import click
+from .registry import ToolRegistry
+from dataclasses import dataclass, field
+from typer.main import get_group
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    import typer
+
+# Why a unifi-mapper command has no MCP tool.
+CLI_ONLY_CATEGORIES: dict[str, str] = {
+    'writer': 'changes controller state; the control boundary keeps writes on the CLI',
+    'by nature': 'only makes sense at a terminal (shell completions, local files, the port-mapper)',
+    'active probe': 'runs a command on the gateway over SSH; issue 060 decision D1 (after 038)',
+    'long-running': 'a run outlasts an MCP call; issue 060 decision D4 waits for SDK tasks',
+    'not yet built': 'a read the MCP server should offer; tracked by issue 078',
+}
+
+# Why an MCP tool has no unifi-mapper command.
+CLI_GAP_CATEGORIES: dict[str, str] = {
+    'raw read': 'an agent-facing read of controller objects the UniFi UI already shows',
+    'not yet built': 'a feature a terminal user would want; tracked by issue 078',
+}
+
+# unifi-mapper commands with no MCP tool, each with "category: detail". A command an MCP tool
+# names with cli: must not be here; a command that stops existing must be removed.
+CLI_ONLY: dict[str, str] = {
+    # Writers: the CLI's plan -> review -> apply flow, never over MCP (issue 019).
+    'stp rollback': 'writer: applies a saved rollback plan to the controller',
+    'inventory update-firmware': 'writer: triggers firmware upgrades (preview by default)',
+    'ports refresh': 'writer: renames switch ports from live LLDP and client data',
+    'vlan-traffic sample': 'writer: an SSH collector that appends to the local store',
+    'vlan-traffic rollup': 'writer: rolls the local store up offline',
+    'discover': 'writer: the port-naming workflow (preview by default, --apply writes names)',
+    # Terminal-only by nature.
+    'install-completions': 'by nature: installs shell completions',
+    'version': 'by nature: prints the installed version (the server reports its own)',
+    'verify': 'by nature: ground-truth verification of the port-naming workflow',
+    'diagram': 'by nature: renders topology diagrams to local files',
+    # SSH probes: issue 060 decision D1 keeps them off MCP until issue 038 is fixed.
+    'gateway ping': 'active probe: ping on the gateway over SSH (issue 060 D1)',
+    'gateway traceroute': 'active probe: traceroute on the gateway over SSH (issue 060 D1)',
+    'gateway dns': 'active probe: nslookup on the gateway over SSH (issue 060 D1)',
+    'gateway http': 'active probe: curl on the gateway over SSH (issue 060 D1)',
+    'gateway flows': 'active probe: conntrack on the gateway over SSH (issue 060 D1)',
+    'diagnose latency-matrix': 'active probe: pings every device from the gateway over SSH (issue 060 D1)',
+    'diagnose bandwidth': 'active probe: iperf3 from the gateway over SSH (issue 060 D1)',
+    'diagnose client-connectivity': 'active probe: gateway probes over SSH (issue 060 D1)',
+    # Longer than an MCP call.
+    'diagnose ap-health': 'long-running: samples for up to 10 h (issue 060 D4, issue 008)',
+    # Read-only commands with no tool yet (issue 078).
+    'analyze config-drift': 'not yet built: compare device config against a baseline file',
+    'analyze link-errors': 'not yet built: compare port error counters against a baseline',
+    'analyze neighbours': 'not yet built: neighbouring APs from the passive scan',
+    'analyze roaming': 'not yet built: roaming and sticky clients from a history file',
+    'capabilities': 'not yet built: port-naming support per device',
+    'diagnose all': 'not yet built: the pass/warn/fail summary of every diagnostic',
+    'inventory list': 'not yet built: the device inventory by type',
+    'inventory firmware-skew': 'not yet built: models running mixed firmware versions',
+}
+
+
+def category_of(reason: str) -> str:
+    """Return the category prefix of a reason (``'writer: ...'`` -> ``'writer'``).
+
+    Args:
+        reason: A reason string, ``"category: detail"``.
+
+    Returns:
+        The text before the first ``': '``, or the whole string when there is none.
+    """
+    return reason.split(': ', 1)[0]
+
+
+def cli_commands(app: typer.Typer | None = None) -> dict[str, click.Command]:
+    """Return every leaf command of the ``unifi-mapper`` tree, keyed by its space-joined path.
+
+    Args:
+        app: The Typer application; the default is ``unifi_mapper.typer_cli.app``.
+
+    Returns:
+        ``{'analyze poe-budget': <Command>, ...}``, hidden commands included.
+    """
+    if app is None:
+        from unifi_mapper.typer_cli import app as default_app
+
+        app = default_app
+    commands: dict[str, click.Command] = {}
+
+    def walk(command: click.Command, path: tuple[str, ...]) -> None:
+        if isinstance(command, click.Group):
+            for name, sub in command.commands.items():
+                walk(sub, (*path, name))
+        else:
+            commands[' '.join(path)] = command
+
+    walk(get_group(app), ())
+    return commands
+
+
+@dataclass
+class ParityReport:
+    """The parity gate's result over one registry and one command tree.
+
+    Attributes:
+        matched: MCP tool -> the ``unifi-mapper`` command it is the counterpart of.
+        mcp_only: MCP tool -> its ``cli_gap`` reason.
+        cli_only: command -> its reason, as given.
+        problems: Every rule violation, one line each; empty when the gate passes.
+    """
+
+    matched: dict[str, str] = field(default_factory=lambda: {})
+    mcp_only: dict[str, str] = field(default_factory=lambda: {})
+    cli_only: dict[str, str] = field(default_factory=lambda: {})
+    problems: list[str] = field(default_factory=lambda: [])
+
+
+def parity_report(
+    registry: ToolRegistry | None = None,
+    app: typer.Typer | None = None,
+    *,
+    cli_only: dict[str, str] | None = None,
+) -> ParityReport:
+    """Check every manifest entry and every command against the parity rules.
+
+    Args:
+        registry: The manifest registry; the default is the shipped manifests.
+        app: The Typer application; the default is ``unifi_mapper.typer_cli.app``.
+        cli_only: The exemption table; the default is :data:`CLI_ONLY`.
+
+    Returns:
+        The report; ``problems`` is empty when both surfaces agree.
+    """
+    registry = registry or ToolRegistry()
+    exempt = CLI_ONLY if cli_only is None else cli_only
+    commands = cli_commands(app)
+    report = ParityReport(cli_only=dict(exempt))
+    named_by: dict[str, str] = {}
+
+    for category_tools in registry.get_categories().values():
+        for name in sorted(category_tools):
+            meta = registry.get_metadata(name)
+            assert meta is not None
+            if meta.cli and meta.cli_gap:
+                report.problems.append(f'{name}: declare exactly one of cli: and cli_gap:')
+                continue
+            if meta.cli:
+                if meta.cli not in commands:
+                    report.problems.append(
+                        f'{name}: cli {meta.cli!r} is not a unifi-mapper command'
+                    )
+                report.matched[name] = meta.cli
+                named_by.setdefault(meta.cli, name)
+            elif meta.cli_gap:
+                if category_of(meta.cli_gap) not in CLI_GAP_CATEGORIES:
+                    report.problems.append(f'{name}: cli_gap {meta.cli_gap!r} has no category')
+                report.mcp_only[name] = meta.cli_gap
+            else:
+                report.problems.append(f'{name}: declare cli: or cli_gap:')
+
+    for command in sorted(commands):
+        if command not in named_by and command not in exempt:
+            report.problems.append(f'{command}: no MCP tool and not in CLI_ONLY')
+    for command, reason in exempt.items():
+        if command not in commands:
+            report.problems.append(f'CLI_ONLY {command!r} is not a unifi-mapper command')
+        elif command in named_by:
+            report.problems.append(
+                f'CLI_ONLY {command!r} is named by MCP tool {named_by[command]}'
+            )
+        if category_of(reason) not in CLI_ONLY_CATEGORIES:
+            report.problems.append(f'CLI_ONLY {command!r}: reason {reason!r} has no category')
+    return report
