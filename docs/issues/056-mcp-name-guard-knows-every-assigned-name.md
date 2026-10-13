@@ -1,7 +1,8 @@
 ---
 title: "The MCP-name guard counts any name assigned in `src/` as known, local variables included"
 date: 2026-10-04
-status: open
+status: resolved
+resolved_by: 16dda92
 severity: low
 components: [tests/test_docs_consistency.py]
 found_by: docs and repo hygiene review
@@ -55,3 +56,22 @@ the 76. The guard would miss a stale tool name that matches one of them. The exa
 The design step is the binding list in step 2. Class attributes (model and result fields)
 and function parameters are names a doc can legitimately describe; local variables and
 keyword-argument lines are not.
+
+## Resolution
+
+Resolved on 2026-10-13 (`16dda92`). `_known_names()` no longer adds every name matching
+`^\s*name\s*[:=]` in a tracked `src/` file. It takes `src_known_names(_src_bindings())`, the
+AST bindings that issue [052](052-class-names-outside-the-docs-guard.md) introduced: function
+and class names, module-level `Assign` and `AnnAssign` targets, class attributes (model and
+result fields) and function parameters. That is the binding list of step 2, with the two
+kinds this issue called legitimate kept and the two it called illegitimate dropped: a local
+variable or a keyword argument on its own line is no longer a known name. At the fix commit
+30 tool-shaped names that `src/` binds only as a local or a keyword argument stopped being
+known (the issue's 73 counted class attributes and parameters as well, which stay known);
+the current docs report no new problem, as predicted.
+
+The self-test (step 1) gives one synthetic source binding a tool-shaped name in each of the
+six ways and a doc that names all of them; only the local and the keyword argument are
+reported. Under the regex harvest it failed for the right reason: that harvest knew the local
+and the keyword-argument line, which sit on their own lines, and did not know the parameter,
+which does not. Module stems and the manifests' parameter keys are collected as before.
