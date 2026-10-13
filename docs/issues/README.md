@@ -32,7 +32,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [014](014-optional-dependency-extras.md) | Every uvx launch installs the Protect, backup and ONVIF dependencies | open |
 | [015](015-other-discover-entry-points-write-by-default.md) | `unifi-network-toolkit discover` and `python -m unifi_mapper.cli` still write port names by default | resolved (`0ac8d0d`) |
 | [016](016-audit-lldp-consistency-tool.md) | Add an LLDP consistency audit (`audit_lldp_consistency` / `analyze lldp`) | open |
-| [017](017-firmware-drift-tool.md) | Add a firmware drift tool (`get_firmware_drift`) and `inventory firmware-skew --json` | open |
+| [017](017-firmware-drift-tool.md) | Add a firmware drift tool (`get_firmware_drift`) and `inventory firmware-skew --json` | resolved (`19ff5ce`) |
 | [018](018-read-only-tool-proposals.md) | Read-only tool proposals for the CLI and MCP | open |
 | [019](019-write-capable-cli-ideas.md) | Write-capable CLI ideas (plan, review, apply; never over MCP) | open, decision needed |
 | [020](020-mcp-protocol-follow-ups.md) | MCP protocol and runtime follow-ups | open |
@@ -93,4 +93,4 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [075](075-discover-needs-graphviz-dot-undocumented.md) | `discover` needs Graphviz's `dot` program for its PNG and SVG diagrams and exits 1 without it, writing no report (the docs now name it) | open |
 | [076](076-0.2.0-port-final-review-follow-ups.md) | Follow-ups from the 0.2.0 port's final review that were not fixed on the branch | open, decision needed |
 | [077](077-update-firmware-confirms-instead-of-previewing.md) | `inventory update-firmware` writes after a confirmation prompt, not a preview | open, decision needed |
-| [078](078-cli-and-mcp-feature-parity-is-not-enforced.md) | The CLI and the MCP server do not have feature parity, and nothing checks that they do | open, decision needed |
+| [078](078-cli-and-mcp-feature-parity-is-not-enforced.md) | The CLI and the MCP server do not have feature parity, and nothing checks that they do | open, in progress |

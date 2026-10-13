@@ -1,7 +1,8 @@
 ---
 title: "Add a firmware drift tool (`get_firmware_drift`) and `inventory firmware-skew --json`"
 date: 2026-10-02
-status: open
+status: resolved
+resolved_by: 19ff5ce
 severity: low
 components: [inventory_cli, analysis, mcp/manifests/analysis.yaml]
 found_by: MCP uvx standards work
@@ -45,3 +46,15 @@ The design's spec (MCP_STANDARDS_REVIEW.md §3 T4):
   `--stp-window` are unchanged.
 - Manifest entry in `analysis.yaml` (`credentials: controller`, explicit title), bump
   `test_registry_totals`, offline tests for the pure core and the JSON parity.
+
+## Resolution
+
+Resolved on 2026-10-13 (`19ff5ce`), as part of the CLI/MCP parity work of issue
+[078](078-cli-and-mcp-feature-parity-is-not-enforced.md), with one deviation from the spec:
+the module is `analysis/device_inventory.py`, not `firmware_drift.py`, because it also carries
+`get_device_inventory` (the MCP side of `inventory list`) and the pure `categorize_devices`
+and `find_firmware_skew` both tools and `inventory_cli` share. `get_firmware_drift(device_type)`
+returns a `FirmwareDriftReport` (per skewed model: versions to device names, `fleet_newest`,
+`devices_behind`; the controller's offered upgrades; offline devices); `inventory
+firmware-skew --json` prints the same report for the same `--filter`. `--show-upgradable` was
+not added: the JSON carries the upgrade columns, and the table is unchanged.

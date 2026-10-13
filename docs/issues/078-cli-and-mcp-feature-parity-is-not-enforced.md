@@ -1,7 +1,7 @@
 ---
 title: "The CLI and the MCP server do not have feature parity, and nothing checks that they do"
 date: 2026-10-12
-status: open, decision needed
+status: open, in progress
 severity: medium
 components: [typer_cli, inventory_cli, mcp/manifests, tests/mcp]
 found_by: maintainer's question after the 0.2.0 readiness work
@@ -80,3 +80,39 @@ has to describe two different feature sets, and the gap is invisible until someo
   for the rule.
 - Whether the MCP-only raw reads (`get_firewall_policies`, `get_cameras`, ...) need CLI
   commands or are exempt as agent-facing reads of controller objects the UI already shows.
+
+## Progress
+
+Decided on 2026-10-13 by the maintainer: parity is a **rule** (the test fails), and the raw
+reads of controller objects (`network` and `protect` tools) are **exempt** as agent-facing views
+of what the UniFi UI already shows.
+
+- `2a67d5a` landed the gate: `cli:` / `cli_gap:` on every manifest entry, `CLI_ONLY` with
+  categorised reasons in `src/unifi_mapper/mcp/parity.py`, and `tests/test_surface_parity.py`,
+  which fails on any undeclared gap and pins the "not yet built" counts. The measured mapping
+  corrected this issue's arithmetic: 56 matched tools, 31 MCP-only (11 raw reads), 53 covered
+  commands, 27 CLI-only, of which 8 (not 15) were read-only commands with no tool.
+- `19ff5ce` closed all 8: `get_device_inventory`, `get_firmware_drift` (issue 017),
+  `get_port_naming_capabilities`, `run_all_diagnostics`, `detect_config_drift`,
+  `compare_link_errors`, `analyze_client_roaming`, `scan_neighbour_aps` and
+  `compare_neighbour_baseline`. The CLI-side "not yet built" count is 0.
+
+Standing CLI-only exemptions (19), each with its reason in `CLI_ONLY`: the writers (`stp
+rollback`, `inventory update-firmware`, `ports refresh`, `vlan-traffic sample` and `rollup`,
+`discover`); terminal-only by nature (`install-completions`, `version`, `verify`, `diagram`);
+the eight SSH probes (`gateway ping`, `traceroute`, `dns`, `http`, `flows`, `diagnose
+latency-matrix`, `bandwidth`, `client-connectivity`), kept off MCP by issue
+[060](060-decisions-from-the-0.2.0-port.md) decision D1 until issue
+[038](038-ssh-host-key-verification-disabled.md) is fixed; and `diagnose ap-health`
+(decision D4, a run can last 10 h). Lifting D1 is a decision for the maintainer, not a parity
+gap.
+
+Still open: the 20 MCP tools declared `cli_gap: not yet built`, listed by
+`tests/test_surface_parity.py` (`analyze_mac_table`, `audit_stp_path_costs`,
+`check_device_freshness`, `detect_foreign_bridges`, `detect_ip_conflicts`, `detect_storms`,
+`diagnose_vlans`, `get_capacity_report`, `monitor_lags`, `summarise_freshness`,
+`validate_qos`, `firewall_check`, `path_analysis`, `traceroute`, `connectivity_analysis`,
+`performance_analysis`, `security_audit`, `client_trace`, `find_ip`, `find_mac`). Each needs a
+`unifi-mapper` command, in the order a terminal user would want them (`detect_ip_conflicts`,
+`security_audit`, `detect_storms`, `diagnose_vlans` first); each one removes its `cli_gap`
+and lowers `NOT_YET_BUILT_MCP_TOOLS`.
