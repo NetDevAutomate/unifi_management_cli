@@ -14,6 +14,7 @@ import pytest
 import stat
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tests.lock_helpers import held_read_only, run_bounded, umask
 from unifi_mapper.core.utils import jsonl
@@ -123,18 +124,19 @@ def test_duplicates_are_dropped_against_the_file_and_the_batch(tmp_path: Path) -
 
 
 def test_concurrent_appends_of_the_same_run_write_it_once(tmp_path: Path) -> None:
+    """Each writer runs in a pool so its exception, if any, surfaces (issue 076 item 17)."""
     path = tmp_path / 'h.jsonl'
 
-    def _append() -> None:
-        append_capped_jsonl(
+    def _append() -> CappedWriteResult:
+        return append_capped_jsonl(
             path, [_line(1, run=42)], max_bytes=10_000, epoch_of=EPOCH, dedup_key=_run_time
         )
 
-    threads = [threading.Thread(target=_append) for _ in range(8)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = [
+            future.result(timeout=10) for future in [pool.submit(_append) for _ in range(8)]
+        ]
+    assert sorted(r.lines_written for r in results) == [0] * 7 + [1]
     assert _epochs(path) == [1]
 
 

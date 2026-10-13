@@ -9,7 +9,7 @@ import json
 import os
 import pytest
 import stat
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tests.lock_helpers import held_read_only, run_bounded
 from typer.testing import CliRunner
@@ -144,14 +144,14 @@ def test_the_shipped_lock_bound_is_fifteen_seconds() -> None:
 
 
 def test_concurrent_appends_of_one_run_write_it_once(tmp_path: Path) -> None:
+    """Issue 076 item 17: run as plain threads, a writer's exception was dropped; each
+    ``result()`` re-raises it here."""
     path = tmp_path / 'history.jsonl'
-    threads = [
-        threading.Thread(target=append_speedtest, args=(_speedtest(), path)) for _ in range(8)
-    ]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(append_speedtest, _speedtest(), path) for _ in range(8)]
+        results = [future.result(timeout=10) for future in futures]
+    assert sum(1 for r in results if r is not None and r.lines_written) == 1
+    assert sum(1 for r in results if r is not None and r.skipped_duplicates) == 7
     assert len(path.read_text().splitlines()) == 1  # the dedup ran under the writer's lock
 
 
