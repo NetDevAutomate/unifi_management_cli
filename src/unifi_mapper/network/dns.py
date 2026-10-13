@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from unifi_mapper.network.models import DNSPolicy
+from unifi_mapper.network.models import DNSPolicy, DNSRecordType
 
 
 if TYPE_CHECKING:
@@ -140,7 +140,9 @@ class DNSPolicyManager:
         """Get DNS policies by record type.
 
         Args:
-            record_type: Record type (A, AAAA, CNAME, MX, TXT, SRV).
+            record_type: The reference's type name (``A_RECORD``, ``AAAA_RECORD``,
+                ``CNAME_RECORD``, ``MX_RECORD``, ``TXT_RECORD``, ``SRV_RECORD``,
+                ``FORWARD_DOMAIN``), compared case-insensitively.
 
         Returns:
             List of matching policies.
@@ -181,7 +183,7 @@ class DNSPolicyManager:
         """
         policy = await self._client.create_dns_policy(
             domain=domain,
-            policy_type='A',
+            policy_type=DNSRecordType.A_RECORD.value,
             ipv4_address=ipv4_address,
             ttl_seconds=ttl_seconds,
             enabled=enabled,
@@ -209,7 +211,7 @@ class DNSPolicyManager:
         """
         policy = await self._client.create_dns_policy(
             domain=domain,
-            policy_type='AAAA',
+            policy_type=DNSRecordType.AAAA_RECORD.value,
             ipv6_address=ipv6_address,
             ttl_seconds=ttl_seconds,
             enabled=enabled,
@@ -335,18 +337,19 @@ class DNSPolicyManager:
             else:
                 summary.disabled_policies += 1
 
+            # The reference's names (issue 036); FORWARD_DOMAIN and anything new count as other.
             record_type = policy.type.upper()
-            if record_type == 'A':
+            if record_type == DNSRecordType.A_RECORD:
                 summary.a_records += 1
-            elif record_type == 'AAAA':
+            elif record_type == DNSRecordType.AAAA_RECORD:
                 summary.aaaa_records += 1
-            elif record_type == 'CNAME':
+            elif record_type == DNSRecordType.CNAME_RECORD:
                 summary.cname_records += 1
-            elif record_type == 'MX':
+            elif record_type == DNSRecordType.MX_RECORD:
                 summary.mx_records += 1
-            elif record_type == 'TXT':
+            elif record_type == DNSRecordType.TXT_RECORD:
                 summary.txt_records += 1
-            elif record_type == 'SRV':
+            elif record_type == DNSRecordType.SRV_RECORD:
                 summary.srv_records += 1
             else:
                 summary.other_records += 1

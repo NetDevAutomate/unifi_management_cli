@@ -56,14 +56,14 @@ class TestDNSRecordInfo:
         info = DNSRecordInfo(
             policy_id='policy-1',
             domain='local.example.com',
-            record_type='A',
+            record_type='A_RECORD',
             enabled=True,
             ttl_seconds=3600,
             value='192.0.2.100',
         )
         assert info.policy_id == 'policy-1'
         assert info.domain == 'local.example.com'
-        assert info.record_type == 'A'
+        assert info.record_type == 'A_RECORD'
         assert info.enabled is True
         assert info.ttl_seconds == 3600
         assert info.value == '192.0.2.100'
@@ -88,7 +88,7 @@ class TestDNSPolicyManager:
         return [
             DNSPolicy(
                 id='policy-1',
-                type='A',
+                type='A_RECORD',
                 enabled=True,
                 domain='server.local',
                 ipv4Address='192.0.2.100',
@@ -96,7 +96,7 @@ class TestDNSPolicyManager:
             ),
             DNSPolicy(
                 id='policy-2',
-                type='A',
+                type='A_RECORD',
                 enabled=True,
                 domain='nas.local',
                 ipv4Address='192.0.2.50',
@@ -104,7 +104,7 @@ class TestDNSPolicyManager:
             ),
             DNSPolicy(
                 id='policy-3',
-                type='AAAA',
+                type='AAAA_RECORD',
                 enabled=True,
                 domain='server.local',
                 ipv6Address='fd00::100',
@@ -112,7 +112,7 @@ class TestDNSPolicyManager:
             ),
             DNSPolicy(
                 id='policy-4',
-                type='CNAME',
+                type='CNAME_RECORD',
                 enabled=False,
                 domain='www.local',
                 targetDomain='server.local',
@@ -120,7 +120,7 @@ class TestDNSPolicyManager:
             ),
             DNSPolicy(
                 id='policy-5',
-                type='TXT',
+                type='TXT_RECORD',
                 enabled=True,
                 domain='_dmarc.local',
                 text='v=DMARC1; p=none',
@@ -221,14 +221,14 @@ class TestDNSPolicyManager:
 
         manager = DNSPolicyManager(mock_client)
 
-        a_records = await manager.get_policies_by_type('A')
+        a_records = await manager.get_policies_by_type('A_RECORD')
         assert len(a_records) == 2
 
-        aaaa_records = await manager.get_policies_by_type('AAAA')
+        aaaa_records = await manager.get_policies_by_type('AAAA_RECORD')
         assert len(aaaa_records) == 1
 
         # Case-insensitive
-        cname_records = await manager.get_policies_by_type('cname')
+        cname_records = await manager.get_policies_by_type('cname_record')
         assert len(cname_records) == 1
 
     @pytest.mark.asyncio
@@ -259,7 +259,7 @@ class TestDNSPolicyManager:
 
         new_policy = DNSPolicy(
             id='new-policy',
-            type='A',
+            type='A_RECORD',
             enabled=True,
             domain='new.local',
             ipv4Address='192.0.2.200',
@@ -287,7 +287,7 @@ class TestDNSPolicyManager:
 
         new_policy = DNSPolicy(
             id='new-policy',
-            type='AAAA',
+            type='AAAA_RECORD',
             enabled=True,
             domain='new.local',
             ipv6Address='fd00::200',
@@ -316,7 +316,7 @@ class TestDNSPolicyManager:
 
         updated_policy = DNSPolicy(
             id='policy-4',
-            type='CNAME',
+            type='CNAME_RECORD',
             enabled=True,
             domain='www.local',
         )
@@ -339,7 +339,7 @@ class TestDNSPolicyManager:
 
         updated_policy = DNSPolicy(
             id='policy-1',
-            type='A',
+            type='A_RECORD',
             enabled=False,
             domain='server.local',
         )
@@ -362,7 +362,7 @@ class TestDNSPolicyManager:
 
         updated_policy = DNSPolicy(
             id='policy-1',
-            type='A',
+            type='A_RECORD',
             enabled=True,
             domain='server.local',
             ttlSeconds=7200,
@@ -403,7 +403,7 @@ class TestDNSPolicyManager:
         info = manager.get_record_info(sample_policies[0])
         assert info.policy_id == 'policy-1'
         assert info.domain == 'server.local'
-        assert info.record_type == 'A'
+        assert info.record_type == 'A_RECORD'
         assert info.value == '192.0.2.100'
 
         # Test AAAA record
@@ -448,7 +448,7 @@ class TestDNSPolicyManager:
 
         assert len(exported) == 5
         assert exported[0]['domain'] == 'server.local'
-        assert exported[0]['type'] == 'A'
+        assert exported[0]['type'] == 'A_RECORD'
         assert exported[0]['enabled'] is True
 
     @pytest.mark.asyncio

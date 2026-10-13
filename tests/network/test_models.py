@@ -7,6 +7,7 @@ from unifi_mapper.network.models import (
     ACLDeviceFilter,
     ACLProtocol,
     ACLRule,
+    ACLRuleMetadata,
     ACLTrafficFilter,
     ClientAccess,
     ClientAccessType,
@@ -145,32 +146,28 @@ class TestDeviceInfo:
             ipAddress='192.0.2.100',
             name='Test Switch',
             model='USW-24-POE',
-            state=DeviceState.CONNECTED,
-            features=['SWITCH', 'POE'],
+            state=DeviceState.ONLINE,
+            features=['switching'],
         )
         assert device.id == 'device-123'
         assert device.mac_address == '00:11:22:33:44:55'
-        assert device.state == DeviceState.CONNECTED
+        assert device.state == DeviceState.ONLINE
 
     def test_feature_checks(self) -> None:
-        """Test feature check properties."""
+        """Test feature check properties (the reference's feature names, issue 036)."""
         # Switch
-        device = DeviceInfo(features=['SWITCH'])
+        device = DeviceInfo(features=['switching'])
         assert device.is_switch is True
         assert device.is_router is False
         assert device.is_access_point is False
 
-        # Router
-        device = DeviceInfo(features=['ROUTER'])
+        # Gateway
+        device = DeviceInfo(features=['gateway'])
         assert device.is_switch is False
         assert device.is_router is True
 
-        # Gateway
-        device = DeviceInfo(features=['GATEWAY'])
-        assert device.is_router is True
-
         # Access Point
-        device = DeviceInfo(features=['ACCESS_POINT'])
+        device = DeviceInfo(features=['accessPoint'])
         assert device.is_access_point is True
 
 
@@ -386,7 +383,11 @@ class TestEnums:
     """Tests for enum types."""
 
     def test_device_state(self) -> None:
-        """Test DeviceState enum."""
+        """Test DeviceState enum: the reference's states (issue 036) and the older members."""
+        assert DeviceState.ONLINE.value == 'ONLINE'
+        assert DeviceState.OFFLINE.value == 'OFFLINE'
+        assert DeviceState.PENDING_ADOPTION.value == 'PENDING_ADOPTION'
+        assert DeviceState.UPDATING.value == 'UPDATING'
         assert DeviceState.CONNECTED.value == 'CONNECTED'
         assert DeviceState.DISCONNECTED.value == 'DISCONNECTED'
         assert DeviceState.PENDING.value == 'PENDING'
@@ -432,12 +433,12 @@ class TestACLModels:
         filter_ = ACLTrafficFilter(
             type='SOURCE',
             ipAddressesOrSubnets=['192.0.2.0/24', '10.0.0.0/8'],
-            portsFilter=[22, 80, 443],
+            portFilter=[22, 80, 443],
             macAddresses=['AA:BB:CC:DD:EE:FF'],
             networkIds=['net-1', 'net-2'],
         )
         assert len(filter_.ip_addresses_or_subnets) == 2
-        assert 22 in filter_.ports_filter
+        assert 22 in filter_.port_filter
         assert len(filter_.mac_addresses) == 1
         assert len(filter_.network_ids) == 2
 
@@ -456,13 +457,13 @@ class TestACLModels:
             enabled=True,
             name='Block SSH',
             action=ACLActionType.BLOCK,
-            origin='USER',
+            metadata=ACLRuleMetadata(origin='USER_DEFINED'),
         )
         assert rule.id == 'rule-123'
         assert rule.name == 'Block SSH'
         assert rule.action == ACLActionType.BLOCK
         assert rule.enabled is True
-        assert rule.origin == 'USER'
+        assert rule.origin == 'USER_DEFINED'
 
     def test_acl_rule_with_filters(self) -> None:
         """Test ACLRule model with source/destination filters."""
@@ -474,7 +475,7 @@ class TestACLModels:
             action=ACLActionType.BLOCK,
             sourceFilter=ACLTrafficFilter(
                 ipAddressesOrSubnets=['192.0.2.0/24'],
-                portsFilter=[22],
+                portFilter=[22],
             ),
             destinationFilter=ACLTrafficFilter(
                 ipAddressesOrSubnets=['10.0.0.0/8'],
@@ -507,14 +508,14 @@ class TestDNSPolicyModel:
         """Test basic A record DNS policy."""
         policy = DNSPolicy(
             id='policy-123',
-            type='A',
+            type='A_RECORD',
             enabled=True,
             domain='server.local',
             ipv4Address='192.0.2.100',
             ttlSeconds=3600,
         )
         assert policy.id == 'policy-123'
-        assert policy.type == 'A'
+        assert policy.type == 'A_RECORD'
         assert policy.domain == 'server.local'
         assert policy.ipv4_address == '192.0.2.100'
         assert policy.ttl_seconds == 3600
@@ -523,7 +524,7 @@ class TestDNSPolicyModel:
         """Test AAAA record DNS policy."""
         policy = DNSPolicy(
             id='policy-123',
-            type='AAAA',
+            type='AAAA_RECORD',
             enabled=True,
             domain='server.local',
             ipv6Address='fd00::100',
@@ -535,7 +536,7 @@ class TestDNSPolicyModel:
         """Test CNAME record DNS policy."""
         policy = DNSPolicy(
             id='policy-123',
-            type='CNAME',
+            type='CNAME_RECORD',
             enabled=True,
             domain='www.local',
             targetDomain='server.local',
@@ -547,7 +548,7 @@ class TestDNSPolicyModel:
         """Test TXT record DNS policy."""
         policy = DNSPolicy(
             id='policy-123',
-            type='TXT',
+            type='TXT_RECORD',
             enabled=True,
             domain='_dmarc.local',
             text='v=DMARC1; p=none',
