@@ -95,3 +95,4 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [077](077-update-firmware-confirms-instead-of-previewing.md) | `inventory update-firmware` writes after a confirmation prompt, not a preview | open, decision needed |
 | [078](078-cli-and-mcp-feature-parity-is-not-enforced.md) | The CLI and the MCP server do not have feature parity, and nothing checks that they do | resolved (`4d55fa0`) |
 | [079](079-security-audit-counts-every-neighbour-ap-as-a-critical-rogue.md) | `security_audit` counts every neighbouring AP as a critical rogue | resolved (`2f8d2a8`) |
+| [080](080-security-audit-rates-own-devices-and-iot-vendors-as-medium.md) | `security_audit` rates its own adopted devices and every IoT vendor as medium risk | open, decision needed |
