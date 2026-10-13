@@ -1,7 +1,8 @@
 ---
 title: "`configure_logging` is never called, so `UNIFI_MAPPER_DEBUG` does nothing"
 date: 2026-10-04
-status: open, decision needed
+status: resolved
+resolved_by: 70bbf8b
 severity: low
 components: [core]
 found_by: docs and repo hygiene review (environment variable check)
@@ -43,3 +44,20 @@ the CLI (for example behind `--debug`) and document the log file it writes.
 
 Why this needs a decision: deleting it removes a public name from `unifi_mapper.core`, and
 wiring it in changes what the CLI writes to disk.
+
+## Resolution
+
+Resolved on 2026-10-13 (`70bbf8b`), the recommended way: `configure_logging` is deleted from
+`core/utils/logging.py` together with its re-exports from `unifi_mapper.core` and
+`unifi_mapper.core.utils`, and with it the only read of `UNIFI_MAPPER_DEBUG`. The claims
+held: nothing in `src/`, `tests/` or `scripts/` called the function, and no document outside
+this issue named the variable (the architecture overview and the codemap said as much and
+now record the removal without naming it, so the docs' environment-variable check stays
+clean). `replace_default_loguru_handler`, which both CLIs call, `get_logger` and the
+tool-call helpers stay.
+
+Deliberately not changed: the public name is removed rather than wired into `--debug`,
+because the CLI and the MCP server each have a working setup and a JSON log file in the home
+directory would be a new behaviour to document and secure. Tests:
+`tests/test_configure_logging_removed.py` asserts the name is gone from the three modules,
+the loguru helper stays, and the variable is named nowhere but under `docs/issues/`.
