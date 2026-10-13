@@ -13,6 +13,8 @@ from ``docs/artefacts/``, and ``scripts/*.sh``), offline and without a controlle
   the registry's counts (``McpFacts.valid``), so a stale total that matches a category's count
   can pass;
 - the ``diagnose all`` check count and list match ``typer_cli.diagnose_all``;
+- every backticked CamelCase name, and every class a Mermaid ``classDiagram`` declares or
+  relates, is a class or type alias under ``src/`` or one of ``KNOWN_EXTERNAL_TYPES``;
 - relative links and ``#anchors`` resolve, and no doc names a machine-local path;
 - no Mermaid sequence-diagram line holds a ``;``, which ends the statement there, so GitHub
   can't render the diagram;
@@ -692,6 +694,244 @@ def test_documented_mcp_names_resources_and_counts_match_the_server() -> None:
 def test_mcp_guide_tool_index_matches_the_registry() -> None:
     """The guide's tool index lists every registered tool with its manifest columns."""
     assert tool_index_problems(MCP_GUIDE, _docs()[MCP_GUIDE], _index_rows()) == []
+
+
+# ---------------------------------------------------------------------------
+# Class names
+# ---------------------------------------------------------------------------
+
+# A backticked CamelCase name, alone, called or with a member: `UniFiClient`, `ToolRegistry()`,
+# `UniFiClient.get_devices()`. Two or more capitals and a lower-case letter, so a product name
+# (`UNIFI`) or a one-word type (`Path`) is not a class reference.
+CLASS_REF = re.compile(r'`([A-Z][A-Za-z0-9]*)(?:\(\)|\.[A-Za-z_][\w.]*(?:\(\))?)?`')
+# In a Mermaid classDiagram: a ``class Name`` statement, and the two ends of a relation
+# (``A <|-- B``, ``A "1" *-- "*" B : label`` and the other arrows).
+MERMAID_CLASS = re.compile(r'^\s*class\s+([A-Za-z_]\w*)')
+MERMAID_RELATION = re.compile(
+    r'^\s*([A-Za-z_]\w*)\s*(?:"[^"]*"\s*)?'
+    r'(?:<\|--|<\|\.\.|--\|>|\.\.\|>|\*--|--\*|o--|--o|<--|-->|<\.\.|\.\.>|--|\.\.)'
+    r'\s*(?:"[^"]*"\s*)?([A-Za-z_]\w*)'
+)
+# Built-in and third-party types the current docs name. A name joins only after a check that
+# the library really defines it (``python -c 'import mcp.types; mcp.types.ToolAnnotations'``,
+# the ONVIF Media and Device specifications); a name defined under ``src/`` never does, since
+# the detector reads those from the source and a stale one must fail.
+KNOWN_EXTERNAL_TYPES = frozenset(
+    {
+        'Exception',  # Python
+        'ImportError',
+        'PermissionError',
+        'ValueError',
+        'BaseModel',  # pydantic
+        'SecretStr',
+        'CallToolResult',  # mcp.types
+        'ToolAnnotations',
+        'ProtectApiClient',  # uiprotect
+        'GetStreamUri',  # ONVIF: the Media service operation
+        'XAddr',  # ONVIF: the service-address element of GetCapabilities and GetServices
+    }
+)
+
+
+@dataclass(frozen=True)
+class SrcBindings:
+    """The names one Python source (or every tracked one under ``src/``) binds.
+
+    Attributes:
+        defs: Function and method names.
+        classes: Class names.
+        module_names: Module-level assignment targets (constants, type aliases, Typer apps).
+        class_attributes: Names assigned in a class body (model and result fields).
+        parameters: Function parameter names.
+    """
+
+    defs: frozenset[str]
+    classes: frozenset[str]
+    module_names: frozenset[str]
+    class_attributes: frozenset[str]
+    parameters: frozenset[str]
+
+    def __or__(self, other: SrcBindings) -> SrcBindings:
+        """Merge two sources' bindings."""
+        return SrcBindings(
+            self.defs | other.defs,
+            self.classes | other.classes,
+            self.module_names | other.module_names,
+            self.class_attributes | other.class_attributes,
+            self.parameters | other.parameters,
+        )
+
+
+EMPTY_BINDINGS = SrcBindings(frozenset(), frozenset(), frozenset(), frozenset(), frozenset())
+
+
+def _assigned(statement: ast.stmt) -> set[str]:
+    """Return the names an ``Assign`` or ``AnnAssign`` statement binds (tuples unpacked)."""
+    if isinstance(statement, ast.Assign):
+        return {n.id for t in statement.targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+    if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
+        return {statement.target.id}
+    return set()
+
+
+def src_bindings(text: str) -> SrcBindings:
+    """Return the names one Python source binds, by kind, read from its AST.
+
+    Args:
+        text: The source.
+
+    Returns:
+        The bindings. A local variable or a keyword argument on its own line is no binding
+        a doc may name, so neither is collected.
+    """
+    tree = ast.parse(text)
+    defs: set[str] = set()
+    classes: set[str] = set()
+    class_attributes: set[str] = set()
+    parameters: set[str] = set()
+    module_names = {name for statement in tree.body for name in _assigned(statement)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            classes.add(node.name)
+            class_attributes |= {n for statement in node.body for n in _assigned(statement)}
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            defs.add(node.name)
+            args = node.args
+            parameters |= {a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)}
+            parameters |= {a.arg for a in (args.vararg, args.kwarg) if a is not None}
+    return SrcBindings(
+        frozenset(defs),
+        frozenset(classes),
+        frozenset(module_names),
+        frozenset(class_attributes),
+        frozenset(parameters),
+    )
+
+
+@functools.cache
+def _src_bindings() -> SrcBindings:
+    """Return the bindings of every tracked Python file under ``src/``."""
+    bindings = EMPTY_BINDINGS
+    for path in sorted(p for p in _tracked() if p.startswith('src/') and p.endswith('.py')):
+        bindings |= src_bindings((REPO / path).read_text(encoding='utf-8'))
+    return bindings
+
+
+def _is_class_reference(name: str) -> bool:
+    """True for a CamelCase name: two or more capitals and at least one lower-case letter."""
+    return sum(c.isupper() for c in name) >= 2 and any(c.islower() for c in name)
+
+
+@functools.cache
+def _known_classes() -> frozenset[str]:
+    """Return the class names a doc may use: ``src/`` classes, type aliases, external types.
+
+    A module-level CamelCase assignment is a type alias (``UnsubscribeFunc = Callable[[],
+    None]``), which a doc names like a class.
+    """
+    bindings = _src_bindings()
+    aliases = {n for n in bindings.module_names if _is_class_reference(n)}
+    return bindings.classes | aliases | KNOWN_EXTERNAL_TYPES
+
+
+def class_name_problems(path: str, text: str, known: frozenset[str]) -> list[str]:
+    """Return ``path:line: problem`` for each class name that no code defines.
+
+    A backticked CamelCase name in prose, and each class a Mermaid ``classDiagram`` declares or
+    relates, must be a class or type alias under ``src/`` or one of ``KNOWN_EXTERNAL_TYPES``.
+
+    Args:
+        path: The repo-relative file name.
+        text: The file's text.
+        known: Every class name a doc may use (``_known_classes()``).
+
+    Returns:
+        The problems in file order.
+    """
+    problems = []
+    for n, line in enumerate(text.splitlines(), 1):
+        for name in CLASS_REF.findall(line):
+            if _is_class_reference(name) and name not in known:
+                problems.append(f'{path}:{n}: unknown class {name}')
+    if not path.endswith('.md'):
+        return problems
+    for start, info, body in code_blocks(text):
+        if not info.startswith('mermaid') or _diagram_type(body) != 'classDiagram':
+            continue
+        for offset, line in enumerate(body):
+            names = MERMAID_CLASS.findall(line)
+            names += [end for ends in MERMAID_RELATION.findall(line) for end in ends]
+            for name in names:
+                if name not in known:
+                    problems.append(
+                        f'{path}:{start + offset}: unknown class {name} in a classDiagram'
+                    )
+    return sorted(problems, key=lambda p: int(p.split(':')[1]))
+
+
+def test_class_name_detector_reports_an_unknown_class() -> None:
+    """A made-up class in prose or a classDiagram is reported; real and external ones are not."""
+    known = _known_classes()
+    text = (
+        'A `NoSuchManager` wraps `UniFiClient`; `ToolRegistry()` and `UniFiClient.get_devices()`\n'
+        'are fine, as are `BaseModel` (pydantic), `Path`, `UNIFI_URL` and `README.md`.\n'
+        '\n'
+        '```mermaid\n'
+        'classDiagram\n'
+        '    class NoSuchThing {\n'
+        '        +run() None\n'
+        '    }\n'
+        '    class UniFiClient\n'
+        '    Exception <|-- UniFiApiError\n'
+        '    NoSuchBase <|-- NoSuchThing\n'
+        '    ToolRegistry "1" *-- "*" ToolMetadata : holds\n'
+        '```\n'
+    )
+    assert class_name_problems('demo.md', text, known) == [
+        'demo.md:1: unknown class NoSuchManager',
+        'demo.md:6: unknown class NoSuchThing in a classDiagram',
+        'demo.md:11: unknown class NoSuchBase in a classDiagram',
+        'demo.md:11: unknown class NoSuchThing in a classDiagram',
+    ]
+    assert class_name_problems('demo.py', '`NoSuchManager`\n', known) == [
+        'demo.py:1: unknown class NoSuchManager'
+    ]
+
+
+def test_src_bindings_sorts_names_by_kind() -> None:
+    """Module names, class attributes and parameters are collected; locals and kwargs are not."""
+    source = (
+        'MODULE_NAME = 1\n'
+        'Alias = dict[str, int]\n'
+        'a, b = 1, 2\n'
+        '\n'
+        '\n'
+        'class Model:\n'
+        '    field: int = 0\n'
+        '    other = 1\n'
+        '\n'
+        '    def method(self, param, *rest, key=None, **extra):\n'
+        '        local = call(keyword=1)\n'
+        '        return local\n'
+    )
+    bindings = src_bindings(source)
+    assert bindings.module_names == {'MODULE_NAME', 'Alias', 'a', 'b'}
+    assert bindings.classes == {'Model'}
+    assert bindings.defs == {'method'}
+    assert bindings.class_attributes == {'field', 'other'}
+    assert bindings.parameters == {'self', 'param', 'rest', 'key', 'extra'}
+    assert 'local' not in bindings.module_names and 'keyword' not in bindings.module_names
+
+
+def test_documented_class_names_exist_in_the_code() -> None:
+    """Every CamelCase name and classDiagram class in the current docs is defined somewhere."""
+    docs, known = _current_docs(), _known_classes()
+    references = sum(
+        1 for t in docs.values() for m in CLASS_REF.findall(t) if _is_class_reference(m)
+    )
+    assert references > 100, f'found only {references} class references: has the pattern moved?'
+    assert 'UniFiClient' in known and 'UnsubscribeFunc' in known
+    assert _all_problems(docs, lambda p, t: class_name_problems(p, t, known)) == []
 
 
 # ---------------------------------------------------------------------------
