@@ -43,8 +43,12 @@ from unifi_mapper.core.utils.redact import redact_text
 
 # For each br* interface print "iface rx_bytes tx_bytes", then a marker line, then the
 # interfaces' addresses as JSON for the subnet match. A constant: nothing is interpolated.
+# With no br* interface POSIX sh keeps the literal glob, so the `[ -e ]` guard skips it: a
+# gateway without bridges prints no counter line (issue 076 item 30), and the sample ends as
+# "nothing stored" rather than a bridge line without counters.
 SAMPLE_SCRIPT = (
     'for i in /sys/class/net/br*; do '
+    '[ -e "$i" ] || continue; '
     'n=$(basename "$i"); '
     'echo "$n $(cat "$i"/statistics/rx_bytes) $(cat "$i"/statistics/tx_bytes)"; '
     'done; echo "===ADDR==="; ip -4 -j addr show'
