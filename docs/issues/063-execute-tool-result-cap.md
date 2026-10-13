@@ -2,7 +2,7 @@
 title: "No cap on `execute_tool` result size"
 date: 2026-10-05
 status: resolved
-resolved_by: DOCS_HASH
+resolved_by: 54b89b2
 severity: low
 components: [mcp/runner, mcp/server]
 found_by: MCP uvx standards work (moved from issue 013, decision D4)

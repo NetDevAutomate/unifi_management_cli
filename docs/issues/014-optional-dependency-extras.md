@@ -2,7 +2,7 @@
 title: "Every uvx launch installs the Protect, backup and ONVIF dependencies"
 date: 2026-10-02
 status: resolved
-resolved_by: DOCS_HASH
+resolved_by: 54b89b2
 severity: low
 components: [pyproject.toml]
 found_by: MCP uvx standards work

@@ -2,7 +2,7 @@
 title: "Should the MCP server list every tool (the direct surface) by default?"
 date: 2026-10-02
 status: resolved
-resolved_by: DOCS_HASH
+resolved_by: 54b89b2
 severity: low
 components: [mcp/server]
 found_by: MCP uvx standards work
