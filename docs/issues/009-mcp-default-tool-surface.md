@@ -1,7 +1,8 @@
 ---
 title: "Should the MCP server list every tool (the direct surface) by default?"
 date: 2026-10-02
-status: open, decision needed
+status: resolved
+resolved_by: DOCS_HASH
 severity: low
 components: [mcp/server]
 found_by: MCP uvx standards work
@@ -56,3 +57,10 @@ Design recommendation: **keep `discovery` for now** and opt in per client (done 
 snippets). The verify step's measurement is recorded above; revisit once the hosts in use are
 confirmed to defer schemas; a flip is one constant plus the `test_protocol_contract.py`
 expectations, and `--surface discovery` keeps the old listing available.
+
+## Decision (2026-10-13)
+
+Keep `discovery` as the default surface (`DEFAULT_SURFACE` in `mcp/server.py`): 6.4k characters
+against 215k for `direct`. `direct` stays opt-in per client, as the guide's snippets show for
+hosts that defer tool schemas. Decided by the 0.3.0 release council (D-009); resolved as a
+recorded decision, no code change.

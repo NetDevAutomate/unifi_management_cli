@@ -76,3 +76,15 @@ explicit `--apply`, re-read to verify, never over MCP.
 
 Until decided, these stay unbuilt. Nothing that exists today depends on them. Breaks fresh
 clones, CI or prod: no.
+
+## Decision (2026-10-13)
+
+The 0.3.0 release council decided all four, recorded here; the issue stays open as the 0.4.0
+design record. **D1**: the gateway SSH probes stay CLI-only in 0.3.0 (the parity gate's
+`active probe` exemption); an agent-triggered root SSH session to the gateway is a different
+trust class from a controller read even with host-key verification on (issue 038, now fixed),
+so exposing them over MCP needs an explicit opt-in design, revisited for 0.4.0. **D2**: no
+on-demand WAN speedtest over MCP; it is a controller write (`POST cmd/devmgr`) and the MCP
+server stays read-only. **D3**: the controller backup-list read is deferred; the endpoint is
+unverified and no user has asked. **D4**: long-running MCP jobs (the job registry, AP-health
+sampling over MCP) are deferred to 0.4.0 pending the SDK v2 task support (issue 008).

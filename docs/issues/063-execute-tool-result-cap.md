@@ -1,7 +1,8 @@
 ---
 title: "No cap on `execute_tool` result size"
 date: 2026-10-05
-status: open, decision needed
+status: resolved
+resolved_by: DOCS_HASH
 severity: low
 components: [mcp/runner, mcp/server]
 found_by: MCP uvx standards work (moved from issue 013, decision D4)
@@ -26,3 +27,10 @@ breaks nothing today. Breaks fresh clones, CI or prod: no.
   `truncated: true`)? Design recommendation: **not now**: hosts already persist oversized
   results, and the new tools paginate (`limit`/`offset`). Revisit if a tool is seen to exceed
   it.
+
+## Decision (2026-10-13)
+
+No global cap on `execute_tool` result size in 0.3.0: hosts already persist oversized results
+and the tools that can grow paginate (`limit`/`offset`). Revisit if a tool is seen to exceed a
+host's limit in practice. Decided by the 0.3.0 release council (D-063); resolved as a recorded
+decision, no code change.

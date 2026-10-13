@@ -45,3 +45,9 @@ Which of W1–W5, if any, to build. Whatever is built must follow the rules the 
 - Respect held configuration: for example, port 5 on 'USW Flex XG' is held on its forced
   10 Gbps profile for an open vendor case, and W1 must never be pointed at it without the
   operator saying so.
+
+## Decision (2026-10-13)
+
+None of W1 to W5 is built in 0.3.0. The issue stays open as the backlog for write-capable CLI
+commands; whatever is built later must follow the rules above (CLI only, preview by default,
+`--apply`, never registered over MCP). Decided by the 0.3.0 release council (D-019).
