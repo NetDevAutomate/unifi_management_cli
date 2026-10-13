@@ -201,8 +201,7 @@ The open items live in [docs/issues](docs/issues/README.md), one file each, with
 reasoning. The ones that affect use today:
 
 - Gateway SSH host keys are not verified (038); Protect tools are unverified live (034).
-- The six Network Integration API tools need `UNIFI_NETWORK_HOST`, `_API_KEY` and `_SITE_ID`
-  as well (037); `monitor_lags` misses LAGs on current switch firmware (061).
+- `monitor_lags` misses LAGs on current switch firmware (061).
 - PNG and SVG diagrams need Graphviz's `dot`; without it `discover` writes a placeholder and
   its report (075). MQTT needs the `mqtt` extra: `uv sync --extra mqtt` (074).
 

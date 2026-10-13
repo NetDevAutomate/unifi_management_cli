@@ -119,16 +119,24 @@ controllers:
 | Family | Keys | Ready when |
 | --- | --- | --- |
 | `controller` | `UNIFI_URL`/`UNIFI_HOST`, `UNIFI_PORT`, `UNIFI_SITE`, `UNIFI_VERIFY_SSL`, `UNIFI_CONSOLE_API_TOKEN`/`UNIFI_API_TOKEN`, `UNIFI_USERNAME`, `UNIFI_PASSWORD`, `UNIFI_SSH_USERNAME`, `UNIFI_SSH_PASSWORD` | URL or host, plus a token or username and password |
-| `network_api` | `UNIFI_NETWORK_*` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID` |
+| `network_api` | `UNIFI_NETWORK_*` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID`, each of which the controller family can stand in for (below) |
 | `protect` | `PROTECT_*` | `PROTECT_HOST`, `PROTECT_USERNAME` and `PROTECT_PASSWORD` |
 
 - `UNIFI_SSH_USERNAME` and `UNIFI_SSH_PASSWORD` travel with the controller family so a file
   stays one site, but no MCP tool uses them: only the CLI's `diagnose latency-matrix` and
   `diagnose bandwidth` SSH to the gateway.
-- The `network_api` family needs all three keys. A file that sets only
-  `UNIFI_NETWORK_API_KEY`, as the legacy `~/.config/unifi_network_mapper/prod.env` in
-  [issue 037](../issues/037-launch-config-network-family-incomplete.md) does, leaves the six
-  network tools at `[CONFIG_MISSING]`.
+- The `network_api` family no longer needs its own three keys when the controller family is
+  configured ([issue 037](../issues/037-launch-config-network-family-incomplete.md)). With
+  `UNIFI_NETWORK_HOST` unset the host, port and scheme come from `UNIFI_URL`; with
+  `UNIFI_NETWORK_SITE_ID` unset the site id is resolved at the first call by one
+  `GET /v1/sites` matched on `internalReference == UNIFI_SITE` (`default` when unset) and
+  cached for the process, and zero or several matches are a `[CONFIG_INVALID]` naming what
+  was found; with `UNIFI_NETWORK_API_KEY` unset, `UNIFI_CONSOLE_API_TOKEN` stands in **only**
+  when the network host is the same origin (scheme, host and port) as `UNIFI_URL`. The
+  console token is never sent to another host, and the client follows no redirect. An
+  explicit `UNIFI_NETWORK_*` key always wins. `--check` reports the deferred steps under the
+  family's `derived` list (`host: derived from UNIFI_URL`, `site id: resolved at first call`,
+  `key: console token (same origin)`) without contacting the controller.
 - For `protect`, use a dedicated local, view-only Protect account, not the console's admin
   login. The five Protect tools haven't been verified against a live console yet
   ([issue 034](../issues/034-protect-has-no-live-account.md)).

@@ -81,8 +81,9 @@ UNKNOWN_PARAMETER_HINTS: dict[tuple[str, str], str] = {
 
 _FAMILY_SUGGESTIONS = {
     'network_api': (
-        'set UNIFI_CONFIG to an env file with UNIFI_NETWORK_HOST, UNIFI_NETWORK_API_KEY '
-        'and UNIFI_NETWORK_SITE_ID, or export them'
+        'set UNIFI_CONFIG to an env file with UNIFI_NETWORK_API_KEY (UNIFI_NETWORK_HOST and '
+        'UNIFI_NETWORK_SITE_ID are derived from UNIFI_URL and UNIFI_SITE when unset; the '
+        'console token stands in for the key on the same origin), or export them'
     ),
     'protect': (
         'set UNIFI_CONFIG to an env file with PROTECT_HOST, PROTECT_USERNAME and '

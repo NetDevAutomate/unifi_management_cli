@@ -31,6 +31,7 @@ from unifi_mapper.network.client import (
     NetworkAuthenticationError,
     NetworkClientError,
     NetworkConnectionError,
+    NetworkSiteResolutionError,
     UniFiNetworkClient,
 )
 from unifi_mapper.network.clients import ClientManager
@@ -43,6 +44,10 @@ from unifi_mapper.network.networks import NetworkManager
 CONNECTION_SUGGESTION = 'Check UNIFI_NETWORK_HOST and that the controller is reachable.'
 AUTHENTICATION_SUGGESTION = 'Check UNIFI_NETWORK_API_KEY and its permissions.'
 API_SUGGESTION = 'Check the controller status and try again.'
+SITE_SUGGESTION = (
+    'Set UNIFI_NETWORK_SITE_ID to the id of the site whose internalReference is UNIFI_SITE '
+    '(from GET /proxy/network/integration/v1/sites), or set UNIFI_SITE to one of the names found.'
+)
 
 
 def _tool_error(action: str, error: NetworkClientError) -> ToolError:
@@ -57,6 +62,8 @@ def _tool_error(action: str, error: NetworkClientError) -> ToolError:
     """
     if isinstance(error, NetworkAuthenticationError):
         code, suggestion = ErrorCodes.AUTHENTICATION_FAILED, AUTHENTICATION_SUGGESTION
+    elif isinstance(error, NetworkSiteResolutionError):
+        code, suggestion = ErrorCodes.CONFIG_INVALID, SITE_SUGGESTION
     elif isinstance(error, NetworkConnectionError):
         code, suggestion = ErrorCodes.CONTROLLER_UNREACHABLE, CONNECTION_SUGGESTION
     else:
@@ -65,8 +72,26 @@ def _tool_error(action: str, error: NetworkClientError) -> ToolError:
 
 
 def _network_config() -> NetworkConfig:
-    """Load Network API configuration from environment."""
-    return NetworkConfig.from_env()
+    """Load Network API configuration from environment.
+
+    The runner's family gate has already checked readiness, so a ``ValueError`` here (a key
+    that vanished between the two reads) is reported as ``CONFIG_MISSING`` with the loader's
+    own wording, never the token.
+
+    Raises:
+        ToolError: ``CONFIG_MISSING`` when the family cannot be resolved.
+    """
+    try:
+        return NetworkConfig.from_env()
+    except ValueError as e:
+        raise ToolError(
+            message=f'network_api family not configured: {e}',
+            error_code=ErrorCodes.CONFIG_MISSING,
+            suggestion=(
+                'set UNIFI_NETWORK_API_KEY (UNIFI_NETWORK_HOST and UNIFI_NETWORK_SITE_ID are '
+                'derived from UNIFI_URL and UNIFI_SITE when unset)'
+            ),
+        ) from e
 
 
 def _inner_transport(config: NetworkConfig) -> httpx.AsyncBaseTransport:

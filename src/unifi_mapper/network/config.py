@@ -2,20 +2,214 @@
 
 This module provides Pydantic models for configuring the UniFi Network
 API client connection, including environment variable loading and validation.
+
+The ``network_api`` family can stand on the controller's own config (issue 037):
+
+* ``UNIFI_NETWORK_HOST`` unset: the host, port and scheme come from ``UNIFI_URL`` (or
+  ``UNIFI_HOST``/``UNIFI_PORT``), normalised.
+* ``UNIFI_NETWORK_SITE_ID`` unset: the config carries ``site_name`` (``UNIFI_SITE``, default
+  ``default``) and the client resolves the id at first call from one ``GET /v1/sites``
+  matched on ``internalReference``, cached for the process.
+* ``UNIFI_NETWORK_API_KEY`` unset: ``UNIFI_CONSOLE_API_TOKEN`` stands in **only** when the
+  network host's origin (scheme, host, port) equals ``UNIFI_URL``'s; the console token is
+  never sent to another origin. Explicit keys always win.
+
+:func:`resolve_network_env` is the offline view of that derivation; the MCP readiness report
+uses it so ``--check`` never contacts the controller.
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
-from typing import Annotated
+from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 
 # Ubiquiti's Network API spec gives the server as .../proxy/network/integration; Network 10.6
 # also answers on the undocumented plural. The client probes ``{base}/v1/info`` in this order
 # and uses the first base that does not 404, as port_diagnostics does (issue 003).
 INTEGRATION_BASES: tuple[str, ...] = ('/proxy/network/integration', '/proxy/network/integrations')
+
+NETWORK_PREFIX = 'UNIFI_NETWORK_'
+CONSOLE_TOKEN_VAR = 'UNIFI_CONSOLE_API_TOKEN'
+DEFAULT_SITE_NAME = 'default'  # the controller family's default too (Credentials.from_env)
+_DEFAULT_PORTS = {'https': 443, 'http': 80}
+
+# The deferred-resolution notes --check and the readiness report show, word for word.
+HOST_DERIVED_NOTE = 'host: derived from UNIFI_URL'
+SITE_DEFERRED_NOTE = 'site id: resolved at first call'
+KEY_CONSOLE_NOTE = 'key: console token (same origin)'
+
+
+@dataclass(frozen=True)
+class Origin:
+    """A normalised ``(scheme, host, port)``; two configs with equal origins name one server."""
+
+    scheme: str
+    host: str
+    port: int
+
+
+def _split_origin(value: str, default_scheme: str = 'https') -> tuple[str, str, int | None] | None:
+    """Split a URL, ``host``, ``host:port`` or ``scheme://host[:port]`` into its parts.
+
+    Returns ``(scheme, host, explicit port or None)``, lower-cased, or ``None`` when there is
+    no usable host or the scheme is not http(s).
+    """
+    text = value.strip()
+    if not text:
+        return None
+    if '://' not in text:
+        text = f'{default_scheme}://{text}'
+    parts = urlsplit(text)
+    scheme = (parts.scheme or default_scheme).lower()
+    host = (parts.hostname or '').strip().lower()
+    if not host or scheme not in _DEFAULT_PORTS:
+        return None
+    try:
+        port = parts.port
+    except ValueError:
+        return None
+    return scheme, host, port
+
+
+def _origin(value: str, port_var: str | None) -> Origin | None:
+    """Build an origin from ``value``.
+
+    A port in the value wins, then ``port_var`` when it is digits, then the scheme's default.
+    """
+    split = _split_origin(value)
+    if split is None:
+        return None
+    scheme, host, port = split
+    if port is None and port_var and port_var.strip().isdigit():
+        port = int(port_var.strip())
+    return Origin(scheme, host, port or _DEFAULT_PORTS[scheme])
+
+
+def controller_origin(env: Mapping[str, str]) -> Origin | None:
+    """Return the controller's origin from ``UNIFI_URL``, else ``UNIFI_HOST``/``UNIFI_PORT``.
+
+    Args:
+        env: The environment to read.
+
+    Returns:
+        The origin, or ``None`` when neither variable names a host.
+    """
+    url = env.get('UNIFI_URL')
+    if url and url.strip():
+        return _origin(url, None)
+    host = env.get('UNIFI_HOST')
+    if host and host.strip():
+        return _origin(host, env.get('UNIFI_PORT'))
+    return None
+
+
+def network_origin(env: Mapping[str, str], prefix: str = NETWORK_PREFIX) -> Origin | None:
+    """Return the Integration API's origin: ``UNIFI_NETWORK_HOST``/``PORT``, else the controller's.
+
+    Args:
+        env: The environment to read.
+        prefix: The family's variable prefix.
+
+    Returns:
+        The origin the network client would connect to, or ``None`` when no host is known.
+    """
+
+    def get_env(key: str) -> str | None:
+        return env.get(f'{prefix}{key}')
+
+    host = get_env('HOST')
+    if host and host.strip():
+        return _origin(host, get_env('PORT'))
+    return controller_origin(env)
+
+
+@dataclass(frozen=True)
+class NetworkEnvResolution:
+    """What the ``network_api`` family resolves to from an environment, offline.
+
+    ``missing`` names what no variable supplies; ``derived`` carries the deferred-resolution
+    notes for ``--check``. The key value is kept out of ``repr``.
+    """
+
+    origin: Origin | None
+    host_derived: bool
+    site_id: str | None
+    site_name: str | None
+    api_key: str | None = field(repr=False)
+    api_key_source: Literal['network', 'console'] | None
+    missing: tuple[str, ...]
+    derived: tuple[str, ...]
+
+
+def resolve_network_env(
+    env: Mapping[str, str], prefix: str = NETWORK_PREFIX
+) -> NetworkEnvResolution:
+    """Resolve the ``network_api`` family from ``env`` without any I/O.
+
+    Args:
+        env: The environment to read.
+        prefix: The family's variable prefix.
+
+    Returns:
+        The resolution; ``missing == ()`` means :meth:`NetworkConfig.from_env` would succeed.
+    """
+    missing: list[str] = []
+
+    def get_env(key: str) -> str | None:
+        return env.get(f'{prefix}{key}')
+
+    explicit_host = bool((get_env('HOST') or '').strip())
+    origin = network_origin(env, prefix)
+    host_derived = origin is not None and not explicit_host
+    if origin is None:
+        missing.append(f'{prefix}HOST or UNIFI_URL')
+
+    api_key = (get_env('API_KEY') or '').strip() or None
+    api_key_source: Literal['network', 'console'] | None = 'network' if api_key else None
+    if api_key is None:
+        token = (env.get(CONSOLE_TOKEN_VAR) or '').strip()
+        console = controller_origin(env)
+        if token and origin is not None and console is not None and origin == console:
+            api_key, api_key_source = token, 'console'
+        elif token and origin is not None:
+            missing.append(f'{prefix}API_KEY ({CONSOLE_TOKEN_VAR} is not for this origin)')
+        else:
+            missing.append(f'{prefix}API_KEY or {CONSOLE_TOKEN_VAR} (same origin)')
+
+    site_id = (get_env('SITE_ID') or '').strip() or None
+    site_name: str | None = None
+    if site_id is None:
+        if origin is None:
+            missing.append(f'{prefix}SITE_ID or UNIFI_SITE')
+        else:
+            site_name = (env.get('UNIFI_SITE') or '').strip() or DEFAULT_SITE_NAME
+
+    derived = tuple(
+        note
+        for note, applies in (
+            (HOST_DERIVED_NOTE, host_derived),
+            (SITE_DEFERRED_NOTE, site_name is not None),
+            (KEY_CONSOLE_NOTE, api_key_source == 'console'),  # pragma: allowlist secret
+        )
+        if applies
+    )
+
+    return NetworkEnvResolution(
+        origin=origin,
+        host_derived=host_derived,
+        site_id=site_id,
+        site_name=site_name,
+        api_key=api_key,
+        api_key_source=api_key_source,
+        missing=tuple(missing),
+        derived=derived,
+    )
 
 
 class NetworkConfig(BaseModel):
@@ -27,8 +221,15 @@ class NetworkConfig(BaseModel):
     Attributes:
         host: The hostname or IP address of the UniFi Network controller.
         port: The HTTPS port for the Network API (default: 443).
-        api_key: API key for authentication (generated in UniFi Integrations).
-        site_id: The site UUID to operate on.
+        scheme: ``https`` (default) or ``http``, as ``UNIFI_URL`` has it when derived.
+        api_key: API key for authentication (generated in UniFi Integrations), or the
+            console token when ``api_key_source`` is ``console`` (same origin only).
+        api_key_source: Where the key came from: the family's own variable or the
+            controller's console token.
+        site_id: The site UUID to operate on, or ``None`` to resolve it at first call from
+            ``site_name`` (one ``GET /v1/sites``, cached for the process).
+        site_name: The legacy site name (``UNIFI_SITE``) to match on ``internalReference``
+            when ``site_id`` is ``None``.
         verify_ssl: Whether to verify SSL certificates (default: False).
         timeout: HTTP request timeout in seconds (default: 30).
         debug: Enable debug logging for the API client (default: False).
@@ -43,8 +244,16 @@ class NetworkConfig(BaseModel):
 
     host: Annotated[str, Field(min_length=1, description='UniFi Network controller host')]
     port: Annotated[int, Field(default=443, ge=1, le=65535, description='HTTPS port')]
+    scheme: Annotated[Literal['https', 'http'], Field(default='https', description='URL scheme')]
     api_key: Annotated[SecretStr, Field(description='API key for authentication')]
-    site_id: Annotated[str, Field(min_length=1, description='Site UUID')]
+    api_key_source: Annotated[
+        Literal['network', 'console'],
+        Field(default='network', description='Where the key is from'),
+    ]
+    site_id: Annotated[str | None, Field(default=None, description='Site UUID')]
+    site_name: Annotated[
+        str | None, Field(default=None, description='Site name to resolve the UUID from')
+    ]
     verify_ssl: Annotated[bool, Field(default=False, description='Verify SSL certificates')]
     timeout: Annotated[
         int, Field(default=30, ge=5, le=300, description='Request timeout in seconds')
@@ -69,8 +278,10 @@ class NetworkConfig(BaseModel):
 
     @field_validator('site_id')
     @classmethod
-    def validate_site_id(cls, v: str) -> str:
-        """Validate site_id format (UUID)."""
+    def validate_site_id(cls, v: str | None) -> str | None:
+        """Validate site_id format (UUID); ``None`` defers the lookup to ``site_name``."""
+        if v is None:
+            return None
         v = v.strip()
         # Basic UUID format validation
         parts = v.split('-')
@@ -86,12 +297,19 @@ class NetworkConfig(BaseModel):
         """Validate that required fields are provided."""
         if not self.api_key.get_secret_value():
             raise ValueError('API key is required')
+        if self.site_id is None and not (self.site_name or '').strip():
+            raise ValueError('site_id or site_name is required')
         return self
 
     @property
     def base_url(self) -> str:
         """Get the base URL for API requests."""
-        return f'https://{self.host}:{self.port}'
+        return f'{self.scheme}://{self.host}:{self.port}'
+
+    @property
+    def origin(self) -> Origin:
+        """The normalised origin this config connects to."""
+        return Origin(self.scheme, self.host.lower(), self.port)
 
     @property
     def api_base_url(self) -> str:
@@ -118,8 +336,14 @@ class NetworkConfig(BaseModel):
         Returns:
             A NetworkConfig instance populated from environment variables.
 
+        With ``UNIFI_NETWORK_HOST``, ``UNIFI_NETWORK_API_KEY`` and ``UNIFI_NETWORK_SITE_ID`` all
+        set, nothing is derived. Otherwise the controller's config stands in (issue 037): the
+        host from ``UNIFI_URL``, the site id from ``UNIFI_SITE`` at first call, and the console
+        token as the key only when the network host is ``UNIFI_URL``'s own origin.
+
         Raises:
-            ValueError: If required environment variables are missing.
+            ValueError: If required environment variables are missing (the message names the
+                family's variable and what could have stood in for it).
 
         Example:
             >>> # With environment variables:
@@ -134,23 +358,27 @@ class NetworkConfig(BaseModel):
         def get_env(key: str, default: str | None = None) -> str | None:
             return os.environ.get(f'{prefix}{key}', default)
 
-        host = get_env('HOST')
-        if not host:
-            raise ValueError(f'{prefix}HOST environment variable is required')
-
-        api_key = get_env('API_KEY')
-        if not api_key:
-            raise ValueError(f'{prefix}API_KEY environment variable is required')
-
-        site_id = get_env('SITE_ID')
-        if not site_id:
-            raise ValueError(f'{prefix}SITE_ID environment variable is required')
+        resolution = resolve_network_env(os.environ, prefix)
+        if resolution.origin is None:
+            raise ValueError(
+                f'{prefix}HOST environment variable is required '
+                '(or UNIFI_URL, which the Network API host is derived from)'
+            )
+        if resolution.api_key is None:
+            why = (
+                f'{CONSOLE_TOKEN_VAR} stands in only when {prefix}HOST is the same origin as '
+                'UNIFI_URL; the console token is never sent to another origin'
+            )
+            raise ValueError(f'{prefix}API_KEY environment variable is required ({why})')
 
         return cls(
-            host=host,
-            port=int(get_env('PORT', '443') or '443'),
-            api_key=SecretStr(api_key),
-            site_id=site_id,
+            host=resolution.origin.host,
+            port=resolution.origin.port,
+            scheme=resolution.origin.scheme,  # type: ignore[arg-type]  # _DEFAULT_PORTS keys
+            api_key=SecretStr(resolution.api_key),
+            api_key_source=resolution.api_key_source or 'network',
+            site_id=resolution.site_id,
+            site_name=resolution.site_name,
             verify_ssl=(get_env('VERIFY_SSL', 'false') or 'false').lower() == 'true',
             timeout=int(get_env('TIMEOUT', '30') or '30'),
             debug=(get_env('DEBUG', 'false') or 'false').lower() == 'true',
