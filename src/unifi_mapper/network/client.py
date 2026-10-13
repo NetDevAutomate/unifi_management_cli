@@ -347,7 +347,10 @@ class UniFiNetworkClient:
         return DeviceInfo.model_validate(response.get('data', response))
 
     async def get_device_statistics(self, device_id: str) -> DeviceStatistics:
-        """Get real-time statistics for a device.
+        """Get the latest statistics for a device.
+
+        Reads ``/sites/{siteId}/devices/{deviceId}/statistics/latest``, the reference's
+        path (Network 10.6 answers 404 for ``.../statistics``; issue 035).
 
         Args:
             device_id: Device UUID.
@@ -355,7 +358,7 @@ class UniFiNetworkClient:
         Returns:
             Device statistics.
         """
-        response = await self._get(f'/sites/{{siteId}}/devices/{device_id}/statistics')
+        response = await self._get(f'/sites/{{siteId}}/devices/{device_id}/statistics/latest')
         data = response.get('data', response)
         data['deviceId'] = device_id
         return DeviceStatistics.model_validate(data)
@@ -387,6 +390,9 @@ class UniFiNetworkClient:
     ) -> dict[str, Any]:
         """Execute an action on a device port.
 
+        Posts to ``/sites/{siteId}/devices/{deviceId}/interfaces/ports/{portIdx}/actions``,
+        the reference's path (issue 035).
+
         Args:
             device_id: Device UUID.
             port_idx: Port index.
@@ -397,7 +403,7 @@ class UniFiNetworkClient:
         """
         payload = {'action': action}
         return await self._post(
-            f'/sites/{{siteId}}/devices/{device_id}/ports/{port_idx}/actions',
+            f'/sites/{{siteId}}/devices/{device_id}/interfaces/ports/{port_idx}/actions',
             json=payload,
         )
 

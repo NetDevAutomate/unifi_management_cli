@@ -735,7 +735,7 @@ graph LR
     end
 ```
 
-Each manager maps to one Integration API resource under `/sites/{siteId}` (`firewall/zones`, `firewall/policies`, `acl-rules`, `dns/policies`, `clients`, `networks`, `traffic-matching-lists`, `devices`) or `/dpi`. The six MCP tools read zones, policies, ACL rules, DNS policies, clients and networks. The client also has write methods (device and port actions, guest authorisation, and creating, updating or deleting networks, firewall policies, ACL rules, DNS policies and traffic-matching lists); no MCP tool calls them, and the guard would refuse them. Its device-statistics and port-action paths aren't served by Network 10.6 ([issue 035](../issues/035-device-statistics-and-port-action-paths.md)).
+Each manager maps to one Integration API resource under `/sites/{siteId}` (`firewall/zones`, `firewall/policies`, `acl-rules`, `dns/policies`, `clients`, `networks`, `traffic-matching-lists`, `devices`) or `/dpi`. The six MCP tools read zones, policies, ACL rules, DNS policies, clients and networks. The client also has write methods (device and port actions, guest authorisation, and creating, updating or deleting networks, firewall policies, ACL rules, DNS policies and traffic-matching lists); no MCP tool calls them, and the guard would refuse them. Its device-statistics and port-action paths follow the reference (`.../statistics/latest`, `.../interfaces/ports/{idx}/actions`; [issue 035](../issues/035-device-statistics-and-port-action-paths.md)).
 
 ---
 
