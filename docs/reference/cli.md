@@ -468,6 +468,8 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `version` | Show version information |
 | `install-completions` | Install shell completions |
 | `find device` | Find a device by name, IP or MAC |
+| `find ip` | Where an IP address is: device or client, VLAN, lease and connection |
+| `find mac` | Where a MAC address is: device, client or last known location |
 | `ports refresh` | Rewrite port labels from LLDP and wired clients (writes with `--apply`) |
 | `ports inspect` | Deep single-port inspection: VLAN, client, addressing, LLDP (`--json` for raw fields) |
 | `ports list` | Every port on a switch: speed, negotiation, profile, LLDP peer, clients, errors |
@@ -508,6 +510,11 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `diagnose security` | Security audit: unknown and anomalous devices, rogue APs, guest and VLAN violations |
 | `diagnose vlans` | Every VLAN, the trunk ports that carry them, and the VLAN diagnostic checks |
 | `diagnose freshness` | How old each device's telemetry is; `--sample` compares two reads a gap apart |
+| `diagnose performance` | CPU, memory, load and drops per device, scored and ranked, with bottlenecks |
+| `diagnose connectivity` | Segments, critical paths, single points of failure and a connectivity score |
+| `diagnose firewall` | The firewall rules that match a source and destination, and the verdict |
+| `diagnose path` | The path between two endpoints from controller data (`--analyze` for hop issues and bottlenecks); no packets sent |
+| `diagnose client-path` | A client's path to the gateway from controller data |
 | `diagnose wan` | WAN health and the controller's last scheduled speedtest (`--record` appends it to the history) |
 | `diagnose wan-history` | The recorded WAN speedtest results, newest first |
 | `diagnose device-stats` | One device's CPU, memory, load, uptime, radios and per-VAP TX counters |

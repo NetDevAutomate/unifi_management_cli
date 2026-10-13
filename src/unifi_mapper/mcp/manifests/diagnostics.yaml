@@ -31,7 +31,7 @@ tools:
     module: unifi_mapper.diagnostics.performance_analysis
     handler: performance_analysis
     title: Performance Analysis
-    cli_gap: 'not yet built: the performance analysis has no command'
+    cli: diagnose performance
     description: Network performance analysis and bottleneck identification
     priority: P1
     tags: [performance, bottleneck, analysis, throughput]
@@ -49,7 +49,7 @@ tools:
     module: unifi_mapper.diagnostics.connectivity_analysis
     handler: connectivity_analysis
     title: Connectivity Analysis
-    cli_gap: 'not yet built: the connectivity analysis has no command'
+    cli: diagnose connectivity
     description: Connection troubleshooting and path analysis
     priority: P2
     tags: [connectivity, troubleshooting, path, diagnostic]

@@ -24,7 +24,7 @@ tools:
     module: unifi_mapper.discovery.find_ip
     handler: find_ip
     title: Find IP
-    cli_gap: 'not yet built: find device covers devices only'
+    cli: find ip
     aliases:
       ip_address: ip
     description: Locate device and port by IP address
@@ -40,7 +40,7 @@ tools:
     module: unifi_mapper.discovery.find_mac
     handler: find_mac
     title: Find MAC
-    cli_gap: 'not yet built: find device covers devices only'
+    cli: find mac
     aliases:
       mac_address: mac
     description: MAC address location tracking across the network
@@ -56,7 +56,7 @@ tools:
     module: unifi_mapper.discovery.client_trace
     handler: client_trace
     title: Client Trace
-    cli_gap: 'not yet built: the client trace has no command'
+    cli: diagnose client-path
     aliases:
       client_id: client
     description: End-to-end client path analysis through the network

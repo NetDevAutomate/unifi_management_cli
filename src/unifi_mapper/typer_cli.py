@@ -2335,6 +2335,455 @@ def stp_path_costs(
         console.print(table)
 
 
+def _print_network_path(path: Any, title: str) -> None:
+    """Render a ``NetworkPath``: endpoints, the hop table, VLANs and the firewall verdict."""
+    console.print(f'{title}')
+    console.print(
+        f'From [cyan]{escape(path.source_name or path.source)}[/cyan] '
+        f'({escape(path.source_resolved)}) to '
+        f'[cyan]{escape(path.destination_name or path.destination)}[/cyan] '
+        f'({escape(path.destination_resolved)})'
+    )
+    kind = 'L3 routed' if path.is_l3_routed else 'L2 switched' if path.is_l2_only else 'mixed'
+    vlans = ', '.join(map(str, path.vlans_traversed)) or '—'
+    latency = f'{path.total_latency_ms:g} ms' if path.total_latency_ms is not None else '—'
+    console.print(
+        f'Hops: [cyan]{len(path.hops)}[/cyan]  {kind}  VLANs: {escape(vlans)}  '
+        f'Latency: {latency}  Firewall: {_severity_cell(path.firewall_verdict)}'
+    )
+    if path.hops:
+        table = Table(title='Hops', show_header=True)
+        table.add_column('#', justify='right')
+        table.add_column('Device', style='cyan')
+        table.add_column('Type')
+        table.add_column('Interface')
+        table.add_column('VLAN', justify='right')
+        table.add_column('Latency ms', justify='right')
+        table.add_column('Firewall')
+        for hop in path.hops:
+            firewall = '—'
+            if hop.firewall_checked:
+                firewall = str(hop.firewall_result or 'checked')
+                if hop.blocking_rule:
+                    firewall += f' ({hop.blocking_rule})'
+            table.add_row(
+                str(hop.hop_number),
+                escape(hop.device_name),
+                escape(hop.device_type),
+                escape(hop.interface),
+                str(hop.vlan) if hop.vlan is not None else '—',
+                f'{hop.latency_ms:g}' if hop.latency_ms is not None else '—',
+                _severity_cell(firewall) if firewall.startswith('deny') else escape(firewall),
+            )
+        console.print(table)
+    if path.blocking_rules:
+        table = Table(title='Blocking Rules', show_header=True)
+        table.add_column('Order', justify='right')
+        table.add_column('Rule set')
+        table.add_column('Name', style='cyan')
+        table.add_column('Action', style='bold')
+        table.add_column('Source')
+        table.add_column('Destination')
+        table.add_column('Protocol')
+        for rule in path.blocking_rules:
+            table.add_row(
+                str(rule.order),
+                escape(rule.rule_set),
+                escape(rule.name),
+                _severity_cell(rule.action),
+                escape(rule.source),
+                escape(rule.destination),
+                escape(rule.protocol),
+            )
+        console.print(table)
+
+
+def _print_mapping(title: str, mapping: dict[str, Any]) -> None:
+    """Render a flat dict as a two-column table; nested dicts are flattened one level."""
+    table = Table(title=title, show_header=False)
+    table.add_column('Field', style='cyan')
+    table.add_column('Value')
+    for field, value in mapping.items():
+        if isinstance(value, dict):
+            for inner, inner_value in value.items():
+                if inner_value is not None:
+                    table.add_row(f'{field}.{inner}', escape(str(inner_value)))
+        elif value is not None:
+            table.add_row(field, escape(str(value)))
+    console.print(table)
+
+
+@diagnose_app.command('path')
+def diagnose_path(
+    source: str = typer.Argument(
+        ..., help='Source: an IP, MAC, hostname, device name or "gateway"'
+    ),
+    destination: str = typer.Argument(
+        ..., help='Destination: an IP, MAC, hostname, device name or "internet"'
+    ),
+    firewall: bool = typer.Option(
+        True, '--firewall/--no-firewall', help='Check the firewall rules along the path'
+    ),
+    expert: bool = typer.Option(False, '--expert', help='Expert detail instead of guided'),
+    analyze: bool = typer.Option(
+        False,
+        '--analyze',
+        help='Analyse the path instead: per-hop issues, performance rating, bottlenecks',
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🗺️ The path between two endpoints from controller data: hops, VLANs, firewall verdict.
+
+    Built from the topology, client tables and firewall rules the controller holds; no packet
+    is sent (`gateway traceroute` sends real probes over SSH). The same result as the MCP tool
+    `traceroute`; with --analyze, the MCP tool `path_analysis` (hop issues, performance
+    rating, bottlenecks and recommendations). Read-only.
+    """
+    if analyze:
+        from .connectivity.path_analysis import path_analysis_mcp
+
+        analysis = _run_analysis(lambda: path_analysis_mcp(source=source, destination=destination))
+        if as_json:
+            _emit_json(analysis)
+            return
+        console.print('🗺️ [bold]Path Analysis[/bold]')
+        summary = analysis.get('path_summary') or {}
+        metrics = analysis.get('performance_metrics') or {}
+        console.print(
+            f'Hops: [cyan]{summary.get("total_hops", "—")}[/cyan]  '
+            f'{escape(str(summary.get("path_type", "—")))}  '
+            f'Firewall: {_severity_cell(summary.get("firewall_verdict", "unknown"))}  '
+            f'Rating: {escape(str(metrics.get("performance_rating", "—")))}  '
+            f'Complexity: {escape(str(summary.get("complexity", "—")))}'
+        )
+        hops = analysis.get('hop_analysis') or []
+        if hops:
+            table = Table(title='Hop Analysis', show_header=True)
+            table.add_column('#', justify='right')
+            table.add_column('Device', style='cyan')
+            table.add_column('Type')
+            table.add_column('Interface')
+            table.add_column('VLAN', justify='right')
+            table.add_column('Bottleneck')
+            table.add_column('Issues')
+            for hop in hops:
+                table.add_row(
+                    str(hop.get('hop_number', '—')),
+                    escape(str(hop.get('device_name', '—'))),
+                    escape(str(hop.get('device_type', '—'))),
+                    escape(str(hop.get('interface', '—'))),
+                    str(hop.get('vlan')) if hop.get('vlan') is not None else '—',
+                    '[yellow]yes[/yellow]' if hop.get('is_bottleneck') else 'no',
+                    escape('; '.join(map(str, hop.get('issues') or [])) or '—'),
+                )
+            console.print(table)
+        bottlenecks = analysis.get('bottleneck_identification') or []
+        _print_list('Bottlenecks', [str(b) for b in bottlenecks], style='yellow')
+        _print_list('Recommendations', [str(r) for r in analysis.get('recommendations') or []])
+        return
+
+    from .connectivity.traceroute import traceroute
+
+    path = _run_analysis(
+        lambda: traceroute(
+            source=source,
+            destination=destination,
+            include_firewall=firewall,
+            verbosity='expert' if expert else 'guided',
+        )
+    )
+    if as_json:
+        _emit_json(path.model_dump(mode='json'))
+        return
+    _print_network_path(path, '🗺️ [bold]Path[/bold]')
+
+
+@diagnose_app.command('client-path')
+def diagnose_client_path(
+    client: str = typer.Argument(..., help="The client's MAC, IP, hostname or name"),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🧭 A client's path to the gateway from controller data: AP or switch port, then hops.
+
+    Finds the client, then follows the topology from its AP or switch port to the gateway,
+    with the VLANs crossed and the firewall verdict. No packet is sent. The same result as
+    the MCP tool `client_trace`. Read-only.
+    """
+    from .discovery.client_trace import client_trace
+
+    path = _run_analysis(lambda: client_trace(client=client))
+    if as_json:
+        _emit_json(path.model_dump(mode='json'))
+        return
+    _print_network_path(path, f'🧭 [bold]Path of {escape(client)}[/bold]')
+
+
+@diagnose_app.command('firewall')
+def diagnose_firewall(
+    source: str = typer.Argument(..., help='Source: an IP, network (CIDR) or VLAN id'),
+    destination: str = typer.Argument(..., help='Destination: an IP, network (CIDR) or VLAN id'),
+    protocol: str = typer.Option(
+        'all', '--protocol', help='tcp, udp, icmp or all', case_sensitive=False
+    ),
+    port: Optional[str] = typer.Option(None, '--port', help='Destination port or range'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🧱 Which firewall rules match traffic from a source to a destination, and the verdict.
+
+    Resolves each endpoint to an address, network or VLAN, lists the rules that match in
+    evaluation order and gives the allow/deny verdict with recommendations. The same result
+    as the MCP tool `firewall_check`; `diagnose inter-vlan` answers for two endpoints with
+    routing included. Read-only.
+    """
+    from .connectivity.firewall_check import firewall_check
+
+    result = _run_analysis(
+        lambda: firewall_check(
+            source=source, destination=destination, protocol=protocol.lower(), port=port
+        )
+    )
+    if as_json:
+        _emit_json(result)
+        return
+    console.print('🧱 [bold]Firewall Check[/bold]')
+    console.print(
+        f'{escape(source)} → {escape(destination)} ({escape(protocol.lower())}'
+        f'{", port " + escape(port) if port else ""})  '
+        f'Verdict: {_severity_cell(result.get("verdict", "unknown"))}'
+    )
+    for label, spec in (
+        ('Source', result.get('source_resolved') or {}),
+        ('Destination', result.get('destination_resolved') or {}),
+    ):
+        parts = ', '.join(f'{k} {v}' for k, v in spec.items() if k != 'addresses' and v)
+        console.print(f'  {label}: {escape(parts) or "—"}')
+    rules = result.get('matching_rules') or []
+    if rules:
+        table = Table(title='Matching Rules (evaluation order)', show_header=True)
+        table.add_column('Order', justify='right')
+        table.add_column('Rule set')
+        table.add_column('Name', style='cyan')
+        table.add_column('Action', style='bold')
+        table.add_column('Enabled')
+        table.add_column('Source')
+        table.add_column('Destination')
+        table.add_column('Protocol')
+        for rule in rules:
+            table.add_row(
+                str(rule.get('order', '—')),
+                escape(str(rule.get('rule_set', '—'))),
+                escape(str(rule.get('name', '—'))),
+                _severity_cell(rule.get('action', '—')),
+                'yes' if rule.get('enabled', True) else 'no',
+                escape(str(rule.get('source', '—'))),
+                escape(str(rule.get('destination', '—'))),
+                escape(str(rule.get('protocol', '—'))),
+            )
+        console.print(table)
+    else:
+        console.print('[dim]No rule matches; the default policy applies.[/dim]')
+    _print_list('Recommendations', [str(r) for r in result.get('recommendations') or []])
+
+
+@diagnose_app.command('performance')
+def diagnose_performance(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """📈 Device performance: CPU, memory, load and drops per device, scored and ranked.
+
+    Scores every device from its CPU, memory, load and dropped packets, lists the poor
+    performers with their bottleneck indicators, and the network-wide bottlenecks, capacity
+    warnings and recommendations. The same report as the MCP tool `performance_analysis`.
+    Read-only.
+    """
+    from .diagnostics.performance_analysis import performance_analysis
+
+    report = _run_analysis(performance_analysis)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('📈 [bold]Performance Analysis[/bold]')
+
+    def pct(value: Optional[float]) -> str:
+        return f'{value:.0f}%' if value is not None else '—'
+
+    console.print(
+        f'Devices: [cyan]{report.total_devices_analyzed}[/cyan]  '
+        f'Average CPU: {pct(report.average_cpu)}  Memory: {pct(report.average_memory)}  '
+        f'Load: {f"{report.average_load:.2f}" if report.average_load is not None else "—"}  '
+        f'Poor performers: [{"yellow" if report.poor_performers else "green"}]'
+        f'{len(report.poor_performers)}[/]'
+    )
+    ranked = [*report.poor_performers, *report.average_performers, *report.high_performers]
+    if ranked:
+        table = Table(title='Devices by Performance Score (worst first)', show_header=True)
+        table.add_column('Device', style='cyan')
+        table.add_column('Model')
+        table.add_column('Score', justify='right')
+        table.add_column('CPU', justify='right')
+        table.add_column('Memory', justify='right')
+        table.add_column('Load', justify='right')
+        table.add_column('Dropped tx/rx', justify='right')
+        table.add_column('Indicators')
+        for d in ranked[:MAX_RISK_ROWS]:
+            load = f'{d.load_average:.2f}' if d.load_average is not None else '—'
+            dropped = f'{d.tx_dropped if d.tx_dropped is not None else "—"}/{d.rx_dropped if d.rx_dropped is not None else "—"}'
+            table.add_row(
+                escape(d.name),
+                escape(d.model),
+                str(d.performance_score),
+                pct(d.cpu_percent),
+                pct(d.memory_percent),
+                load,
+                dropped,
+                escape('; '.join(d.bottleneck_indicators) or '—'),
+            )
+        console.print(table)
+        if len(ranked) > MAX_RISK_ROWS:
+            console.print(
+                f'[dim]  … and {len(ranked) - MAX_RISK_ROWS} more; --json lists them all.[/dim]'
+            )
+    _print_list('Critical alerts', [str(a) for a in report.critical_alerts], style='red')
+    _print_list('Bottlenecks', [str(b) for b in report.network_bottlenecks], style='yellow')
+    _print_list('Capacity warnings', [str(w) for w in report.capacity_warnings], style='yellow')
+    _print_list('Recommendations', [str(r) for r in report.optimization_recommendations])
+
+
+@diagnose_app.command('connectivity')
+def diagnose_connectivity(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🕸️ Connectivity analysis: segments, critical paths, single points of failure.
+
+    Scores the network's connectivity, describes each segment (devices, uplink quality,
+    congestion, redundancy, single points of failure), lists the critical and redundant
+    paths with their quality and issues, and ends with bottlenecks, latency issues and
+    improvement opportunities. The same report as the MCP tool `connectivity_analysis`.
+    Read-only.
+    """
+    from .diagnostics.connectivity_analysis import connectivity_analysis
+
+    report = _run_analysis(connectivity_analysis)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🕸️ [bold]Connectivity Analysis[/bold]')
+    console.print(
+        f'Score: [cyan]{report.network_connectivity_score}[/cyan]/100  '
+        f'Paths: [cyan]{report.total_paths_analyzed}[/cyan]  '
+        f'Healthy: [green]{report.healthy_paths}[/green]  '
+        f'Degraded: [yellow]{report.degraded_paths}[/yellow]  '
+        f'Broken: [red]{report.broken_paths}[/red]'
+    )
+    if report.network_segments:
+        table = Table(title='Segments', show_header=True)
+        table.add_column('Segment', style='cyan')
+        table.add_column('Type')
+        table.add_column('Devices', justify='right')
+        table.add_column('Uplink')
+        table.add_column('Congestion')
+        table.add_column('Redundant')
+        table.add_column('Single points of failure', style='yellow')
+        for seg in report.network_segments:
+            table.add_row(
+                escape(seg.segment_id),
+                escape(seg.segment_type),
+                str(seg.device_count),
+                escape(seg.uplink_quality),
+                escape(seg.congestion_level),
+                'yes' if seg.redundancy else '[yellow]no[/yellow]',
+                escape(', '.join(map(str, seg.single_points_of_failure)) or '—'),
+            )
+        console.print(table)
+    paths = [*report.critical_paths, *report.redundant_paths]
+    if paths:
+        table = Table(title='Paths', show_header=True)
+        table.add_column('From', style='cyan')
+        table.add_column('To', style='cyan')
+        table.add_column('Via')
+        table.add_column('Quality', style='bold')
+        table.add_column('Bandwidth %', justify='right')
+        table.add_column('Latency ms', justify='right')
+        table.add_column('Issues')
+        for p in paths:
+            table.add_row(
+                escape(p.source_device),
+                escape(p.destination_device),
+                escape(' → '.join(map(str, p.path_hops)) or '—'),
+                _severity_cell(p.path_quality),
+                f'{p.bandwidth_usage:.0f}' if p.bandwidth_usage is not None else '—',
+                f'{p.latency_ms:g}' if p.latency_ms is not None else '—',
+                escape('; '.join(map(str, p.issues)) or '—'),
+            )
+        console.print(table)
+    if report.connectivity_issues:
+        table = Table(title='Issues', show_header=True)
+        table.add_column('Severity', style='bold')
+        table.add_column('Type')
+        table.add_column('Devices', style='cyan')
+        table.add_column('Description')
+        table.add_column('Root cause')
+        table.add_column('Resolution')
+        for issue in report.connectivity_issues:
+            table.add_row(
+                _severity_cell(issue.severity),
+                escape(issue.issue_type),
+                escape(', '.join(map(str, issue.affected_devices)) or '—'),
+                escape(issue.description),
+                escape(issue.root_cause or '—'),
+                escape('; '.join(map(str, issue.resolution_steps)) or '—'),
+            )
+        console.print(table)
+    _print_list(
+        'Bandwidth bottlenecks', [str(b) for b in report.bandwidth_bottlenecks], style='yellow'
+    )
+    _print_list('Latency issues', [str(i) for i in report.latency_issues], style='yellow')
+    _print_list('Optimisation', [str(o) for o in report.optimization_opportunities])
+    _print_list('Reliability', [str(r) for r in report.reliability_improvements])
+    _print_list('Capacity planning', [str(c) for c in report.capacity_planning])
+
+
+@find_app.command('ip')
+def find_ip_command(
+    ip: str = typer.Argument(..., help='The IPv4 address to locate'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """🔎 Where an IP address is: the device or client, its VLAN and connection.
+
+    Searches the adopted devices first, then the connected clients; a client's entry has its
+    DHCP lease and the AP or switch port it is on. Exits 1 when nothing has the address. The
+    same result as the MCP tool `find_ip`; `find device` also accepts an IP but only looks at
+    devices. Read-only.
+    """
+    from .discovery.find_ip import find_ip
+
+    found = _run_analysis(lambda: find_ip(ip=ip))
+    if as_json:
+        _emit_json(found)
+        return
+    _print_mapping(f'🔎 {escape(ip)}', found)
+
+
+@find_app.command('mac')
+def find_mac_command(
+    mac: str = typer.Argument(..., help='The MAC address to locate, in any format'),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of a table'),
+):
+    """🔎 Where a MAC address is: the device or client, its connection, VLAN and address.
+
+    Searches the adopted devices, the connected clients and then the controller's client
+    history (a last known location). Exits 1 when the MAC is unknown. The same result as the
+    MCP tool `find_mac`. Read-only.
+    """
+    from .discovery.find_mac import find_mac
+
+    found = _run_analysis(lambda: find_mac(mac=mac))
+    if as_json:
+        _emit_json(found)
+        return
+    _print_mapping(f'🔎 {escape(mac)}', found)
+
+
 @diagnose_app.command('all')
 def diagnose_all(
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of the table'),

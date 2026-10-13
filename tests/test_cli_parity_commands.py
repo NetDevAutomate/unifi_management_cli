@@ -26,8 +26,10 @@ from unifi_mapper.core.models import (
     StormDetectionReport,
     VLANDiagnosticReport,
 )
+from unifi_mapper.core.models.network_path import NetworkPath
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.diagnostics.security_audit import SecurityAuditReport, SecurityDevice
+from unifi_mapper.mcp.parity import cli_commands
 from unifi_mapper.mcp.registry import ToolRegistry, default_manifests_dir
 from unifi_mapper.typer_cli import app
 
@@ -454,6 +456,130 @@ FOREIGN = foreign_bridges.ForeignBridgeReport.model_validate(
     }
 )
 
+PATH = NetworkPath.model_validate(
+    {
+        'source': 'laptop',
+        'source_resolved': '192.0.2.50',
+        'source_name': 'Laptop',
+        'destination': 'nas',
+        'destination_resolved': '198.51.100.20',
+        'destination_name': 'NAS',
+        'hops': [
+            {'hop_number': 1, 'device_mac': '02:00:00:00:00:20', 'device_name': 'Hall AP', 'device_type': 'ap', 'interface': 'wifi0', 'vlan': 20, 'latency_ms': 2.5},
+            {'hop_number': 2, 'device_mac': '02:00:00:00:00:01', 'device_name': 'Gateway', 'device_type': 'gateway', 'interface': 'br20', 'vlan': 20, 'firewall_checked': True, 'firewall_result': 'deny', 'blocking_rule': 'Block IoT to LAN'},
+            {'hop_number': 3, 'device_mac': '02:00:00:00:00:10', 'device_name': 'Rack Switch', 'device_type': 'switch', 'interface': 'port 7', 'vlan': 10, 'latency_ms': 0.4},
+        ],
+        'total_latency_ms': 2.9,
+        'firewall_verdict': 'deny',
+        'blocking_rules': [
+            {'id': 'r1', 'name': 'Block IoT to LAN', 'action': 'deny', 'source': '198.51.100.0/24', 'destination': '192.0.2.0/24', 'protocol': 'all', 'order': 2000, 'rule_set': 'LAN_IN'}
+        ],
+        'crosses_vlans': True,
+        'vlans_traversed': [20, 10],
+        'is_l2_only': False,
+        'is_l3_routed': True,
+    }
+)  # fmt: skip
+PATH_ANALYSIS: dict[str, Any] = {
+    'path_summary': {'total_hops': 3, 'path_type': 'L3 routed', 'crosses_vlans': True, 'firewall_verdict': 'deny', 'is_blocked': True, 'total_latency_ms': 2.9, 'complexity': 'medium'},
+    'hop_analysis': [{'hop_number': 2, 'device_name': 'Gateway', 'device_type': 'gateway', 'interface': 'br20', 'vlan': 20, 'latency_ms': None, 'is_bottleneck': True, 'issues': ['firewall deny']}],
+    'performance_metrics': {'total_latency_ms': 2.9, 'average_latency_ms': 1.45, 'max_latency_ms': 2.5, 'performance_rating': 'good'},
+    'vlan_analysis': {'crossings': 1},
+    'bottleneck_identification': ['Gateway: firewall deny'],
+    'recommendations': ['Allow the NAS from the IoT VLAN or move the laptop'],
+}  # fmt: skip
+FIREWALL: dict[str, Any] = {
+    'verdict': 'deny',
+    'source_resolved': {'type': 'vlan', 'vlan_id': 20, 'vlan_name': 'IoT', 'network': '198.51.100.0/24'},
+    'destination_resolved': {'type': 'ip', 'address': '192.0.2.20', 'network': '192.0.2.20/32'},
+    'matching_rules': [
+        {'id': 'r1', 'name': 'Block IoT to LAN', 'action': 'deny', 'enabled': True, 'source': '198.51.100.0/24', 'destination': '192.0.2.0/24', 'protocol': 'all', 'order': 2000, 'rule_set': 'LAN_IN'}
+    ],
+    'rule_evaluation_order': [2000],
+    'recommendations': ['Add an allow rule above 2000 for the NAS'],
+    'vlan_matrix': {'vlans': [], 'connectivity_matrix': {}},
+}  # fmt: skip
+PERFORMANCE = importlib.import_module(
+    'unifi_mapper.diagnostics.performance_analysis'
+).NetworkPerformanceReport.model_validate(
+    {
+        'timestamp': '2026-10-13T10:00:00',
+        'total_devices_analyzed': 2,
+        'average_cpu': 31.0,
+        'average_memory': 55.0,
+        'average_load': 0.8,
+        'high_performers': [],
+        'average_performers': [],
+        'poor_performers': [
+            {'name': 'Garage Switch', 'mac': '02:00:00:00:00:12', 'model': 'USW-Pro-24-PoE', 'type': 'usw', 'cpu_percent': 92.0, 'memory_percent': 88.0, 'load_average': 3.1, 'uptime_days': 12.0, 'tx_bytes': 1, 'rx_bytes': 1, 'tx_packets': 1, 'rx_packets': 1, 'tx_dropped': 500, 'rx_dropped': 0, 'performance_score': 35, 'bottleneck_indicators': ['CPU above 90%'], 'recommendations': ['Reboot in a maintenance window']}
+        ],
+        'network_bottlenecks': ['Garage Switch CPU'],
+        'capacity_warnings': ['Garage Switch memory at 88%'],
+        'critical_alerts': [],
+        'optimization_recommendations': ['Spread the IoT clients across two switches'],
+    }
+)  # fmt: skip
+CONNECTIVITY = importlib.import_module(
+    'unifi_mapper.diagnostics.connectivity_analysis'
+).ConnectivityAnalysisReport.model_validate(
+    {
+        'timestamp': '2026-10-13T10:00:00',
+        'network_connectivity_score': 72,
+        'total_paths_analyzed': 5,
+        'healthy_paths': 3,
+        'degraded_paths': 2,
+        'broken_paths': 0,
+        'network_segments': [
+            {'segment_id': 'core', 'segment_type': 'distribution', 'device_count': 3, 'uplink_quality': 'good', 'congestion_level': 'low', 'redundancy': False, 'single_points_of_failure': ['Rack Switch']}
+        ],
+        'critical_paths': [
+            {'source_device': 'Garage Switch', 'source_mac': '02:00:00:00:00:12', 'destination_device': 'Gateway', 'destination_mac': '02:00:00:00:00:01', 'path_hops': ['Rack Switch'], 'path_quality': 'degraded', 'bandwidth_usage': 81.0, 'latency_ms': 1.2, 'issues': ['uplink at 81%']}
+        ],
+        'redundant_paths': [],
+        'connectivity_issues': [
+            {'issue_type': 'single_point_of_failure', 'severity': 'high', 'affected_devices': ['Rack Switch'], 'description': 'Every path crosses Rack Switch', 'root_cause': 'one distribution switch', 'resolution_steps': ['Add a second uplink']}
+        ],
+        'bandwidth_bottlenecks': ['Garage Switch uplink'],
+        'latency_issues': [],
+        'optimization_opportunities': ['Enable LACP on the two Garage links'],
+        'reliability_improvements': ['Second uplink for Rack Switch'],
+        'capacity_planning': [],
+    }
+)  # fmt: skip
+FOUND_IP: dict[str, Any] = {
+    'device_mac': '02:00:00:00:00:50',
+    'device_name': 'Printer',
+    'device_type': 'client',
+    'device_model': 'Brother',
+    'vlan_id': 10,
+    'vlan_name': 'LAN',
+    'subnet': 'net-lan',
+    'dhcp_assigned': True,
+    'connection_info': {
+        'type': 'wired',
+        'connected_to_mac': '02:00:00:00:00:10',
+        'port_number': 7,
+    },
+    'first_seen': 1700000000,
+    'last_seen': 1760000000,
+    'is_online': True,
+}
+FOUND_MAC: dict[str, Any] = {
+    'device_type': 'client',
+    'device_name': 'Laptop',
+    'device_model': 'Apple',
+    'connection_type': 'wireless',
+    'connected_to': 'Hall AP',
+    'port_number': None,
+    'vlan': 20,
+    'ip_address': '198.51.100.50',
+    'first_seen': 1700000000,
+    'last_seen': 1760000000,
+    'is_online': True,
+    'signal_strength': -58,
+    'channel': 44,
+}
+
 # command -> (handler module, handler name, fixture, text the rendering must show, cli args
 # beyond the command that exercise the options, and the kwargs the handler must receive)
 COMMANDS: dict[str, tuple[str, str, Any, str, list[str], dict[str, Any]]] = {
@@ -537,6 +663,67 @@ COMMANDS: dict[str, tuple[str, str, Any, str, list[str], dict[str, Any]]] = {
         [],
         {},
     ),
+    'diagnose performance': (
+        'unifi_mapper.diagnostics.performance_analysis',
+        'performance_analysis',
+        PERFORMANCE,
+        'Performance Analysis',
+        [],
+        {},
+    ),
+    'diagnose connectivity': (
+        'unifi_mapper.diagnostics.connectivity_analysis',
+        'connectivity_analysis',
+        CONNECTIVITY,
+        'Connectivity Analysis',
+        [],
+        {},
+    ),
+    'diagnose firewall laptop nas': (
+        'unifi_mapper.connectivity.firewall_check',
+        'firewall_check',
+        FIREWALL,
+        'Firewall Check',
+        ['--protocol', 'tcp', '--port', '445'],
+        {'source': 'laptop', 'destination': 'nas', 'protocol': 'tcp', 'port': '445'},
+    ),
+    'diagnose path laptop nas': (
+        'unifi_mapper.connectivity.traceroute',
+        'traceroute',
+        PATH,
+        'Path',
+        ['--no-firewall', '--expert'],
+        {
+            'source': 'laptop',
+            'destination': 'nas',
+            'include_firewall': False,
+            'verbosity': 'expert',
+        },
+    ),
+    'diagnose client-path laptop': (
+        'unifi_mapper.discovery.client_trace',
+        'client_trace',
+        PATH,
+        'Path',
+        [],
+        {'client': 'laptop'},
+    ),
+    'find ip 192.0.2.50': (
+        'unifi_mapper.discovery.find_ip',
+        'find_ip',
+        FOUND_IP,
+        '192.0.2.50',
+        [],
+        {'ip': '192.0.2.50'},
+    ),
+    'find mac 02:00:00:00:00:51': (
+        'unifi_mapper.discovery.find_mac',
+        'find_mac',
+        FOUND_MAC,
+        '02:00:00:00:00:51',
+        [],
+        {'mac': '02:00:00:00:00:51'},
+    ),
 }
 
 
@@ -593,16 +780,27 @@ def test_options_reach_the_handler_by_keyword(cli: SimpleNamespace, command: str
         assert kwargs.get(key) == value, (key, kwargs)
 
 
+def _command_path(invocation: str) -> str:
+    """The registered command an invocation runs: its longest leading token prefix."""
+    tokens = invocation.split()
+    known = cli_commands()
+    for n in range(len(tokens), 0, -1):
+        if ' '.join(tokens[:n]) in known:
+            return ' '.join(tokens[:n])
+    raise AssertionError(f'{invocation!r} names no unifi-mapper command')
+
+
 @pytest.mark.parametrize('command', sorted(COMMANDS))
 def test_the_manifest_names_the_command(command: str) -> None:
     _, handler, *_ = COMMANDS[command]
+    path = _command_path(command)
     named = [
         name
         for tools in REGISTRY.get_categories().values()
         for name in tools
-        if (meta := REGISTRY.get_metadata(name)) is not None and meta.cli == command
+        if (meta := REGISTRY.get_metadata(name)) is not None and meta.cli == path
     ]
-    assert named, f'no manifest entry carries cli: {command}'
+    assert named, f'no manifest entry carries cli: {path}'
     assert handler in {REGISTRY.get_metadata(n).handler for n in named}  # type: ignore[union-attr]
 
 
@@ -753,3 +951,79 @@ def test_stp_path_costs_manifest_names_the_command() -> None:
     meta = REGISTRY.get_metadata('audit_stp_path_costs')
     assert meta is not None and meta.cli == 'stp path-costs'
     assert REGISTRY.get_metadata('check_device_freshness').cli == 'diagnose freshness'  # type: ignore[union-attr]
+
+
+def test_path_rendering_shows_hops_verdict_and_blocking_rule(cli: SimpleNamespace) -> None:
+    text = ' '.join(cli.run('diagnose', 'path', 'laptop', 'nas').stdout.split())
+    assert 'Laptop' in text and 'NAS' in text and '192.0.2.50' in text
+    assert 'Hall AP' in text and 'Gateway' in text and 'Rack Switch' in text
+    assert 'deny' in text and 'Block IoT to LAN' in text
+    assert 'L3' in text and 'VLANs' in text
+
+
+def test_path_analyze_runs_the_analysis_tool(cli: SimpleNamespace, monkeypatch) -> None:
+    path_analysis = importlib.import_module('unifi_mapper.connectivity.path_analysis')
+    received: list[dict[str, Any]] = []
+
+    async def _analyse(**kwargs: Any) -> dict[str, Any]:
+        received.append(kwargs)
+        return PATH_ANALYSIS
+
+    monkeypatch.setattr(path_analysis, 'path_analysis_mcp', _analyse)
+    result = cli.run('diagnose', 'path', 'laptop', 'nas', '--analyze', '--json')
+    assert result.exit_code == 0, result.output
+    assert received == [{'source': 'laptop', 'destination': 'nas'}]
+    assert json.loads(result.stdout) == PATH_ANALYSIS
+    assert cli.calls == []  # traceroute itself is not called in --analyze mode
+    text = ' '.join(cli.run('diagnose', 'path', 'laptop', 'nas', '--analyze').stdout.split())
+    assert 'Path Analysis' in text and 'L3 routed' in text and 'good' in text
+    assert 'Gateway: firewall deny' in text and 'Allow the NAS' in text
+
+
+def test_client_path_rendering_shows_the_hops(cli: SimpleNamespace) -> None:
+    text = ' '.join(cli.run('diagnose', 'client-path', 'laptop').stdout.split())
+    assert 'Hall AP' in text and 'Gateway' in text and 'deny' in text
+
+
+def test_firewall_rendering_shows_verdict_rules_and_endpoints(cli: SimpleNamespace) -> None:
+    text = ' '.join(cli.run('diagnose', 'firewall', 'laptop', 'nas').stdout.split())
+    assert 'deny' in text and 'Block IoT to LAN' in text and 'LAN_IN' in text
+    assert 'IoT' in text and '192.0.2.20' in text
+    assert 'Add an allow rule' in text
+
+
+def test_performance_rendering_shows_poor_performers_and_notes(cli: SimpleNamespace) -> None:
+    text = ' '.join(cli.run('diagnose', 'performance').stdout.split())
+    assert 'Garage Switch' in text and '92' in text and 'CPU above 90%' in text
+    assert 'Garage Switch memory at 88%' in text and 'Spread the IoT clients' in text
+
+
+def test_connectivity_rendering_shows_segments_paths_and_issues(cli: SimpleNamespace) -> None:
+    text = ' '.join(cli.run('diagnose', 'connectivity').stdout.split())
+    assert '72' in text and 'core' in text and 'Rack Switch' in text
+    assert 'Garage Switch' in text and 'uplink at 81%' in text
+    assert 'Every path crosses Rack Switch' in text and 'Add a second uplink' in text
+    assert 'Enable LACP' in text
+
+
+def test_find_ip_and_mac_render_every_field(cli: SimpleNamespace) -> None:
+    text = ' '.join(cli.run('find', 'ip', '192.0.2.50').stdout.split())
+    assert 'Printer' in text and 'wired' in text and 'port_number' in text and '7' in text
+    text = ' '.join(cli.run('find', 'mac', '02:00:00:00:00:51').stdout.split())
+    assert 'Laptop' in text and 'Hall AP' in text and '-58' in text and '198.51.100.50' in text
+
+
+def test_find_ip_not_found_exits_1_with_the_tool_message(
+    cli: SimpleNamespace, monkeypatch
+) -> None:
+    module = importlib.import_module('unifi_mapper.discovery.find_ip')
+
+    async def _missing(**_kwargs: Any) -> Any:
+        raise ToolError(
+            message='IP address 192.0.2.77 not found on any device', error_code='IP_NOT_FOUND'
+        )
+
+    monkeypatch.setattr(module, 'find_ip', _missing)
+    result = cli.run('find', 'ip', '192.0.2.77')
+    assert result.exit_code == 1
+    assert 'not found' in result.stderr
