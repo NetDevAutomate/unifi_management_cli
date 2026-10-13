@@ -507,7 +507,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `analyze neighbours` | Passive neighbour AP detection and trend |
 | `diagnose all` | Run every diagnostic with a pass/warn/fail summary |
 | `diagnose health` | Overall network health check |
-| `diagnose security` | Security audit: unknown and anomalous devices, rogue APs, guest and VLAN violations |
+| `diagnose security` | Security audit: pending adoption, guest overstay, rogue APs, VLAN isolation |
 | `diagnose vlans` | Every VLAN, the trunk ports that carry them, and the VLAN diagnostic checks |
 | `diagnose freshness` | How old each device's telemetry is; `--sample` compares two reads a gap apart |
 | `diagnose performance` | CPU, memory, load and drops per device, scored and ranked, with bottlenecks |

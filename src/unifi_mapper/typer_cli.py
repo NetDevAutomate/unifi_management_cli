@@ -1629,13 +1629,15 @@ MAX_RISK_ROWS = 40  # a site that hears many neighbour APs reports hundreds of '
 def diagnose_security(
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
 ):
-    """🛡️ Security audit: unknown or anomalous devices, rogue APs, guest and VLAN violations.
+    """🛡️ Security audit: pending adoption, guest overstay, rogue APs, VLAN isolation.
 
-    Classifies every device and client the controller knows (authorised, unauthorised,
-    anomalous, unknown), lists the critical, high and medium risks with their flags, MAC
-    anomalies, new devices, rogue APs, guest-network violations and per-VLAN isolation, and
-    ends with the immediate actions and recommendations. The same report as the MCP tool
-    `security_audit`. Read-only.
+    Reports what the controller's own data can show: infrastructure pending adoption, clients
+    overstaying the guest network, rogue APs told apart from neighbours, MAC anomalies among
+    the clients, new devices and per-VLAN isolation, then the immediate actions and
+    recommendations. Authorised and unauthorised are the controller's verdicts (adopted or
+    pending devices, blocked or noted clients); vendor, randomised MAC, name and traffic are
+    not risks. Ends with the report's limitations, including any check that could not run
+    (not assessed). The same report as the MCP tool `security_audit`. Read-only.
     """
     from .diagnostics.security_audit import security_audit
 
@@ -1649,7 +1651,6 @@ def diagnose_security(
         f'Authorised: [green]{report.authorized_devices}[/green]  '
         f'Unauthorised: [red]{report.unauthorized_devices}[/red]  '
         f'Anomalous: [yellow]{report.anomalous_devices}[/yellow]  '
-        f'Unknown: [yellow]{report.unknown_devices}[/yellow]  '
         f'Rogue APs: [{"red" if report.rogue_aps else "green"}]{len(report.rogue_aps)}[/]  '
         f'Neighbour APs: [dim]{report.neighbour_aps}[/dim]'
     )
@@ -1729,6 +1730,7 @@ def diagnose_security(
     _print_list('MAC anomalies', [str(a) for a in report.mac_anomalies], style='yellow')
     _print_list('Immediate actions', [str(a) for a in report.immediate_actions], style='red')
     _print_list('Recommendations', [str(r) for r in report.security_recommendations])
+    _print_list('Limitations', [str(line) for line in report.limitations], style='dim')
 
 
 @analyze_app.command('storms')
