@@ -232,7 +232,7 @@ The root callback intercepts `--connected-devices`, `--dry-run`, and `--verify-u
 
 `cli.py` is the shared foundation consumed by `typer_cli.py` and `inventory_cli.py` (and, for `load_env_from_config`, `network_cli.py`). It provides:
 
-- **XDG Base Directory resolution** for config files — `get_default_config_path()` tries `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` (or `~/.config/unifi_management_cli/` when `XDG_CONFIG_HOME` is unset), then falls back to `.env` in the current directory. `--config` or `UNIFI_CONFIG` comes first ([section 16](#16-configuration-and-credential-management)).
+- **XDG Base Directory resolution** for config files — `get_default_config_path()` runs the search shared with the MCP server (`core/utils/config_search.py`): `--config` or `UNIFI_CONFIG` first, then `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` (an absolute `XDG_CONFIG_HOME` only), then in `~/.config/unifi_management_cli/`, then the legacy `~/.config/unifi_network_mapper/prod.env` (with a warning), and, for the CLI alone, `.env` in the current directory with a deprecation warning (removed in 0.4.0) ([section 16](#16-configuration-and-credential-management)).
 - **`load_env_from_config(path)`** — reads a `.env` file and injects each key-value pair into `os.environ`.
 
 ### MCP Server (mcp/server.py)
@@ -1578,35 +1578,34 @@ The MCP server implements the Model Context Protocol with the FastMCP bundled in
 
 ### Configuration resolution order
 
-The CLI entry points (`cli.get_default_config_path`, used by `unifi-mapper` and `unifi-inventory`) read one env file:
+The CLI entry points (`cli.get_default_config_path`, used by `unifi-mapper` and `unifi-inventory`) and the MCP server (`mcp.config.resolve_config_path`) run one shared search, `core/utils/config_search.find_config` ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)); the CLI adds only the deprecated working-directory step at the end:
 
 ```mermaid
 flowchart TD
-    EnvCli["--config CLI flag, or UNIFI_CONFIG (unifi-mapper)"]
-    HasXdg{"XDG_CONFIG_HOME set?"}
-    XdgDir["$XDG_CONFIG_HOME/unifi_management_cli/"]
-    HomeDir["~/.config/unifi_management_cli/"]
-    Prod["prod.env in that directory"]
-    Def["default.env in that directory"]
-    DotEnv[".env (current directory)"]
-    Missing["exit 1: Configuration file not found"]
+    EnvCli["--config CLI flag, or UNIFI_CONFIG"]
+    HasXdg{"XDG_CONFIG_HOME set to an absolute path?"}
+    XdgDir["$XDG_CONFIG_HOME/unifi_management_cli/prod.env, then default.env"]
+    HomeDir["~/.config/unifi_management_cli/prod.env, then default.env"]
+    Legacy["~/.config/unifi_network_mapper/prod.env (warning)"]
+    DotEnv["CLI only: .env in the current directory (deprecation warning; removed in 0.4.0)"]
+    Missing["exit 1: lists every path tried"]
     Load["load into os.environ"]
 
     EnvCli -->|"given (exit 1 if missing)"| Load
     EnvCli -->|"not given"| HasXdg
     HasXdg -->|"yes"| XdgDir
-    HasXdg -->|"no"| HomeDir
-    XdgDir --> Prod
-    HomeDir --> Prod
-    Prod -->|"exists"| Load
-    Prod -->|"not found"| Def
-    Def -->|"exists"| Load
-    Def -->|"not found"| DotEnv
+    HasXdg -->|"no, or relative (ignored)"| HomeDir
+    XdgDir -->|"exists"| Load
+    XdgDir -->|"not found"| HomeDir
+    HomeDir -->|"exists"| Load
+    HomeDir -->|"not found"| Legacy
+    Legacy -->|"exists"| Load
+    Legacy -->|"not found"| DotEnv
     DotEnv -->|"exists"| Load
     DotEnv -->|"not found"| Missing
 ```
 
-A set `XDG_CONFIG_HOME` replaces `~/.config` here rather than going before it, unlike the MCP server's search ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)). Of the CLI programs, only the root `--config` option of `unifi-mapper` (`typer_cli.main`) reads `UNIFI_CONFIG`; the MCP server reads it too (below). The standalone `unifi-inventory` program ignores that variable: without its own `--config` it goes straight to the `XDG_CONFIG_HOME` step. The `inventory` commands take their own `--config` and ignore the root one ([issue 043](../issues/043-inventory-ignores-the-root-config.md)); `unifi-network-toolkit` defaults its `--config` to `~/.config/unifi_management_cli/prod.env`.
+A relative `XDG_CONFIG_HOME` is ignored everywhere (the CLI, the MCP server, `scripts/site_targets.py` and `scripts/unifi-mcp-launch.sh`), as the XDG Base Directory spec requires, so no search reads a file under the working directory by accident ([issue 068](../issues/068-relative-xdg-config-home-is-honoured.md)). Of the CLI programs, only the root `--config` option of `unifi-mapper` (`typer_cli.main`) reads `UNIFI_CONFIG`; the MCP server reads it too (below). The standalone `unifi-inventory` program ignores that variable: without its own `--config` it goes straight to the `XDG_CONFIG_HOME` step. The `inventory` commands take their own `--config` and ignore the root one ([issue 043](../issues/043-inventory-ignores-the-root-config.md)); `unifi-network-toolkit` defaults its `--config` to `~/.config/unifi_management_cli/prod.env`.
 
 ### Credential fallback chain (MCP / toolkit)
 
@@ -1618,7 +1617,7 @@ For the async toolkit and MCP server, credentials are resolved at runtime via `g
 
 If all three sources fail, a `ToolError` with `error_code=AUTHENTICATION_FAILED` is raised with a structured suggestion. Under the MCP server the chain runs off the event loop, bounded by `UNIFI_MCP_CREDENTIAL_TIMEOUT` (default 15 s), and an exhausted or slow chain is reported as `CONFIG_MISSING`.
 
-The MCP server does **not** use the resolution order above: it never reads a `.env` in the working directory, and loads its file per credential family (`--config`, `UNIFI_CONFIG`, then the XDG/`~/.config` files, then the legacy `~/.config/unifi_network_mapper/prod.env`). See [Configuration](../mcp-server/MCP_SERVER_GUIDE.md#configuration) in the MCP server guide.
+The MCP server runs the same search minus the last step: it never reads a `.env` in the working directory, and loads its file per credential family (`--config`, `UNIFI_CONFIG`, then the XDG/`~/.config` files, then the legacy `~/.config/unifi_network_mapper/prod.env`). See [Configuration](../mcp-server/MCP_SERVER_GUIDE.md#configuration) in the MCP server guide.
 
 ### UnifiConfig dataclass
 

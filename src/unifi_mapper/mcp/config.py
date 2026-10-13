@@ -25,18 +25,31 @@ from pathlib import Path
 from typing import Any, Literal
 from unifi_mapper.core.utils import auth
 from unifi_mapper.core.utils.auth import Credentials
+from unifi_mapper.core.utils.config_search import (
+    ConfigSource,
+    find_config,
+)
+from unifi_mapper.core.utils.config_search import (
+    expand_home as _expand_home,
+)
+from unifi_mapper.core.utils.config_search import (
+    readable_file as _readable_file,
+)
 from unifi_mapper.core.utils.envfile import parse_env_value
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.mcp.call_audit import CALL_AUDIT_ENV, CallAuditSetting, parse_call_audit
+from unifi_mapper.network.config import resolve_network_env
 
 
 CredentialFamily = Literal['controller', 'network_api', 'protect', 'none']
-ConfigSource = Literal['explicit', 'xdg', 'home', 'legacy', 'none']
 FamilySource = Literal['environment', 'file', 'none']
 
 CREDENTIAL_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
     # Each inner tuple is an any-of group; every group must be satisfied.
     'controller': (('UNIFI_URL', 'UNIFI_HOST'),),  # + auth group, see controller_ready()
+    # The family's own keys. Each can also be derived from the controller family (issue 037):
+    # the host from UNIFI_URL, the site id from UNIFI_SITE at first call, the key from the
+    # console token for the same origin; family_status() reports those as ``derived``.
     'network_api': (
         ('UNIFI_NETWORK_HOST',),
         ('UNIFI_NETWORK_API_KEY',),
@@ -80,9 +93,6 @@ _HOST_KEYS: dict[str, tuple[str, ...]] = {
 }
 _TOKEN_KEYS = ('UNIFI_CONSOLE_API_TOKEN', 'UNIFI_API_TOKEN')
 
-CONFIG_DIR_NAME = 'unifi_management_cli'
-LEGACY_CONFIG_DIR_NAME = 'unifi_network_mapper'
-CONFIG_FILE_NAMES = ('prod.env', 'default.env')
 FOREIGN_FILE_REASON = 'file describes a different controller'
 FOREIGN_FILE_SUGGESTION = 'set UNIFI_CONFIG to the file for this site'
 
@@ -167,6 +177,10 @@ class FamilyStatus:
     present: tuple[str, ...]
     missing: tuple[str, ...]
     skipped_reason: str | None = None  # why a file's keys were *not* applied, if they weren't
+    # What stands in for an unset key, resolved later and offline here (issue 037):
+    # 'host: derived from UNIFI_URL', 'site id: resolved at first call', 'key: console token
+    # (same origin)'. Empty for a family whose own keys are all set.
+    derived: tuple[str, ...] = ()
 
     def to_json_dict(self) -> dict[str, Any]:
         """Return a JSON-safe dict (key names and flags only)."""
@@ -176,6 +190,7 @@ class FamilyStatus:
             'present': list(self.present),
             'missing': list(self.missing),
             'skipped_reason': self.skipped_reason,
+            'derived': list(self.derived),
         }
 
 
@@ -202,6 +217,8 @@ class ResolvedConfig:
 
 def _missing_keys(family: str, env: Mapping[str, str]) -> tuple[str, ...]:
     """Return the key names (or alternatives) a family still needs in ``env``."""
+    if family == 'network_api':
+        return resolve_network_env(env).missing  # offline: names only, nothing contacted
     missing = [
         ' or '.join(group)
         for group in CREDENTIAL_KEYS.get(family, ())
@@ -240,12 +257,14 @@ def family_status(
     member = FAMILY_KEYS[family]
     present = tuple(sorted(k for k, v in env.items() if member(k) and v))
     missing = _missing_keys(family, env)
+    derived = resolve_network_env(env).derived if family == 'network_api' else ()
     return FamilyStatus(
         ready=not missing,
         source=source,
         present=present,
         missing=missing,
         skipped_reason=skipped_reason,
+        derived=derived,
     )
 
 
@@ -296,22 +315,15 @@ def apply_file(
     return to_set, status, settings
 
 
-def _expand_home(value: str, home: Path) -> Path:
-    """Expand a leading ``~`` against the injected home directory."""
-    if value == '~':
-        return home
-    if value.startswith('~/'):
-        return home / value[2:]
-    return Path(value)
-
-
 def resolve_config_path(
     env: Mapping[str, str], home: Path, is_file: Callable[[Path], bool]
 ) -> tuple[ConfigSource, Path | None, tuple[Path, ...], str | None]:
     """Choose the env file for the MCP server. Never the CWD ``.env``.
 
-    Order: ``UNIFI_CONFIG`` (no fall-through when it is missing), then
-    ``$XDG_CONFIG_HOME/unifi_management_cli/{prod,default}.env``, then
+    The shared search (:func:`unifi_mapper.core.utils.config_search.find_config`) without
+    its working-directory step: ``UNIFI_CONFIG`` (no fall-through when it is missing), then
+    ``$XDG_CONFIG_HOME/unifi_management_cli/{prod,default}.env`` when that variable is
+    absolute (a relative one is ignored, issue 068), then
     ``~/.config/unifi_management_cli/{prod,default}.env``, then the legacy
     ``~/.config/unifi_network_mapper/prod.env`` (with a deprecation warning).
 
@@ -323,41 +335,7 @@ def resolve_config_path(
     Returns:
         ``(source, path or None, paths tried, warning or None)``.
     """
-    configured = env.get('UNIFI_CONFIG')
-    if configured:
-        path = _expand_home(configured, home)
-        if is_file(path):
-            return 'explicit', path, (path,), None
-        return (
-            'none',
-            None,
-            (path,),
-            f'UNIFI_CONFIG={path} is not a readable file; no config file loaded '
-            '(auto-discovery is skipped when UNIFI_CONFIG is set)',
-        )
-
-    candidates: list[tuple[ConfigSource, Path]] = []
-    xdg = env.get('XDG_CONFIG_HOME')
-    if xdg:
-        candidates.extend(('xdg', Path(xdg) / CONFIG_DIR_NAME / n) for n in CONFIG_FILE_NAMES)
-    home_dir = home / '.config' / CONFIG_DIR_NAME
-    candidates.extend(('home', home_dir / n) for n in CONFIG_FILE_NAMES)
-    candidates.append(('legacy', home / '.config' / LEGACY_CONFIG_DIR_NAME / 'prod.env'))
-
-    tried: list[Path] = []
-    for source, path in candidates:
-        if path in tried:
-            continue
-        tried.append(path)
-        if is_file(path):
-            warning = None
-            if source == 'legacy':
-                warning = (
-                    f'loading the legacy config {path}; move it to '
-                    f'{home_dir / "prod.env"} (the legacy location is deprecated)'
-                )
-            return source, path, tuple(tried), warning
-    return 'none', None, tuple(tried), None
+    return find_config(env, home, is_file)
 
 
 def parse_env_file(text: str) -> tuple[dict[str, str], list[int]]:
@@ -392,11 +370,6 @@ def parse_env_file(text: str) -> tuple[dict[str, str], list[int]]:
 def _stderr_warning(message: str) -> None:
     """Write one warning line to stderr (never stdout, which may carry JSON-RPC)."""
     print(f'unifi-mcp: warning: {message}', file=sys.stderr)
-
-
-def _readable_file(path: Path) -> bool:
-    """Return True if ``path`` is a file this process can read."""
-    return path.is_file() and os.access(path, os.R_OK)
 
 
 class ConfigFileError(OSError):

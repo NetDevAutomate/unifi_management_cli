@@ -8,12 +8,23 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from unifi_mapper.analysis.port_counter_baseline import state_dir
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.local_paths import check_snapshot_path
 
 
-DEFAULT_CONFIG_PATH = 'reports/config-baseline.json'
+CONFIG_BASELINE_FILENAME = 'config-baseline.json'
+
+
+def default_config_baseline_path() -> Path:
+    """Return ``state_dir() / 'config-baseline.json'`` (read at call time; nothing is created).
+
+    The baseline lives under ``$XDG_STATE_HOME/unifi_mapper/`` (issue 010), so a cron job and
+    an interactive run started in different directories compare against the same file.
+    """
+    return state_dir() / CONFIG_BASELINE_FILENAME
+
 
 # Fields to track for drift (ignore volatile stats fields)
 TRACKED_FIELDS = {
@@ -60,8 +71,13 @@ RADIO_TRACKED = [
 ]
 
 
-async def snapshot_config(output_path: str = DEFAULT_CONFIG_PATH) -> dict:
-    """Snapshot tracked configuration fields for all devices."""
+async def snapshot_config(output_path: str | Path | None = None) -> dict:
+    """Snapshot tracked configuration fields for all devices.
+
+    Args:
+        output_path: Where to write the baseline; ``None`` means
+            :func:`default_config_baseline_path`.
+    """
     async with UniFiClient() as client:
         devices = await client.get_devices()
 
@@ -100,18 +116,23 @@ async def snapshot_config(output_path: str = DEFAULT_CONFIG_PATH) -> dict:
 
         snapshot['devices'].append(entry)
 
-    path = Path(output_path)
+    path = Path(output_path) if output_path else default_config_baseline_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(snapshot, indent=2))
     return snapshot
 
 
-async def detect_drift(baseline_path: str = DEFAULT_CONFIG_PATH) -> dict:
-    """Compare current config against baseline and report differences."""
-    path = Path(baseline_path)
+async def detect_drift(baseline_path: str | Path | None = None) -> dict:
+    """Compare current config against baseline and report differences.
+
+    Args:
+        baseline_path: The baseline to read; ``None`` means
+            :func:`default_config_baseline_path`.
+    """
+    path = Path(baseline_path) if baseline_path else default_config_baseline_path()
     if not path.exists():
         raise ToolError(
-            message=f'No config baseline at {baseline_path}. Run snapshot first.',
+            message=f'No config baseline at {path}. Run snapshot first.',
             error_code=ErrorCodes.NO_DATA,
             suggestion='Run: unifi-mapper analyze config-drift --snapshot',
         )

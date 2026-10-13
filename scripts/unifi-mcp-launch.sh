@@ -11,7 +11,13 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${UNIFI_MCP_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/unifi_management_cli/prod.env}"
+# A relative XDG_CONFIG_HOME is invalid under the XDG Base Directory spec and is ignored, so
+# the config is never read from under the working directory (issue 068).
+CONFIG_HOME="$HOME/.config"
+if [[ "${XDG_CONFIG_HOME:-}" == /* ]]; then
+  CONFIG_HOME="$XDG_CONFIG_HOME"
+fi
+ENV_FILE="${UNIFI_MCP_ENV:-$CONFIG_HOME/unifi_management_cli/prod.env}"
 
 if [[ ! -r "$ENV_FILE" ]]; then
   echo "unifi-mcp-launch: config not found or unreadable: $ENV_FILE" >&2

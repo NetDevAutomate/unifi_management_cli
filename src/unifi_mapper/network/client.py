@@ -61,6 +61,22 @@ class NetworkConnectionError(NetworkClientError):
     pass
 
 
+class NetworkSiteResolutionError(NetworkClientError):
+    """``UNIFI_SITE`` matched no Integration API site, or more than one (issue 037)."""
+
+    pass
+
+
+# Site ids resolved from a site name, per process: ``(origin, site name) -> id``. One
+# ``GET /v1/sites`` per controller and name, however many clients a server opens.
+_SITE_IDS: dict[tuple[str, str], str] = {}
+
+
+def clear_site_id_cache() -> None:
+    """Forget every resolved site id (tests, or after a controller re-provision)."""
+    _SITE_IDS.clear()
+
+
 class UniFiNetworkClient:
     """Async client for the UniFi Network API.
 
@@ -115,6 +131,9 @@ class UniFiNetworkClient:
                 verify=self.config.verify_ssl,
                 timeout=httpx.Timeout(self.config.timeout),
                 transport=self._transport,
+                # The API key (or the console token standing in for it) goes to this origin
+                # only: a redirect elsewhere is an error, never followed with the header.
+                follow_redirects=False,
             )
 
             if self.config.debug:
@@ -177,7 +196,24 @@ class UniFiNetworkClient:
 
     @staticmethod
     def _raise_for_status(response: httpx.Response) -> None:
-        """Raise the client's error for a 4xx/5xx response."""
+        """Raise the client's error for a 3xx/4xx/5xx response.
+
+        A redirect is an error, not followed: the API key (or the console token standing in
+        for it, issue 037) is for this origin only, and ``follow_redirects`` is off.
+        """
+        if 300 <= response.status_code < 400:
+            target = (
+                httpx.URL(response.headers.get('location', ''))
+                if response.headers.get('location')
+                else None
+            )
+            where = f' to {target.host}' if target is not None and target.host else ''
+            raise NetworkClientError(
+                f'API request redirected ({response.status_code}){where}; redirects are not '
+                'followed, so the API key never leaves this origin',
+                status_code=response.status_code,
+            )
+
         if response.status_code == 401:
             raise NetworkAuthenticationError(
                 'Authentication failed - check API key',
@@ -222,10 +258,9 @@ class UniFiNetworkClient:
         if self._client is None:
             raise NetworkConnectionError('Client not connected')
 
-        # Replace site_id placeholder
-        path = path.replace('{siteId}', self.config.site_id)
-
         try:
+            if '{siteId}' in path:
+                path = path.replace('{siteId}', await self.site_id())
             base = await self._base_path_for(self._client)
             response = await self._client.request(
                 method,
@@ -248,6 +283,48 @@ class UniFiNetworkClient:
     ) -> dict[str, Any]:
         """Make a GET request."""
         return await self._request('GET', path, params=params)
+
+    async def site_id(self) -> str:
+        """Return the site id, resolving it from ``config.site_name`` at first use.
+
+        With ``config.site_id`` set it is returned as is. Otherwise one ``GET /v1/sites`` is
+        read (all pages) and the site whose ``internalReference`` equals ``site_name`` is
+        taken, exactly as ``port_diagnostics.fetch_integration_ports`` matches; the result is
+        cached for the process per ``(origin, site name)``.
+
+        Raises:
+            NetworkSiteResolutionError: No site, or more than one, has that
+                ``internalReference``; the message names what was found (names or ids,
+                never the key).
+            NetworkClientError: The listing itself failed.
+        """
+        if self.config.site_id:
+            return self.config.site_id
+        name = (self.config.site_name or '').strip()
+        key = (self.config.base_url, name)
+        cached = _SITE_IDS.get(key)
+        if cached is not None:
+            return cached
+
+        sites = [site async for site in self._paginate('/sites')]
+        matches = [
+            str(site.get('id') or '')
+            for site in sites
+            if str(site.get('internalReference') or '') == name and site.get('id')
+        ]
+        if len(matches) != 1:
+            found = sorted(str(s.get('internalReference') or '?') for s in sites)
+            if not matches:
+                detail = f'found: {", ".join(found) if found else "no sites"}'
+            else:
+                detail = f'{len(matches)} sites have it: {", ".join(matches)}'
+            raise NetworkSiteResolutionError(
+                f'UNIFI_SITE {name!r} does not name exactly one Integration API site '
+                f'(internalReference); {detail}'
+            )
+        _SITE_IDS[key] = matches[0]
+        log.debug(f'Resolved site {name!r} to {matches[0]}')
+        return matches[0]
 
     async def _post(
         self,
@@ -662,7 +739,7 @@ class UniFiNetworkClient:
         Returns:
             Current site information.
         """
-        return await self.get_site(self.config.site_id)
+        return await self.get_site(await self.site_id())
 
     async def update_site(
         self,

@@ -401,11 +401,11 @@ AsyncClient --> Errors
 |---|---|
 | `main()` | argparse-based entry, dispatches to port mapping or smart mapping |
 | `load_env_from_config(config_path)` | Parses a key=value `.env` file into `os.environ`; exits 1 if the file is missing |
-| `get_default_config_path()` | `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` (or `~/.config/unifi_management_cli/` when unset), else `./.env` |
+| `get_default_config_path()` | The shared search (`core/utils/config_search.find_config`): `UNIFI_CONFIG`; `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` (absolute values only), then in `~/.config/unifi_management_cli/`; the legacy `~/.config/unifi_network_mapper/prod.env` (warning); else `./.env` with a deprecation warning (removed in 0.4.0) |
 
 **Dependencies.** `config.py`, `api_client.py`, `port_mapper.py`, `smart_port_mapper.py`, `run_methods.py`, `completions.py`
 
-**Interface.** `typer_cli.py` and `inventory_cli.py` import its two config helpers; `network_cli.py` imports `load_env_from_config`. Deferred imports after env loading avoid import-time side effects. The MCP server has its own search (`mcp/config.py`), which also tries `~/.config` when `XDG_CONFIG_HOME` is set ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
+**Interface.** `typer_cli.py` and `inventory_cli.py` import its two config helpers; `network_cli.py` imports `load_env_from_config`. Deferred imports after env loading avoid import-time side effects. The MCP server (`mcp/config.py`) runs the same shared search without the `./.env` step ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
 
 ---
 

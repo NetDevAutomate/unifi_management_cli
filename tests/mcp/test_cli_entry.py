@@ -181,7 +181,15 @@ def test_check_prints_key_names_only_and_exits_0_when_ready(
     assert 'UNIFI_CONSOLE_API_TOKEN' in controller['present']
     assert 'fallback_chain' not in controller
     assert report['families']['protect']['ready']
-    assert report['families']['network_api']['missing']
+    # Issue 037: with only the controller's keys the network family is ready by derivation,
+    # resolved later; --check stays offline (run_calls is empty below).
+    network = report['families']['network_api']
+    assert network['ready'] and network['missing'] == [] and network['present'] == []
+    assert network['derived'] == [
+        'host: derived from UNIFI_URL',
+        'site id: resolved at first call',
+        'key: console token (same origin)',
+    ]
     assert report['tool_count'] > 0
     assert run_calls == []
 

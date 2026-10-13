@@ -105,6 +105,27 @@ def test_default_path_without_xdg_uses_the_home_config(
     )
 
 
+@pytest.mark.parametrize('relative', ['conf', './conf', '~/conf'])
+def test_default_path_ignores_a_relative_xdg_config_home(
+    targets: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, relative: str
+) -> None:
+    """A relative ``XDG_CONFIG_HOME`` is invalid under the XDG spec: the home config is used,
+    never a directory under the working directory (issue 068)."""
+    monkeypatch.setenv('HOME', str(tmp_path))
+    cwd = tmp_path / 'cwd'
+    stray = cwd / 'conf' / 'unifi_management_cli' / 'site-targets.json'
+    stray.parent.mkdir(parents=True)
+    stray.write_text(targets.EXAMPLE.read_text(encoding='utf-8'), encoding='utf-8')
+    monkeypatch.chdir(cwd)
+
+    path = targets.default_path({'XDG_CONFIG_HOME': relative})
+
+    assert path == tmp_path / '.config' / 'unifi_management_cli' / 'site-targets.json'
+    assert path.is_absolute()
+    with pytest.raises(targets.TargetsError):  # the stray file is never read
+        targets.channel_plan(environ={'XDG_CONFIG_HOME': relative})
+
+
 @pytest.mark.parametrize(
     'data',
     [

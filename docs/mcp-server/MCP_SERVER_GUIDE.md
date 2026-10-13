@@ -52,7 +52,7 @@ src/unifi_mapper/mcp/
 | uvx, git | `uvx --python 3.12 --from git+https://github.com/NetDevAutomate/unifi_management_cli@v0.2.0 unifi-mcp` | Serves what is pushed and tagged on GitHub. Until `main` is pushed and `v0.2.0` is tagged, this mode serves an older release (a user action, design D7) |
 | Installed tool | `uv tool install --python 3.12 /ABS/PATH/TO/unifi_management_cli`, then point the client at the absolute path of the installed `unifi-mcp` (usually `~/.local/bin/unifi-mcp`) | GUI apps start with a minimal `PATH`, so use the absolute path |
 | Legacy dev | `uv --directory /ABS/PATH/TO/unifi_management_cli run unifi-mcp` with `UNIFI_CONFIG=/path/to/prod.env` in the client's `env` | Runs from the repo's `.venv` and `uv.lock` |
-| Legacy wrapper | `scripts/unifi-mcp-launch.sh` | Sources `$UNIFI_MCP_ENV` (default `${XDG_CONFIG_HOME:-~/.config}/unifi_management_cli/prod.env`), exports every key, then runs the legacy dev command. Still supported, unchanged |
+| Legacy wrapper | `scripts/unifi-mcp-launch.sh` | Sources `$UNIFI_MCP_ENV` (default `$XDG_CONFIG_HOME/unifi_management_cli/prod.env` when that variable is absolute, else `~/.config/unifi_management_cli/prod.env`), exports every key, then runs the legacy dev command. Still supported |
 
 Only the two legacy modes read `uv.lock`. The uvx and installed-tool modes resolve from the
 dependency bounds in `pyproject.toml`. The cache keys below also apply to the legacy modes'
@@ -102,7 +102,8 @@ whatever the MCP client chose). It picks **one** env file, first match wins:
 2. `UNIFI_CONFIG=/path/to/file.env` (a leading `~` is expanded). If that file is missing, the
    server warns on stderr, loads **no** file (it never falls through to another, which might be
    a different site) and still starts.
-3. `$XDG_CONFIG_HOME/unifi_management_cli/prod.env`, then `default.env`.
+3. `$XDG_CONFIG_HOME/unifi_management_cli/prod.env`, then `default.env`, when `XDG_CONFIG_HOME`
+   is set to an absolute path (a relative one is ignored, as the XDG spec says).
 4. `~/.config/unifi_management_cli/prod.env`, then `default.env`.
 5. `~/.config/unifi_network_mapper/prod.env` (legacy; loaded with a deprecation warning).
 6. Nothing: the server still starts. `search_tools`, `get_tool_info` and the resources work;
@@ -118,16 +119,24 @@ controllers:
 | Family | Keys | Ready when |
 | --- | --- | --- |
 | `controller` | `UNIFI_URL`/`UNIFI_HOST`, `UNIFI_PORT`, `UNIFI_SITE`, `UNIFI_VERIFY_SSL`, `UNIFI_CONSOLE_API_TOKEN`/`UNIFI_API_TOKEN`, `UNIFI_USERNAME`, `UNIFI_PASSWORD`, `UNIFI_SSH_USERNAME`, `UNIFI_SSH_PASSWORD` | URL or host, plus a token or username and password |
-| `network_api` | `UNIFI_NETWORK_*` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID` |
+| `network_api` | `UNIFI_NETWORK_*` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID`, each of which the controller family can stand in for (below) |
 | `protect` | `PROTECT_*` | `PROTECT_HOST`, `PROTECT_USERNAME` and `PROTECT_PASSWORD` |
 
 - `UNIFI_SSH_USERNAME` and `UNIFI_SSH_PASSWORD` travel with the controller family so a file
   stays one site, but no MCP tool uses them: only the CLI's `diagnose latency-matrix` and
   `diagnose bandwidth` SSH to the gateway.
-- The `network_api` family needs all three keys. A file that sets only
-  `UNIFI_NETWORK_API_KEY`, as the legacy `~/.config/unifi_network_mapper/prod.env` in
-  [issue 037](../issues/037-launch-config-network-family-incomplete.md) does, leaves the six
-  network tools at `[CONFIG_MISSING]`.
+- The `network_api` family no longer needs its own three keys when the controller family is
+  configured ([issue 037](../issues/037-launch-config-network-family-incomplete.md)). With
+  `UNIFI_NETWORK_HOST` unset the host, port and scheme come from `UNIFI_URL`; with
+  `UNIFI_NETWORK_SITE_ID` unset the site id is resolved at the first call by one
+  `GET /v1/sites` matched on `internalReference == UNIFI_SITE` (`default` when unset) and
+  cached for the process, and zero or several matches are a `[CONFIG_INVALID]` naming what
+  was found; with `UNIFI_NETWORK_API_KEY` unset, `UNIFI_CONSOLE_API_TOKEN` stands in **only**
+  when the network host is the same origin (scheme, host and port) as `UNIFI_URL`. The
+  console token is never sent to another host, and the client follows no redirect. An
+  explicit `UNIFI_NETWORK_*` key always wins. `--check` reports the deferred steps under the
+  family's `derived` list (`host: derived from UNIFI_URL`, `site id: resolved at first call`,
+  `key: console token (same origin)`) without contacting the controller.
 - For `protect`, use a dedicated local, view-only Protect account, not the console's admin
   login. The five Protect tools haven't been verified against a live console yet
   ([issue 034](../issues/034-protect-has-no-live-account.md)).

@@ -7,8 +7,9 @@ placeholders only, in ``site-targets.example.json`` next to this file. Each scri
 own section of the real file, found in this order:
 
 1. the path given with the script's ``--targets`` option;
-2. ``$XDG_CONFIG_HOME/unifi_management_cli/site-targets.json``, or
-   ``~/.config/unifi_management_cli/site-targets.json`` when ``XDG_CONFIG_HOME`` is unset.
+2. ``$XDG_CONFIG_HOME/unifi_management_cli/site-targets.json`` when ``XDG_CONFIG_HOME`` is an
+   absolute path, else ``~/.config/unifi_management_cli/site-targets.json`` (a relative
+   ``XDG_CONFIG_HOME`` is ignored, as the XDG spec says; issue 068).
 
 A missing or unreadable file, a missing section, a key repeated in one object, an AP listed
 twice in the channel plan or a malformed entry raises :class:`TargetsError`. Each script
@@ -20,10 +21,10 @@ repeats an entry's value.
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from unifi_mapper.core.utils.config_search import config_dir
 
 
 EXAMPLE = Path(__file__).resolve().parent / 'site-targets.example.json'
@@ -58,15 +59,18 @@ def _unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def default_path(environ: Mapping[str, str] | None = None) -> Path:
     """Return the default targets file under the XDG config directory.
 
+    The directory is the one the project's env-file search uses
+    (``unifi_mapper.core.utils.config_search.config_dir``): ``$XDG_CONFIG_HOME`` when it is
+    set to an absolute path, else ``~/.config``. A relative ``XDG_CONFIG_HOME`` is ignored,
+    as the XDG spec says, so the file is never read from under the working directory.
+
     Args:
         environ: The environment to read ``XDG_CONFIG_HOME`` from; ``os.environ`` when None.
 
     Returns:
         ``<config home>/unifi_management_cli/site-targets.json``.
     """
-    env = os.environ if environ is None else environ
-    base = env.get('XDG_CONFIG_HOME') or str(Path.home() / '.config')
-    return Path(base).expanduser() / 'unifi_management_cli' / FILE_NAME
+    return config_dir(environ) / FILE_NAME
 
 
 def load_section(

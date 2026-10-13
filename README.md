@@ -107,9 +107,12 @@ uv run unifi-mapper discover --format html --apply  # only when the preview look
 `diagnose all` prints one line per check (`✅`, `⚠️` or `❌` with the finding), then a
 pass/warn/fail count; it exits 2 when any check fails, so it works in a script or a cron job.
 
-`unifi-mapper` finds the config at `--config PATH` or `UNIFI_CONFIG`, else
-`${XDG_CONFIG_HOME:-~/.config}/unifi_management_cli/prod.env`, then `default.env` there, then
-`./.env`. When none exists it lists every path it tried. [`.env.example`](.env.example)
+`unifi-mapper` and `unifi-mcp` share one config search: `--config PATH` or `UNIFI_CONFIG`,
+else `$XDG_CONFIG_HOME/unifi_management_cli/{prod,default}.env` (an absolute
+`XDG_CONFIG_HOME` only), then `~/.config/unifi_management_cli/{prod,default}.env`, then the
+legacy `~/.config/unifi_network_mapper/prod.env` with a warning. The CLI alone still reads
+`./.env` last, with a deprecation warning; that fallback is removed in 0.4.0. When none
+exists it lists every path it tried. [`.env.example`](.env.example)
 documents every key, including the optional gateway SSH, Network Integration API and Protect
 settings.
 
@@ -199,12 +202,9 @@ The open items live in [docs/issues](docs/issues/README.md), one file each, with
 reasoning. The ones that affect use today:
 
 - Gateway SSH host keys are not verified (038); Protect tools are unverified live (034).
-- The six Network Integration API tools need `UNIFI_NETWORK_HOST`, `_API_KEY` and `_SITE_ID`
-  as well (037); `monitor_lags` misses LAGs on current switch firmware (061).
+- `monitor_lags` misses LAGs on current switch firmware (061).
 - PNG and SVG diagrams need Graphviz's `dot`; without it `discover` writes a placeholder and
   its report (075). MQTT needs the `mqtt` extra: `uv sync --extra mqtt` (074).
-- Radio snapshots and some baselines are written under `./reports/` in the working directory
-  rather than the state directory (010).
 
 ## Documentation
 

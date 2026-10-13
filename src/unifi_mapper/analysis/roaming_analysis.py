@@ -8,12 +8,27 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unifi_mapper.analysis.port_counter_baseline import state_dir
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.local_paths import check_snapshot_path
 
 
-DEFAULT_ROAMING_PATH = 'reports/client-roaming-history.json'
+ROAMING_HISTORY_FILENAME = 'client-roaming-history.json'
+
+
+def default_roaming_history_path() -> Path:
+    """Return ``state_dir() / 'client-roaming-history.json'`` (read at call time).
+
+    The history lives under ``$XDG_STATE_HOME/unifi_mapper/`` (issue 010); nothing is created.
+    """
+    return state_dir() / ROAMING_HISTORY_FILENAME
+
+
+def _history(history_path: str | Path | None) -> Path:
+    """Return the history file to use: the given one, else the XDG default."""
+    return Path(history_path) if history_path else default_roaming_history_path()
+
 
 # Retention configuration — referenced by rf_strategy.py's 48h history gate.
 # Bumped from 288 (24h) to 576 (48h) during Phase D design to support the
@@ -32,11 +47,14 @@ MAX_SNAPSHOTS_RETAINED = (RETENTION_HOURS * 3600) // SNAPSHOT_INTERVAL_SECONDS  
 CHANNELS_24GHZ = frozenset(range(1, 15))
 
 
-async def snapshot_client_associations(output_path: str = DEFAULT_ROAMING_PATH) -> dict:
+async def snapshot_client_associations(output_path: str | Path | None = None) -> dict:
     """Record current client-to-AP associations for roaming tracking.
 
     Each run appends to the history file, building a time-series of
     which AP each client is connected to.
+
+    Args:
+        output_path: The history file; ``None`` means :func:`default_roaming_history_path`.
     """
     async with UniFiClient() as client:
         devices = await client.get_devices()
@@ -68,7 +86,7 @@ async def snapshot_client_associations(output_path: str = DEFAULT_ROAMING_PATH) 
         )
 
     # Load existing history or create new
-    path = Path(output_path)
+    path = Path(output_path) if output_path else default_roaming_history_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if path.exists():
@@ -89,18 +107,21 @@ async def snapshot_client_associations(output_path: str = DEFAULT_ROAMING_PATH) 
     }
 
 
-async def analyze_roaming(history_path: str = DEFAULT_ROAMING_PATH) -> dict:
+async def analyze_roaming(history_path: str | Path | None = None) -> dict:
     """Analyze roaming patterns from collected history.
 
     Identifies:
     - Clients that roamed between APs
     - Sticky clients (low RSSI but not roaming)
     - Frequent roamers (bouncing between APs)
+
+    Args:
+        history_path: The history file; ``None`` means :func:`default_roaming_history_path`.
     """
-    path = Path(history_path)
+    path = _history(history_path)
     if not path.exists():
         raise ToolError(
-            message=f'No roaming history at {history_path}. Collect snapshots first.',
+            message=f'No roaming history at {path}. Collect snapshots first.',
             error_code=ErrorCodes.NO_DATA,
             suggestion='Run: unifi-mapper analyze roaming --snapshot (multiple times over time)',
         )
@@ -198,7 +219,7 @@ async def analyze_roaming(history_path: str = DEFAULT_ROAMING_PATH) -> dict:
     }
 
 
-def history_hours_available(history_path: str = DEFAULT_ROAMING_PATH) -> float:
+def history_hours_available(history_path: str | Path | None = None) -> float:
     """Return the number of hours between the oldest and newest snapshot.
 
     Used by the RF strategy scorecard (rf_strategy.py) to gate recommendation
@@ -213,7 +234,7 @@ def history_hours_available(history_path: str = DEFAULT_ROAMING_PATH) -> float:
         ToolError(CONFIG_INVALID) if the history file exists but is not valid
         JSON or does not contain a "snapshots" list.
     """
-    path = Path(history_path)
+    path = _history(history_path)
     if not path.exists():
         return 0.0
 
@@ -221,7 +242,7 @@ def history_hours_available(history_path: str = DEFAULT_ROAMING_PATH) -> float:
         history = json.loads(path.read_text())
     except json.JSONDecodeError as err:
         raise ToolError(
-            message=f'Roaming history at {history_path} is not valid JSON: {err}',
+            message=f'Roaming history at {path} is not valid JSON: {err}',
             error_code=ErrorCodes.CONFIG_INVALID,
             suggestion='Inspect the file manually; rerun the snapshot command to rebuild if corrupt.',
         ) from err
@@ -229,7 +250,7 @@ def history_hours_available(history_path: str = DEFAULT_ROAMING_PATH) -> float:
     snapshots = history.get('snapshots')
     if not isinstance(snapshots, list):
         raise ToolError(
-            message=f"Roaming history at {history_path} is missing a 'snapshots' list.",
+            message=f"Roaming history at {path} is missing a 'snapshots' list.",
             error_code=ErrorCodes.CONFIG_INVALID,
             suggestion='Delete the file and let snapshot collection rebuild it.',
         )
@@ -248,7 +269,7 @@ def history_hours_available(history_path: str = DEFAULT_ROAMING_PATH) -> float:
 
 
 def compute_twofour_only_clients(
-    history_path: str = DEFAULT_ROAMING_PATH,
+    history_path: str | Path | None = None,
     window_hours: float = 48.0,
 ) -> dict[str, list[dict[str, Any]]]:
     """Identify clients observed ONLY on 2.4 GHz per AP within the window.
@@ -281,7 +302,7 @@ def compute_twofour_only_clients(
           ``snapshot_client_associations`` (no ``ap_mac``), so they never
           reach this code path.
     """
-    path = Path(history_path)
+    path = _history(history_path)
     if not path.exists():
         return {}
 
@@ -289,7 +310,7 @@ def compute_twofour_only_clients(
         history = json.loads(path.read_text())
     except json.JSONDecodeError as err:
         raise ToolError(
-            message=f'Roaming history at {history_path} is not valid JSON: {err}',
+            message=f'Roaming history at {path} is not valid JSON: {err}',
             error_code=ErrorCodes.CONFIG_INVALID,
             suggestion='Inspect the file manually; rerun the snapshot command to rebuild if corrupt.',
         ) from err
@@ -377,7 +398,7 @@ def compute_twofour_only_clients(
 
 
 def build_mobility_graph(
-    history_path: str = DEFAULT_ROAMING_PATH,
+    history_path: str | Path | None = None,
     window_hours: float = 48.0,
 ) -> dict[str, set[str]]:
     """Build ``{client_mac: set[ap_name]}`` for all clients seen in the window.
@@ -394,7 +415,7 @@ def build_mobility_graph(
     Returns an empty dict when the history file is missing, not yet written,
     or contains no snapshots in the window.
     """
-    path = Path(history_path)
+    path = _history(history_path)
     if not path.exists():
         return {}
 
@@ -402,7 +423,7 @@ def build_mobility_graph(
         history = json.loads(path.read_text())
     except json.JSONDecodeError as err:
         raise ToolError(
-            message=f'Roaming history at {history_path} is not valid JSON: {err}',
+            message=f'Roaming history at {path} is not valid JSON: {err}',
             error_code=ErrorCodes.CONFIG_INVALID,
             suggestion='Inspect the file manually; rerun the snapshot command to rebuild if corrupt.',
         ) from err

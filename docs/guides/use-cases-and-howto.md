@@ -113,13 +113,18 @@ first of:
 
 1. `--config PATH`, or `UNIFI_CONFIG=PATH` (the inventory commands take their own
    `--config` instead, [issue 043](../issues/043-inventory-ignores-the-root-config.md))
-2. `prod.env` in `$XDG_CONFIG_HOME/unifi_management_cli/`, or in
-   `~/.config/unifi_management_cli/` when `XDG_CONFIG_HOME` is unset
-3. `default.env` in that same directory
-4. `.env` in the current directory (legacy fallback)
+2. `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` when
+   `XDG_CONFIG_HOME` is set to an absolute path (a relative one is ignored, as the XDG spec
+   says)
+3. `prod.env`, then `default.env`, in `~/.config/unifi_management_cli/`
+4. the legacy `~/.config/unifi_network_mapper/prod.env` (loaded with a deprecation warning)
+5. `.env` in the current directory (deprecated: loaded with a warning on stderr before any
+   controller connection; removed in 0.4.0. Name it with `--config ./.env` or
+   `UNIFI_CONFIG=./.env` instead)
 
-A set `XDG_CONFIG_HOME` replaces `~/.config` here; the MCP server tries both
-([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
+This is the MCP server's search too (one shared function,
+`core/utils/config_search.py`), minus step 5: the server never reads a `.env` in its
+working directory ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
 
 **Step 3: Create the configuration file**
 
@@ -1760,17 +1765,19 @@ flowchart TD
     A([Load config]) --> B{--config flag set?}
     B -->|Yes| C[Use specified path]
     B -->|No| D{UNIFI_CONFIG env var set?}
-    D -->|Yes| E[Use env var path]
-    D -->|No| F{XDG_CONFIG_HOME set?}
-    F -->|Yes| G[Check XDG_CONFIG_HOME/unifi_management_cli/prod.env]
-    F -->|No| H[Check ~/.config/unifi_management_cli/prod.env]
-    G --> I{prod.env exists?}
-    H --> I
+    D -->|Yes| E[Use env var path, never fall through]
+    D -->|No| F{XDG_CONFIG_HOME set to an absolute path?}
+    F -->|Yes| G[Check XDG_CONFIG_HOME/unifi_management_cli/prod.env, then default.env]
+    F -->|No or relative| H[Check ~/.config/unifi_management_cli/prod.env, then default.env]
+    G --> I{found?}
+    I -->|No| H
     I -->|Yes| C
-    I -->|No| J[Check default.env in same dir]
-    J --> K{default.env exists?}
+    H --> K{found?}
     K -->|Yes| C
-    K -->|No| L[Fall back to .env in CWD]
+    K -->|No| L[Check legacy ~/.config/unifi_network_mapper/prod.env, warn if used]
+    L --> M{found?}
+    M -->|Yes| C
+    M -->|No| N[CLI only: ./.env, deprecation warning; removed in 0.4.0]
 ```
 
 ---
