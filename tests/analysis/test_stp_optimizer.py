@@ -1211,7 +1211,7 @@ class TestGatewayIsNeverPlanned:
         async def _discover(*_args: object, **_kwargs: object) -> STPTopology:
             return topology
 
-        monkeypatch.setattr('unifi_mapper.cli.load_env_from_config', lambda path: None)
+        monkeypatch.setattr('unifi_mapper.typer_cli.load_env_from_config', lambda path: None)
         monkeypatch.setattr(stp_optimizer, 'discover_stp_topology', _discover)
         result = CliRunner().invoke(app, ['stp', 'optimize'])
         assert result.exit_code == 0, result.output
