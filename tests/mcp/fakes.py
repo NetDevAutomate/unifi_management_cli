@@ -5,6 +5,7 @@ using these fakes ever reaches the credential chain.
 """
 
 import anyio
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
@@ -192,6 +193,12 @@ async def sleeper(seconds: float = 0.2) -> dict[str, Any]:
     return {'slept': seconds}
 
 
+def blocks(seconds: float = 0.2) -> dict[str, Any]:
+    """Block the event loop with a sync sleep (the shape of a sync catalog handler)."""
+    time.sleep(seconds)
+    return {'blocked': seconds}
+
+
 # --- manifest -----------------------------------------------------------------------
 
 _HANDLERS = [
@@ -216,6 +223,7 @@ _HANDLERS = [
     'raise_domain',
     'raise_validation',
     'sleeper',
+    'blocks',
 ]
 
 

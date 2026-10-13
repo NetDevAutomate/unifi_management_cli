@@ -199,7 +199,7 @@ Call it again with `offset: 200` for the last 30 clients (`next_offset` is then 
 | --- | --- | --- | --- |
 | `UNIFI_CONFIG` | unset | path to a readable env file | stderr warning; no file loaded; server starts |
 | `UNIFI_MCP_TOOL_SURFACE` | `discovery` | `discovery`, `direct` (case-insensitive) | stderr warning; `discovery` |
-| `UNIFI_MCP_TOOL_TIMEOUT` | 300 | seconds, 5–3600 | stderr warning; 300 |
+| `UNIFI_MCP_TOOL_TIMEOUT` | 270 | seconds, 5–3600 | stderr warning; 270 |
 | `UNIFI_MCP_CREDENTIAL_TIMEOUT` | 15 | seconds, 1–120 | stderr warning; 15 |
 | `UNIFI_MCP_MAX_CONCURRENCY` | 4 | integer, 1–32 | stderr warning; 4 |
 | `UNIFI_MCP_LOG_LEVEL` | `WARNING` | a loguru level name | stderr warning; `WARNING` |
@@ -380,7 +380,7 @@ failed call. On the direct surface a failure is a single text block,
 | `MUTATION_REFUSED` | The tool changes the controller; use the CLI |
 | `INVALID_PARAMETERS` | Unknown key or a type/range error; the envelope adds `parameters` and `input_schema` |
 | `CONFIG_MISSING` | The tool's credential family isn't ready, or the Keychain/1Password lookup didn't finish in time; names the files tried |
-| `TIMEOUT` | The call exceeded `UNIFI_MCP_TOOL_TIMEOUT` (300 s by default) |
+| `TIMEOUT` | The call exceeded `UNIFI_MCP_TOOL_TIMEOUT` (270 s by default) |
 | `READ_ONLY_VIOLATION` | A tool tried a write and a read-only guard refused it (a bug; nothing was written) |
 | `TOOL_FAILED` | Any other exception, as `ExceptionClass: text` |
 | domain codes | Raised by the tool itself, e.g. `DEVICE_NOT_FOUND`, `PROFILE_NOT_FOUND`, `CONTROLLER_UNREACHABLE`, `AUTHENTICATION_FAILED`, `CONFIG_INVALID`, `NO_DATA` |
@@ -404,18 +404,20 @@ config. Replace `/ABS/PATH/TO/unifi_management_cli` with the absolute path of yo
 `/Users/you` with your home directory. These are examples; the server never edits client
 configs.
 
-Every call has a server-side deadline, `UNIFI_MCP_TOOL_TIMEOUT` (300 s by default, 5–3600;
+Every call has a server-side deadline, `UNIFI_MCP_TOOL_TIMEOUT` (270 s by default, 5–3600;
 issue [012](../issues/012-mcp-default-tool-deadline.md)): a wedged controller or a stuck
 helper ends as a `[TIMEOUT]` error result, logged on stderr, and frees its concurrency slot.
-The default is above the longest read-only tools (counter sampling blocks for about 100 s).
-Where a client has its own per-call limit, set it **above** the server's, as the snippets
-below do (330 s): if the client's limit were the lower one, it would give up first and the
-server's `[TIMEOUT]` would never reach the model. Raise both together if you raise one.
+The default is above the longest read-only tools (counter sampling blocks for about 100 s)
+and 30 s below the 300 s per-call limit the snippets below give the client: if the client's
+limit were the lower one, it would give up first and the server's `[TIMEOUT]` would never
+reach the model. If you raise one, keep the client's limit above the server's. The deadline
+interrupts an async handler; a handler that blocks the event loop runs to its end first
+(the issue records which tools and why).
 
 ### kiro-cli
 
 `~/.kiro/settings/mcp.json` (Kiro defers MCP tool schemas, so use the direct surface; `timeout`
-is in milliseconds, 30 s above the server's 300 s deadline):
+is in milliseconds, 30 s above the server's 270 s deadline):
 
 ```json
 {
@@ -427,7 +429,7 @@ is in milliseconds, 30 s above the server's 300 s deadline):
         "UNIFI_CONFIG": "/Users/you/.config/unifi_management_cli/prod.env",
         "UNIFI_MCP_TOOL_SURFACE": "direct"
       },
-      "timeout": 330000
+      "timeout": 300000
     }
   }
 }
@@ -469,8 +471,8 @@ or the equivalent project-scoped `.mcp.json`:
 command = "uvx"
 args = ["--python", "3.12", "--from", "/ABS/PATH/TO/unifi_management_cli", "unifi-mcp"]
 env = { UNIFI_CONFIG = "/Users/you/.config/unifi_management_cli/prod.env" }
-# 30 s above the server's own 300 s deadline (UNIFI_MCP_TOOL_TIMEOUT), so [TIMEOUT] arrives.
-tool_timeout_sec = 330
+# 30 s above the server's own 270 s deadline (UNIFI_MCP_TOOL_TIMEOUT), so [TIMEOUT] arrives.
+tool_timeout_sec = 300
 ```
 
 ### Claude Desktop and other GUI hosts

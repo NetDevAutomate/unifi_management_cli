@@ -5,7 +5,7 @@
 1. lookup, 2. mutation gate, 3. lazy catalog build, 4. alias rewrite,
 5. unknown-key check, 6. argument validation against the handler signature,
 7. credential gate by the tool's family, 8. execution under a concurrency cap and the
-per-call deadline (``UNIFI_MCP_TOOL_TIMEOUT``, 300 s by default), 9. error mapping to stable
+per-call deadline (``UNIFI_MCP_TOOL_TIMEOUT``, 270 s by default), 9. error mapping to stable
 codes,
 10. masking of every result and error text, 11. the result for the surface, then one line
 in the call log (``mcp/call_audit.py``) when the server gave the runner one.
