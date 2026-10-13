@@ -6,12 +6,16 @@ and unset, and never resolves relative to the working directory.
 
 import inspect
 import json
+import os
 import pytest
-import threading
+import stat
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from tests.lock_helpers import held_read_only, run_bounded
 from typer.testing import CliRunner
 from unifi_mapper import typer_cli
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.jsonl import LockTimeoutError, NotOwnedError
 from unifi_mapper.diagnostics import wan_history
 from unifi_mapper.diagnostics.wan_history import (
     SPEEDTEST_HISTORY_MAX_BYTES,
@@ -83,15 +87,93 @@ def test_append_dedups_by_run_time_and_sets_modes(tmp_path: Path) -> None:
     assert append_speedtest(_speedtest(run_epoch=None), path) is None
 
 
-def test_concurrent_appends_of_one_run_write_it_once(tmp_path: Path) -> None:
+def _loosen(path: Path) -> Path:
+    """An existing history, lock and directory with group and other bits; the lock's path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o755)
+    path.write_text('', encoding='utf-8')
+    os.chmod(path, 0o644)
+    lock = Path(f'{path}.lock')
+    lock.write_text('', encoding='utf-8')
+    os.chmod(lock, 0o644)
+    return lock
+
+
+def test_append_tightens_a_permissive_history_lock_and_default_directory() -> None:
+    """Issue 076 item 7: the modes applied on creation only, so an existing history or
+    directory with group or other bits stayed readable (the gap the MCP call log had). The
+    default state directory is the tool's own, so it is kept 0o700 too."""
+    path = default_speedtest_history_path()  # under the test's XDG_STATE_HOME
+    lock = _loosen(path)
+    assert append_speedtest(_speedtest()) is not None
+    modes = [stat.S_IMODE(p.stat().st_mode) for p in (path.parent, path, lock)]
+    assert modes == [0o700, 0o600, 0o600]
+
+
+def test_append_never_tightens_the_directory_of_an_explicit_path(tmp_path: Path) -> None:
+    """Council decision on item 7: a directory the caller named is the user's; only the
+    history and its lock are made private there."""
+    path = tmp_path / 'theirs' / 'history.jsonl'
+    lock = _loosen(path)
+    assert append_speedtest(_speedtest(), path) is not None
+    modes = [stat.S_IMODE(p.stat().st_mode) for p in (path.parent, path, lock)]
+    assert modes == [0o755, 0o600, 0o600]
+    new = tmp_path / 'new' / 'history.jsonl'  # a missing directory is created private
+    assert append_speedtest(_speedtest(), new) is not None
+    assert stat.S_IMODE(new.parent.stat().st_mode) == 0o700
+
+
+def test_append_refuses_a_history_owned_by_another_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     path = tmp_path / 'history.jsonl'
-    threads = [
-        threading.Thread(target=append_speedtest, args=(_speedtest(), path)) for _ in range(8)
-    ]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    append_speedtest(_speedtest(), path)
+    real_fstat = os.fstat
+
+    def someone_elses(fd: int) -> os.stat_result:
+        st = real_fstat(fd)
+        fields = list(st[:10])
+        fields[stat.ST_UID] = st.st_uid + 1
+        return os.stat_result(fields)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(os, 'fstat', someone_elses)
+        with pytest.raises(NotOwnedError, match='owned by another user'):
+            append_speedtest(_speedtest(run_epoch=1_790_003_600), path)
+    assert len(path.read_text().splitlines()) == 1  # nothing appended
+
+
+def test_append_gives_up_on_a_held_lock_after_the_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue 076 item 32: the history waited for its lock with no limit, so another account
+    holding the lock stalled every scheduled `diagnose wan --record`."""
+    monkeypatch.setattr(wan_history, 'HISTORY_LOCK_TIMEOUT_S', 0.2)
+    path = tmp_path / 'history.jsonl'
+    append_speedtest(_speedtest(), path)
+    with held_read_only(Path(f'{path}.lock')):
+        held = run_bounded(lambda: append_speedtest(_speedtest(run_epoch=1_790_003_600), path), 5)
+    assert held.done, 'the append waited on the held lock past its limit'
+    assert isinstance(held.error, LockTimeoutError) and held.elapsed < 1.5
+    assert f'the lock {path}.lock was held for more than 0.2 s' in str(held.error)
+    assert 'any account that can open that file' in str(held.error)  # who may hold it
+    assert len(path.read_text().splitlines()) == 1
+
+
+def test_the_shipped_lock_bound_is_five_seconds() -> None:
+    """Council decision on item 32: bounded at 5 s, never unbounded."""
+    assert wan_history.HISTORY_LOCK_TIMEOUT_S == 5.0
+
+
+def test_concurrent_appends_of_one_run_write_it_once(tmp_path: Path) -> None:
+    """Issue 076 item 17: run as plain threads, a writer's exception was dropped; each
+    ``result()`` re-raises it here."""
+    path = tmp_path / 'history.jsonl'
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(append_speedtest, _speedtest(), path) for _ in range(8)]
+        results = [future.result(timeout=10) for future in futures]
+    assert sum(1 for r in results if r is not None and r.lines_written) == 1
+    assert sum(1 for r in results if r is not None and r.skipped_duplicates) == 7
     assert len(path.read_text().splitlines()) == 1  # the dedup ran under the writer's lock
 
 
@@ -144,7 +226,23 @@ async def test_the_mcp_tool_reads_the_default_path(
     append_speedtest(_speedtest())
     result = await get_wan_speedtest_history(limit=10)
     assert result['total'] == 1 and result['entries'][0]['down_mbps'] == 950.0
+
+
+def test_the_mcp_tool_is_a_coroutine_function() -> None:
+    """Moved here from the VLAN store tests (issue 076 item 15): the handler is awaited."""
     assert inspect.iscoroutinefunction(get_wan_speedtest_history)
+
+
+def test_the_tool_description_points_at_its_cli_command() -> None:
+    """Issue 076 item 9: the description named the recorder but not the CLI reader."""
+    from unifi_mapper.mcp.registry import ToolRegistry, default_manifests_dir
+
+    meta = ToolRegistry(default_manifests_dir(), strict=True).get_metadata(
+        'get_wan_speedtest_history'
+    )
+    assert meta.cli == 'diagnose wan-history'
+    assert '`unifi-mapper diagnose wan-history`' in (meta.description or '')
+    assert 'diagnose wan-history' in (get_wan_speedtest_history.__doc__ or '')
 
 
 def test_the_history_module_imports_no_controller_client() -> None:

@@ -2927,7 +2927,11 @@ def diagnose_latency_matrix(
         False, '--devices-only', help='Skip clients, only ping infrastructure'
     ),
 ):
-    """📡 SSH to gateway and ping all devices to build a latency matrix."""
+    """📡 SSH to gateway and ping all devices to build a latency matrix.
+
+    A target whose ping could not run on the gateway (ping missing, or refused for the SSH
+    user) is listed under "Ping could not run" with the reason, never as 100% loss.
+    """
     from rich.table import Table
     from unifi_mapper.analysis.latency_matrix import run_latency_matrix
 
@@ -2968,7 +2972,12 @@ def diagnose_latency_matrix(
             status = '[green]✅[/green]'
             rtt_avg = f'{r.rtt_avg:.1f}ms' if r.rtt_avg else '—'
             rtt_max = f'{r.rtt_max:.1f}ms' if r.rtt_max else '—'
-            loss = f'{r.packet_loss:.0f}%' if r.packet_loss > 0 else '0%'
+            loss = f'{r.packet_loss:.0f}%' if r.packet_loss else '0%'
+        elif r.error is not None:  # ping could not run: no loss figure
+            status = '[yellow]⚠ not run[/yellow]'
+            rtt_avg = '—'
+            rtt_max = '—'
+            loss = '—'
         else:
             status = '[red]❌[/red]'
             rtt_avg = '—'
@@ -2983,6 +2992,12 @@ def diagnose_latency_matrix(
         console.print(f'\n[red]Unreachable ({len(report.unreachable_devices)}):[/red]')
         for name in report.unreachable_devices:
             console.print(f'  ❌ {name}')
+
+    failed = [r for r in report.results if r.error is not None]
+    if failed:
+        console.print(f'\n[yellow]Ping could not run ({len(failed)}):[/yellow]')
+        for r in failed:
+            console.print(f'  ⚠ {escape(r.name)}: {escape(r.error or "")}')
 
     if report.skipped_targets:
         console.print(
@@ -3440,8 +3455,9 @@ def stp_audit_priorities(
     """📋 One-shot STP priority audit: each switch's current vs recommended priority.
 
     Discovers the whole fleet (tiers need every switch), computes the recommended
-    priorities and reports the delta per switch, a warning when two non-core switches tie
-    at the lowest priority, and the gateway, which is skipped. --device narrows the rows and
+    priorities and reports the delta per switch, a warning when switches tie at the lowest
+    priority unless every one is core-class (the root would be decided by MAC address), and
+    the gateway, which is skipped. --device narrows the rows and
     the verdict to one switch, by name, MAC or ID, and prints the fleet's verdict after it.
     Writes no plan: stp optimize --plan does. Read-only.
     """
@@ -5176,12 +5192,19 @@ def analyze_link_errors(
     A plain run only compares against the baseline (read only). --snapshot sets the
     baseline; --record appends to the counter history read by `ports counters`,
     `ports diagnose` and the MCP port tools. Both write only under the XDG state
-    directory and can be combined (one controller read).
+    directory and can be combined (one controller read). A record that cannot be written
+    (its lock held by another run or account for over 5 s, a file owned by another user)
+    exits 1 naming the lock and the reason, so a schedule notices. A --history path's
+    existing directory is left as it is; the default state directory is kept private.
     """
     import time
     from datetime import datetime
     from rich.table import Table
-    from unifi_mapper.analysis.counter_history import append_history, build_history_records
+    from unifi_mapper.analysis.counter_history import (
+        append_history,
+        build_history_records,
+        default_history_path,
+    )
     from unifi_mapper.analysis.link_error_tracking import (
         compare_link_errors,
         default_link_error_baseline_path,
@@ -5216,12 +5239,16 @@ def analyze_link_errors(
             epoch = time.time()
             taken_at = datetime.fromtimestamp(epoch).astimezone().isoformat()
             records = build_history_records(devices, taken_at=taken_at, epoch=epoch)
-            written = append_history(
-                records,
-                path=Path(history) if history else None,
-                retention_days=retention_days,
-                now=epoch,
-            )
+            target = Path(history) if history else default_history_path()
+            try:
+                written = append_history(
+                    records,
+                    path=Path(history) if history else None,  # None: the default's directory
+                    retention_days=retention_days,
+                    now=epoch,
+                )
+            except OSError as e:  # a held lock past its bound, another user's file, no space
+                _fail(f'Not recorded: {target}: {_os_error_reason(e)}')
             held = f', holds {written.span_days:g} days' if written.span_days is not None else ''
             console.print(
                 f'🗂️ Recorded {written.records_written} switch(es) to '
@@ -5884,8 +5911,10 @@ def diagnose_wan(
     One read of the controller's health summary: ISP, WAN IP, gateway version, latency,
     drops and the result of the controller's own scheduled speedtest. Never starts a
     speedtest. --record appends that result to a history file under the XDG state
-    directory (skipped when the run is already recorded); diagnose wan-history lists it.
-    Read-only towards the controller.
+    directory (skipped when the run is already recorded); diagnose wan-history lists it. A
+    record that cannot be written (its lock held by another run or account for over 5 s, a
+    file owned by another user) exits 1 after the report, naming the lock and the reason, so
+    a schedule notices. Read-only towards the controller.
     """
     from .diagnostics.wan_health import get_wan_health
 
@@ -5920,8 +5949,17 @@ def diagnose_wan(
         _record_speedtest(report['last_speedtest'])
 
 
+def _os_error_reason(error: OSError) -> str:
+    """An OSError's reason for one line: its strerror, else its message, else its class."""
+    return error.strerror or str(error) or type(error).__name__
+
+
 def _record_speedtest(speedtest: Optional[JsonDict]) -> None:
-    """Append the last speedtest to the history; report the outcome on stderr only."""
+    """Append the last speedtest to the history; report the outcome on stderr only.
+
+    A record that cannot be written (the lock held past its bound, a file owned by another
+    user, no space) is the run's failure, exit 1, after the health report was printed.
+    """
     from .diagnostics.wan_history import append_speedtest, default_speedtest_history_path
 
     if not speedtest:
@@ -5931,12 +5969,7 @@ def _record_speedtest(speedtest: Optional[JsonDict]) -> None:
     try:
         written = append_speedtest(speedtest, path)
     except OSError as e:
-        reason = e.strerror or type(e).__name__
-        err_console.print(
-            f'[yellow]⚠ Not recorded: {escape(str(path))}: {escape(reason)}[/yellow]',
-            soft_wrap=True,
-        )
-        return
+        _fail(f'Not recorded: {path}: {_os_error_reason(e)}')
     if written is None:
         err_console.print('Nothing to record: the last speedtest has no run time.')
     elif written.lines_written == 0:
@@ -6486,7 +6519,12 @@ def diagnose_ap_health(
         None, '--reference', help='A known-good AP to sample alongside it'
     ),
     essid: Optional[str] = typer.Option(
-        None, '--essid', help='The SSID whose 2.4 GHz VAP to track (default the busiest)'
+        None,
+        '--essid',
+        help=(
+            "The SSID whose 2.4 GHz VAP to track (default the busiest); one the target's "
+            '2.4 GHz radio carries, else exit 2 naming the SSIDs it has'
+        ),
     ),
     samples: int = typer.Option(6, '--samples', min=1, max=60, help='Samples to take (1-60)'),
     interval: int = typer.Option(
@@ -6509,8 +6547,11 @@ def diagnose_ap_health(
 
     Takes --samples reads --interval seconds apart (60 reads 600 s apart take about 10 h; the
     expected duration is printed first) and reports each sample and the mean interval retry
-    rate, beside a --reference AP when given. A sample whose read times out or fails is recorded
-    as missing. Read-only, with no power-cycle step. --ping-clients also pings up to 4 of each
+    rate, beside a --reference AP when given. An AP whose 2.4 GHz radio does not carry the
+    tracked SSID gets no rate ("SSID not present"), never another SSID's; an --essid the target
+    does not carry exits 2 after the discovery read, naming the SSIDs it has. A sample whose
+    read times out or fails is recorded as missing. Read-only, with no power-cycle step.
+    --ping-clients also pings up to 4 of each
     AP's wireless clients from the gateway over SSH: those on 2.4 GHz, the radio the report
     measures, and those whose radio the controller doesn't report (5 and 6 GHz clients are
     left out), as the SSH user (the gateway's host key is not verified). --output is checked
@@ -6529,6 +6570,7 @@ def diagnose_ap_health(
         render_markdown,
         run_ap_health_capture,
     )
+    from .core.utils.errors import ErrorCodes, ToolError
 
     output = _file_option(output, '--output')
     if output is not None:
@@ -6546,10 +6588,17 @@ def diagnose_ap_health(
         note = ' (missing)' if info['missing'] else ''
         err_console.print(f'Sample {info["sample"]} of {info["of"]}{note}', style='dim')
 
-    def run() -> Coroutine[Any, Any, dict]:
-        return run_ap_health_capture(
-            target, reference, essid, samples, interval, ping_clients, progress, sink=capture
-        )
+    usage_error = False  # a refused argument before any sample (an --essid the AP lacks)
+
+    async def run() -> dict:
+        nonlocal usage_error
+        try:
+            return await run_ap_health_capture(
+                target, reference, essid, samples, interval, ping_clients, progress, sink=capture
+            )
+        except ToolError as e:
+            usage_error = e.error_code == ErrorCodes.CONFIG_INVALID and not capture.samples
+            raise
 
     failure_code = 0
     try:
@@ -6558,7 +6607,7 @@ def diagnose_ap_health(
         report = build_report(capture, partial=True)
     except typer.Exit as e:  # the error line is printed; keep the samples taken so far
         if not capture.samples:
-            raise
+            raise typer.Exit(2) if usage_error else e
         failure_code = e.exit_code or 1
         report = build_report(capture, partial=True)
     markdown = render_markdown(report)
@@ -6670,10 +6719,12 @@ def vlan_traffic_report(
     """📊 Per-VLAN average and peak throughput over a period, from the store (offline).
 
     now, 1d and 1w read raw samples (kept 8 days); 1m reads hourly rollups and 1y daily
-    rollups (smoothed peaks), each up to the newest complete hour or day `vlan-traffic
-    rollup` has rolled. Valid samples is the share of the window's samples that gave a
-    rate, not time coverage: `vlan-traffic coverage` shows the time each tier covers. A
-    missing store exits 1 with a hint to sample first. Contacts nothing.
+    rollups, each up to the newest complete hour or day `vlan-traffic rollup` has rolled.
+    Every tier's peak is the largest sample rate in its window, so bursts shorter than the
+    sampling interval are under-represented in every tier. Valid samples is the share of the
+    window's samples that gave a rate, not time coverage: `vlan-traffic coverage` shows the
+    time each tier covers. A missing store exits 1 with a hint to sample first. Contacts
+    nothing.
     """
     from .analysis.vlan_traffic_store import read_vlan_traffic_report
 

@@ -12,6 +12,7 @@ import asyncssh
 import shlex
 from datetime import datetime
 from unifi_mapper.analysis.gateway_ssh import (
+    check_exit_status,
     gateway_session,
     require_bounded_int,
     require_ip,
@@ -45,7 +46,10 @@ async def run_latency_matrix(
     Returns:
         LatencyMatrixReport with per-target latency results. Targets whose IP is
         not a plain IPv4 or IPv6 address are not pinged; they are listed in
-        ``skipped_targets``.
+        ``skipped_targets``. A target whose ping could not run (``ping`` missing or
+        refused for the SSH user: an exit status other than 0 or 1) carries that
+        error and no loss figure, counted in ``targets_failed``, never among the
+        unreachable.
 
     Raises:
         ToolError: If an argument is out of range or UNIFI_SSH_PASSWORD is unset
@@ -85,7 +89,8 @@ async def run_latency_matrix(
     results = await _ping_targets_via_ssh(creds.host, targets, ping_count, timeout)
 
     reachable = [r for r in results if r.reachable]
-    unreachable = [r for r in results if not r.reachable]
+    failed = [r for r in results if r.error is not None]
+    unreachable = [r for r in results if not r.reachable and r.error is None]
 
     return LatencyMatrixReport(
         timestamp=datetime.now().isoformat(),
@@ -93,6 +98,7 @@ async def run_latency_matrix(
         targets_total=len(results),
         targets_reachable=len(reachable),
         targets_unreachable=len(unreachable),
+        targets_failed=len(failed),
         ping_count=ping_count,
         results=results,
         unreachable_devices=[r.name for r in unreachable],
@@ -190,13 +196,16 @@ async def _ping_single(
     """Run a single ping command and parse results.
 
     The command may take ``count * timeout + 5`` seconds. A ``TIMEOUT`` past that bound, like
-    any other failure, makes the target unreachable rather than failing the matrix.
+    any other failure to run the command, makes the target unreachable rather than failing
+    the matrix. A ``ping`` that ran but could not do its job (an exit status other than 0,
+    replies, or 1, no reply: missing, or refused for the SSH user) prints nothing on stdout,
+    which the parser would read as 100% loss, so it is the target's ``error`` instead, with
+    no loss figure (issue 076 item 4).
     """
     try:
         result = await run_gateway_command(
             conn, _ping_argv(target['ip'], count, timeout), timeout=count * timeout + 5
         )
-        return _parse_ping_output(target, result.stdout)
     except Exception:  # a TIMEOUT ToolError, a dropped channel, anything: unreachable
         return LatencyResult(
             ip=target['ip'],
@@ -205,6 +214,18 @@ async def _ping_single(
             reachable=False,
             packet_loss=100.0,
         )
+    try:
+        check_exit_status(result, 'ping', (0, 1))
+    except ToolError as e:
+        return LatencyResult(
+            ip=target['ip'],
+            name=target['name'],
+            target_type=target['type'],
+            reachable=False,
+            packet_loss=None,
+            error=e.message,
+        )
+    return _parse_ping_output(target, result.stdout)
 
 
 def _ping_argv(ip: str, count: int, timeout: int) -> list[str]:

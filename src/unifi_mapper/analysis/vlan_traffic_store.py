@@ -95,8 +95,8 @@ _TIER_METHODOLOGY: dict[str, dict[str, Any]] = {
         'interval_s': 3600,
         'caveats': [
             'Hourly-rollup data: averages are the mean of per-sample rates within each hour, '
-            'and peaks are the max sample rate seen in that hour; bursts shorter than the '
-            'sampling interval may be under-represented.',
+            'and peaks are the largest sample rate seen in that hour; bursts shorter than the '
+            'sampling interval are under-represented in every tier.',
             'Only complete hours that `vlan-traffic rollup` has rolled are included: run it '
             '(hourly, say) to keep this view current.',
         ],
@@ -104,8 +104,9 @@ _TIER_METHODOLOGY: dict[str, dict[str, Any]] = {
     'daily': {
         'interval_s': 86400,
         'caveats': [
-            'Daily-rollup data: a rollup of a rollup. A 1y peak is the max of hourly peaks, so '
-            'it smooths out short bursts more than a raw or hourly view would.',
+            'Daily-rollup data: a rollup of a rollup. A daily peak is the largest hourly peak '
+            'of the day, so it is still the largest sample rate in its window; bursts shorter '
+            'than the sampling interval are under-represented in every tier.',
             'Only complete days that `vlan-traffic rollup` has rolled are included.',
         ],
     },
@@ -929,9 +930,12 @@ async def get_vlan_traffic_report(
     counters, read over SSH by a person or a schedule; none is published until issue 038 is
     decided). now, 1d and 1w read raw samples (the store keeps 8 days), 1m hourly rollups
     and 1y daily rollups, each up to the newest complete hour or day that `unifi-mapper
-    vlan-traffic rollup` has rolled; methodology names the tier and how much it smooths
-    peaks. Needs no credentials and sends no request. Run list_vlan_traffic_periods first to
-    tell an idle VLAN (0 bps) from a window with no samples.
+    vlan-traffic rollup` has rolled; methodology names the tier. Every tier's peak is the
+    largest sample rate in its window (an hourly peak the largest sample rate in the hour,
+    a daily peak the largest hourly peak), so bursts shorter than the sampling interval are
+    under-represented in every tier. Needs no credentials and sends no request. Run
+    list_vlan_traffic_periods first to tell an idle VLAN (0 bps) from a window with no
+    samples.
 
     Args:
         period: now, 1d, 1w, 1m or 1y.

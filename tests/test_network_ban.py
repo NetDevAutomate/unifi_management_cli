@@ -41,6 +41,22 @@ def test_a_raw_socket_cannot_connect(family: socket.AddressFamily) -> None:
             sock.connect_ex(address)
 
 
+@pytest.mark.parametrize('family', [socket.AF_INET, socket.AF_INET6])
+def test_a_udp_datagram_cannot_leave_the_host(family: socket.AddressFamily) -> None:
+    """Issue 076 item 14: the ban covered connects only; a UDP ``sendto`` needs no connect."""
+    address = ('192.0.2.1', 53) if family == socket.AF_INET else ('2001:db8::1', 53)
+    with socket.socket(family, socket.SOCK_DGRAM) as sock:
+        with pytest.raises(AssertionError, match='live network access in a test'):
+            sock.sendto(b'x', address)
+
+
+def test_unix_datagrams_still_work() -> None:
+    left, right = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+    with left, right:
+        left.send(b'x')
+        assert right.recv(1) == b'x'
+
+
 def test_unix_sockets_and_mock_transports_still_work() -> None:
     left, right = socket.socketpair()
     with left, right:

@@ -4,10 +4,12 @@ import fcntl
 import json
 import os
 import pytest
+import stat
 import threading
 import time
 from pathlib import Path
 from tests.fixtures_unifi import NOW, SWITCH_ID, SWITCH_MAC, SWITCH_NAME, fake_switch
+from tests.lock_helpers import held_read_only, run_bounded, umask
 from typing import Any
 from unifi_mapper.analysis import counter_history
 from unifi_mapper.analysis.counter_history import (
@@ -26,6 +28,7 @@ from unifi_mapper.analysis.port_counter_baseline import (
     snapshots_from_devices,
     state_dir,
 )
+from unifi_mapper.core.utils.jsonl import LockTimeoutError, NotOwnedError
 
 
 DAY = 86400
@@ -135,6 +138,86 @@ def test_append_creates_the_directory_under_xdg_state(tmp_path):
     assert result.retention_days == DEFAULT_RETENTION_DAYS
     assert target.is_relative_to(tmp_path)  # the per-test XDG_STATE_HOME isolation
     assert len(_lines(target)) == 1
+
+
+def _modes(*paths: Path) -> list[int]:
+    return [stat.S_IMODE(p.stat().st_mode) for p in paths]
+
+
+def test_the_default_history_its_lock_and_directory_are_private_and_kept_so():
+    """Issue 076 item 32: the history and its lock kept the umask mode (0o644 under umask
+    022) and the state directory too, so another account could hold the lock. The default
+    state directory is the tool's own: created and kept 0o700."""
+    path = default_history_path()  # under the test's XDG_STATE_HOME
+    with umask(0o022):
+        append_history([_record(NOW)], now=NOW)
+    lock = Path(f'{path}.lock')
+    assert _modes(path.parent, path, lock) == [0o700, 0o600, 0o600]
+    os.chmod(path.parent, 0o755)
+    os.chmod(path, 0o644)
+    os.chmod(lock, 0o644)
+    append_history([_record(NOW + 1)], now=NOW + 1)
+    assert _modes(path.parent, path, lock) == [0o700, 0o600, 0o600]
+
+
+def test_an_explicit_paths_existing_directory_is_never_tightened(tmp_path):
+    """Council decision on items 7 and 32: a directory the user named (--history) is theirs;
+    the history and its lock are still made and kept private there."""
+    directory = tmp_path / 'theirs'
+    directory.mkdir()
+    os.chmod(directory, 0o755)
+    path = directory / 'history.jsonl'
+    with umask(0o022):
+        append_history([_record(NOW)], path=path, now=NOW)
+    lock = Path(f'{path}.lock')
+    assert _modes(directory, path, lock) == [0o755, 0o600, 0o600]
+    os.chmod(path, 0o644)
+    append_history([_record(NOW + 1)], path=path, now=NOW + 1)
+    assert _modes(directory, path, lock) == [0o755, 0o600, 0o600]
+    missing = tmp_path / 'new' / 'history.jsonl'  # a directory this code creates is private
+    append_history([_record(NOW)], path=missing, now=NOW)
+    assert _modes(missing.parent) == [0o700]
+
+
+def test_a_history_owned_by_another_user_is_refused_not_chmoded(tmp_path, monkeypatch):
+    path = tmp_path / 'history.jsonl'
+    append_history([_record(NOW)], path=path, now=NOW)
+    os.chmod(path, 0o644)
+    theirs = os.stat(path)
+    real_fstat = os.fstat
+
+    def someone_elses(fd: int) -> os.stat_result:
+        st = real_fstat(fd)
+        if (st.st_dev, st.st_ino) != (theirs.st_dev, theirs.st_ino):
+            return st
+        fields = list(st[:10])
+        fields[stat.ST_UID] = st.st_uid + 1
+        return os.stat_result(fields)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(os, 'fstat', someone_elses)
+        with pytest.raises(NotOwnedError, match='^the file is owned by another user$'):
+            append_history([_record(NOW + 1)], path=path, now=NOW + 1)
+    assert _modes(path) == [0o644] and [line['epoch'] for line in _lines(path)] == [NOW]
+
+
+def test_append_gives_up_on_a_held_lock_after_the_bound(tmp_path, monkeypatch):
+    """Issue 076 item 32: the append waited for the lock with no limit; under cron the
+    stalled runs piled up and under launchd the recording stopped."""
+    monkeypatch.setattr(counter_history, 'HISTORY_LOCK_TIMEOUT_S', 0.2)
+    path = tmp_path / 'history.jsonl'
+    append_history([_record(NOW)], path=path, now=NOW)
+    with held_read_only(Path(f'{path}.lock')):
+        held = run_bounded(lambda: append_history([_record(NOW + 1)], path=path, now=NOW + 1), 5)
+    assert held.done, 'the append waited on the held lock past its limit'
+    assert isinstance(held.error, LockTimeoutError) and held.elapsed < 1.5
+    assert f'the lock {path}.lock was held for more than 0.2 s' in str(held.error)
+    assert [line['epoch'] for line in _lines(path)] == [NOW]
+
+
+def test_the_shipped_lock_bound_is_five_seconds():
+    """Council decision on item 32: bounded at 5 s, never unbounded."""
+    assert counter_history.HISTORY_LOCK_TIMEOUT_S == 5.0
 
 
 def test_age_retention_drops_old_lines(tmp_path):

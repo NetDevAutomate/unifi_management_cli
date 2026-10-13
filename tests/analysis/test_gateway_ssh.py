@@ -438,23 +438,87 @@ def test_the_two_callers_share_as_text_instead_of_copies() -> None:
 
 
 def _asyncssh_connect_uses(tree: ast.AST) -> list[int]:
-    """Line numbers that reach ``asyncssh.connect``: the attribute, or an import of the name."""
-    lines = []
+    """Line numbers that reach ``asyncssh.connect``: an import of the name, or ``.connect`` on
+    any name bound to ``asyncssh`` or one of its modules (``import asyncssh as x``, ``from
+    asyncssh import connection as c``), through any attribute chain."""
+    modules: set[str] = set()  # names bound to asyncssh or an asyncssh module
+    lines: set[int] = set()
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Attribute)
-            and node.attr == 'connect'
-            and isinstance(node.value, ast.Name)
-            and node.value.id == 'asyncssh'
-        ):
-            lines.append(node.lineno)
-        elif (
-            isinstance(node, ast.ImportFrom)
-            and (node.module or '').split('.')[0] == 'asyncssh'
-            and any(alias.name in {'connect', '*'} for alias in node.names)
-        ):
-            lines.append(node.lineno)
-    return lines
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split('.')[0] == 'asyncssh':
+                    modules.add((alias.asname or alias.name).split('.')[0])
+        elif isinstance(node, ast.ImportFrom) and (node.module or '').split('.')[0] == 'asyncssh':
+            for alias in node.names:
+                if alias.name in {'connect', '*'}:
+                    lines.add(node.lineno)
+                else:
+                    modules.add(alias.asname or alias.name)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == 'connect':
+            root: ast.expr = node.value
+            while isinstance(root, ast.Attribute):
+                root = root.value
+            if isinstance(root, ast.Name) and root.id in modules:
+                lines.add(node.lineno)
+    return sorted(lines)
+
+
+def _is_gateway_session_call(node: ast.expr) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else getattr(func, 'attr', None)
+    return name == 'gateway_session'
+
+
+def _ssh_run_uses(tree: ast.AST) -> list[int]:
+    """Line numbers of ``.run(`` on an SSH connection, however the connection was bound.
+
+    A connection is a name bound by ``async with gateway_session(...) as X``, assigned from
+    ``enter_async_context(gateway_session(...))`` (also behind a conditional expression), a
+    parameter annotated ``SSHClientConnection``, or the house name ``conn``.
+    """
+    names = {'conn'}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncWith | ast.With):
+            for item in node.items:
+                if _is_gateway_session_call(item.context_expr) and isinstance(
+                    item.optional_vars, ast.Name
+                ):
+                    names.add(item.optional_vars.id)
+        elif isinstance(node, ast.Assign):
+            candidates = [node.value]
+            if isinstance(node.value, ast.IfExp):
+                candidates = [node.value.body, node.value.orelse]
+            for value in candidates:
+                if isinstance(value, ast.Await):
+                    value = value.value
+                if (
+                    isinstance(value, ast.Call)
+                    and isinstance(value.func, ast.Attribute)
+                    and value.func.attr == 'enter_async_context'
+                    and value.args
+                    and _is_gateway_session_call(value.args[0])
+                ):
+                    names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            for arg in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]:
+                if arg.annotation is not None and 'SSHClientConnection' in ast.unparse(
+                    arg.annotation
+                ):
+                    names.add(arg.arg)
+    return sorted(
+        {
+            node.lineno
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == 'run'
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in names
+        }
+    )
 
 
 def test_asyncssh_connect_is_called_only_in_gateway_ssh() -> None:
@@ -466,16 +530,81 @@ def test_asyncssh_connect_is_called_only_in_gateway_ssh() -> None:
     assert [c.split(':')[0] for c in callers] == ['analysis/gateway_ssh.py'], callers
 
 
-def test_the_only_door_scan_sees_an_imported_connect() -> None:
+def test_the_only_door_scan_sees_an_imported_or_aliased_connect() -> None:
+    """Issue 076 item 10: the scan matched the name ``asyncssh`` only, so ``import asyncssh
+    as ssh`` and ``from asyncssh import connection as c`` slipped past it."""
     sample = (
-        'import asyncssh\n'
-        'from asyncssh import connect\n'
-        'from asyncssh.connection import connect as dial\n'
-        'from asyncssh import *\n'
-        'from asyncssh import SSHClientConnection\n'
-        'asyncssh.connect("192.0.2.1")\n'
+        'import asyncssh\n'  # 1
+        'import asyncssh as ssh\n'  # 2
+        'from asyncssh import connect\n'  # 3
+        'from asyncssh.connection import connect as dial\n'  # 4
+        'from asyncssh import *\n'  # 5
+        'from asyncssh import SSHClientConnection\n'  # 6
+        'from asyncssh import connection as c\n'  # 7
+        'import asyncssh.connection\n'  # 8
+        'asyncssh.connect("192.0.2.1")\n'  # 9
+        'ssh.connect("192.0.2.1")\n'  # 10
+        'c.connect("192.0.2.1")\n'  # 11
+        'asyncssh.connection.connect("192.0.2.1")\n'  # 12
+        'other.connect("192.0.2.1")\n'  # 13: not asyncssh
+        'sock.connect(("192.0.2.1", 22))\n'  # 14: not asyncssh
     )
-    assert _asyncssh_connect_uses(ast.parse(sample)) == [2, 3, 4, 6]
+    assert _asyncssh_connect_uses(ast.parse(sample)) == [3, 4, 5, 9, 10, 11, 12]
+
+
+def test_an_ssh_connections_run_is_called_only_in_run_gateway_command() -> None:
+    """Issue 076 item 11: the connect scan proved the connect confined, not the commands; a
+    ``.run(`` on a connection outside ``run_gateway_command`` would bypass the quoting and
+    the timeout every caller states."""
+    callers = [
+        f'{path.relative_to(SRC)}:{line}'
+        for path in sorted(SRC.rglob('*.py'))
+        for line in _ssh_run_uses(ast.parse(path.read_text(encoding='utf-8')))
+    ]
+    gateway = SRC / 'analysis' / 'gateway_ssh.py'
+    door = next(
+        node
+        for node in ast.walk(ast.parse(gateway.read_text(encoding='utf-8')))
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == 'run_gateway_command'
+    )
+    allowed = {
+        f'analysis/gateway_ssh.py:{n}' for n in range(door.lineno, (door.end_lineno or 0) + 1)
+    }
+    assert callers and set(callers) <= allowed, callers
+
+
+def test_the_run_scan_sees_a_connection_however_it_was_bound() -> None:
+    sample = (
+        'async def a(conn: asyncssh.SSHClientConnection) -> None:\n'  # 1
+        '    await conn.run("x")\n'  # 2
+        'async def b(link: "SSHClientConnection", other: Any) -> None:\n'  # 3
+        '    await link.run("x")\n'  # 4
+        '    other.run("x")\n'  # 5: not a connection
+        'async def c() -> None:\n'  # 6
+        '    async with gateway_session() as sess:\n'  # 7
+        '        await sess.run("x")\n'  # 8
+        '    held = await stack.enter_async_context(gateway_session(host)) if go else None\n'  # 9
+        '    await asyncio.wait_for(held.run("x"), 5)\n'  # 10
+        '    subprocess.run(["x"])\n'  # 11
+        '    asyncio.run(main())\n'  # 12
+        '    await self.runner.run("tool")\n'  # 13
+        'def d(conn: Any) -> None:\n'  # 14
+        '    conn.run("x")\n'  # 15: the house name for a connection
+    )
+    assert _ssh_run_uses(ast.parse(sample)) == [2, 4, 8, 10, 15]
+
+
+async def test_the_ssh_fake_refuses_a_command_its_replies_do_not_name() -> None:
+    """Issue 076 item 16: with ``replies`` set, the fake answered an unknown command with a
+    success-shaped ping reply, so a test could pass on a command it never scripted."""
+    scripted = FakeSSH({'ping': 'pong\n'})
+    conn = await scripted('192.0.2.1')
+    assert (await conn.run('ping -c 1 192.0.2.10')).stdout == 'pong\n'
+    with pytest.raises(AssertionError, match='traceroute'):
+        await conn.run('traceroute 192.0.2.10')
+    unscripted = await FakeSSH()('192.0.2.1')  # no replies: the ping and iperf3 defaults stay
+    assert 'packets transmitted' in (await unscripted.run('ping -c 1 192.0.2.10')).stdout
+    assert 'bits_per_second' in (await unscripted.run('iperf3 -c 192.0.2.10 -J')).stdout
 
 
 async def test_a_real_connect_fails_in_every_test() -> None:
@@ -619,6 +748,7 @@ async def test_latency_turns_a_ping_timeout_into_an_unreachable_target(
     target = {'ip': '192.0.2.10', 'name': 'Switch', 'type': 'device'}
     result = await latency_matrix._ping_single(object(), target, 3, 2)  # type: ignore[arg-type]
     assert (result.reachable, result.packet_loss, result.ip) == (False, 100.0, '192.0.2.10')
+    assert result.error is None
 
 
 async def test_latency_connect_failure_names_the_host_with_its_suggestion(
@@ -874,6 +1004,81 @@ def test_latency_counts_a_target_with_total_loss_as_unreachable() -> None:
         target, '5 packets transmitted, 0 received, 100% packet loss\n'
     )
     assert (result.reachable, result.packet_loss, result.rtt_avg) == (False, 100.0, None)
+
+
+# --- a ping that could not run is an error for its target (issue 076 item 4) -------------
+
+
+def _status_runner(status: int, stderr: str = '') -> Callable[..., Awaitable[GatewayResult]]:
+    async def _run(conn: object, argv: list[str], *, timeout: float) -> GatewayResult:
+        return GatewayResult(stdout='', stderr=stderr, exit_status=status)
+
+    return _run
+
+
+@pytest.mark.parametrize(
+    ('status', 'stderr', 'detail'),
+    [
+        (127, 'sh: ping: not found', ': sh: ping: not found'),
+        (2, '', ''),
+        (2, f'ping: socket: token={FAKE_URL_PW}', ': ping: socket: token=***redacted***'),
+    ],
+    ids=['missing (127)', 'refused (2), no stderr', 'refused (2), redacted stderr'],
+)
+async def test_latency_reads_a_ping_that_could_not_run_as_an_error_not_total_loss(
+    monkeypatch: pytest.MonkeyPatch, status: int, stderr: str, detail: str
+) -> None:
+    """Issue 076 item 4: ``_ping_single`` parsed stdout without checking the exit status, so a
+    missing or refused ping (nothing on stdout) read as a lost target at 100% loss."""
+    monkeypatch.setattr(latency_matrix, 'run_gateway_command', _status_runner(status, stderr))
+    target = {'ip': '192.0.2.10', 'name': 'Switch', 'type': 'device'}
+    result = await latency_matrix._ping_single(object(), target, 3, 2)  # type: ignore[arg-type]
+    assert result.reachable is False and result.packet_loss is None
+    assert result.error == f'ping could not run on the gateway (exit status {status}){detail}'
+    assert FAKE_URL_PW not in (result.error or '')
+
+
+async def test_a_ping_with_no_reply_is_still_an_unreachable_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _no_reply(conn: object, argv: list[str], *, timeout: float) -> GatewayResult:
+        return GatewayResult('3 packets transmitted, 0 received, 100% packet loss\n', '', 1)
+
+    monkeypatch.setattr(latency_matrix, 'run_gateway_command', _no_reply)
+    target = {'ip': '192.0.2.10', 'name': 'Switch', 'type': 'device'}
+    result = await latency_matrix._ping_single(object(), target, 3, 2)  # type: ignore[arg-type]
+    assert (result.reachable, result.packet_loss, result.error) == (False, 100.0, None)
+
+
+async def test_the_matrix_counts_a_failed_ping_apart_from_the_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeSSH({'ping': ('', 'sh: ping: not found', 127)})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    _controller(monkeypatch, [{'ip': '192.0.2.10', 'name': 'Switch'}], [])
+    report = await latency_matrix.run_latency_matrix(include_clients=False)
+    assert (report.targets_total, report.targets_reachable, report.targets_unreachable) == (
+        1,
+        0,
+        0,
+    )
+    assert report.targets_failed == 1 and report.unreachable_devices == []
+    assert report.results[0].error is not None and report.results[0].error.startswith('ping could')
+
+
+def test_cli_latency_matrix_lists_a_ping_that_could_not_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeSSH({'ping': ('', 'ping: socket: Operation not permitted', 2)})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    monkeypatch.setattr(typer_cli, 'load_env_from_config', lambda path: None)
+    _controller(monkeypatch, [{'ip': '192.0.2.10', 'name': 'Switch'}], [])
+    result = runner.invoke(app, ['diagnose', 'latency-matrix', '--devices-only'])
+    assert result.exit_code == 0, result.output
+    flat = _flat(result.output)
+    assert 'Ping could not run (1)' in flat
+    assert 'Switch: ping could not run on the gateway (exit status 2): ping: socket' in flat
+    assert '100%' not in flat and 'Unreachable (' not in flat
 
 
 # --- the connect itself is bounded ---------------------

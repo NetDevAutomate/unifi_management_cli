@@ -83,9 +83,16 @@ SSID_CONFIG_KEYS = (
 RETRY_NOTE = (
     'Retry % = delta tx_retries / delta tx_packets on the 2.4 GHz tracked VAP between two '
     'samples (cumulative counters, reset-aware); an interval with fewer than '
-    f'{MIN_INTERVAL_PACKETS} packets has none. Pings run from the gateway to 2.4 GHz '
-    'clients on each AP at sample time.'
+    f'{MIN_INTERVAL_PACKETS} packets has none, and an AP whose 2.4 GHz radio does not carry '
+    'the tracked SSID has none (no other SSID is measured in its place).'
 )
+# Added to the notes only with ping_clients, worded as clients_on_ap selects.
+PING_NOTE = (
+    f'Pings run from the gateway at sample time to up to {MAX_PINGED_CLIENTS} wireless '
+    'clients of each AP: those on 2.4 GHz, the radio the report measures, and those whose '
+    'radio the controller does not report (5 and 6 GHz clients are left out).'
+)
+SSID_NOT_PRESENT = 'SSID not present'
 
 # The wait between samples: cancellable, so Ctrl-C stops it. Tests replace it.
 _pause = asyncio.sleep
@@ -228,7 +235,10 @@ def interval_rows(samples: list[ApSample], essid: str | None) -> list[dict[str, 
     """One row per sample, with the retry delta since that AP's previous sample read. Pure.
 
     A missing sample has no counters; the next sample's delta runs from the last one that
-    read. The first sample read of each AP has no interval, so no delta.
+    read. The first sample read of each AP has no interval, so no delta. A sample whose 2.4
+    GHz VAPs do not carry the tracked SSID (a reference AP without it, or a target whose WLAN
+    went away mid-run) has no delta either, and ``retry_note`` says so: the busiest VAP is
+    never measured in the tracked SSID's place.
 
     Args:
         samples: The capture's samples, in the order taken (both roles interleaved).
@@ -236,18 +246,21 @@ def interval_rows(samples: list[ApSample], essid: str | None) -> list[dict[str, 
 
     Returns:
         One dict per sample: ``role``, its ``index`` within the role, ``utc``, ``missing``
-        and ``reason``, the load and channel readings, the TX packet and retry deltas and
-        ``retry_pct`` (None without an interval or under :data:`MIN_INTERVAL_PACKETS`), and
-        its ``pings``.
+        and ``reason``, the load and channel readings, the TX packet and retry deltas,
+        ``retry_pct`` (None without an interval or under :data:`MIN_INTERVAL_PACKETS`),
+        ``retry_note`` (:data:`SSID_NOT_PRESENT`, or None) and its ``pings``.
     """
     rows: list[dict[str, Any]] = []
     last: dict[str, ApSample] = {}
     counts: dict[str, int] = {}
     for s in samples:
         counts[s.role] = counts.get(s.role, 0) + 1
-        dp = dr = pct = None
+        dp = dr = pct = note = None
         prev = last.get(s.role)
-        if not s.missing and prev is not None and essid:
+        present = any(v.essid == essid for v in s.vaps)
+        if not s.missing and essid and not present:
+            note = SSID_NOT_PRESENT  # never pick_vap's fallback: another SSID's counters
+        elif not s.missing and prev is not None and essid:
             dp, dr, pct = retry_delta(prev.vaps, s.vaps, essid)
             if dp < MIN_INTERVAL_PACKETS:
                 pct = None
@@ -270,6 +283,7 @@ def interval_rows(samples: list[ApSample], essid: str | None) -> list[dict[str, 
                 'delta_tx_packets': dp,
                 'delta_tx_retries': dr,
                 'retry_pct': pct,
+                'retry_note': note,
                 'pings': s.pings,
             }
         )
@@ -334,7 +348,7 @@ def build_report(capture: ApHealthCapture, *, partial: bool) -> dict[str, Any]:
         'rows': interval_rows(capture.samples, capture.essid),
         'summary': summarize_samples(capture.samples, capture.essid),
         'ssid_config': {key: wlan.get(key) for key in SSID_CONFIG_KEYS} if wlan else None,
-        'notes': [RETRY_NOTE, CU_TOTAL_CAVEAT],
+        'notes': [RETRY_NOTE, *([PING_NOTE] if capture.ping_clients else []), CU_TOTAL_CAVEAT],
     }
 
 
@@ -418,7 +432,10 @@ def render_markdown(report: dict[str, Any]) -> str:
             if r['missing']:
                 lines.append(f'| {r["index"]} | {r["utc"]} | missing: {_cell(r["reason"])} |')
                 continue
-            pct = f'{r["retry_pct"]}%' if r['retry_pct'] is not None else '-'
+            if r['retry_pct'] is not None:
+                pct = f'{r["retry_pct"]}%'
+            else:
+                pct = f'no rate ({r["retry_note"]})' if r['retry_note'] else '-'
             cells = [r[key] for key in _SAMPLE_COLUMNS]
             lines.append(
                 '| '
@@ -478,6 +495,30 @@ def _match_ap(devices: list[Any], query: str) -> dict[str, Any]:
     except LookupError as e:
         raise _not_found(str(e)) from None
     return found
+
+
+def _require_essid_on_target(target: dict[str, Any], essid: str) -> None:
+    """Refuse an ``essid`` the target's 2.4 GHz radio does not carry (exact name).
+
+    Before this check ``pick_vap``'s fallback measured the busiest VAP under a mistyped or
+    5 GHz-only SSID's name (issue 076 item 1).
+
+    Raises:
+        ToolError: ``CONFIG_INVALID``, naming the SSIDs the radio has.
+    """
+    vaps = sample_device(strip_secrets(target, 'device')[0], 'target', 0.0).vaps
+    names = [v.essid for v in vaps]
+    if essid in names:
+        return
+    has = ', '.join(dict.fromkeys(names)) if names else 'none reported'
+    raise ToolError(
+        message=(
+            f'--essid {essid!r} is not on the 2.4 GHz radio of {target.get("name") or "the AP"} '
+            f'(it has: {has})'
+        ),
+        error_code=ErrorCodes.CONFIG_INVALID,
+        suggestion='Give one of those SSIDs exactly, or omit --essid to track the busiest.',
+    )
 
 
 async def _discover() -> tuple[list[Any], list[Any]]:
@@ -546,7 +587,8 @@ async def run_ap_health_capture(
     Args:
         target: The suspect AP's name, MAC or IP.
         reference: A known-good AP to sample alongside it.
-        essid: The SSID whose 2.4 GHz VAP to track (None: the busiest at the first sample).
+        essid: The SSID whose 2.4 GHz VAP to track (None: the busiest at the first sample);
+            it must be on the target's 2.4 GHz radio at discovery.
         samples: Samples to take, 1-60.
         interval: Seconds between samples, 30-600.
         ping_clients: Also ping up to 4 wireless clients of each AP from the gateway, in one
@@ -558,9 +600,10 @@ async def run_ap_health_capture(
         The report (:func:`build_report`), not partial.
 
     Raises:
-        ToolError: ``CONFIG_INVALID`` for a bound or a reference equal to the target,
-            ``DEVICE_NOT_FOUND`` for an AP that matches nothing or more than one, and the
-            first read's controller errors.
+        ToolError: ``CONFIG_INVALID`` for a bound, a reference equal to the target, or an
+            ``essid`` that is not on the target's 2.4 GHz VAPs (the message names the SSIDs
+            it has), ``DEVICE_NOT_FOUND`` for an AP that matches nothing or more than one,
+            and the first read's controller errors.
     """
     samples = require_bounded_int('samples', samples, *SAMPLES_RANGE)
     interval = require_bounded_int('interval', interval, *INTERVAL_RANGE)
@@ -569,7 +612,8 @@ async def run_ap_health_capture(
     sink.samples_requested, sink.interval_seconds = samples, interval
     sink.ping_clients = ping_clients
     devices, wlans = await _discover()
-    macs = {'target': normalise_mac(_match_ap(devices, target).get('mac'))}
+    target_record = _match_ap(devices, target)
+    macs = {'target': normalise_mac(target_record.get('mac'))}
     if reference is not None:
         macs['reference'] = normalise_mac(_match_ap(devices, reference).get('mac'))
         if macs['reference'] == macs['target']:
@@ -579,6 +623,7 @@ async def run_ap_health_capture(
             )
     sink.wlan_configs = [strip_secrets(w)[0] for w in wlans]
     if essid is not None:
+        _require_essid_on_target(target_record, essid)
         sink.essid, sink.essid_source = essid, 'given'
 
     async with contextlib.AsyncExitStack() as stack:

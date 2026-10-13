@@ -321,6 +321,58 @@ def test_a_call_log_owned_by_another_user_turns_the_log_off_with_one_warning(
     assert not path.exists() and stat.S_IMODE(path.parent.stat().st_mode) == 0o755
 
 
+def test_two_writes_that_fail_together_warn_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, warned: list[str]
+) -> None:
+    """Issue 076 item 35: ``_write`` checked ``_disabled`` outside the lock and the generic
+    handler set it and warned with no guard, so two writes already past the check (the
+    runner records in worker threads) could both fail and both warn."""
+    import errno
+    import threading
+
+    gate = threading.Barrier(2, timeout=5)
+
+    def _both_fail(*_args: object, **_kwargs: object) -> None:
+        gate.wait()  # both writes are past the enabled check before either fails
+        raise OSError(errno.EACCES, 'Permission denied')
+
+    monkeypatch.setattr(call_audit_module, 'append_capped_jsonl', _both_fail)
+    log = CallAuditLog(CallAuditSetting('path', tmp_path / CALL_AUDIT_FILENAME))
+    threads = [threading.Thread(target=_record, args=(log,), daemon=True) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not any(thread.is_alive() for thread in threads)
+    assert log.enabled is False
+    assert len([w for w in warned if 'MCP call log disabled' in w]) == 1
+
+
+@pytest.mark.parametrize('link', ['lock', 'log'])
+def test_a_link_in_the_locks_place_is_named_in_the_warning(
+    tmp_path: Path, warned: list[str], link: str
+) -> None:
+    """Issue 076 item 36: the lock's ``O_NOFOLLOW`` open fails with ELOOP, and the warning
+    named the log (which may not exist), not the lock."""
+    directory = tmp_path / 'logs'
+    directory.mkdir()
+    path = directory / CALL_AUDIT_FILENAME
+    target = tmp_path / 'elsewhere.jsonl'
+    target.write_text('', encoding='utf-8')
+    (Path(f'{path}.lock') if link == 'lock' else path).symlink_to(target)
+    log = _given(directory)
+    _record(log)
+    _record(log)
+    assert log.enabled is False
+    (warning,) = [w for w in warned if 'call log disabled' in w]
+    assert f'cannot write {path}: OSError (ELOOP)' in warning
+    if link == 'lock':
+        assert f'on {CALL_AUDIT_FILENAME}.lock' in warning
+    else:
+        assert '.lock' not in warning  # today's warning, unchanged
+    assert target.read_text(encoding='utf-8') == ''  # nothing written through the link
+
+
 # --- a given path: its directory is the user's, never changed ------------
 
 
@@ -430,7 +482,10 @@ def test_a_given_path_in_a_searchable_directory_leaves_a_private_lock(tmp_path: 
 def test_a_held_lock_drops_the_write_with_one_warning_and_keeps_the_log_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, warned: list[str]
 ) -> None:
+    import time
+
     monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2)
+    monkeypatch.setattr(call_audit_module, 'LOCK_COOLDOWN_S', 0.3)
     directory = tmp_path / 'logs'
     directory.mkdir()
     os.chmod(directory, 0o755)
@@ -443,8 +498,13 @@ def test_a_held_lock_drops_the_write_with_one_warning_and_keeps_the_log_on(
             assert held.error is None and held.elapsed < 0.2 + LOCK_SLACK_S
     assert log.enabled is True and not path.exists()
     assert len(_lock_warnings(warned)) == 1
-    _record(log)  # the lock is free again: the next call is written
-    assert [line['tool'] for line in _lines(path)] == ['find_device']
+    time.sleep(0.35)  # the lock is free and the cool-down over: the next call is written
+    _record(log)
+    assert [(line['kind'], line.get('tool')) for line in _lines(path)] == [
+        ('lock_timeout', None),
+        ('call', 'find_device'),
+    ]
+    assert _lines(path)[0]['dropped'] == 2  # the timed-out write and the one in the cool-down
     assert len(_lock_warnings(warned)) == 1
     assert not [w for w in warned if 'call log disabled' in w]
 
@@ -465,6 +525,60 @@ def test_a_held_lock_never_holds_a_tool_result_past_the_limit(
     assert held.error is None and held.elapsed < 0.2 + LOCK_SLACK_S
     assert getattr(held.result, 'structuredContent', None) == {'ok': True, 'result': {'ok': True}}
     assert runner.call_audit is not None and runner.call_audit.enabled is True
+
+
+def test_after_a_lock_timeout_the_lock_is_not_tried_again_during_the_cool_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, warned: list[str]
+) -> None:
+    """Issue 076 item 33: a lock that is never released cost every logged call the whole
+    limit; after a timeout the next writes skip the lock attempt for LOCK_COOLDOWN_S."""
+    monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2)
+    monkeypatch.setattr(call_audit_module, 'LOCK_COOLDOWN_S', 60.0)
+    directory = tmp_path / 'logs'
+    directory.mkdir()
+    log = _given(directory)
+    path = directory / CALL_AUDIT_FILENAME
+    with held_read_only(Path(f'{path}.lock')):
+        timed_out = run_bounded(lambda: _record(log), join_s=5)
+        assert timed_out.done and timed_out.error is None
+        assert 0.2 <= timed_out.elapsed < 0.2 + LOCK_SLACK_S
+        for _ in range(3):  # in the cool-down: no wait at all
+            skipped = run_bounded(lambda: _record(log), join_s=5)
+            assert skipped.done and skipped.error is None
+            assert skipped.elapsed < 0.1, 'a write in the cool-down waited on the lock'
+    assert log.enabled is True and not path.exists()
+    assert len(_lock_warnings(warned)) == 1
+
+
+def test_the_shipped_cool_down_is_thirty_seconds() -> None:
+    """Council decision on item 33: 30 s before the lock is tried again."""
+    assert call_audit_module.LOCK_COOLDOWN_S == 30.0
+
+
+def test_the_next_write_after_the_cool_down_records_how_many_lines_were_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue 076 item 33: after the first warning the dropped lines left no trace; now the
+    next successful write starts with a ``lock_timeout`` line counting them, as
+    ``request_overflow`` does for request lines."""
+    import time
+
+    monkeypatch.setattr(call_audit_module, 'LOCK_TIMEOUT_S', 0.2)
+    monkeypatch.setattr(call_audit_module, 'LOCK_COOLDOWN_S', 0.3)
+    directory = tmp_path / 'logs'
+    directory.mkdir()
+    log = _given(directory)
+    path = directory / CALL_AUDIT_FILENAME
+    with held_read_only(Path(f'{path}.lock')):
+        log.note_request('GET', '/x')  # a buffered request line is dropped with its call line
+        assert run_bounded(lambda: _record(log), join_s=5).done  # times out: 2 lines dropped
+        assert run_bounded(lambda: _record(log), join_s=5).done  # in the cool-down: 1 more
+    time.sleep(0.35)  # past the cool-down; the lock is free again
+    _record(log)
+    kinds = [(line['kind'], line.get('dropped')) for line in _lines(path)]
+    assert kinds == [('lock_timeout', 3), ('call', None)]
+    _record(log)  # the count was reset: no second marker
+    assert [line['kind'] for line in _lines(path)] == ['lock_timeout', 'call', 'call']
 
 
 # --- request lines -------------------------------------------------------------------------
@@ -609,3 +723,27 @@ async def test_logging_runs_in_a_worker_thread(
     monkeypatch.setattr(runner_module.anyio.to_thread, 'run_sync', _spy)
     await make_runner().run('no_params', {})
     assert seen == [True] and len(_lines()) == 1
+
+
+async def test_the_writes_run_under_the_logs_own_bounded_limiter(
+    make_runner: Callable[..., ToolRunner], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue 076 item 33 (council decision): the writes shared anyio's default limiter with
+    the SDK's stdio transport, so with ~40 writes in flight a call could wait past the lock
+    limit for a thread; they run under their own small limiter now, reused across calls."""
+    limiters: list[Any] = []
+    real = anyio.to_thread.run_sync
+
+    async def _spy(fn: Any, *args: Any, **kwargs: Any) -> Any:
+        limiters.append(kwargs.get('limiter'))
+        return await real(fn, *args, **kwargs)
+
+    monkeypatch.setattr(runner_module.anyio.to_thread, 'run_sync', _spy)
+    runner = make_runner()
+    await runner.run('no_params', {})
+    await runner.run('no_params', {})
+    assert len(limiters) == 2 and limiters[0] is limiters[1]
+    limiter = limiters[0]
+    assert isinstance(limiter, anyio.CapacityLimiter)
+    assert limiter.total_tokens == call_audit_module.MAX_CONCURRENT_WRITES == 4
+    assert limiter is not anyio.to_thread.current_default_thread_limiter()

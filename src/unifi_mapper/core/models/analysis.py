@@ -754,7 +754,13 @@ class LatencyResult(BaseModel):
     rtt_avg: float | None = Field(default=None, description='Average RTT in ms')
     rtt_max: float | None = Field(default=None, description='Maximum RTT in ms')
     rtt_mdev: float | None = Field(default=None, description='RTT std deviation in ms')
-    packet_loss: float = Field(default=100.0, description='Packet loss percentage')
+    packet_loss: float | None = Field(
+        default=100.0, description='Packet loss percentage; None when the ping could not run'
+    )
+    error: str | None = Field(
+        default=None,
+        description='Why ping could not run on the gateway (its exit status); then no loss',
+    )
 
 
 class LatencySkippedTarget(BaseModel):
@@ -774,9 +780,14 @@ class LatencyMatrixReport(BaseModel):
     targets_total: int = Field(description='Total targets pinged')
     targets_reachable: int = Field(description='Targets that responded')
     targets_unreachable: int = Field(description='Targets that did not respond')
+    targets_failed: int = Field(
+        default=0, description='Targets whose ping could not run (results with an error)'
+    )
     ping_count: int = Field(description='Pings sent per target')
     results: list[LatencyResult] = Field(description='Per-target results')
-    unreachable_devices: list[str] = Field(description='Names of unreachable targets')
+    unreachable_devices: list[str] = Field(
+        description='Names of unreachable targets (not those whose ping could not run)'
+    )
     skipped_targets: list[LatencySkippedTarget] = Field(
         default_factory=list,
         description='Targets not pinged because their IP is not a plain IPv4 or IPv6 address',

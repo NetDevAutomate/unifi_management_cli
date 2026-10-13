@@ -62,7 +62,8 @@ def _no_live_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyP
 
     This host holds the live controller credentials, so a missed stub must fail rather than
     reach the controller. The real HTTP transports (httpx's sync and async ones, requests'
-    adapter) and TCP/UDP socket connects are refused; in-memory transports
+    adapter), TCP/UDP socket connects and UDP ``sendto`` on an IPv4 or IPv6 socket (a
+    datagram needs no connect; issue 076 item 14) are refused; in-memory transports
     (``httpx.MockTransport``, the fake sessions) and Unix sockets are untouched, so the event
     loop and mocked clients work as before. ``block_network`` stays for tests that also want
     every ``send`` refused.
@@ -78,6 +79,7 @@ def _no_live_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyP
         raise AssertionError(message)
 
     real_connect, real_connect_ex = socket.socket.connect, socket.socket.connect_ex
+    real_sendto = socket.socket.sendto
     inet = (socket.AF_INET, socket.AF_INET6)
 
     def _connect(self: socket.socket, address: object) -> None:
@@ -90,11 +92,17 @@ def _no_live_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyP
             raise AssertionError(message)
         return real_connect_ex(self, address)  # type: ignore[arg-type]
 
+    def _sendto(self: socket.socket, *args: object) -> int:
+        if self.family in inet:
+            raise AssertionError(message)
+        return real_sendto(self, *args)  # type: ignore[arg-type]
+
     monkeypatch.setattr(httpx.HTTPTransport, 'handle_request', _refused)
     monkeypatch.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', _refused_async)
     monkeypatch.setattr(requests.adapters.HTTPAdapter, 'send', _refused)
     monkeypatch.setattr(socket.socket, 'connect', _connect)
     monkeypatch.setattr(socket.socket, 'connect_ex', _connect_ex)
+    monkeypatch.setattr(socket.socket, 'sendto', _sendto)
 
 
 @pytest.fixture

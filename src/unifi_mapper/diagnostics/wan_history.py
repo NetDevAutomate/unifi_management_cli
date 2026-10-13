@@ -3,7 +3,12 @@
 ``unifi-mapper diagnose wan --record`` appends the controller's last scheduled speedtest to
 ``state_dir() / 'wan-speedtest-history.jsonl'`` through the shared capped writer: one JSON
 line per run, deduplicated by the run's time under the writer's lock, at most 1 MiB, the
-file ``0o600`` in a ``0o700`` directory. Reading never writes. This module imports no
+file and its lock ``0o600`` and the default state directory ``0o700``, kept so on every
+append (a history, lock or default directory owned by another user is refused, never
+chmod'ed, and nothing is written; a directory an explicit ``path`` names is left as it is).
+The writer waits at most :data:`HISTORY_LOCK_TIMEOUT_S` (5 s) for the lock, so a lock
+another account holds fails the run, naming the lock, instead of stalling it. Reading never
+writes. This module imports no
 controller client, so the MCP tool over it (``credentials: none``) can run with no
 credentials at all; it only reads what was recorded.
 """
@@ -15,7 +20,12 @@ from pathlib import Path
 from pydantic import Field
 from typing import Annotated, Any
 from unifi_mapper.analysis.port_counter_baseline import state_dir
-from unifi_mapper.core.utils.jsonl import CappedWriteResult, append_capped_jsonl, epoch_field
+from unifi_mapper.core.utils.jsonl import (
+    HISTORY_LOCK_TIMEOUT_S,
+    CappedWriteResult,
+    append_capped_jsonl,
+    epoch_field,
+)
 
 
 HISTORY_FILENAME = 'wan-speedtest-history.jsonl'
@@ -78,19 +88,28 @@ def append_speedtest(
         result has no run time and nothing was written.
 
     Raises:
-        OSError: The history cannot be written.
+        OSError: The history cannot be written: ``LockTimeoutError`` (naming the lock and
+            who may hold it) when its lock stayed held past :data:`HISTORY_LOCK_TIMEOUT_S`,
+            ``NotOwnedError`` when the history, its lock or its default directory is another
+            user's, or any other write failure.
     """
     line = speedtest_line(last_speedtest)
     if line is None:
         return None
+    target = path or default_speedtest_history_path()
+    # The default directory is the tool's own: kept 0o700 on every append. An explicit
+    # path's existing directory is the user's: never changed (a missing one is made 0o700).
+    keep_dir = path is not None and target.parent.exists()
     return append_capped_jsonl(
-        path or default_speedtest_history_path(),
+        target,
         [line],
         max_bytes=SPEEDTEST_HISTORY_MAX_BYTES,
         epoch_of=epoch_field('epoch'),
         dedup_key=_run_time,
         file_mode=0o600,
-        dir_mode=0o700,
+        dir_mode=None if keep_dir else 0o700,
+        enforce_modes=True,
+        lock_timeout_s=HISTORY_LOCK_TIMEOUT_S,
     )
 
 
@@ -139,9 +158,10 @@ async def get_wan_speedtest_history(
     """The WAN speedtest results recorded so far, newest first. Read-only.
 
     Reads the history file that ``unifi-mapper diagnose wan --record`` (hourly when
-    scheduled) appends to, under the XDG state directory. Needs no credentials and sends no
-    request. An empty history returns no entries and a note saying how to record, not an
-    error. For the controller's current status and last result, use get_wan_health.
+    scheduled) appends to, under the XDG state directory; the CLI form is
+    ``unifi-mapper diagnose wan-history``. Needs no credentials and sends no request. An
+    empty history returns no entries and a note saying how to record, not an error. For the
+    controller's current status and last result, use get_wan_health.
 
     Args:
         limit: Cap on returned results.

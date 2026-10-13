@@ -13,7 +13,7 @@ import os
 import pytest
 import stat
 import threading
-import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tests.lock_helpers import held_read_only, run_bounded, umask
 from unifi_mapper.core.utils import jsonl
@@ -123,35 +123,57 @@ def test_duplicates_are_dropped_against_the_file_and_the_batch(tmp_path: Path) -
 
 
 def test_concurrent_appends_of_the_same_run_write_it_once(tmp_path: Path) -> None:
+    """Each writer runs in a pool so its exception, if any, surfaces (issue 076 item 17)."""
     path = tmp_path / 'h.jsonl'
 
-    def _append() -> None:
-        append_capped_jsonl(
+    def _append() -> CappedWriteResult:
+        return append_capped_jsonl(
             path, [_line(1, run=42)], max_bytes=10_000, epoch_of=EPOCH, dedup_key=_run_time
         )
 
-    threads = [threading.Thread(target=_append) for _ in range(8)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = [
+            future.result(timeout=10) for future in [pool.submit(_append) for _ in range(8)]
+        ]
+    assert sorted(r.lines_written for r in results) == [0] * 7 + [1]
     assert _epochs(path) == [1]
 
 
-def test_append_waits_for_the_lock(tmp_path: Path) -> None:
+class _SignallingFcntl:
+    """``jsonl``'s ``fcntl`` for one test: the real ``flock``, signalling each attempt first."""
+
+    LOCK_EX = fcntl.LOCK_EX
+    LOCK_NB = fcntl.LOCK_NB
+    LOCK_UN = fcntl.LOCK_UN
+
+    def __init__(self) -> None:
+        self.at_the_lock = threading.Event()
+
+    def flock(self, fd: int, operation: int) -> None:
+        if operation & fcntl.LOCK_EX:
+            self.at_the_lock.set()
+        fcntl.flock(fd, operation)
+
+
+def test_append_waits_for_the_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Issue 076 item 21: the test slept a fixed 0.2 s and hoped the worker had reached the
+    lock by then; it now waits for the worker's own signal that it is at the lock."""
     path = tmp_path / 'h.jsonl'
+    signalling = _SignallingFcntl()
+    monkeypatch.setattr(jsonl, 'fcntl', signalling)  # the holder below keeps the real one
     done = threading.Event()
+
+    def _append() -> None:
+        append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
+        done.set()
+
     with (tmp_path / 'h.jsonl.lock').open('a') as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        worker = threading.Thread(
-            target=lambda: (
-                append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH),
-                done.set(),
-            )
-        )
+        worker = threading.Thread(target=_append, daemon=True)
         worker.start()
-        time.sleep(0.2)
-        assert not done.is_set() and not path.exists()
+        assert signalling.at_the_lock.wait(timeout=5), 'the worker never reached the lock'
+        assert not done.wait(timeout=0.1), 'the append went through a held lock'
+        assert not path.exists()
         fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
     worker.join(timeout=5)
     assert done.is_set() and _epochs(path) == [1]
@@ -308,29 +330,16 @@ def test_enforced_modes_refuse_a_directory_owned_by_another_user(
     assert list(directory.iterdir()) == [] and _mode(directory) == 0o755
 
 
-def test_enforced_modes_refuse_a_file_owned_by_another_user(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / 'state' / 'h.jsonl'
-    _private(path, _line(1))
-    os.chmod(path, 0o644)
-    real_fstat = os.fstat
-
-    def someone_elses(fd: int) -> os.stat_result:
-        st = real_fstat(fd)
-        fields = list(st[:10])
-        fields[stat.ST_UID] = st.st_uid + 1
-        return os.stat_result(fields)
-
-    with monkeypatch.context() as patched:
-        patched.setattr(os, 'fstat', someone_elses)
-        with pytest.raises(jsonl.NotOwnedError, match='file is owned by another user'):
-            _private(path, _line(2))
-    assert _epochs(path) == [1] and _mode(path) == 0o644
+# Issue 076 item 34: a test here faked the owner of every descriptor and matched 'file is
+# owned by another user' unanchored, so once the lock was checked first it passed on the
+# lock's message ('the lock file is owned by another user') and no longer tested the file's
+# check. test_enforced_modes_refuse_a_lock_or_file_owned_by_another_user[file] below fakes
+# the file's descriptor alone and anchors the match; the old test is gone.
 
 
 def test_without_enforcement_an_existing_file_keeps_its_mode(tmp_path: Path) -> None:
-    """The other histories (no ``enforce_modes``) still set a mode on creation only."""
+    """Without ``enforce_modes`` a mode is set on creation only (the generic path; every
+    history enforces since issue 076 items 7 and 32)."""
     path = tmp_path / 'h.jsonl'
     path.write_text(_line(1), encoding='utf-8')
     os.chmod(path, 0o644)
@@ -358,7 +367,8 @@ def test_the_lock_is_created_with_the_file_mode(tmp_path: Path) -> None:
 
 
 def test_without_a_file_mode_the_lock_keeps_the_umask_mode(tmp_path: Path) -> None:
-    """The port counter history gives no mode: its lock is created as before."""
+    """A caller that gives no mode gets a lock created as before (the histories all give one
+    since issue 076 item 32; this pins the generic path)."""
     path = tmp_path / 'h.jsonl'
     with umask(0o022):
         append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)

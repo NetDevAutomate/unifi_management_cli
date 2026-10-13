@@ -32,15 +32,20 @@ The runner records each call in a worker thread inside a shielded cancel scope, 
 write never blocks the event loop and a cancelled call is still logged. A write waits at most
 :data:`LOCK_TIMEOUT_S` (5 s) to take the lock; a write still locked out drops its lines (the
 call line and any buffered request lines) with one warning per process, and the log stays
-on, so later calls are logged once the lock is free. The limit covers that wait only: the
-append and any compaction after the lock is taken, a wait for a worker thread, and
+on. For the next :data:`LOCK_COOLDOWN_S` (30 s) writes drop their lines without trying the
+lock, so a lock that is never released does not cost every logged call the whole limit; the
+next write that takes the lock starts with a ``lock_timeout`` line counting the lines
+dropped since the last one written (as ``request_overflow`` counts request lines), so a gap
+leaves a trace. The writes run under their own :data:`MAX_CONCURRENT_WRITES`-token
+``CapacityLimiter``, not the SDK transport's. The limit covers the wait only: the append and
+any compaction after the lock is taken, a wait for one of the log's worker threads, and
 :meth:`CallAuditLog.flush` at the lifespan's exit (which waits the same way, on the event
-loop thread) are outside it, so it is not a limit on a call's total time. A lock that is
-never released costs every logged call up to the limit, and after the first warning the dropped
-lines leave no trace. Any other failure to write (an unwritable path, a read-only home, no
+loop thread) are outside it, so it is not a limit on a call's total time. Any other failure
+to write (an unwritable path, a read-only home, no
 ``HOME``, another user's file, lock or directory, a symbolic link, a given directory others
-can write to) logs one warning and turns the log off for the process; a tool's result is
-never changed.
+can write to) logs one warning and turns the log off for the process (two writes failing
+at once still warn once; when the failing file is not the log, its lock for example, the
+warning names it); a tool's result is never changed.
 """
 
 import errno
@@ -70,6 +75,16 @@ MAX_PENDING_REQUESTS = 1000
 # The longest one write waits for the lock (seconds): well past what another writer's
 # compaction of a full file takes. A write still locked out then drops its lines.
 LOCK_TIMEOUT_S = 5.0
+# After a write times out on the lock, the writes of the next LOCK_COOLDOWN_S seconds drop
+# their lines without trying the lock, so a lock that is never released does not cost every
+# logged call the whole limit; the next write that takes the lock starts with a
+# ``lock_timeout`` line counting the lines dropped since the last one written (item 33,
+# council decision: 30 s).
+LOCK_COOLDOWN_S = 30.0
+# The call log's own work budget: its writes run in worker threads under a CapacityLimiter of
+# this many tokens (``mcp/runner.py``), never the default limiter the SDK's stdio transport
+# shares, so a slow or failing log cannot queue behind, or starve, the transport's threads.
+MAX_CONCURRENT_WRITES = 4
 UNREGISTERED = '<unregistered>'
 CANCELLED = 'CANCELLED'
 # Backstops: keys are the tool's own parameter names, so these never bind in practice.
@@ -180,6 +195,20 @@ def _error_name(error: BaseException) -> str:
     return f'{type(error).__name__} ({name})' if name else type(error).__name__
 
 
+def _other_file(error: BaseException, target: Path | None) -> str:
+    """`` on <name>`` when the error names a file other than the log (its lock, a temp file).
+
+    A link in the lock's place fails the lock's ``O_NOFOLLOW`` open with ``ELOOP``; without
+    this the warning named the log, which may not exist (issue 076 item 36). Only the base
+    name is added: it shows no more than the path the warning already prints.
+    """
+    filename = getattr(error, 'filename', None)
+    if not isinstance(filename, str | os.PathLike) or target is None:
+        return ''
+    named = Path(filename)
+    return '' if named == target or named.name == target.name else f' on {named.name}'
+
+
 def _given_directory_exists(directory: Path) -> bool:
     """Check the directory of a path ``UNIFI_MCP_CALL_AUDIT`` gives; its mode is never changed.
 
@@ -221,6 +250,8 @@ class CallAuditLog:
         self._dropped = 0
         self._disabled = setting.mode == 'off'
         self._lock_timeout_warned = False
+        self._lock_dropped = 0  # lines dropped since the last write that took the lock
+        self._skip_lock_until: float | None = None  # monotonic time the cool-down ends
 
     @property
     def enabled(self) -> bool:
@@ -330,20 +361,46 @@ class CallAuditLog:
             return
         self._write(self._take_pending())
 
+    def _take_dropped(self, lines: list[str]) -> int | None:
+        """Count ``lines`` as dropped and return None in a cool-down; else the count to report.
+
+        Returns:
+            None when a lock timeout's cool-down is running (the lines are dropped, counted,
+            and the lock is not tried); otherwise the number of lines dropped since the last
+            write that took the lock, now taken over by this write, which reports them.
+        """
+        with self._lock:
+            if self._skip_lock_until is not None and time.monotonic() < self._skip_lock_until:
+                self._lock_dropped += len(lines)
+                return None
+            self._skip_lock_until = None
+            dropped, self._lock_dropped = self._lock_dropped, 0
+        return dropped
+
     def _write(self, lines: list[str]) -> None:
         if not lines or self._disabled:
             return
         target: Path | None = None
+        dropped = 0
         try:
             target = self.target()
             if target is None:
                 return
+            taken = self._take_dropped(lines)
+            if taken is None:
+                return  # the lock timed out moments ago: dropped, counted, not tried again yet
+            dropped = taken
+            batch = lines
+            if dropped:
+                stamp, epoch = _now()
+                marker = {'t': stamp, 'epoch': epoch, 'kind': 'lock_timeout', 'dropped': dropped}
+                batch = [json.dumps(marker), *lines]
             # The default directory is the tool's own: kept 0o700 on every write. A given
             # path's existing directory is the user's: checked first, never changed.
             keep_dir = self.setting.mode == 'path' and _given_directory_exists(target.parent)
             append_capped_jsonl(
                 target,
-                lines,
+                batch,
                 max_bytes=self.max_bytes,
                 epoch_of=_EPOCH_OF,
                 file_mode=0o600,
@@ -352,21 +409,33 @@ class CallAuditLog:
                 lock_timeout_s=LOCK_TIMEOUT_S,
             )
         except LockTimeoutError:
-            # Another descriptor holds the lock: these lines are dropped, the log stays on.
+            # Another descriptor holds the lock: these lines are dropped and counted, the lock
+            # is not tried again for LOCK_COOLDOWN_S, and the log stays on.
             with self._lock:
+                self._lock_dropped += dropped + len(lines)
+                self._skip_lock_until = time.monotonic() + LOCK_COOLDOWN_S
                 first, self._lock_timeout_warned = not self._lock_timeout_warned, True
             if first:
                 logger.warning(
                     'MCP call log: lines not written to {}: its lock was held for over {:g} s; '
-                    'the log stays on (this warning is shown once)',
+                    'the lock is not tried again for {:g} s, and the next write that takes it '
+                    'starts with a lock_timeout line counting the lines dropped; the log stays '
+                    'on (this warning is shown once)',
                     target,
                     LOCK_TIMEOUT_S,
+                    LOCK_COOLDOWN_S,
                 )
         except Exception as e:  # noqa: BLE001 - the call log must never affect a tool call
-            self._disabled = True
+            # Two writes already past the enabled check (the runner records in worker
+            # threads) can both fail: only the first to get here warns (issue 076 item 35).
+            with self._lock:
+                first, self._disabled = not self._disabled, True
+            if not first:
+                return
             where = str(target) if target is not None else 'the default path'
             logger.warning(
-                'MCP call log disabled for this process: cannot write {}: {}',
+                'MCP call log disabled for this process: cannot write {}: {}{}',
                 where,
                 str(e) if isinstance(e, NotOwnedError | SharedDirectoryError) else _error_name(e),
+                _other_file(e, target),
             )

@@ -423,9 +423,16 @@ def password_wrapper(real_wrapper: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
     return real_wrapper
 
 
-def test_the_password_config_exports_no_login_past_the_test(password_wrapper: Path) -> None:
-    # The keys monkeypatch set before the CLI runs are the ones it removes afterwards.
+def test_the_login_keys_are_set_before_the_cli_exports_them(password_wrapper: Path) -> None:
+    """Issue 076 item 22: the old name promised a cleanup check this test cannot make (the
+    monkeypatch undo runs after every finalizer here). What it checks: the fixture sets both
+    login keys before the CLI runs, so the keys the CLI exports from the config are ones
+    monkeypatch already owns and removes at teardown."""
     assert os.environ['UNIFI_USERNAME'] == os.environ['UNIFI_PASSWORD'] == 'placeholder'
+    runner.invoke(app, ['--config', str(password_wrapper), 'ports', 'list', SWITCH_NAME])
+    # UnifiConfig.from_env exported the config's login over the placeholders: the export is
+    # real, and it lands on keys monkeypatch set, so it does not outlive the test.
+    assert os.environ['UNIFI_USERNAME'] == 'admin' and os.environ['UNIFI_PASSWORD'] == FAKE_PW
 
 
 def test_an_unexpected_read_error_is_one_redacted_line(

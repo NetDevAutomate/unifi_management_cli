@@ -17,8 +17,8 @@ skip a line that does not parse; ``read_port_history`` and ``read_speedtest_hist
 A line is valid when the caller's ``epoch_of(line)`` returns a number; :func:`epoch_field`
 builds that function for a top-level numeric field.
 
-With ``enforce_modes`` (the MCP call log), the file and directory modes that are given hold
-on every append, not only on creation: a file, lock file or directory of the current user's
+With ``enforce_modes`` (the MCP call log and the CLI histories), the file and directory modes
+that are given hold on every append, not only on creation: a file, lock file or directory of the current user's
 with any group or other bit is changed to the mode, and one owned by another user raises
 :class:`NotOwnedError`. The file and its lock are then also opened without following a
 symbolic link, so a link in the place of either is refused.
@@ -45,6 +45,12 @@ from pathlib import Path
 # Compaction trims the file to this fraction of max_bytes, so a file at the cap is not
 # rewritten on every append.
 COMPACT_LOW_WATER_RATIO = 0.8
+# The longest a CLI history (the port counter and speedtest histories) waits for its lock:
+# well past a compaction of a full file; a held lock then fails the run, non-zero, with a
+# message naming the lock and who may hold it, instead of stalling a scheduled command for
+# good (issue 076 item 32, council decision: 5 s, never unbounded). The MCP call log uses the
+# same bound (mcp/call_audit.LOCK_TIMEOUT_S).
+HISTORY_LOCK_TIMEOUT_S = 5.0
 
 EpochOf = Callable[[str], float | None]
 # The permission bits a private file or directory must not have.
@@ -233,11 +239,13 @@ def _open_for_append(
     return fd
 
 
-def _lock_exclusively(fd: int, timeout_s: float | None) -> None:
+def _lock_exclusively(fd: int, timeout_s: float | None, lock_path: Path) -> None:
     """Take ``LOCK_EX`` on ``fd``: wait as long as it takes, or at most ``timeout_s``.
 
     Raises:
-        LockTimeoutError: The lock was still held when ``timeout_s`` ran out.
+        LockTimeoutError: The lock was still held when ``timeout_s`` ran out. The message
+            names the lock file and who may hold it, so a scheduled command's failure line
+            is actionable on its own.
     """
     if timeout_s is None:
         fcntl.flock(fd, fcntl.LOCK_EX)
@@ -251,7 +259,9 @@ def _lock_exclusively(fd: int, timeout_s: float | None) -> None:
             remaining = deadline - time.monotonic()
             if not remaining > 0:
                 raise LockTimeoutError(
-                    f'the lock was held for more than {timeout_s:g} s'
+                    f'the lock {lock_path} was held for more than {timeout_s:g} s: another '
+                    'run of this command, or any account that can open that file, holds it; '
+                    'nothing was appended'
                 ) from None
             time.sleep(min(_LOCK_RETRY_S, remaining))
 
@@ -306,8 +316,9 @@ def append_capped_jsonl(
             existing directory the user named). The lock file and the file are opened
             without following a symbolic link (``O_NOFOLLOW``), so a link in the place of
             either is refused.
-        lock_timeout_s: None waits for the lock as long as it takes (the histories); a
-            number of seconds is the longest wait, after which nothing is appended.
+        lock_timeout_s: None waits for the lock as long as it takes; a number of seconds
+            (:data:`HISTORY_LOCK_TIMEOUT_S` for the CLI histories) is the longest wait,
+            after which nothing is appended.
 
     Returns:
         What was written and what compaction removed.
@@ -329,7 +340,7 @@ def append_capped_jsonl(
     lock_path = path.with_name(path.name + '.lock')
     lock_fd = _open_for_append(lock_path, file_mode, enforce_modes, 'lock file')
     with os.fdopen(lock_fd, 'ab') as lock:
-        _lock_exclusively(lock.fileno(), lock_timeout_s)
+        _lock_exclusively(lock.fileno(), lock_timeout_s, lock_path)
         try:
             if dedup_key is not None:
                 seen: set[str] = set()

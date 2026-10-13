@@ -4,7 +4,9 @@ The root ``tests/conftest.py`` bans a real ``asyncssh.connect`` in every test
 (``_no_live_ssh``). A test that needs SSH installs ``FakeSSH`` over the ban with
 ``monkeypatch.setattr(asyncssh, 'connect', FakeSSH())``; the later patch wins. Each
 connection records every command it is asked to run and answers ``ping`` and ``iperf3`` with
-canned output, or, given ``replies``, each program (the command's first word) with its own.
+canned output, or, given ``replies``, each program (the command's first word) with its own;
+with ``replies`` a program they do not name is an ``AssertionError`` naming the command, so a
+test cannot pass on a command it never scripted (issue 076 item 16).
 """
 
 import json
@@ -41,20 +43,27 @@ Reply = str | tuple[str, str, int]
 
 
 class FakeConnection:
-    """What ``asyncssh.connect`` returns: records every command it is asked to run."""
+    """What ``asyncssh.connect`` returns: records every command it is asked to run.
+
+    With ``replies`` (a dict, even an empty one) only the programs it names are answered;
+    with None, ``ping`` and ``iperf3`` get the canned defaults.
+    """
 
     def __init__(self, replies: dict[str, Reply] | None = None) -> None:
         self.commands: list[str] = []
-        self.replies = replies or {}
+        self.replies = replies
 
     async def run(self, command: str, check: bool = False) -> FakeProcess:
         self.commands.append(command)
-        reply = self.replies.get(shlex.split(command)[0]) if self.replies else None
+        if self.replies is None:
+            return FakeProcess(IPERF3_OK if command.startswith('iperf3 ') else PING_OK)
+        program = shlex.split(command)[0]
+        if program not in self.replies:
+            raise AssertionError(f'the SSH fake has no reply for {program!r}: {command}')
+        reply = self.replies[program]
         if isinstance(reply, tuple):
             return FakeProcess(reply[0], exit_status=reply[2], stderr=reply[1])
-        if reply is not None:
-            return FakeProcess(reply)
-        return FakeProcess(IPERF3_OK if command.startswith('iperf3 ') else PING_OK)
+        return FakeProcess(reply)
 
     async def __aenter__(self) -> 'FakeConnection':
         return self
