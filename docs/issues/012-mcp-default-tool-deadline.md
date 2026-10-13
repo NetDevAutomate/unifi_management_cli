@@ -2,7 +2,7 @@
 title: "MCP tool calls have no deadline by default"
 date: 2026-10-02
 status: resolved
-resolved_by: f78bc3c
+resolved_by: 8071f7d
 severity: low
 components: [mcp/config, mcp/runner]
 found_by: MCP uvx standards work
@@ -79,36 +79,68 @@ tasks, issue [008](008-mcp-sdk-v2-migration.md)), not for a deadline here.
 
 ## Resolution
 
-Resolved on 2026-10-13 (`f78bc3c`): D11 approved at 300 s. `ServerSettings.tool_timeout`
-defaults to `300.0` and `load_server_settings` returns that default when
-`UNIFI_MCP_TOOL_TIMEOUT` is unset, empty or invalid (an invalid value used to mean "no
-deadline"); the bounds stay 5–3600 s. A `tool_timeout` of `None` is still honoured by the
-runner (no deadline) for programmatic callers and tests, but the variable cannot set it.
+Resolved on 2026-10-13 (`f78bc3c`, then `8071f7d` for the council's decision). D11 was
+approved **at 270 s, not 300 s**: `ServerSettings.tool_timeout` defaults to `270.0` and
+`load_server_settings` returns that default when `UNIFI_MCP_TOOL_TIMEOUT` is unset, empty or
+invalid (an invalid value used to mean "no deadline"); the bounds stay 5–3600 s. A
+`tool_timeout` of `None` is still honoured by the runner (no deadline) for programmatic
+callers and tests, but the variable cannot set it.
 
-The 2026-10-05 correction is taken the second way: the server default stays at the round
-300 s and the guide's client limits move **above** it, to 330 s (kiro-cli
-`"timeout": 330000`, Codex `tool_timeout_sec = 330`), with a paragraph in the guide's
-client-configuration section saying why a client limit must exceed the server's. Documented
-in `docs/mcp-server/MCP_SERVER_GUIDE.md` (environment table, error-code table, client
+**Why 270 and not 300.** The 2026-10-05 correction above offered two ways out of the tie
+with the guide's client limits: lower the server default below them, or raise them above
+it. `f78bc3c` took the second (300 s server, clients raised to 330 s). The council took the
+first: the guide's client snippets stay at the round 300 s every user already has
+(kiro-cli `"timeout": 300000`, Codex `tool_timeout_sec = 300`), and the server's deadline
+sits 30 s under them, so a wedged controller is reported as `[TIMEOUT]` with its stderr line
+and its slot is freed before the client's own limit fires. 270 s is still well above the
+100 s counter-sampling window and every figure measured below. `8071f7d` reverts the
+snippets to 300 s and lowers the default. Documented in
+`docs/mcp-server/MCP_SERVER_GUIDE.md` (environment table, error-code table, the
+client-configuration paragraph on why the client's limit must stay above the server's, both
 snippets), `docs/mcp-server/MCP_STANDARDS_REVIEW.md` (A12, D11) and `.env.example`.
+
+**What the deadline can and cannot interrupt** (verified against
+`src/unifi_mapper/mcp/runner.py` on 2026-10-13, and pinned by tests). `ToolRunner._execute`
+acquires the concurrency semaphore (`async with self._limit()`) and *inside* it opens
+`anyio.fail_after(timeout)` around `self._call(tool, kwargs)`; `_call` awaits an async
+handler but runs a sync handler inline on the event loop (`result = tool.fn(**kwargs)`).
+So:
+
+- An async handler that is awaiting past the deadline is cancelled and the call is
+  `[TIMEOUT]` (`tests/mcp/test_error_semantics.py::test_an_async_handler_past_the_deadline_is_timeout`:
+  a 0.5 s `anyio.sleep` at a 0.05 s deadline returns `TIMEOUT` in under 0.4 s).
+- A sync handler that blocks cannot be interrupted: it holds the event loop, so the
+  deadline's timer callback cannot run until the handler returns; the cancel scope then
+  exits having cancelled nothing, and the call is reported `ok: true` after holding its
+  semaphore slot, and the whole loop, for the handler's full duration
+  (`test_a_sync_handler_is_not_interrupted_by_the_deadline`: a 0.3 s `time.sleep` at a
+  0.05 s deadline returns the handler's result after at least 0.3 s). Nine of the 96
+  registered handlers are sync, all pipeline-only STP tools: `audit_stp_guard_recommendations`,
+  `audit_stp_path_costs`, `create_stp_change_plan`, `detect_stp_config_drift`,
+  `diff_stp_snapshots`, `format_10g_validation_report_markdown`,
+  `format_stp_report_markdown`, `snapshot_stp_topology`, `stp_preflight_simulate_add`.
+  Cooperative cancellation for sync handlers (running them in a worker with a stop flag, or
+  moving the deadline outside the semaphore) is a runner redesign and was deliberately not
+  done in this lane; the coordinator files it.
 
 B14, measured read-only through the CLI against the live controller on 2026-10-13, one run
 each, wall clock including process start-up: `diagnose health` 1.1 s, `diagnose security`
 0.9 s, `diagnose performance` 0.5 s, `analyze traffic-matrix` 0.7 s (8 requests),
 `analyze link-speeds` 1.2 s. `diagnose_switch_port` was not run: its counter sampling
 blocks for `(samples - 1) × interval_seconds`, about 100 s by default, by construction.
-Every figure is far below 300 s, and the sampling window is the only one in the same order
+Every figure is far below 270 s, and the sampling window is the only one in the same order
 of magnitude.
 
-Tests: `tests/mcp/test_config_resolution.py::test_tool_timeout_defaults_to_300_seconds`
-(default, empty, invalid) and the renamed deadline cases in
-`tests/mcp/test_error_semantics.py`.
+Tests: `tests/mcp/test_config_resolution.py::test_tool_timeout_defaults_to_270_seconds`
+(default, empty, invalid) and the deadline cases in `tests/mcp/test_error_semantics.py`
+named above.
 
 Deliberately not changed, each still open and recorded in this file above:
 
 - **A deadline ends the call, not a worker thread.** The fourteen `asyncio.to_thread` tools
   run on after `[TIMEOUT]`; the stop-flag fix is a change to each handler and needs its own
-  issue (the coordinator files it from this lane's report).
+  issue (the coordinator files it from this lane's report), as does the sync-handler
+  limitation just described.
 - **`get_ap_retry_rates` can outlast the client limit** at `interval_seconds` near 240 s.
   Bounding each read and capping the interval changes that tool's contract; not done here.
 - **`get_recent_events` pages everything before it keeps the newest** (issue 021's note);
