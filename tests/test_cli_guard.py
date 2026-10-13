@@ -181,14 +181,33 @@ CONTROLLER_MODULES = sorted(
 )
 
 
+def _import_aliases(tree: ast.AST, name: str) -> set[str]:
+    """The names ``from … import <name> [as alias]`` binds in the module, ``name`` included."""
+    return {name} | {
+        alias.asname
+        for n in ast.walk(tree)
+        if isinstance(n, ast.ImportFrom)
+        for alias in n.names
+        if alias.name == name and alias.asname
+    }
+
+
 def _own_clients(tree: ast.AST) -> list[int]:
-    """Lines that build a client of their own: ``UniFiClient`` with arguments, or httpx's."""
+    """Lines that build a client of their own: ``UniFiClient`` with arguments, or httpx's.
+
+    Resolves ``from … import UniFiClient as X`` and ``from httpx import AsyncClient as Y``
+    (issue 076 item 19), so an alias cannot hide a constructor from the scan.
+    """
+    unifi, httpx_clients = (
+        _import_aliases(tree, 'UniFiClient'),
+        _import_aliases(tree, 'AsyncClient'),
+    )
 
     def own(call: ast.Call) -> bool:
         name = getattr(call.func, 'id', None) or getattr(call.func, 'attr', None)
-        if name == 'AsyncClient':
+        if name in httpx_clients:
             return True
-        return name == 'UniFiClient' and bool(call.args or call.keywords)
+        return name in unifi and bool(call.args or call.keywords)
 
     return [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call) and own(n)]
 
@@ -214,6 +233,22 @@ def test_the_own_client_scan_sees_arguments_and_raw_httpx() -> None:
     assert _names_unifi_client(ast.parse('from x import UniFiClient'))
     assert _names_unifi_client(ast.parse('c.UniFiClient()'))
     assert not _names_unifi_client(ast.parse('UniFiClientish = 1'))
+
+
+def test_the_own_client_scan_resolves_import_aliases() -> None:
+    """Issue 076 item 19: a constructor reached through an alias was not matched by name."""
+    sample = (
+        'from unifi_mapper.core.utils.client import UniFiClient as Client\n'  # 1
+        'from httpx import AsyncClient as Http\n'  # 2
+        'import httpx as h\n'  # 3
+        'Client(creds)\n'  # 4: an own client through the alias
+        'Client()\n'  # 5: borrows the holder
+        'Http()\n'  # 6: raw httpx through the alias
+        'h.AsyncClient()\n'  # 7
+        'Other(creds)\n'  # 8: not a client
+    )
+    assert _own_clients(ast.parse(sample)) == [4, 6, 7]
+    assert _names_unifi_client(ast.parse(sample))  # the aliased import still marks the module
 
 
 def test_the_host_key_notice_prints_once_per_invocation(
