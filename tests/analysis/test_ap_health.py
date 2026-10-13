@@ -317,23 +317,41 @@ async def _run(controller: FakeController, **kwargs: Any) -> tuple[dict[str, Any
     return report, capture
 
 
-async def test_the_capture_samples_both_aps_through_reads_only(
-    pauses: list[float], ssh: FakeSSH
+# Issue 076 item 13: one capture test checked timing, the SSID choice and the read-only and
+# redaction guarantees at once; each is its own test now, over the same three-sample capture.
+
+
+async def test_the_capture_pauses_between_samples_and_interleaves_both_aps(
+    pauses: list[float],
 ) -> None:
-    controller = _controller()
     report, capture = await _run(
-        controller, target='AP 1', reference='AP 2', samples=3, interval=30
+        _controller(), target='AP 1', reference='AP 2', samples=3, interval=30
     )
-    assert pauses == [30, 30]
+    assert pauses == [30, 30]  # no pause before the first sample
     assert report['samples_taken'] == {'target': 3, 'reference': 3}
-    assert report['essid'] == 'SSID A' and report['essid_source'] == 'busiest'
     assert [s.role for s in capture.samples] == ['target', 'reference'] * 3
     target = [r for r in report['rows'] if r['role'] == 'target']
-    assert [r['retry_pct'] for r in target] == [None, 10.0, 10.0]
+    assert [r['retry_pct'] for r in target] == [None, 10.0, 10.0]  # 1000 packets, 100 retries
+
+
+async def test_without_an_essid_the_busiest_2_4_ghz_vap_of_the_first_sample_is_tracked(
+    pauses: list[float],
+) -> None:
+    report, _ = await _run(_controller(), target='AP 1', samples=1, interval=30)
+    assert (
+        report['essid'] == 'SSID A' and report['essid_source'] == 'busiest'
+    )  # not SSID C (5 GHz)
     assert report['ssid_config'] == dict.fromkeys(ap_health.SSID_CONFIG_KEYS) | {
         'wpa_mode': 'wpa2'
     }
-    assert controller.methods == {'GET'} and ssh.connects == []
+
+
+async def test_the_capture_reads_only_opens_no_ssh_and_redacts_the_report(
+    pauses: list[float], ssh: FakeSSH
+) -> None:
+    controller = _controller()
+    report, _ = await _run(controller, target='AP 1', reference='AP 2', samples=2, interval=30)
+    assert controller.methods == {'GET'} and ssh.connects == []  # no SSH without pings
     text = json.dumps(report)
     assert FAKE_PSK not in text and 'FAKE-AP-AUTHKEY' not in text
 
