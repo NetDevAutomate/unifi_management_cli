@@ -9,9 +9,9 @@ from ``docs/artefacts/``, and ``scripts/*.sh``), offline and without a controlle
   and no root shortcut flag sits before a subcommand that refuses it (exit 2);
 - MCP tool names, ``unifi://`` resources and prompts exist. The category table rows, the
   tool index, the surface sums, the "Of the N" split sentence and the ``--check`` output equal
-  what ``ToolRegistry()`` holds; any other tool count in an MCP line only has to equal one of
-  the registry's counts (``McpFacts.valid``), so a stale total that matches a category's count
-  can pass;
+  what ``ToolRegistry()`` holds; any other tool count in an MCP line is the registry's total
+  unless its sentence names a category, a surface or a kind of tool (``McpFacts.qualified``),
+  whose own count it may then be;
 - the ``diagnose all`` check count and list match ``typer_cli.diagnose_all``;
 - every backticked CamelCase name, and every class a Mermaid ``classDiagram`` declares or
   relates, is a class or type alias under ``src/`` or one of ``KNOWN_EXTERNAL_TYPES``;
@@ -366,7 +366,13 @@ TOOLISH = re.compile(
     r'calculate|generate|identify|plan|preflight|track|scan|diff|export|run)_[a-z0-9_]+$'
 )
 URI = re.compile(r'unifi://[a-z/_-]+')
-COUNT = re.compile(r'\b(\d+)\s+(?:[a-z-]+\s+){0,3}?(tools?|meta-tools|categories|schemas)\b', re.I)
+# ``96 tools``, ``57 registered MCP tools``, ``82 non-mutating, non-pipeline catalog tools``;
+# not the ``3`` of a ``13.3`` section number.
+COUNT = re.compile(
+    r'(?<![\d.])\b(\d+)\s+(?:[a-z-]+,?\s+){0,3}?(tools?|meta-tools|categories|schemas)\b', re.I
+)
+# ``Total registered tools: **87**``: a total written after the noun.
+TOTAL_AFTER_NOUN = re.compile(r'\btools:\s*\**(\d+)\b', re.I)
 CATEGORY_ROW = re.compile(r'^\|\s*`?([a-z]+)`?\s*\|\s*(\d+)\s*\|')
 INDEX_HEADING = re.compile(r'^### ([a-z]+) \((\d+)\)$')
 INDEX_ROW = re.compile(
@@ -402,9 +408,10 @@ def _registry() -> ToolRegistry:
 class McpFacts:
     """The MCP numbers the docs may state, computed from the registry by ``_facts()``.
 
-    ``valid`` holds every count a free-text claim may equal: the total, a category, a surface,
-    the meta-tools, the mutating and pipeline tools, the category count and the open-world and
-    non-idempotent tools. The exact checks use the named fields.
+    A free-text tool count must equal ``total`` unless its sentence names a category, a
+    surface or a kind of tool; ``qualified`` maps each such word (a regex, matched
+    case-insensitively on a word boundary) to the counts it allows as well. The exact checks
+    use the named fields.
     """
 
     total: int
@@ -414,7 +421,7 @@ class McpFacts:
     direct_catalog: int
     meta_tools: int
     direct_listed: int
-    valid: frozenset[int]
+    qualified: dict[str, frozenset[int]]
 
 
 @functools.cache
@@ -429,18 +436,19 @@ def _facts() -> McpFacts:
     meta_tools = len(mcp_server.META_TOOLS)
     mutating = sum(1 for m in metas.values() if m.mutates)
     pipeline = sum(1 for m in metas.values() if m.pipeline)
-    valid = {
-        len(metas),
-        direct,
-        direct + meta_tools,
-        meta_tools,
-        mutating,
-        pipeline,
-        len(categories),
-        *categories.values(),
-        sum(1 for m in metas.values() if not m.open_world),
-        sum(1 for m in metas.values() if not m.idempotent),
-    }
+    qualified = {category: frozenset({count}) for category, count in categories.items()}
+    qualified['discovery'] = qualified.get('discovery', frozenset()) | {meta_tools}  # a surface
+    qualified.update(
+        {
+            'direct': frozenset({direct, direct + meta_tools}),
+            'listed': frozenset({direct + meta_tools}),
+            'read-only': frozenset({direct}),  # the catalog a client may call
+            'meta[- ]tools?': frozenset({meta_tools}),
+            'mutating': frozenset({mutating}),
+            'pipeline': frozenset({pipeline}),
+            'schemas?': frozenset({direct + meta_tools}),
+        }
+    )
     return McpFacts(
         total=len(metas),
         categories=categories,
@@ -449,7 +457,7 @@ def _facts() -> McpFacts:
         direct_catalog=direct,
         meta_tools=meta_tools,
         direct_listed=direct + meta_tools,
-        valid=frozenset(valid),
+        qualified=qualified,
     )
 
 
@@ -509,11 +517,80 @@ def _line_of(text: str, offset: int) -> int:
     return text.count('\n', 0, offset) + 1
 
 
+SENTENCE_END = re.compile(r'[.!?;](?=\s|$)')
+BLOCK_START = re.compile(r'^\s*(?:#|[-*] |\d+\. |\||```|~~~|$)')
+
+
+def _continues(line: str) -> bool:
+    """True when a prose line runs on into the next one (no sentence end, not a block)."""
+    stripped = line.strip()
+    return bool(stripped) and not BLOCK_START.match(line) and stripped[-1] not in '.!?:'
+
+
+def _sentence(lines: list[str], index: int, start: int, code: set[int]) -> str:
+    """Return the sentence holding offset ``start`` of ``lines[index]``.
+
+    Wrapped prose is joined with the lines before and after it; a table row or a line in a
+    fenced code block (a Mermaid label, a tree) stands alone, since neither wraps.
+
+    Args:
+        lines: The file's lines.
+        index: The 0-based index of the line holding the match.
+        start: The match's offset in that line.
+        code: The 1-based line numbers inside fenced code blocks.
+
+    Returns:
+        The sentence, whitespace collapsed to single spaces.
+    """
+    line = lines[index]
+    if index + 1 in code or line.lstrip().startswith('|'):
+        return line
+    first = index
+    while first > 0 and _continues(lines[first - 1]) and not BLOCK_START.match(lines[first]):
+        first -= 1
+    last = index
+    while (
+        last + 1 < len(lines)
+        and _continues(lines[last])
+        and not BLOCK_START.match(lines[last + 1])
+    ):
+        last += 1
+    text = ' '.join(ln.strip() for ln in lines[first : last + 1])
+    offset = sum(len(ln.strip()) + 1 for ln in lines[first:index])
+    offset += start - (len(line) - len(line.lstrip()))
+    begin = max((m.end() for m in SENTENCE_END.finditer(text, 0, offset)), default=0)
+    end = SENTENCE_END.search(text, offset)
+    return text[begin : end.end() if end else len(text)]
+
+
+def _allowed_counts(sentence: str, noun: str, facts: McpFacts) -> frozenset[int]:
+    """Return the counts a ``<number> <noun>`` claim in ``sentence`` may equal.
+
+    ``categories``, ``meta-tools`` and ``schemas`` name their own count. A tool count is the
+    total, or the count of each category, surface or kind the sentence names.
+    """
+    noun = noun.lower()
+    if noun == 'categories':
+        return frozenset({len(facts.categories)})
+    if noun == 'meta-tools':
+        return frozenset({facts.meta_tools})
+    if noun == 'schemas':
+        return facts.qualified['schemas?']
+    allowed = {facts.total}
+    for word, counts in facts.qualified.items():
+        if re.search(rf'\b{word}\b', sentence, re.I):
+            allowed |= counts
+    return frozenset(allowed)
+
+
 def mcp_count_problems(path: str, text: str, facts: McpFacts) -> list[str]:
     """Return ``path:line: problem`` for each MCP count that the registry doesn't support.
 
-    Checks tool and category counts in MCP lines, category table rows, the tool index's
-    headings, the direct-surface sums and the "Of the N" sentence.
+    A free-text tool count in an MCP line must be the registry's total, unless its sentence
+    names a category, a surface (``direct``, ``discovery``, ``listed``) or a kind
+    (``meta-tools``, ``mutating``, ``pipeline``, ``read-only``), whose own counts it may then
+    equal. Category table rows, the tool index's headings, the direct-surface sums and the
+    "Of the N" sentence are checked exactly.
 
     Args:
         path: The repo-relative file name.
@@ -523,14 +600,24 @@ def mcp_count_problems(path: str, text: str, facts: McpFacts) -> list[str]:
     Returns:
         The problems in file order.
     """
-    valid, categories = facts.valid, facts.categories
+    categories = facts.categories
+    lines, code = text.splitlines(), _code_lines(text)
     problems = []
-    for n, line in enumerate(text.splitlines(), 1):
+    for index, line in enumerate(lines):
+        n = index + 1
         if 'mcp' in path.lower() or 'MCP' in line or 'tool' in line.lower():
             for m in COUNT.finditer(line):
                 number = int(m.group(1))
-                if 2 < number <= 500 and number not in valid:
-                    problems.append(f'{path}:{n}: {number} {m.group(2)} matches no registry count')
+                if not 2 < number <= 500:
+                    continue
+                sentence = _sentence(lines, index, m.start(), code)
+                allowed = _allowed_counts(sentence, m.group(2), facts)
+                if number not in allowed:
+                    expected = ', '.join(str(c) for c in sorted(allowed))
+                    problems.append(f'{path}:{n}: {number} {m.group(2)}: expected {expected}')
+            for m in TOTAL_AFTER_NOUN.finditer(line):
+                if int(m.group(1)) != facts.total:
+                    problems.append(f'{path}:{n}: "{m.group(0)}", not the total {facts.total}')
             for m in WORD_CATEGORIES.finditer(line):
                 if NUMBER_WORDS[m.group(1).lower()] != len(categories):
                     problems.append(f'{path}:{n}: "{m.group(0)}", not {len(categories)}')
@@ -659,6 +746,33 @@ def test_mcp_detectors_report_unknown_names_resources_and_counts() -> None:
         'docs/mcp-demo.md:2',
         'docs/mcp-demo.md:3',
         'docs/mcp-demo.md:4',
+    ]
+
+
+def test_mcp_count_detector_requires_the_total_unless_the_sentence_qualifies_it() -> None:
+    """A bare tool count must be the total; a category, surface or kind names its own count."""
+    facts = _facts()
+    analysis, direct = facts.categories['analysis'], facts.direct_catalog
+    meta, listed, total = facts.meta_tools, facts.direct_listed, facts.total
+    text = (
+        f'The server registers {analysis} tools.\n'  # a stale total that equals a category
+        f'The analysis category holds {analysis} tools; `analysis.yaml` lists {analysis} tools.\n'
+        f'| `direct` | the meta-tools plus the catalog | {listed} tools, {direct} + {meta} |\n'
+        f'With `--surface direct` a client sees the\n'
+        f'{direct} tools, {listed} in all.\n'
+        f'The {meta} discovery meta-tools; {direct} read-only tools; {facts.pipeline} pipeline tools;\n'
+        f'the {facts.mutating} mutating tools; the {listed} schemas; {total} tools.\n'
+        f'Analysis Tools ({analysis} tools) and Diagnostics ({facts.pipeline} tools).\n'
+        '### 13.3 MCP Tool Discovery\n'
+        f'Total registered tools: **{facts.pipeline}** (the total, written after the noun).\n'
+        f'Also the {total + 1} non-mutating, non-pipeline catalog tools (the comma hid it).\n'
+    )
+    problems = mcp_count_problems('docs/mcp-demo.md', text, facts)
+    assert [p.split(': ', 1)[0] for p in problems] == [
+        'docs/mcp-demo.md:1',
+        'docs/mcp-demo.md:8',  # Diagnostics names a category; the pipeline count is not its count
+        'docs/mcp-demo.md:10',
+        'docs/mcp-demo.md:11',
     ]
 
 

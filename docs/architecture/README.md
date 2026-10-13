@@ -32,7 +32,7 @@ API Integration Layer
 
 Analysis Toolkit
 ├── Analysis Tools (57 tools)
-├── Diagnostics (11 tools)
+├── Diagnostics (12 tools)
 ├── Discovery (5 tools)
 ├── Observability (7 tools)
 ├── Connectivity (4 tools)

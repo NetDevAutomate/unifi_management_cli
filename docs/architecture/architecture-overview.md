@@ -246,7 +246,7 @@ The `unifi-mcp` server is built on the FastMCP bundled with the official MCP Pyt
 | `get_tool_info` | Fetch the parameters, JSON input/output schemas and annotations for a named tool |
 | `execute_tool` | Run a read-only catalog tool by name; mutating tools are refused with `MUTATION_REFUSED` |
 
-With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) the server also lists the 73 non-mutating, non-pipeline catalog tools directly. The server holds no domain logic. Its modules:
+With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) the server also lists the 82 non-mutating, non-pipeline catalog tools directly. The server holds no domain logic. Its modules:
 
 | Module | Responsibility |
 | --- | --- |
@@ -459,7 +459,7 @@ graph TD
         NWC["UniFiNetworkClient\nnetwork/client.py\n(httpx, async)"]
         RO["read-only guards\ncore/utils/readonly.py"]
         RED["secret stripping and masking\ncore/utils/redact.py"]
-        TA["ToolkitAdapter\ntoolkit_adapters.py\n(sync versions of 3 tools)"]
+        TA["ToolkitAdapter\ntoolkit_adapters.py\n(sync wrappers for find_device,\nanalyze_link_quality, network_health_check)"]
         CFG["UnifiConfig\nconfig.py"]
         CRED["Credentials\ncore/utils/auth.py"]
     end
@@ -1146,7 +1146,7 @@ The MCP server implements a progressive-disclosure pattern designed for AI agent
 3. execute_tool("detect_ip_conflicts", {}) -> {"ok": true, "result": ...}
 ```
 
-This keeps the AI's tool list short (4 tools, about 6.4k characters of `tools/list`) and avoids overwhelming the model with schema for all 96 tools at once. The agent requests detail only for tools it intends to use. Hosts that defer tool schemas themselves can use the direct surface instead (86 tools listed).
+This keeps the AI's tool list short (4 meta-tools, about 6.4k characters of `tools/list`) and avoids overwhelming the model with schema for all 96 tools at once. The agent requests detail only for tools it intends to use. Hosts that defer tool schemas themselves can use the direct surface instead (86 tools listed).
 
 ---
 
@@ -1566,7 +1566,7 @@ Commands executed: `ping` (latency matrix, `gateway ping`, `diagnose client-conn
 
 The MCP server implements the Model Context Protocol with the FastMCP bundled in the official MCP Python SDK (`mcp>=1.30,<1.31`). AI clients connect over stdio; no network transport is served. The server exports:
 
-- 4 public meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`); with `--surface direct`, also the 73 non-mutating, non-pipeline catalog tools
+- 4 public meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`); with `--surface direct`, also the 82 non-mutating, non-pipeline catalog tools
 - 96 registered tools in YAML manifests, of which 93 run through `execute_tool` (the 3 mutating tools are refused)
 - 2 resources (`unifi://catalog`, `unifi://config/status`) and 2 prompts (`troubleshoot_port_link`, `plan_stp_change`)
 - Server `instructions`, per-tool annotations, and `serverInfo.version` set to the package version
