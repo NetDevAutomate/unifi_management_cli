@@ -190,9 +190,9 @@ tools:
     open_world: false
     description: >-
       WAN speedtest results recorded by `unifi-mapper diagnose wan --record` (hourly when
-      scheduled), newest first, from the history file under the XDG state directory. Needs
-      no credentials and sends no request; an empty history returns a note on how to record.
-      Read-only.
+      scheduled), newest first, from the history file under the XDG state directory; the
+      CLI form is `unifi-mapper diagnose wan-history`. Needs no credentials and sends no
+      request; an empty history returns a note on how to record. Read-only.
     priority: P2
     tags: [wan, speedtest, history, trend, read-only]
     parameters:

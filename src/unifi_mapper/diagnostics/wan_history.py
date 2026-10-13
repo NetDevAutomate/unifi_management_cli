@@ -151,9 +151,10 @@ async def get_wan_speedtest_history(
     """The WAN speedtest results recorded so far, newest first. Read-only.
 
     Reads the history file that ``unifi-mapper diagnose wan --record`` (hourly when
-    scheduled) appends to, under the XDG state directory. Needs no credentials and sends no
-    request. An empty history returns no entries and a note saying how to record, not an
-    error. For the controller's current status and last result, use get_wan_health.
+    scheduled) appends to, under the XDG state directory; the CLI form is
+    ``unifi-mapper diagnose wan-history``. Needs no credentials and sends no request. An
+    empty history returns no entries and a note saying how to record, not an error. For the
+    controller's current status and last result, use get_wan_health.
 
     Args:
         limit: Cap on returned results.

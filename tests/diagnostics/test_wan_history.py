@@ -207,6 +207,18 @@ async def test_the_mcp_tool_reads_the_default_path(
     assert inspect.iscoroutinefunction(get_wan_speedtest_history)
 
 
+def test_the_tool_description_points_at_its_cli_command() -> None:
+    """Issue 076 item 9: the description named the recorder but not the CLI reader."""
+    from unifi_mapper.mcp.registry import ToolRegistry, default_manifests_dir
+
+    meta = ToolRegistry(default_manifests_dir(), strict=True).get_metadata(
+        'get_wan_speedtest_history'
+    )
+    assert meta.cli == 'diagnose wan-history'
+    assert '`unifi-mapper diagnose wan-history`' in (meta.description or '')
+    assert 'diagnose wan-history' in (get_wan_speedtest_history.__doc__ or '')
+
+
 def test_the_history_module_imports_no_controller_client() -> None:
     source = Path(wan_history.__file__).read_text(encoding='utf-8')
     for name in ('UniFiClient', 'UnifiApiClient', 'get_credentials', 'httpx'):
