@@ -371,11 +371,16 @@ class NetworkConfig(BaseModel):
             )
             raise ValueError(f'{prefix}API_KEY environment variable is required ({why})')
 
-        # Same origin, same TLS policy: a host derived from UNIFI_URL inherits the controller
-        # family's UNIFI_VERIFY_SSL unless the network family sets its own. The console token
-        # the family borrows must not travel over a session the controller family would verify.
+        # Same token, same TLS policy: when the family borrows the controller's console token
+        # (the host derived from UNIFI_URL, or an explicit host on the same origin) it inherits
+        # the controller family's UNIFI_VERIFY_SSL unless the network family sets its own, so
+        # the token never travels over a session the controller family would verify. A
+        # network-owned key keeps the family's own default.
         verify_ssl_raw = get_env('VERIFY_SSL')
-        if verify_ssl_raw is None and resolution.host_derived:
+        if verify_ssl_raw is None and (
+            resolution.host_derived
+            or resolution.api_key_source == 'console'  # pragma: allowlist secret
+        ):
             verify_ssl_raw = os.environ.get('UNIFI_VERIFY_SSL')
         return cls(
             host=resolution.origin.host,

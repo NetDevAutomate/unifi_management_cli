@@ -257,3 +257,31 @@ def test_an_explicit_network_host_does_not_inherit_the_controller_tls_setting(
         UNIFI_NETWORK_API_KEY=NET_KEY,
     )
     assert NetworkConfig.from_env().verify_ssl is False
+
+
+def test_the_borrowed_console_token_inherits_the_tls_setting_with_an_explicit_host(
+    env: dict[str, str],
+) -> None:
+    """The policy follows the token, not how the host was found (council pass B, finding M1).
+
+    An explicit ``UNIFI_NETWORK_HOST`` that is the same origin as ``UNIFI_URL`` still borrows the
+    console token, so the token must not travel over a session the controller family verifies.
+    """
+    env.update(CONTROLLER, UNIFI_VERIFY_SSL='true', UNIFI_NETWORK_HOST='192.0.2.1')
+    config = NetworkConfig.from_env()
+    assert config.api_key_source == 'console'  # pragma: allowlist secret
+    assert config.verify_ssl is True
+
+
+def test_a_network_owned_key_on_the_same_origin_keeps_the_family_default(
+    env: dict[str, str],
+) -> None:
+    env.update(
+        CONTROLLER,
+        UNIFI_VERIFY_SSL='true',
+        UNIFI_NETWORK_HOST='192.0.2.1',
+        UNIFI_NETWORK_API_KEY=NET_KEY,
+    )
+    config = NetworkConfig.from_env()
+    assert config.api_key_source == 'network'  # pragma: allowlist secret
+    assert config.verify_ssl is False
