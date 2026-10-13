@@ -56,3 +56,9 @@ uses:
   `test_registry_totals`; the parity tests cover the rest.
 - Tests: offline fixtures from `tests/fixtures_unifi.py` (frozen module clock), one case per
   finding code, CLI JSON parity.
+
+## Decision (2026-10-13)
+
+Not in 0.3.0. The LLDP consistency audit stays on the 0.4.0 backlog; the 0.3.0 release council
+chose to ship no new analysis features in this release (D-016/018/062). The parity gate now
+requires the CLI command and the MCP tool to land together.

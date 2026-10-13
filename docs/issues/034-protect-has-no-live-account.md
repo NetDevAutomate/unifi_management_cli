@@ -93,3 +93,9 @@ Local evidence, not in the repo, recorded at `a0f95e0`.
 5. Pass: every result is data with no `error` and no `READ_ONLY_VIOLATION`, and the audit
    file holds only GET and HEAD lines under `/proxy/protect/` (the session login is sent but
    not recorded). Then mark this issue resolved with that evidence.
+
+## Status (2026-10-13)
+
+Blocked on operator input: a Protect account must be configured on the maintainer's console
+before the five Protect tools can be verified live. No code change in 0.3.0; the tools raise on
+failure like every other tool since issue 011.

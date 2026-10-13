@@ -61,3 +61,9 @@ explicit opt-in and an `active_probe` marker, never by default.
   `1860ab5`, and the `plan_stp_change` prompt now runs it before and after a change; the other
   composite STP tools are still open.
 - `server_status` (`unifi-mapper doctor`) is still open, as are the rest of the tables above.
+
+## Decision (2026-10-13)
+
+Not in 0.3.0. The proposals stay the 0.4.0 backlog, triaged in the table above; none was built
+in this release by the 0.3.0 release council's decision (D-016/018/062). Any that is built must
+land on both surfaces or carry a parity-gate exemption with a reason.
