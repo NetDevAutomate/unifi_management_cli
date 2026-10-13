@@ -36,6 +36,7 @@ from unifi_mapper.analysis.ap_health import (
     sample_device,
     summarize_samples,
 )
+from unifi_mapper.connectivity import gateway_probe
 from unifi_mapper.core.utils.counters import VapCounters
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.typer_cli import app
@@ -337,8 +338,9 @@ async def test_a_ping_that_fails_with_any_error_is_recorded_and_the_run_goes_on(
     pauses: list[float], ssh: FakeSSH, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Review F4: a dropped SSH session raises an asyncssh or OS error, not a ToolError. That
-    ping records the redacted error and the samples before and after it are kept."""
-    real = ap_health.run_gateway_command
+    ping records the redacted error and the samples before and after it are kept. The ping
+    runs in ``gateway_probe.ping_over`` (issue 073), so that is where the drop is injected."""
+    real = gateway_probe.run_gateway_command
     calls = {'n': 0}
 
     async def _drop_second(conn: Any, argv: list[str], *, timeout: float) -> Any:
@@ -347,7 +349,7 @@ async def test_a_ping_that_fails_with_any_error_is_recorded_and_the_run_goes_on(
             raise ConnectionResetError('Connection lost')
         return await real(conn, argv, timeout=timeout)
 
-    monkeypatch.setattr(ap_health, 'run_gateway_command', _drop_second)
+    monkeypatch.setattr(gateway_probe, 'run_gateway_command', _drop_second)
     report, capture = await _run(
         _controller(), target='AP 1', samples=3, interval=30, ping_clients=True
     )
@@ -407,6 +409,22 @@ async def test_client_pings_run_in_one_gateway_session(pauses: list[float], ssh:
     assert argv == [['ping', '-c', '10', '-i', '0.3', '-W', '2', '192.0.2.31']] * 2
     assert capture.samples[0].pings['192.0.2.31']['loss_pct'] == 0.0
     assert report['ping_clients'] is True
+
+
+async def test_client_pings_go_through_the_shared_ping_step(
+    pauses: list[float], ssh: FakeSSH, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue 073: the argv, bound, accepted exit statuses and parse are gateway_probe.ping_over's."""
+    calls: list[tuple[str, int, float]] = []
+    real = ap_health.ping_over
+
+    async def _spy(conn: Any, address: str, count: int, interval: float) -> Any:
+        calls.append((address, count, interval))
+        return await real(conn, address, count, interval)
+
+    monkeypatch.setattr(ap_health, 'ping_over', _spy)
+    await _run(_controller(), target='AP 1', samples=1, interval=30, ping_clients=True)
+    assert calls == [('192.0.2.31', ap_health.PING_COUNT, ap_health.PING_INTERVAL)]
 
 
 # --- the CLI ------------------------------------------------------------------------------

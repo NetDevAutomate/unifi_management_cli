@@ -196,9 +196,9 @@ because no VLAN matched a gateway interface with byte counters, exit 1, so a sch
 own notices. `rollup`, `report` and `coverage` work on the store
 alone. `report now`, `1d` and `1w` read the raw samples (kept 8 days); `1m` reads hourly rows
 and `1y` daily rows, which `rollup` writes for every complete hour and day (run it hourly, say;
-each run also recomputes the newest two hours and the newest day, so a sample written late
-still counts if a run comes less than two hours after its hour is complete; a later one stays
-in the raw samples only, [issue 071](../issues/071-late-vlan-samples-never-reach-the-rollups.md)).
+each run also recomputes the newest two hours and the newest day and every hour a sample has
+been written into since the last run, so a sample written late still reaches `1m` and `1y`,
+however late, [issue 071](../issues/071-late-vlan-samples-never-reach-the-rollups.md)).
 As ported from the prototype, `1w` was always empty and `1m` and `1y` left out the newest 8 and about
 61 days, because the prototype rolled an hour only once it was 8 days old ([issue
 069](../issues/069-vlan-reports-read-tiers-without-recent-data.md)). The MCP tools

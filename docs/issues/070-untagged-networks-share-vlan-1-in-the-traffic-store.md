@@ -1,7 +1,8 @@
 ---
 title: "Two networks without a VLAN ID both sample as VLAN 1, so one overwrites the other in the traffic store"
 date: 2026-10-06
-status: open
+status: resolved
+resolved_by: b645b1d
 severity: low
 components: [analysis/vlan_interfaces, analysis/vlan_traffic, analysis/vlan_traffic_store]
 found_by: 0.2.0 port review
@@ -32,3 +33,17 @@ In `sample_vlan_traffic`, keep the first resolved network for a VLAN ID and list
 under `unresolved`, so the CLI's one line counts it, with a test of two untagged networks on two
 interfaces. Keying raw rows by interface as well would keep both, but changes the schema and
 every rollup query; it is not worth it for a setup no site has shown.
+
+## Resolution
+
+Resolved on 2026-10-13 (`b645b1d`), as recommended. `sample_vlan_traffic`
+(`analysis/vlan_traffic.py`) keeps the first resolved network for each VLAN ID and lists any
+later one that derives the same ID under `unresolved`, with its `iface` and a `reason`
+(`VLAN 1 already sampled from LAN (br0)`), so the CLI's one line counts it and nothing is
+stored under another network's name. Test:
+`tests/analysis/test_vlan_traffic.py::test_a_second_untagged_network_is_unresolved_not_overwritten`
+(two untagged networks on two bridges; one row stored, the other unresolved).
+
+Deliberately not changed: `network_vlan_id` still derives VLAN 1 for an untagged LAN, the raw
+rows stay keyed by `(ts_utc, vlan_id)` and `resolve_vlan_interfaces` is unchanged; keying by
+interface would change the schema and every rollup query for a setup no site has shown.

@@ -37,7 +37,7 @@ from unifi_mapper.analysis.gateway_ssh import (
 from unifi_mapper.analysis.vlan_interfaces import resolve_vlan_interfaces
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
-from unifi_mapper.core.utils.ping_parse import parse_ping_output
+from unifi_mapper.core.utils.ping_parse import PingStats, parse_ping_output
 from unifi_mapper.core.utils.redact import redact_text
 from unifi_mapper.diagnostic_reads import is_ip_address, normalise_mac
 
@@ -423,6 +423,35 @@ async def resolve_probe_target(target: str) -> tuple[str, str | None]:
 # --- the probes (each one SSH session, one argv per command, its own bound) ---------------
 
 
+async def ping_over(conn: Any, address: str, count: int, interval: float) -> PingStats:
+    """Ping ``address`` from the gateway over the open SSH connection ``conn``.
+
+    The one ping step ``gateway ping`` and AP-health's client pings share (issue 073): the
+    address and the bounds are checked, the argv is ``ping -c <count> -i <interval> -W 2
+    <address>``, it runs under a bound of ``count * interval + 12`` seconds, exit statuses 0
+    and 1 (no reply) are a result and anything else an error, and the output is parsed.
+
+    Args:
+        conn: An open gateway connection (``gateway_session``).
+        address: The IP address to ping.
+        count: Echo requests, 1-100.
+        interval: Seconds between them, 0.2-5.0.
+
+    Returns:
+        The parsed :class:`PingStats`.
+
+    Raises:
+        ToolError: ``CONFIG_INVALID`` for a bad address or bound; ``TIMEOUT`` past the bound;
+            ``API_ERROR`` when ping could not run (its last stderr line redacted).
+    """
+    address = require_ip(address)
+    count = require_bounded_int('ping count', count, 1, 100)
+    interval = require_bounded_float('ping interval', interval, 0.2, 5.0)
+    argv = ['ping', '-c', str(count), '-i', f'{interval:g}', '-W', '2', address]
+    result = await run_gateway_command(conn, argv, timeout=count * interval + 12)
+    return parse_ping_output(check_exit_status(result, 'ping', PING_RESULT_CODES).stdout)
+
+
 async def gateway_ping(target: str, count: int = 10, interval: float = 0.3) -> dict[str, Any]:
     """Ping one target from the gateway: loss and round trips through the real path.
 
@@ -435,14 +464,13 @@ async def gateway_ping(target: str, count: int = 10, interval: float = 0.3) -> d
         ``target``, ``probe_ip``, ``resolved_name``, the counts, loss, round trips and
         ``reachable``.
     """
+    # Checked here too, so a bad bound fails before the SSH login and the controller read.
     count = require_bounded_int('ping count', count, 1, 100)
     interval = require_bounded_float('ping interval', interval, 0.2, 5.0)
     ssh_login()  # a missing SSH password fails before the controller is asked for a name
     probe_ip, resolved = await resolve_probe_target(target)
-    argv = ['ping', '-c', str(count), '-i', f'{interval:g}', '-W', '2', probe_ip]
     async with gateway_session() as conn:
-        result = await run_gateway_command(conn, argv, timeout=count * interval + 12)
-    stats = parse_ping_output(check_exit_status(result, 'ping', PING_RESULT_CODES).stdout)
+        stats = await ping_over(conn, probe_ip, count, interval)
     return {
         'target': target,
         'probe_ip': probe_ip,

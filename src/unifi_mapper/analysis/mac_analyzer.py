@@ -2,7 +2,9 @@
 
 from collections import defaultdict
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
+from unifi_mapper.analysis.link_settings import effective_profile_id, port_override
+from unifi_mapper.analysis.vlan_diagnostics import is_trunk_profile
 from unifi_mapper.core.models import (
     MACAlert,
     MACAlertSeverity,
@@ -76,6 +78,14 @@ async def analyze_mac_table(
         try:
             devices = await client.get_devices()
             clients = await client.get_clients()
+            profiles = cast(
+                list[dict[str, Any]], await client.get(client.build_path('rest/portconf'))
+            )
+            profiles_by_id = {
+                str(profile.get('_id')): profile
+                for profile in profiles
+                if isinstance(profile, dict) and profile.get('_id') is not None
+            }
 
             devices_analyzed = 0
             all_mac_entries: list[MACTableEntry] = []
@@ -155,7 +165,7 @@ async def analyze_mac_table(
                 for port_idx, macs in port_macs.items():
                     port_data = port_info.get(port_idx, {})
                     port_name = port_data.get('name', '') or f'Port {port_idx}'
-                    is_trunk = _is_trunk_port(port_data)
+                    is_trunk = _is_trunk_port(device, port_data, port_idx, profiles_by_id)
                     is_uplink = port_data.get('is_uplink', False)
 
                     # Only flag access ports with excessive MACs
@@ -268,11 +278,23 @@ async def analyze_mac_table(
             )
 
 
-def _is_trunk_port(port_data: dict[str, Any]) -> bool:
-    """Determine if a port is configured as a trunk."""
-    # Check for tagged VLANs or trunk-like configuration
-    port_conf = port_data.get('portconf_id', '')
-    if 'trunk' in port_conf.lower() or 'all' in port_conf.lower():
+def _is_trunk_port(
+    device: dict[str, Any],
+    port_data: dict[str, Any],
+    port_idx: int,
+    profiles_by_id: dict[str, dict[str, Any]],
+) -> bool:
+    """Determine if a port is configured as a trunk.
+
+    The port's profile is the one ``link_settings.effective_profile_id`` picks, looked up in
+    ``rest/portconf``, with the override's own settings on top; trunk-ness is then
+    ``vlan_diagnostics.is_trunk_profile`` (``forward``, ``tagged_vlan_mgmt``, name). A port
+    table entry that lists ``tagged_vlans`` is a trunk as before (issue 030).
+    """
+    profile_id, _source = effective_profile_id(device, port_data, port_idx)
+    settings = dict(profiles_by_id.get(profile_id or '') or {})
+    settings.update(port_override(device, port_idx) or {})
+    if is_trunk_profile(settings):
         return True
 
     # Check VLAN configuration

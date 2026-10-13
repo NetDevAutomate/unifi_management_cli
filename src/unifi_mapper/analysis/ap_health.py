@@ -29,13 +29,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from unifi_mapper.analysis.gateway_ssh import (
-    check_exit_status,
     gateway_session,
     require_bounded_int,
     require_ip,
-    run_gateway_command,
     ssh_login,
 )
+from unifi_mapper.connectivity.gateway_probe import ping_over
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.coerce import float_or_none, int_or_none
 from unifi_mapper.core.utils.counters import (
@@ -45,7 +44,6 @@ from unifi_mapper.core.utils.counters import (
     vap_counters_from_dict,
 )
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
-from unifi_mapper.core.utils.ping_parse import parse_ping_output
 from unifi_mapper.core.utils.redact import redact_text, strip_secrets
 from unifi_mapper.diagnostic_reads import normalise_mac
 from unifi_mapper.diagnostics.observability import CU_TOTAL_CAVEAT, MAX_QUERY_LENGTH
@@ -508,23 +506,22 @@ def _failure_text(error: object) -> str:
 async def _ping_clients(conn: Any, ips: list[str]) -> dict[str, dict[str, Any]]:
     """Ping each address from the gateway: loss and round trips, or the error.
 
-    A ping that fails (a ``ToolError``, or anything else, such as the connection reset of a
+    Each ping is ``connectivity.gateway_probe.ping_over`` (the argv, bound, accepted exit
+    statuses and parse are its; issue 073), ``PING_COUNT`` echoes ``PING_INTERVAL`` s apart. A
+    ping that fails (a ``ToolError``, or anything else, such as the connection reset of a
     dropped SSH session) records its error code and redacted text; the others still run.
     """
     results: dict[str, dict[str, Any]] = {}
     for ip in ips:
         try:
             address = require_ip(ip)
-            argv = ['ping', '-c', str(PING_COUNT), '-i', f'{PING_INTERVAL:g}', '-W', '2', address]
-            out = await run_gateway_command(conn, argv, timeout=PING_COUNT * PING_INTERVAL + 12)
-            check_exit_status(out, 'ping', (0, 1))  # 1 is no reply; anything else: not run
+            stats = await ping_over(conn, address, PING_COUNT, PING_INTERVAL)
         except ToolError as e:
             results[ip] = {'error': e.error_code, 'detail': _failure_text(e.message)}
             continue
         except Exception as e:  # noqa: BLE001 - a failed ping is its result, never fatal
             results[ip] = {'error': ErrorCodes.API_ERROR, 'detail': _failure_text(e)}
             continue
-        stats = parse_ping_output(out.stdout)
         results[address] = {
             'loss_pct': stats.loss_pct,
             'avg_ms': stats.rtt_avg,

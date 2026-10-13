@@ -153,9 +153,10 @@ async def sample_vlan_traffic(db_path: Path | None = None) -> dict[str, Any]:
 
     Returns:
         ``ts`` (the sample's Unix time), ``sampled`` (``{vlan_id, network_name, iface,
-        rx_bytes, tx_bytes}`` each), ``unresolved`` (VLANs with no live interface), and
-        ``skipped`` (resolved VLANs whose interface printed no counter line, such as one that
-        is not a ``br*`` bridge).
+        rx_bytes, tx_bytes}`` each), ``unresolved`` (VLANs with no live interface, and any
+        later network that derives a VLAN ID already sampled this run, such as a second
+        untagged LAN, with a ``reason``), and ``skipped`` (resolved VLANs whose interface
+        printed no counter line, such as one that is not a ``br*`` bridge).
 
     Raises:
         ToolError: ``CONFIG_MISSING`` without the SSH password; the controller's and the SSH
@@ -178,11 +179,29 @@ async def sample_vlan_traffic(db_path: Path | None = None) -> dict[str, Any]:
     resolution = resolve_vlan_interfaces([n for n in networks if isinstance(n, dict)], addresses)
     ts = int(time.time())
     sampled, skipped = [], []
+    unresolved = list(resolution['unresolved'])
+    taken: dict[int, dict[str, Any]] = {}
     for entry in resolution['resolved']:
         counter = counters.get(entry['iface'])
         if counter is None:
             skipped.append(entry)
             continue
+        # Raw rows are keyed by (ts_utc, vlan_id) and written with INSERT OR REPLACE, so two
+        # networks that derive the same VLAN ID (two untagged LANs are both VLAN 1) would
+        # overwrite each other. The first keeps the ID; the rest are counted as unresolved.
+        first = taken.get(entry['vlan_id'])
+        if first is not None:
+            unresolved.append(
+                {
+                    **entry,
+                    'reason': (
+                        f'VLAN {entry["vlan_id"]} already sampled from '
+                        f'{first["network_name"]} ({first["iface"]})'
+                    ),
+                }
+            )
+            continue
+        taken[entry['vlan_id']] = entry
         sampled.append(
             {
                 'ts_utc': ts,
@@ -197,6 +216,6 @@ async def sample_vlan_traffic(db_path: Path | None = None) -> dict[str, Any]:
     return {
         'ts': ts,
         'sampled': sampled,
-        'unresolved': resolution['unresolved'],
+        'unresolved': unresolved,
         'skipped': skipped,
     }

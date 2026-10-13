@@ -1,7 +1,8 @@
 ---
 title: "`monitor_lags` misses LAGs on current switch firmware"
 date: 2026-10-05
-status: open
+status: resolved
+resolved_by: b314c77
 severity: medium
 components: [src/unifi_mapper/analysis/lag_monitoring.py]
 found_by: 0.2.0 port (an untracked prototype test, kept in a local archive, not in the repo)
@@ -59,3 +60,29 @@ values only. Confirm the field shapes with one read-only live capture (device le
 by key path) before building, because the capture that showed them is not in the repo.
 
 Breaks fresh clones, CI or prod: no (the tool under-reports; it writes nothing).
+
+## Resolution
+
+Resolved on 2026-10-13 (`b314c77`). `monitor_lags_from_data(devices, device_id=None)` in
+`analysis/lag_monitoring.py` is the pure core and `monitor_lags` a thin wrapper over it. A LAG
+is declared from `link_aggregation_groups`, from a master port's `port_overrides` entry with
+`op_mode: 'aggregate'`, and from legacy `port_aggregates`, each set of members once; member
+state comes from the master port's `lacp_state` (`active`, `speed`) when present, and a
+`masked` subordinate with a truthy `aggregated_by` inherits the master's link rather than its
+own cosmetic `up: false, speed: 0`. `partner_system_id` is read from the master port.
+`_existing_lag_ports` reads the same sources plus `aggregated_by`/`lacp_state` on the port
+table, so `find_lag_candidates` no longer proposes a LAG over one that exists.
+
+Live confirmation, read-only, 2026-10-13, thirteen switches scanned by key path through
+`ports list --raw --json`: every switch carries `link_aggregation_groups` (a list) and no
+`port_aggregates` key at all, and every `port_table` entry carries `masked`, `aggregated_by`
+and `op_mode`. One refinement from that scan: `aggregated_by` is `False` on a port that is not
+aggregated, so the code tests it as a port index, not for presence. No LAG is configured on
+the site today, so the master port's `lacp_state` and `partner_system_id` shapes are taken from
+the September capture described above and are pinned by the fixtures, not re-confirmed live.
+
+Tests: `tests/analysis/test_lag_monitoring.py` (the eleven cases above, plus one for a LAG
+declared in both current shapes being reported once). Deliberately not changed: the LAG
+status thresholds, the load-balance score and the recommendations, which are unchanged for
+the legacy shape; the pre-fix `analyze lags` output on this site (13 devices, 0 LAGs) is
+identical after the fix.
