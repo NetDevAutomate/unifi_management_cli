@@ -371,6 +371,12 @@ class NetworkConfig(BaseModel):
             )
             raise ValueError(f'{prefix}API_KEY environment variable is required ({why})')
 
+        # Same origin, same TLS policy: a host derived from UNIFI_URL inherits the controller
+        # family's UNIFI_VERIFY_SSL unless the network family sets its own. The console token
+        # the family borrows must not travel over a session the controller family would verify.
+        verify_ssl_raw = get_env('VERIFY_SSL')
+        if verify_ssl_raw is None and resolution.host_derived:
+            verify_ssl_raw = os.environ.get('UNIFI_VERIFY_SSL')
         return cls(
             host=resolution.origin.host,
             port=resolution.origin.port,
@@ -379,7 +385,7 @@ class NetworkConfig(BaseModel):
             api_key_source=resolution.api_key_source or 'network',
             site_id=resolution.site_id,
             site_name=resolution.site_name,
-            verify_ssl=(get_env('VERIFY_SSL', 'false') or 'false').lower() == 'true',
+            verify_ssl=(verify_ssl_raw or 'false').lower() == 'true',
             timeout=int(get_env('TIMEOUT', '30') or '30'),
             debug=(get_env('DEBUG', 'false') or 'false').lower() == 'true',
         )

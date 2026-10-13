@@ -222,3 +222,38 @@ def test_resolution_reports_what_is_derived_and_what_is_missing() -> None:
         'UNIFI_NETWORK_SITE_ID or UNIFI_SITE',
     )
     assert FAKE_TOKEN not in repr(full)
+
+
+def test_a_derived_host_inherits_the_controller_tls_setting(env: dict[str, str]) -> None:
+    """Same origin, same TLS policy: UNIFI_VERIFY_SSL=true carries over to the derived client.
+
+    Without this, the console token the family borrows from the controller could travel over an
+    unverified TLS session that the controller family itself would verify.
+    """
+    env.update(CONTROLLER, UNIFI_VERIFY_SSL='true')
+    assert NetworkConfig.from_env().verify_ssl is True
+
+
+def test_a_derived_host_without_a_controller_tls_setting_keeps_the_default(
+    env: dict[str, str],
+) -> None:
+    env.update(CONTROLLER)
+    assert NetworkConfig.from_env().verify_ssl is False
+
+
+def test_an_explicit_network_tls_setting_wins_over_the_inherited_one(env: dict[str, str]) -> None:
+    env.update(CONTROLLER, UNIFI_VERIFY_SSL='true', UNIFI_NETWORK_VERIFY_SSL='false')
+    assert NetworkConfig.from_env().verify_ssl is False
+
+
+def test_an_explicit_network_host_does_not_inherit_the_controller_tls_setting(
+    env: dict[str, str],
+) -> None:
+    """A different host is a different origin: the controller's TLS policy says nothing about it."""
+    env.update(
+        CONTROLLER,
+        UNIFI_VERIFY_SSL='true',
+        UNIFI_NETWORK_HOST='203.0.113.9',
+        UNIFI_NETWORK_API_KEY=NET_KEY,
+    )
+    assert NetworkConfig.from_env().verify_ssl is False
