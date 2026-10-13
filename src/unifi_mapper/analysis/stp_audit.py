@@ -78,11 +78,14 @@ def _skipped_row(switch: SwitchSTPConfig) -> dict[str, Any]:
 
 
 def _tie_warning(rows: list[dict[str, Any]]) -> str | None:
-    """Warn when two or more switches share the lowest optimal priority and none is core-class.
+    """Warn when switches tie at the lowest optimal priority unless every one is core-class.
 
     A tie at the lowest priority means the root election is decided by MAC address rather
-    than by design, unless one of the tied switches is aggregation- or core-distribution-class
-    hardware, which is meant to hold it.
+    than by design. When every tied switch is aggregation- or core-distribution-class
+    hardware, each is meant to hold the root and the tie is accepted; a tie that includes
+    any other switch is warned, naming the switches that are not core-class (before issue 076
+    item 5 one core-class switch in the tie silenced the warning, so a core switch tied with
+    an access switch left the root to MAC order unwarned).
     """
     if not rows:
         return None
@@ -94,13 +97,19 @@ def _tie_warning(rows: list[dict[str, Any]]) -> str | None:
         SwitchCapabilityClass.AGGREGATION.value,
         SwitchCapabilityClass.CORE_DISTRIBUTION.value,
     }
-    if any(row['capability'] in core_classes for row in tied):
+    not_core = [row['name'] for row in tied if row['capability'] not in core_classes]
+    if not not_core:
         return None
     names = ', '.join(row['name'] for row in tied)
+    if len(not_core) == len(tied):
+        who = 'None is an aggregation- or core-distribution-class switch'
+    else:
+        verb = 'is' if len(not_core) == 1 else 'are'
+        who = f'{", ".join(not_core)} {verb} not an aggregation- or core-distribution-class switch'
     return (
-        f'{len(tied)} switches tie at the lowest optimal priority ({lowest}): {names}. None is '
-        'an aggregation- or core-distribution-class switch, so the root election among them '
-        'is decided by MAC address. Stagger their priorities or confirm the intended root.'
+        f'{len(tied)} switches tie at the lowest optimal priority ({lowest}): {names}. {who}, '
+        'so the root election among them is decided by MAC address. Stagger their priorities '
+        'or confirm the intended root.'
     )
 
 
@@ -264,8 +273,9 @@ async def audit_stp_priorities(
 
     Runs the discovery and the priority calculation for the whole fleet (tiers need every
     switch), then reports each switch's current, recommended and delta priority, a warning
-    when two non-core switches tie at the lowest priority (the root would be decided by MAC
-    address), and the gateway under skipped (its bridge runs with STP disabled). With device,
+    when switches tie at the lowest priority unless every one is core-class (the root would
+    be decided by MAC address), and the gateway under skipped (its bridge runs with STP
+    disabled). With device,
     the same rows are narrowed to that switch: compliant and summary then describe it, and
     fleet_compliant and fleet_summary the fleet.
 

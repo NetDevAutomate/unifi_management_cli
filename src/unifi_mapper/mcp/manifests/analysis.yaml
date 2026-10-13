@@ -525,9 +525,10 @@ tools:
     cli: stp audit-priorities
     description: >-
       One-shot STP priority audit for the whole fleet, or narrowed to one switch: each
-      switch's current, recommended and delta bridge priority and tier, a warning when two
-      non-core switches tie at the lowest priority (the root would be decided by MAC), and
-      the gateway under skipped (its bridge runs with STP disabled). Tiers always come from
+      switch's current, recommended and delta bridge priority and tier, a warning when
+      switches tie at the lowest priority unless every one is core-class (the root would be
+      decided by MAC), and the gateway under skipped (its bridge runs with STP disabled).
+      Tiers always come from
       the whole fleet; narrowed to one switch, compliant and summary describe that switch and
       fleet_compliant and fleet_summary the fleet. Remediation names the CLI commands (stp
       optimize --plan, then stp apply --plan, which previews unless --no-dry-run); STP writes

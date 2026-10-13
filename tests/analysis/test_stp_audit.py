@@ -255,10 +255,28 @@ def test_a_tie_among_access_switches_at_the_lowest_priority_warns() -> None:
     assert report['summary'].startswith('3 of 3 switch(es) differ')
 
 
-def test_a_tie_that_includes_a_core_class_switch_does_not_warn() -> None:
+def test_a_core_switch_tied_with_an_access_switch_warns_naming_the_access_switch() -> None:
+    """Issue 076 item 5: the warning was skipped when any tied switch was core-class, so a
+    core switch and an access switch tied at the lowest priority left the root to MAC order
+    unwarned."""
     core = _switch('c1', 'Switch A', capability=SwitchCapabilityClass.AGGREGATION, current=4096)
     access = _switch('a1', 'Switch B', current=4096)
     report = build_stp_audit(STPTopology(switches=[core, access]), [])
+    warning = report['root_tie_break_warning']
+    assert warning is not None and '4096' in warning
+    assert 'Switch A' in warning and 'Switch B' in warning
+    assert 'Switch B is not an aggregation- or core-distribution-class switch' in warning
+    assert 'decided by MAC address' in warning
+
+
+def test_a_tie_among_core_class_switches_only_does_not_warn() -> None:
+    cores = [
+        _switch('c1', 'Switch A', capability=SwitchCapabilityClass.AGGREGATION, current=4096),
+        _switch(
+            'c2', 'Switch B', capability=SwitchCapabilityClass.CORE_DISTRIBUTION, current=4096
+        ),
+    ]
+    report = build_stp_audit(STPTopology(switches=cores), [])
     assert report['root_tie_break_warning'] is None
 
 

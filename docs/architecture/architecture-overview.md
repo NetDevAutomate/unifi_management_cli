@@ -301,7 +301,8 @@ members) and per-collection document counts, never document contents; it contact
 
 **New `stp audit-priorities` command** (`analysis/stp_audit.py`) — a one-shot,
 read-only priority audit: each switch's current against its recommended priority, a warning
-when non-core switches tie at the lowest priority, and the gateway under "Skipped". It always
+when switches tie at the lowest priority unless every one is core-class, and the gateway under
+"Skipped". It always
 tiers the whole fleet (`--device` narrows the rows and the verdict, and keeps the fleet's as
 `fleet_compliant` and `fleet_summary`) and writes no plan; `stp optimize
 --plan` does.

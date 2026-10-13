@@ -3449,8 +3449,9 @@ def stp_audit_priorities(
     """📋 One-shot STP priority audit: each switch's current vs recommended priority.
 
     Discovers the whole fleet (tiers need every switch), computes the recommended
-    priorities and reports the delta per switch, a warning when two non-core switches tie
-    at the lowest priority, and the gateway, which is skipped. --device narrows the rows and
+    priorities and reports the delta per switch, a warning when switches tie at the lowest
+    priority unless every one is core-class (the root would be decided by MAC address), and
+    the gateway, which is skipped. --device narrows the rows and
     the verdict to one switch, by name, MAC or ID, and prints the fleet's verdict after it.
     Writes no plan: stp optimize --plan does. Read-only.
     """
