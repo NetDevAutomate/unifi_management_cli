@@ -105,7 +105,9 @@ async def security_audit() -> SecurityAuditReport:
             # Get comprehensive network data
             devices_data = await client.get(client.build_path('stat/device'))
             clients_data = await client.get(client.build_path('stat/sta'))
-            rogue_aps = await client.get(client.build_path('rest/rogueap'))
+            # The passive neighbour list is stat/rogueap; rest/rogueap is not an object the
+            # controller serves (HTTP 400 api.err.InvalidObject), which failed every audit.
+            rogue_aps = await client.get_rogue_aps()
 
             # Get VLAN configuration if available
             try:

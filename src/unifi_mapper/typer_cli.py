@@ -1521,6 +1521,178 @@ def analyze_traffic_matrix_cmd(
         raise typer.Exit(1)
 
 
+# ─── Fleet reads that mirror MCP tools (surface parity) ──────────────────────
+
+
+def _print_list(title: str, items: list[str], *, style: str = '') -> None:
+    """Print a titled bullet list, or nothing when the list is empty."""
+    if not items:
+        return
+    console.print(f'[bold]{title}[/bold]')
+    for item in items:
+        line = f'  • {escape(str(item))}'
+        console.print(f'[{style}]{line}[/{style}]' if style else line, soft_wrap=True)
+
+
+def _severity_cell(severity: object) -> str:
+    """Colour a severity or risk word (critical, high, warning, ...) for a Rich table."""
+    word = str(getattr(severity, 'value', severity))
+    key = word.upper()
+    style = {
+        'CRITICAL': 'red',
+        'HIGH': 'red',
+        'ERROR': 'red',
+        'WARNING': 'yellow',
+        'MEDIUM': 'yellow',
+        'DEGRADED': 'yellow',
+        'LOW': 'green',
+        'INFO': 'dim',
+        'OK': 'green',
+        'HEALTHY': 'green',
+    }.get(key, 'white')
+    return f'[{style}]{escape(word)}[/]'
+
+
+@analyze_app.command('ip-conflicts')
+def analyze_ip_conflicts(
+    include_offline: bool = typer.Option(
+        False, '--include-offline', help='Also consider clients the controller lists as offline'
+    ),
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🔁 Find IP addresses that two or more clients claim at once.
+
+    Groups the controller's client list by address and reports every address with more than
+    one MAC, with each client's name, connection and VLAN, and whether the clients sit in
+    different VLANs. The same report as the MCP tool `detect_ip_conflicts`. Read-only.
+    """
+    from .analysis.ip_conflicts import detect_ip_conflicts
+
+    report = _run_analysis(lambda: detect_ip_conflicts(include_offline=include_offline))
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🔁 [bold]IP Conflicts[/bold]')
+    verdict = '[green]none[/green]' if report.healthy else f'[red]{report.conflicts_found}[/red]'
+    console.print(
+        f'Clients scanned: [cyan]{report.total_clients_scanned}[/cyan]  Conflicts: {verdict}'
+    )
+    if report.conflicts:
+        table = Table(title='Conflicting Addresses', show_header=True)
+        table.add_column('Address', style='cyan')
+        table.add_column('Severity', style='bold')
+        table.add_column('VLANs')
+        table.add_column('Client', style='magenta')
+        table.add_column('MAC', style='dim')
+        table.add_column('Connected to')
+        for conflict in report.conflicts:
+            vlans = 'mismatch' if conflict.vlan_mismatch else 'same'
+            first = True
+            for client in conflict.clients:
+                where = client.connected_device or '—'
+                if client.connected_port:
+                    where += f' port {client.connected_port}'
+                where += ' (wireless)' if not client.is_wired else ''
+                table.add_row(
+                    escape(conflict.ip_address) if first else '',
+                    _severity_cell(conflict.severity) if first else '',
+                    (f'[yellow]{vlans}[/yellow]' if conflict.vlan_mismatch else vlans)
+                    if first
+                    else '',
+                    escape(client.name or client.hostname or '—'),
+                    escape(client.mac_address),
+                    escape(where),
+                )
+                first = False
+        console.print(table)
+    _print_list('Recommendations', report.recommendations)
+
+
+MAX_RISK_ROWS = 40  # a site that hears many neighbour APs reports hundreds of 'rogues'
+
+
+@diagnose_app.command('security')
+def diagnose_security(
+    as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
+):
+    """🛡️ Security audit: unknown or anomalous devices, rogue APs, guest and VLAN violations.
+
+    Classifies every device and client the controller knows (authorised, unauthorised,
+    anomalous, unknown), lists the critical, high and medium risks with their flags, MAC
+    anomalies, new devices, rogue APs, guest-network violations and per-VLAN isolation, and
+    ends with the immediate actions and recommendations. The same report as the MCP tool
+    `security_audit`. Read-only.
+    """
+    from .diagnostics.security_audit import security_audit
+
+    report = _run_analysis(security_audit)
+    if as_json:
+        _emit_json(report.model_dump(mode='json'))
+        return
+    console.print('🛡️ [bold]Security Audit[/bold]')
+    console.print(
+        f'Devices: [cyan]{report.total_devices}[/cyan]  '
+        f'Authorised: [green]{report.authorized_devices}[/green]  '
+        f'Unauthorised: [red]{report.unauthorized_devices}[/red]  '
+        f'Anomalous: [yellow]{report.anomalous_devices}[/yellow]  '
+        f'Unknown: [yellow]{report.unknown_devices}[/yellow]'
+    )
+    risks = [
+        *report.critical_risks,
+        *report.high_risks,
+        *report.medium_risks,
+        *report.rogue_aps,
+        *report.guest_violations,
+        *report.new_devices,
+    ]
+    rows = []
+    seen: set[str] = set()
+    for d in risks:  # a device can appear in several lists; show it once
+        if d.mac not in seen:
+            seen.add(d.mac)
+            rows.append(d)
+    shown, hidden = rows[:MAX_RISK_ROWS], max(0, len(rows) - MAX_RISK_ROWS)
+    if shown:
+        table = Table(title='Devices at Risk', show_header=True)
+        table.add_column('Risk', style='bold')
+        table.add_column('Device', style='magenta')
+        table.add_column('MAC', style='dim')
+        table.add_column('Address')
+        table.add_column('Type')
+        table.add_column('Flags')
+        for d in shown:
+            table.add_row(
+                _severity_cell(d.risk_level),
+                escape(d.name or '—'),
+                escape(d.mac),
+                escape(d.ip or '—'),
+                escape(d.type),
+                escape(', '.join(d.security_flags) or '—'),
+            )
+        console.print(table)
+        if hidden:
+            console.print(f'[dim]  … and {hidden} more; --json lists them all.[/dim]')
+    if report.vlan_analysis:
+        table = Table(title='VLAN Isolation', show_header=True)
+        table.add_column('VLAN', style='cyan')
+        table.add_column('Name')
+        table.add_column('Devices')
+        table.add_column('Isolation violations', style='yellow')
+        table.add_column('Unauthorised', style='red')
+        for v in report.vlan_analysis:
+            table.add_row(
+                str(v.vlan_id),
+                escape(v.name),
+                str(v.devices_count),
+                escape(', '.join(map(str, v.isolation_violations)) or '—'),
+                escape(', '.join(map(str, v.unauthorized_devices)) or '—'),
+            )
+        console.print(table)
+    _print_list('MAC anomalies', [str(a) for a in report.mac_anomalies], style='yellow')
+    _print_list('Immediate actions', [str(a) for a in report.immediate_actions], style='red')
+    _print_list('Recommendations', [str(r) for r in report.security_recommendations])
+
+
 @diagnose_app.command('all')
 def diagnose_all(
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of the table'),

@@ -6,7 +6,7 @@ tools:
     module: unifi_mapper.analysis.ip_conflicts
     handler: detect_ip_conflicts
     title: Detect IP Conflicts
-    cli_gap: 'not yet built: IP conflict detection has no command'
+    cli: analyze ip-conflicts
     description: Find IP address conflicts between devices on the network
     priority: P1
     tags: [ip, conflict, layer3, diagnostic]

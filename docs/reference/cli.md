@@ -476,6 +476,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `ports events` | Events, alarms, system log and admin audit for a device, port or client |
 | `ports counters` | Sample a port's error counters: per-minute rates with a trust verdict, baselines and recorded history |
 | `ports diagnose` | JSON evidence bundle for one port, with a request audit (for vendor tickets) |
+| `analyze ip-conflicts` | Addresses claimed by more than one client, with each client's connection and VLAN |
 | `analyze link-quality` | Port statistics and error rates |
 | `analyze link-errors` | Error-rate baseline (`--snapshot`), counter history (`--record`) and read-only delta comparison |
 | `analyze port-profiles` | Validate STP Edge, BPDU Guard and uplink safety |
@@ -498,6 +499,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `analyze neighbours` | Passive neighbour AP detection and trend |
 | `diagnose all` | Run every diagnostic with a pass/warn/fail summary |
 | `diagnose health` | Overall network health check |
+| `diagnose security` | Security audit: unknown and anomalous devices, rogue APs, guest and VLAN violations |
 | `diagnose wan` | WAN health and the controller's last scheduled speedtest (`--record` appends it to the history) |
 | `diagnose wan-history` | The recorded WAN speedtest results, newest first |
 | `diagnose device-stats` | One device's CPU, memory, load, uptime, radios and per-VAP TX counters |

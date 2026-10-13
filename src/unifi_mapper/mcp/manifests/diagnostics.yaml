@@ -40,7 +40,7 @@ tools:
     module: unifi_mapper.diagnostics.security_audit
     handler: security_audit
     title: Security Audit
-    cli_gap: 'not yet built: the security audit has no command'
+    cli: diagnose security
     description: Security configuration review and vulnerability assessment
     priority: P1
     tags: [security, audit, vulnerability, compliance]
