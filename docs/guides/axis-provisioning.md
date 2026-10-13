@@ -57,7 +57,8 @@ Required packages (installed automatically via `uv sync`):
 The ONVIF scripts (`onvif_probe.py`, `onvif_stream.py`) also need `onvif-zeep-async`. It is
 a core dependency of the project, so `uv sync` installs it too; there is nothing to add.
 
-For RTSP stream testing, `ffprobe` (part of `ffmpeg`) must be available on the system PATH:
+`test-rtsp` probes each stream with an RTSP `DESCRIBE` from this process; nothing else needs
+installing:
 
 ```bash
 brew install ffmpeg   # macOS
@@ -625,7 +626,7 @@ uv run --env-file ~/.config/axiscam/onvif.env python scripts/onvif_stream.py str
 # Capture a JPEG snapshot from each camera (saved to /tmp/)
 uv run --env-file ~/.config/axiscam/onvif.env python scripts/onvif_stream.py snapshot
 
-# Test RTSP connectivity using ffprobe (requires ffmpeg installed)
+# Probe RTSP authentication and stream metadata (one DESCRIBE per camera, in-process)
 uv run --env-file ~/.config/axiscam/onvif.env python scripts/onvif_stream.py test-rtsp
 ```
 
@@ -657,11 +658,12 @@ rtsp://onvifuser:<password>@198.51.100.12/axis-media/media.amp?videocodec=h264
 ```
 
 The `streams` subcommand prints the bare URI and the authenticated form with the password
-masked (`onvifuser:***@`), and `test-rtsp` prints the masked form. Error text, including the
-ffprobe excerpt, is masked the same way, so neither command shows `ONVIF_PASSWORD`. To play a
-stream, build the authenticated form by hand from the masked line. `test-rtsp` passes the
-credentials to ffprobe on its command line, so other local users can see them in the process
-list while it runs ([issue 057](../issues/057-onvif-test-rtsp-puts-the-password-on-argv.md)).
+masked (`onvifuser:***@`), and `test-rtsp` prints the bare form. Error text is masked the
+same way, so neither command shows `ONVIF_PASSWORD`. To play a stream, build the authenticated
+form by hand from the masked line. `test-rtsp` sends one authenticated `DESCRIBE` from this
+process and starts no other program, so the password is on no command line; an `OK` line means
+the camera accepted the account and returned the stream's SDP metadata, not that the stream
+plays ([issue 057](../issues/057-onvif-test-rtsp-puts-the-password-on-argv.md)).
 
 ---
 
