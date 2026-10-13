@@ -6730,10 +6730,12 @@ def vlan_traffic_report(
     """📊 Per-VLAN average and peak throughput over a period, from the store (offline).
 
     now, 1d and 1w read raw samples (kept 8 days); 1m reads hourly rollups and 1y daily
-    rollups (smoothed peaks), each up to the newest complete hour or day `vlan-traffic
-    rollup` has rolled. Valid samples is the share of the window's samples that gave a
-    rate, not time coverage: `vlan-traffic coverage` shows the time each tier covers. A
-    missing store exits 1 with a hint to sample first. Contacts nothing.
+    rollups, each up to the newest complete hour or day `vlan-traffic rollup` has rolled.
+    Every tier's peak is the largest sample rate in its window, so bursts shorter than the
+    sampling interval are under-represented in every tier. Valid samples is the share of the
+    window's samples that gave a rate, not time coverage: `vlan-traffic coverage` shows the
+    time each tier covers. A missing store exits 1 with a hint to sample first. Contacts
+    nothing.
     """
     from .analysis.vlan_traffic_store import read_vlan_traffic_report
 

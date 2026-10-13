@@ -464,3 +464,5 @@ def test_every_command_has_help(command: str) -> None:
     assert '--db' in flat
     if command == 'sample':
         assert 'SSH' in flat and 'host key is not verified' in flat
+    if command == 'report':  # issue 076 item 3: no tier smooths a peak
+        assert 'smooth' not in flat.lower() and 'largest sample rate' in flat

@@ -308,7 +308,25 @@ def test_the_hourly_and_daily_tiers_fold_rollups(
     assert (hourly['avg_rx_bps'], hourly['peak_rx_bps'], hourly['samples']) == (200.0, 600.0, 2)
     yearly = read_vlan_traffic_report('1y', path)
     assert yearly['vlans'][0]['peak_rx_bps'] == 500.0
-    assert any('smooth' in c.lower() for c in yearly['methodology']['caveats'])
+    caveats = yearly['methodology']['caveats']
+    assert any('largest hourly peak' in c and 'largest sample rate' in c for c in caveats)
+    assert any('shorter than the sampling interval' in c for c in caveats)
+
+
+def test_no_tier_claims_to_smooth_peaks() -> None:
+    """Issue 076 item 3: an hourly peak is the largest sample rate in the hour and a daily
+    peak the largest hourly peak, so no tier smooths a peak beyond the sampling interval;
+    the daily caveat, the tool's docstring and its manifest said otherwise."""
+    for tier, methodology in store._TIER_METHODOLOGY.items():
+        for caveat in methodology['caveats']:
+            assert 'smooth' not in caveat.lower(), (tier, caveat)
+    assert 'smooth' not in (get_vlan_traffic_report.__doc__ or '').lower()
+    from unifi_mapper.mcp.registry import ToolRegistry, default_manifests_dir
+
+    registry = ToolRegistry(default_manifests_dir(), strict=True)
+    description = registry.get_metadata('get_vlan_traffic_report').description or ''
+    assert 'smooth' not in description.lower()
+    assert 'largest sample rate' in description
 
 
 def test_coverage_counts_rows_and_gaps_by_tier(tmp_path: Path) -> None:
