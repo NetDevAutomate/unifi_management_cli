@@ -23,7 +23,8 @@ from tests.mcp.conftest import isolated_env
 from typing import Any
 
 
-# What the unifi-mcp console script runs; `python -m` would add runpy's warning to stderr.
+# What the unifi-mcp console script runs (`python -m unifi_mapper.mcp.server` is equivalent
+# since issue 020 removed runpy's warning; tests/mcp/test_module_entry.py pins that).
 ENTRY = [sys.executable, '-c', 'from unifi_mapper.mcp.server import main; main()']
 CATALOG_NOTE = 'has no structured return type; listing without outputSchema'
 DEBUG = re.compile(r'\bDEBUG\b')
