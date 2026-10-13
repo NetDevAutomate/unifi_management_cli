@@ -548,11 +548,11 @@ def test_after_a_lock_timeout_the_lock_is_not_tried_again_during_the_cool_down(
             assert skipped.elapsed < 0.1, 'a write in the cool-down waited on the lock'
     assert log.enabled is True and not path.exists()
     assert len(_lock_warnings(warned)) == 1
-    assert call_audit_module.LOCK_COOLDOWN_S == 60.0  # patched; see the shipped value below
 
 
-def test_the_shipped_cool_down_is_one_minute() -> None:
-    assert call_audit_module.LOCK_COOLDOWN_S == 60.0
+def test_the_shipped_cool_down_is_thirty_seconds() -> None:
+    """Council decision on item 33: 30 s before the lock is tried again."""
+    assert call_audit_module.LOCK_COOLDOWN_S == 30.0
 
 
 def test_the_next_write_after_the_cool_down_records_how_many_lines_were_dropped(
@@ -723,3 +723,27 @@ async def test_logging_runs_in_a_worker_thread(
     monkeypatch.setattr(runner_module.anyio.to_thread, 'run_sync', _spy)
     await make_runner().run('no_params', {})
     assert seen == [True] and len(_lines()) == 1
+
+
+async def test_the_writes_run_under_the_logs_own_bounded_limiter(
+    make_runner: Callable[..., ToolRunner], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue 076 item 33 (council decision): the writes shared anyio's default limiter with
+    the SDK's stdio transport, so with ~40 writes in flight a call could wait past the lock
+    limit for a thread; they run under their own small limiter now, reused across calls."""
+    limiters: list[Any] = []
+    real = anyio.to_thread.run_sync
+
+    async def _spy(fn: Any, *args: Any, **kwargs: Any) -> Any:
+        limiters.append(kwargs.get('limiter'))
+        return await real(fn, *args, **kwargs)
+
+    monkeypatch.setattr(runner_module.anyio.to_thread, 'run_sync', _spy)
+    runner = make_runner()
+    await runner.run('no_params', {})
+    await runner.run('no_params', {})
+    assert len(limiters) == 2 and limiters[0] is limiters[1]
+    limiter = limiters[0]
+    assert isinstance(limiter, anyio.CapacityLimiter)
+    assert limiter.total_tokens == call_audit_module.MAX_CONCURRENT_WRITES == 4
+    assert limiter is not anyio.to_thread.current_default_thread_limiter()

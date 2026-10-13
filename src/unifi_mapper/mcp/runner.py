@@ -22,7 +22,7 @@ import inspect
 import os
 import pydantic_core
 import time
-from .call_audit import CANCELLED, CallAuditLog
+from .call_audit import CANCELLED, MAX_CONCURRENT_WRITES, CallAuditLog
 from .catalog import ToolCatalog, ToolNotLoadableError
 from .config import (
     FOREIGN_FILE_SUGGESTION,
@@ -266,6 +266,9 @@ class ToolRunner:
         self.catalog = catalog or ToolCatalog(registry)
         self.settings = settings or ServerSettings()
         self.call_audit = call_audit
+        # The call log's own worker-thread budget (issue 076 item 33); made on first use,
+        # inside the event loop, as anyio requires.
+        self._audit_limiter: anyio.CapacityLimiter | None = None
         self._config = config or (lambda: None)
         self._semaphore: anyio.Semaphore | None = None
         self._semaphore_loop: asyncio.AbstractEventLoop | None = None
@@ -332,7 +335,12 @@ class ToolRunner:
     async def _log_call(
         self, name: str, params: dict[str, Any] | None, surface: str, started: float, outcome: str
     ) -> None:
-        """Write the call's line in a worker thread, shielded, so a cancelled call is logged."""
+        """Write the call's line in a worker thread, shielded, so a cancelled call is logged.
+
+        The thread comes from the call log's own :data:`MAX_CONCURRENT_WRITES`-token limiter,
+        not anyio's default one, which the SDK's stdio transport shares: a slow or failing
+        log never queues behind the transport's threads or starves them.
+        """
         audit = self.call_audit
         if audit is None or not audit.enabled:
             return
@@ -348,8 +356,10 @@ class ToolRunner:
                 duration_ms=(time.monotonic() - started) * 1000,
                 outcome=outcome,
             )
+            if self._audit_limiter is None:
+                self._audit_limiter = anyio.CapacityLimiter(MAX_CONCURRENT_WRITES)
             with anyio.CancelScope(shield=True):
-                await anyio.to_thread.run_sync(record)
+                await anyio.to_thread.run_sync(record, limiter=self._audit_limiter)
         except Exception:  # noqa: BLE001 - logging a call never changes its result
             logger.warning('MCP call log: the line for {} was not written', name)
 

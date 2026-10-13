@@ -32,14 +32,16 @@ The runner records each call in a worker thread inside a shielded cancel scope, 
 write never blocks the event loop and a cancelled call is still logged. A write waits at most
 :data:`LOCK_TIMEOUT_S` (5 s) to take the lock; a write still locked out drops its lines (the
 call line and any buffered request lines) with one warning per process, and the log stays
-on. For the next :data:`LOCK_COOLDOWN_S` (60 s) writes drop their lines without trying the
+on. For the next :data:`LOCK_COOLDOWN_S` (30 s) writes drop their lines without trying the
 lock, so a lock that is never released does not cost every logged call the whole limit; the
 next write that takes the lock starts with a ``lock_timeout`` line counting the lines
 dropped since the last one written (as ``request_overflow`` counts request lines), so a gap
-leaves a trace. The limit covers the wait only: the append and any compaction after the lock
-is taken, a wait for a worker thread, and :meth:`CallAuditLog.flush` at the lifespan's exit
-(which waits the same way, on the event loop thread) are outside it, so it is not a limit on
-a call's total time. Any other failure to write (an unwritable path, a read-only home, no
+leaves a trace. The writes run under their own :data:`MAX_CONCURRENT_WRITES`-token
+``CapacityLimiter``, not the SDK transport's. The limit covers the wait only: the append and
+any compaction after the lock is taken, a wait for one of the log's worker threads, and
+:meth:`CallAuditLog.flush` at the lifespan's exit (which waits the same way, on the event
+loop thread) are outside it, so it is not a limit on a call's total time. Any other failure
+to write (an unwritable path, a read-only home, no
 ``HOME``, another user's file, lock or directory, a symbolic link, a given directory others
 can write to) logs one warning and turns the log off for the process (two writes failing
 at once still warn once; when the failing file is not the log, its lock for example, the
@@ -76,8 +78,13 @@ LOCK_TIMEOUT_S = 5.0
 # After a write times out on the lock, the writes of the next LOCK_COOLDOWN_S seconds drop
 # their lines without trying the lock, so a lock that is never released does not cost every
 # logged call the whole limit; the next write that takes the lock starts with a
-# ``lock_timeout`` line counting the lines dropped since the last one written (item 33).
-LOCK_COOLDOWN_S = 60.0
+# ``lock_timeout`` line counting the lines dropped since the last one written (item 33,
+# council decision: 30 s).
+LOCK_COOLDOWN_S = 30.0
+# The call log's own work budget: its writes run in worker threads under a CapacityLimiter of
+# this many tokens (``mcp/runner.py``), never the default limiter the SDK's stdio transport
+# shares, so a slow or failing log cannot queue behind, or starve, the transport's threads.
+MAX_CONCURRENT_WRITES = 4
 UNREGISTERED = '<unregistered>'
 CANCELLED = 'CANCELLED'
 # Backstops: keys are the tool's own parameter names, so these never bind in practice.
