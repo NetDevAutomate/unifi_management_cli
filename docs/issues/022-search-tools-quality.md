@@ -1,7 +1,8 @@
 ---
 title: "`search_tools` misses multi-word queries, tags and differently-cased categories"
 date: 2026-10-02
-status: open
+status: resolved
+resolved_by: 0c98496
 severity: low
 components: [mcp/registry, mcp/server]
 found_by: MCP uvx standards work
@@ -45,3 +46,26 @@ Keep the signature and the summary/full shapes; change only matching and order:
 
 Add table-driven tests for the five calls above, and keep the existing
 `tests/mcp/test_registry.py` expectations.
+
+## Resolution
+
+Resolved on 2026-10-13 (`0c98496`), as recommended. `ToolRegistry.search` splits the query
+on whitespace, `_` and `-`; every word must appear in the name (`_` read as a space), the
+description or a tag, case-insensitively; `category` matches case-insensitively; with a
+query the results are ranked by where the words hit (name, then tags, then description),
+then priority (`P0` first), then `(category, name)`; a mutating tool's summary carries
+`mutates: true`. The signature and both result shapes are otherwise unchanged.
+
+One refinement of the recommendation: ranking applies only when a `query` is given. With
+no query there are no hits to rank by, and ordering the whole catalogue by priority would
+have broken the `(category, name)` order that `tests/mcp/test_registry_keys.py` and the
+`unifi://catalog` readers rely on; the recommendation's "then `(category, name)` for ties"
+is kept as the tie-break with a query.
+
+The same five calls, on the shipped 96 tools at this commit: `"port vlan"` 8 results,
+`"list devices"` 5 (`get_device_inventory` first), `"link speed"` 3 (`audit_link_speeds`
+first), `"inventory"` 6, `category="Analysis"` 57 (equal to `"analysis"`).
+`tests/mcp/test_search_quality.py` pins them, the ranking on a fixture whose answer is
+known, the token splitting and the summary shape; `test_registry.py` and
+`test_registry_keys.py` pass unchanged. The `search_tools` docstring (the description the
+MCP client sees) and the guide's meta-tools bullet describe the matching.
