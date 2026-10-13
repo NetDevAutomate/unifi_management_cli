@@ -438,23 +438,87 @@ def test_the_two_callers_share_as_text_instead_of_copies() -> None:
 
 
 def _asyncssh_connect_uses(tree: ast.AST) -> list[int]:
-    """Line numbers that reach ``asyncssh.connect``: the attribute, or an import of the name."""
-    lines = []
+    """Line numbers that reach ``asyncssh.connect``: an import of the name, or ``.connect`` on
+    any name bound to ``asyncssh`` or one of its modules (``import asyncssh as x``, ``from
+    asyncssh import connection as c``), through any attribute chain."""
+    modules: set[str] = set()  # names bound to asyncssh or an asyncssh module
+    lines: set[int] = set()
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Attribute)
-            and node.attr == 'connect'
-            and isinstance(node.value, ast.Name)
-            and node.value.id == 'asyncssh'
-        ):
-            lines.append(node.lineno)
-        elif (
-            isinstance(node, ast.ImportFrom)
-            and (node.module or '').split('.')[0] == 'asyncssh'
-            and any(alias.name in {'connect', '*'} for alias in node.names)
-        ):
-            lines.append(node.lineno)
-    return lines
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split('.')[0] == 'asyncssh':
+                    modules.add((alias.asname or alias.name).split('.')[0])
+        elif isinstance(node, ast.ImportFrom) and (node.module or '').split('.')[0] == 'asyncssh':
+            for alias in node.names:
+                if alias.name in {'connect', '*'}:
+                    lines.add(node.lineno)
+                else:
+                    modules.add(alias.asname or alias.name)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == 'connect':
+            root: ast.expr = node.value
+            while isinstance(root, ast.Attribute):
+                root = root.value
+            if isinstance(root, ast.Name) and root.id in modules:
+                lines.add(node.lineno)
+    return sorted(lines)
+
+
+def _is_gateway_session_call(node: ast.expr) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else getattr(func, 'attr', None)
+    return name == 'gateway_session'
+
+
+def _ssh_run_uses(tree: ast.AST) -> list[int]:
+    """Line numbers of ``.run(`` on an SSH connection, however the connection was bound.
+
+    A connection is a name bound by ``async with gateway_session(...) as X``, assigned from
+    ``enter_async_context(gateway_session(...))`` (also behind a conditional expression), a
+    parameter annotated ``SSHClientConnection``, or the house name ``conn``.
+    """
+    names = {'conn'}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncWith | ast.With):
+            for item in node.items:
+                if _is_gateway_session_call(item.context_expr) and isinstance(
+                    item.optional_vars, ast.Name
+                ):
+                    names.add(item.optional_vars.id)
+        elif isinstance(node, ast.Assign):
+            candidates = [node.value]
+            if isinstance(node.value, ast.IfExp):
+                candidates = [node.value.body, node.value.orelse]
+            for value in candidates:
+                if isinstance(value, ast.Await):
+                    value = value.value
+                if (
+                    isinstance(value, ast.Call)
+                    and isinstance(value.func, ast.Attribute)
+                    and value.func.attr == 'enter_async_context'
+                    and value.args
+                    and _is_gateway_session_call(value.args[0])
+                ):
+                    names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            for arg in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]:
+                if arg.annotation is not None and 'SSHClientConnection' in ast.unparse(
+                    arg.annotation
+                ):
+                    names.add(arg.arg)
+    return sorted(
+        {
+            node.lineno
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == 'run'
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in names
+        }
+    )
 
 
 def test_asyncssh_connect_is_called_only_in_gateway_ssh() -> None:
@@ -466,16 +530,68 @@ def test_asyncssh_connect_is_called_only_in_gateway_ssh() -> None:
     assert [c.split(':')[0] for c in callers] == ['analysis/gateway_ssh.py'], callers
 
 
-def test_the_only_door_scan_sees_an_imported_connect() -> None:
+def test_the_only_door_scan_sees_an_imported_or_aliased_connect() -> None:
+    """Issue 076 item 10: the scan matched the name ``asyncssh`` only, so ``import asyncssh
+    as ssh`` and ``from asyncssh import connection as c`` slipped past it."""
     sample = (
-        'import asyncssh\n'
-        'from asyncssh import connect\n'
-        'from asyncssh.connection import connect as dial\n'
-        'from asyncssh import *\n'
-        'from asyncssh import SSHClientConnection\n'
-        'asyncssh.connect("192.0.2.1")\n'
+        'import asyncssh\n'  # 1
+        'import asyncssh as ssh\n'  # 2
+        'from asyncssh import connect\n'  # 3
+        'from asyncssh.connection import connect as dial\n'  # 4
+        'from asyncssh import *\n'  # 5
+        'from asyncssh import SSHClientConnection\n'  # 6
+        'from asyncssh import connection as c\n'  # 7
+        'import asyncssh.connection\n'  # 8
+        'asyncssh.connect("192.0.2.1")\n'  # 9
+        'ssh.connect("192.0.2.1")\n'  # 10
+        'c.connect("192.0.2.1")\n'  # 11
+        'asyncssh.connection.connect("192.0.2.1")\n'  # 12
+        'other.connect("192.0.2.1")\n'  # 13: not asyncssh
+        'sock.connect(("192.0.2.1", 22))\n'  # 14: not asyncssh
     )
-    assert _asyncssh_connect_uses(ast.parse(sample)) == [2, 3, 4, 6]
+    assert _asyncssh_connect_uses(ast.parse(sample)) == [3, 4, 5, 9, 10, 11, 12]
+
+
+def test_an_ssh_connections_run_is_called_only_in_run_gateway_command() -> None:
+    """Issue 076 item 11: the connect scan proved the connect confined, not the commands; a
+    ``.run(`` on a connection outside ``run_gateway_command`` would bypass the quoting and
+    the timeout every caller states."""
+    callers = [
+        f'{path.relative_to(SRC)}:{line}'
+        for path in sorted(SRC.rglob('*.py'))
+        for line in _ssh_run_uses(ast.parse(path.read_text(encoding='utf-8')))
+    ]
+    gateway = SRC / 'analysis' / 'gateway_ssh.py'
+    door = next(
+        node
+        for node in ast.walk(ast.parse(gateway.read_text(encoding='utf-8')))
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == 'run_gateway_command'
+    )
+    allowed = {
+        f'analysis/gateway_ssh.py:{n}' for n in range(door.lineno, (door.end_lineno or 0) + 1)
+    }
+    assert callers and set(callers) <= allowed, callers
+
+
+def test_the_run_scan_sees_a_connection_however_it_was_bound() -> None:
+    sample = (
+        'async def a(conn: asyncssh.SSHClientConnection) -> None:\n'  # 1
+        '    await conn.run("x")\n'  # 2
+        'async def b(link: "SSHClientConnection", other: Any) -> None:\n'  # 3
+        '    await link.run("x")\n'  # 4
+        '    other.run("x")\n'  # 5: not a connection
+        'async def c() -> None:\n'  # 6
+        '    async with gateway_session() as sess:\n'  # 7
+        '        await sess.run("x")\n'  # 8
+        '    held = await stack.enter_async_context(gateway_session(host)) if go else None\n'  # 9
+        '    await asyncio.wait_for(held.run("x"), 5)\n'  # 10
+        '    subprocess.run(["x"])\n'  # 11
+        '    asyncio.run(main())\n'  # 12
+        '    await self.runner.run("tool")\n'  # 13
+        'def d(conn: Any) -> None:\n'  # 14
+        '    conn.run("x")\n'  # 15: the house name for a connection
+    )
+    assert _ssh_run_uses(ast.parse(sample)) == [2, 4, 8, 10, 15]
 
 
 async def test_a_real_connect_fails_in_every_test() -> None:
