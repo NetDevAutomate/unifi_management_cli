@@ -5,6 +5,10 @@ The current release is 0.2.0; only the latest release is supported.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-10-13
+
 ### History rewrite (2026-10-12): clones made before this date must be re-cloned
 
 The whole history from 2025-04-25 on was rewritten to remove three credentials, the
