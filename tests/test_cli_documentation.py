@@ -251,25 +251,38 @@ def test_help_text_names_no_internal_tracker_reference() -> None:
     assert not leaks, leaks
 
 
-def _raises_exit_2(function: ast.FunctionDef) -> bool:
-    """Whether the body raises ``typer.Exit(2)`` itself: a check that failed, not usage."""
+def _is_exit_2(call: ast.Call) -> bool:
+    """Whether a call is ``Exit(2)`` or ``Exit(code=2)``, as ``typer.Exit`` or a bare name."""
+    func = call.func
+    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, 'id', None)
+    if name != 'Exit':
+        return False
+    code: ast.expr | None = call.args[0] if call.args else None
+    if code is None:
+        code = next((kw.value for kw in call.keywords if kw.arg == 'code'), None)
+    return isinstance(code, ast.Constant) and code.value == 2
+
+
+def _raises_exit_2(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Whether the body raises an exit 2 itself: a check that failed, not usage.
+
+    Reads ``raise typer.Exit(2)``, ``raise typer.Exit(code=2)`` and a bare ``raise Exit(2)``
+    (issue 076 item 20; the first was the only shape known before).
+    """
     return any(
-        isinstance(node, ast.Raise)
-        and isinstance(node.exc, ast.Call)
-        and isinstance(node.exc.func, ast.Attribute)
-        and node.exc.func.attr == 'Exit'
-        and bool(node.exc.args)
-        and isinstance(node.exc.args[0], ast.Constant)
-        and node.exc.args[0].value == 2
+        isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and _is_exit_2(node.exc)
         for node in ast.walk(function)
     )
 
 
-def _commands_that_exit_2_on_a_check() -> set[str]:
-    """``group command`` for every command whose body raises ``typer.Exit(2)``."""
+def _commands_that_exit_2_on_a_check(tree: ast.Module | None = None) -> set[str]:
+    """``group command`` for every command (sync or async) whose body raises an exit 2."""
     found: set[str] = set()
-    for node in ast.parse(TYPER_CLI.read_text(encoding='utf-8')).body:
-        if not isinstance(node, ast.FunctionDef) or not _raises_exit_2(node):
+    tree = tree or ast.parse(TYPER_CLI.read_text(encoding='utf-8'))
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) or not _raises_exit_2(
+            node
+        ):
             continue
         for decorator in node.decorator_list:
             if not (
@@ -286,6 +299,42 @@ def _commands_that_exit_2_on_a_check() -> set[str]:
     return found
 
 
+# The commands the scan found when this floor was set; fewer means the scan broke, not that
+# the commands stopped exiting 2 (issue 076 item 20).
+EXIT_2_COMMANDS_FLOOR = 14
+
+
+def test_the_exit_2_scan_reads_every_call_shape_and_async_commands() -> None:
+    sample = ast.parse(
+        'import typer\n'
+        'from typer import Exit\n'
+        '@a_app.command("positional")\n'
+        'def a() -> None:\n'
+        '    raise typer.Exit(2)\n'
+        '@b_app.command("keyword")\n'
+        'def b() -> None:\n'
+        '    raise typer.Exit(code=2)\n'
+        '@c_app.command("bare")\n'
+        'def c() -> None:\n'
+        '    raise Exit(2)\n'
+        '@d_app.command("async")\n'
+        'async def d() -> None:\n'
+        '    raise typer.Exit(2)\n'
+        '@e_app.command("one")\n'
+        'def e() -> None:\n'
+        '    raise typer.Exit(1)\n'
+        '@f_app.command("other")\n'
+        'def f() -> None:\n'
+        '    raise ValueError(2)\n'
+    )
+    assert _commands_that_exit_2_on_a_check(sample) == {
+        'a positional',
+        'b keyword',
+        'c bare',
+        'd async',
+    }
+
+
 def test_the_exit_code_table_names_every_command_that_exits_2_on_a_failed_check() -> None:
     """Review M1: the exit-code table's exit 2 row said "a usage error" only, while a dozen
     commands exit 2 when their check fails; every such command must be named there."""
@@ -293,6 +342,7 @@ def test_the_exit_code_table_names_every_command_that_exits_2_on_a_failed_check(
     row = next(line for line in lines if line.startswith('| 2 |'))
     commands = _commands_that_exit_2_on_a_check()
     assert {'analyze link-speeds', 'diagnose all', 'stp apply'} <= commands  # the scan works
+    assert len(commands) >= EXIT_2_COMMANDS_FLOOR, f'the scan found only {sorted(commands)}'
     missing = sorted(
         c for c in commands if f'`{c}`' not in row and f'`{c.split(" ", 1)[1]}`' not in row
     )
