@@ -1,7 +1,8 @@
 ---
 title: "discover needs Graphviz's dot program for its PNG and SVG diagrams and exits 1 without it, writing no report"
 date: 2026-10-06
-status: open
+status: resolved
+resolved_by: 21f728b
 severity: low
 components: [enhanced_network_topology, run_methods, README]
 found_by: 0.2.0 port (live read-only run)
@@ -63,3 +64,27 @@ which removed `.png` (or `.svg`) anywhere in the path, so a `-d` under a directo
 `site.png.d/` rendered into `site.d/`, outside the directory the audit script checks. They
 now strip only a final suffix that matches the format (`Path.with_suffix('')`), and
 `tests/test_diagram_render.py` pins it for a directory whose name holds the extension.
+
+## Resolution
+
+Resolved on 2026-10-13 (`21f728b`). The code half, as recommended: `generate_png_diagram`
+and `generate_svg_diagram` in `enhanced_network_topology.py` catch graphviz's
+`ExecutableNotFound` and take the branch the missing package already took. A warning names
+the install (`brew install graphviz` / `sudo apt install graphviz`) and the way round it
+(`--format html`), a placeholder holding the same text is written at the diagram path, and
+the DOT source graphviz saved at the diagram path minus its extension is removed. The
+render no longer raises, so `run_port_mapper` goes on to write the `-o` report and the dry
+run exits 0; `diagram` takes the same branch.
+
+Chosen over the pre-run check (`shutil.which('dot')`) because graphviz is the one that
+decides how it finds `dot` (its own `DOT_BINARY`, the current `PATH`), and the catch covers
+both. The user-visible change: a machine without Graphviz now gets a report, a placeholder
+and exit 0 instead of exit 1 and no report; the runbook, the use-cases guide and the error
+table describe the new behaviour.
+
+Deliberately not changed: `diagram` still prints `✅ Diagram generated` after the placeholder
+(its success line does not look at the file; listed for the coordinator), and
+`scripts/network-audit.sh`'s comment about the leftover source, which is outside this lane.
+Tests: `tests/test_diagram_render.py` runs both formats through the real `graphviz` package
+with `dot` hidden from `PATH` (placeholder, warning, no source left) and runs
+`run_port_mapper` with graphviz's renderer raising `ExecutableNotFound` (report written).
