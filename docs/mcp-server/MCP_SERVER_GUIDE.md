@@ -298,8 +298,11 @@ schema with `get_tool_info`, then calls `execute_tool`.
 
 **Meta-tools.**
 
-- `search_tools(query, category, tags, detail_level)`: find tools; `detail_level="full"` adds
-  each tool's `input_schema`.
+- `search_tools(query, category, tags, detail_level)`: find tools. Every word of `query`
+  (split on spaces, `_` and `-`) must appear in a tool's name, description or tags, and
+  results are ranked by where the words hit (name, then tags, then description), then
+  priority; `category` is case-insensitive; a mutating tool's summary carries
+  `mutates: true`. `detail_level="full"` adds each tool's `input_schema`.
 - `list_categories()`: category → tool names.
 - `get_tool_info(tool_name)`: description, parameters, `input_schema`, `output_schema` and
   annotations.

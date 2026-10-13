@@ -425,4 +425,13 @@ async def test_get_tool_info_and_full_search_add_schemas(tmp_path, monkeypatch) 
     assert set(full['read_port']['input_schema']['properties']) == {'switch', 'port'}
     assert full['apply_things']['input_schema'] is None
     summary = await server.search_tools(detail_level='summary')
-    assert all(set(r) == {'name', 'description'} for r in summary)
+    # Issue 022: a mutating tool's summary carries mutates: true; the others stay two keys.
+    assert all(
+        set(r)
+        == (
+            {'name', 'description', 'mutates'}
+            if r['name'] == 'apply_things'
+            else {'name', 'description'}
+        )
+        for r in summary
+    )
