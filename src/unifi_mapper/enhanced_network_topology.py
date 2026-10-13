@@ -57,6 +57,29 @@ def _render_base(output_path: str, extension: str) -> str:
     return str(path.with_suffix('') if path.suffix == extension else path)
 
 
+GRAPHVIZ_MISSING_HINT = (
+    "Graphviz's dot program is not on PATH. Install it with: brew install graphviz "
+    '(macOS) or sudo apt install graphviz (Debian/Ubuntu); or use --format html, '
+    'which needs no Graphviz.'
+)
+
+
+def _render_without_dot(output_path: str, output_base: str, image_format: str) -> None:
+    """The missing-``dot`` branch of a PNG or SVG render (issue 075).
+
+    Mirrors the missing-package branch: a warning that names the install and a placeholder at
+    ``output_path``, so the run goes on to write its report. The DOT source graphviz saved at
+    ``output_base`` before it looked for ``dot`` is removed: it names the site's devices and
+    nothing would clean it up.
+    """
+    log.warning(f'{image_format.upper()} diagram not drawn: {GRAPHVIZ_MISSING_HINT}')
+    source = Path(output_base)
+    if source != Path(output_path) and source.is_file():
+        source.unlink()
+    with open(output_path, 'w') as f:
+        f.write(f'{image_format.upper()} generation needs Graphviz. {GRAPHVIZ_MISSING_HINT}\n')
+
+
 class NetworkTopology:
     """Class for managing network topology visualization."""
 
@@ -463,7 +486,11 @@ class NetworkTopology:
             # Render to PNG
             graph = graphviz.Source(dot_source)
             output_base = _render_base(output_path, '.png')
-            graph.render(output_base, format='png', cleanup=True, view=False)
+            try:
+                graph.render(output_base, format='png', cleanup=True, view=False)
+            except graphviz.ExecutableNotFound:
+                _render_without_dot(output_path, output_base, 'png')
+                return
 
             log.info(f'Generated PNG diagram ({layout_style} layout): {output_path}')
 
@@ -492,7 +519,11 @@ class NetworkTopology:
             # Render to SVG
             graph = graphviz.Source(dot_source)
             output_base = _render_base(output_path, '.svg')
-            graph.render(output_base, format='svg', cleanup=True, view=False)
+            try:
+                graph.render(output_base, format='svg', cleanup=True, view=False)
+            except graphviz.ExecutableNotFound:
+                _render_without_dot(output_path, output_base, 'svg')
+                return
 
             log.info(f'Generated SVG diagram ({layout_style} layout): {output_path}')
 

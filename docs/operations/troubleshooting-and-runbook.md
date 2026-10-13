@@ -137,26 +137,26 @@ before any subcommand, `discover` included, so a write is never requested by acc
 **Resolution**: put a subcommand's own flags after it: `unifi-mapper discover --apply`,
 `unifi-mapper ports refresh --apply`, `unifi-mapper discover --connected-devices`.
 
-#### `discover` or `diagram` Exits 1: Graphviz's `dot` Not Found
+#### `discover` or `diagram` Writes a Placeholder: Graphviz's `dot` Not Found
 
-**Symptom**: `discover` (or `diagram`) reads the controller, then stops with exit status 1
-and:
+**Symptom**: `discover` (or `diagram`) reads the controller and exits 0, but the PNG or SVG
+file holds one line of text, and the log carries:
 
 ```text
-❌ Error: failed to execute PosixPath('dot'), make sure the Graphviz executables are on your systems' PATH
+WARNING PNG diagram not drawn: Graphviz's dot program is not on PATH. Install it with: brew install graphviz (macOS) or sudo apt install graphviz (Debian/Ubuntu); or use --format html, which needs no Graphviz.
 ```
 
 **Cause**: PNG (the default) and SVG diagrams are drawn by Graphviz's `dot` program. The
-`graphviz` Python package that `uv sync` installs only drives it, so without Graphviz the
-render fails. `discover` draws the diagram before it writes the `-o` report, so the report
-is not written either, and the diagram's DOT source, which names the site's devices, is left
-at the diagram path minus its extension: `./diagrams/network_diagram` by default, which
-`.gitignore` covers when you run from the repository root, where its rules are anchored ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)).
+`graphviz` Python package that `uv sync` installs only drives it. Without Graphviz the render
+is a warning and a placeholder, as it is when the package itself is missing, so `discover`
+still writes its `-o` report and the dry run still exits 0. The DOT source graphviz saves
+beside the diagram is removed ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md);
+before 0.3.0 the command exited 1 with no report, leaving that source behind).
 
 **Resolution**: install Graphviz, `brew install graphviz` (macOS) or `sudo apt install
 graphviz` (Debian or Ubuntu), and run the command again, or draw an interactive diagram with
-`--format html`, which needs no Graphviz. Delete the leftover DOT source once you no longer
-need it.
+`--format html`, which needs no Graphviz. `--format dot` writes the DOT source itself, for
+`dot` on another machine.
 
 ---
 
