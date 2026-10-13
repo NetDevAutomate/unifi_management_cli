@@ -2913,7 +2913,11 @@ def diagnose_latency_matrix(
         False, '--devices-only', help='Skip clients, only ping infrastructure'
     ),
 ):
-    """📡 SSH to gateway and ping all devices to build a latency matrix."""
+    """📡 SSH to gateway and ping all devices to build a latency matrix.
+
+    A target whose ping could not run on the gateway (ping missing, or refused for the SSH
+    user) is listed under "Ping could not run" with the reason, never as 100% loss.
+    """
     from rich.table import Table
     from unifi_mapper.analysis.latency_matrix import run_latency_matrix
 
@@ -2954,7 +2958,12 @@ def diagnose_latency_matrix(
             status = '[green]✅[/green]'
             rtt_avg = f'{r.rtt_avg:.1f}ms' if r.rtt_avg else '—'
             rtt_max = f'{r.rtt_max:.1f}ms' if r.rtt_max else '—'
-            loss = f'{r.packet_loss:.0f}%' if r.packet_loss > 0 else '0%'
+            loss = f'{r.packet_loss:.0f}%' if r.packet_loss else '0%'
+        elif r.error is not None:  # ping could not run: no loss figure
+            status = '[yellow]⚠ not run[/yellow]'
+            rtt_avg = '—'
+            rtt_max = '—'
+            loss = '—'
         else:
             status = '[red]❌[/red]'
             rtt_avg = '—'
@@ -2969,6 +2978,12 @@ def diagnose_latency_matrix(
         console.print(f'\n[red]Unreachable ({len(report.unreachable_devices)}):[/red]')
         for name in report.unreachable_devices:
             console.print(f'  ❌ {name}')
+
+    failed = [r for r in report.results if r.error is not None]
+    if failed:
+        console.print(f'\n[yellow]Ping could not run ({len(failed)}):[/yellow]')
+        for r in failed:
+            console.print(f'  ⚠ {escape(r.name)}: {escape(r.error or "")}')
 
     if report.skipped_targets:
         console.print(

@@ -619,6 +619,7 @@ async def test_latency_turns_a_ping_timeout_into_an_unreachable_target(
     target = {'ip': '192.0.2.10', 'name': 'Switch', 'type': 'device'}
     result = await latency_matrix._ping_single(object(), target, 3, 2)  # type: ignore[arg-type]
     assert (result.reachable, result.packet_loss, result.ip) == (False, 100.0, '192.0.2.10')
+    assert result.error is None
 
 
 async def test_latency_connect_failure_names_the_host_with_its_suggestion(
@@ -874,6 +875,81 @@ def test_latency_counts_a_target_with_total_loss_as_unreachable() -> None:
         target, '5 packets transmitted, 0 received, 100% packet loss\n'
     )
     assert (result.reachable, result.packet_loss, result.rtt_avg) == (False, 100.0, None)
+
+
+# --- a ping that could not run is an error for its target (issue 076 item 4) -------------
+
+
+def _status_runner(status: int, stderr: str = '') -> Callable[..., Awaitable[GatewayResult]]:
+    async def _run(conn: object, argv: list[str], *, timeout: float) -> GatewayResult:
+        return GatewayResult(stdout='', stderr=stderr, exit_status=status)
+
+    return _run
+
+
+@pytest.mark.parametrize(
+    ('status', 'stderr', 'detail'),
+    [
+        (127, 'sh: ping: not found', ': sh: ping: not found'),
+        (2, '', ''),
+        (2, f'ping: socket: token={FAKE_URL_PW}', ': ping: socket: token=***redacted***'),
+    ],
+    ids=['missing (127)', 'refused (2), no stderr', 'refused (2), redacted stderr'],
+)
+async def test_latency_reads_a_ping_that_could_not_run_as_an_error_not_total_loss(
+    monkeypatch: pytest.MonkeyPatch, status: int, stderr: str, detail: str
+) -> None:
+    """Issue 076 item 4: ``_ping_single`` parsed stdout without checking the exit status, so a
+    missing or refused ping (nothing on stdout) read as a lost target at 100% loss."""
+    monkeypatch.setattr(latency_matrix, 'run_gateway_command', _status_runner(status, stderr))
+    target = {'ip': '192.0.2.10', 'name': 'Switch', 'type': 'device'}
+    result = await latency_matrix._ping_single(object(), target, 3, 2)  # type: ignore[arg-type]
+    assert result.reachable is False and result.packet_loss is None
+    assert result.error == f'ping could not run on the gateway (exit status {status}){detail}'
+    assert FAKE_URL_PW not in (result.error or '')
+
+
+async def test_a_ping_with_no_reply_is_still_an_unreachable_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _no_reply(conn: object, argv: list[str], *, timeout: float) -> GatewayResult:
+        return GatewayResult('3 packets transmitted, 0 received, 100% packet loss\n', '', 1)
+
+    monkeypatch.setattr(latency_matrix, 'run_gateway_command', _no_reply)
+    target = {'ip': '192.0.2.10', 'name': 'Switch', 'type': 'device'}
+    result = await latency_matrix._ping_single(object(), target, 3, 2)  # type: ignore[arg-type]
+    assert (result.reachable, result.packet_loss, result.error) == (False, 100.0, None)
+
+
+async def test_the_matrix_counts_a_failed_ping_apart_from_the_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeSSH({'ping': ('', 'sh: ping: not found', 127)})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    _controller(monkeypatch, [{'ip': '192.0.2.10', 'name': 'Switch'}], [])
+    report = await latency_matrix.run_latency_matrix(include_clients=False)
+    assert (report.targets_total, report.targets_reachable, report.targets_unreachable) == (
+        1,
+        0,
+        0,
+    )
+    assert report.targets_failed == 1 and report.unreachable_devices == []
+    assert report.results[0].error is not None and report.results[0].error.startswith('ping could')
+
+
+def test_cli_latency_matrix_lists_a_ping_that_could_not_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeSSH({'ping': ('', 'ping: socket: Operation not permitted', 2)})
+    monkeypatch.setattr(asyncssh, 'connect', fake)
+    monkeypatch.setattr(typer_cli, 'load_env_from_config', lambda path: None)
+    _controller(monkeypatch, [{'ip': '192.0.2.10', 'name': 'Switch'}], [])
+    result = runner.invoke(app, ['diagnose', 'latency-matrix', '--devices-only'])
+    assert result.exit_code == 0, result.output
+    flat = _flat(result.output)
+    assert 'Ping could not run (1)' in flat
+    assert 'Switch: ping could not run on the gateway (exit status 2): ping: socket' in flat
+    assert '100%' not in flat and 'Unreachable (' not in flat
 
 
 # --- the connect itself is bounded ---------------------
