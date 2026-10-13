@@ -168,14 +168,15 @@ read-only guard. The `network_api` and `protect` tools open their own guarded cl
 clients}`: `limit` 1-1000 (default 200), sorted by client ID. It reads the controller's whole
 list on every call and filters it first, so `total` counts every client that matches (only
 connected clients while `active_only` is true, the default; every client when it is false);
-pass a page's `next_offset` as the next `offset` until it is null. A failure is `{error}`.
+pass a page's `next_offset` as the next `offset` until it is null. A failure is an error
+result (`CONTROLLER_UNREACHABLE`, `AUTHENTICATION_FAILED` or `API_ERROR`), never a page.
 
 > [!IMPORTANT]
 > **Breaking change in the 0.2.0 port: `get_clients` returns a page object, not a list.**
 > Before, it returned a bare list of client objects, and `[{error}]` on failure. A caller
-> that iterates the result, or reads `result[0]['error']`, must read `result['clients']`
-> and `result['error']` instead, and follow `next_offset` to get more than one page
-> (200 clients by default).
+> that iterates the result must read `result['clients']` instead, and follow `next_offset`
+> to get more than one page (200 clients by default). Since 0.3.0 a failure is an error
+> result with `isError: true` (issue 011), so there is no `error` key to read at all.
 
 ```json
 {
@@ -386,10 +387,12 @@ variable is replaced wherever it appears, and values under secret-named keys are
 Error messages are capped at 2,000 characters (`TOOL_FAILED` at 500). A `TOOL_FAILED` call
 (and an unexpected error in the credential check) is also logged on stderr as one ERROR
 line, the tool, the exception's type and its text masked the same way; its traceback,
-masked too, only at `UNIFI_MCP_LOG_LEVEL=DEBUG`. The Network and Protect
-wrappers still return `{"error": …}` inside an `ok: true` result on failure; issue 011 tracks
-turning that into `TOOL_FAILED`. A write their read-only guard refuses is the exception: it is
-reported as `READ_ONLY_VIOLATION`.
+masked too, only at `UNIFI_MCP_LOG_LEVEL=DEBUG`. The Network and Protect wrappers raise
+like every other tool (issue 011): a connection failure is `CONTROLLER_UNREACHABLE`, a 401 or
+403 (or a Protect login failure) `AUTHENTICATION_FAILED`, another API status `API_ERROR`, a
+Protect controller with no NVR `NO_DATA`, and anything else `TOOL_FAILED`; a write their
+read-only guard refuses is `READ_ONLY_VIOLATION`. Before 0.3.0 they returned `{"error": …}`
+inside an `ok: true` result.
 
 ## Client Configuration
 

@@ -23,7 +23,7 @@ from tests.fixtures_unifi import FAKE_PW, FAKE_TOKEN
 from types import SimpleNamespace
 from typing import Any
 from uiprotect import ProtectApiClient
-from unifi_mapper.core.utils.errors import ErrorCodes
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.readonly import (
     ReadOnlyAsyncTransport,
     ReadOnlyViolation,
@@ -38,6 +38,7 @@ from unifi_mapper.mcp.tools import network as network_tools
 from unifi_mapper.mcp.tools import protect as protect_tools
 from unifi_mapper.network import client as network_client
 from unifi_mapper.network.config import NetworkConfig
+from unifi_mapper.protect.client import ConnectionError as ProtectConnectionError
 from unifi_mapper.protect.client import ReadOnlyProtectApiClient, UniFiProtectClient
 from unifi_mapper.protect.config import ProtectConfig
 from unittest.mock import AsyncMock
@@ -194,11 +195,6 @@ LEAKY = (
 )  # pragma: allowlist secret
 
 
-def _error_texts(result: Any) -> list[str]:
-    items = result if isinstance(result, list) else [result]
-    return [str(item['error']) for item in items if isinstance(item, dict) and 'error' in item]
-
-
 @pytest.fixture
 def logged() -> Iterator[list[str]]:
     from loguru import logger
@@ -218,10 +214,10 @@ async def test_a_network_tool_s_error_and_log_line_are_redacted(
 
     transport = httpx.MockTransport(_fail)
     monkeypatch.setattr(network_tools, '_inner_transport', lambda _config: transport)
-    result = await getattr(network_tools, tool)()
-    errors = _error_texts(result)
-    assert errors, result
-    assert all('FAKE-TOOL-ERROR-PASSWORD' not in e for e in errors)
+    with pytest.raises(ToolError) as info:  # issue 011: a failure is raised, never returned
+        await getattr(network_tools, tool)()
+    assert info.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    assert 'FAKE-TOOL-ERROR-PASSWORD' not in info.value.message
     assert logged and all('FAKE-TOOL-ERROR-PASSWORD' not in line for line in logged)
 
 
@@ -234,17 +230,17 @@ async def test_a_protect_tool_s_error_and_log_line_are_redacted(
             pass
 
         async def __aenter__(self) -> None:
-            raise RuntimeError(LEAKY)
+            raise ProtectConnectionError(LEAKY)
 
         async def __aexit__(self, *_exc: object) -> None:
             return None
 
     monkeypatch.setattr(protect_tools, '_get_config', lambda: object())
     monkeypatch.setattr(protect_tools, 'UniFiProtectClient', _Failing)
-    result = await getattr(protect_tools, tool)()
-    errors = _error_texts(result)
-    assert errors, result
-    assert all('FAKE-TOOL-ERROR-PASSWORD' not in e for e in errors)
+    with pytest.raises(ToolError) as info:  # issue 011: a failure is raised, never returned
+        await getattr(protect_tools, tool)()
+    assert info.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    assert 'FAKE-TOOL-ERROR-PASSWORD' not in info.value.message
     assert logged and all('FAKE-TOOL-ERROR-PASSWORD' not in line for line in logged)
 
 
@@ -456,7 +452,8 @@ async def test_every_protect_tool_opens_a_read_only_client(
             self.cameras: dict[str, Any] = {}
             self.sensors: dict[str, Any] = {}
             self.lights: dict[str, Any] = {}
-            self.nvr = None
+            # Issue 011: a missing NVR is NO_DATA, so the fake carries one.
+            self.nvr = SimpleNamespace(id='nvr-1', name='NVR', type='UNVR')
 
         async def __aenter__(self) -> 'RecordingClient':
             return self
