@@ -2,12 +2,11 @@
 
 # Import only basic utilities to avoid circular dependencies in tests
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
-from unifi_mapper.core.utils.logging import configure_logging, get_logger
+from unifi_mapper.core.utils.logging import get_logger
 
 __all__ = [
     'ErrorCodes',
     'ToolError',
-    'configure_logging',
     'get_logger',
 ]
 

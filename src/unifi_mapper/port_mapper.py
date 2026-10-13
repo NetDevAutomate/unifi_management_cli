@@ -24,6 +24,8 @@ class UnifiPortMapper:
         password: Optional[str] = None,
         api_token: Optional[str] = None,
         timeout: int = 10,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ):
         """Initialize the UnifiPortMapper.
 
@@ -35,6 +37,8 @@ class UnifiPortMapper:
             password: The password for the Unifi Controller (for username/password auth)
             api_token: The API token for the Unifi Controller (for token-based auth)
             timeout: Connection timeout in seconds (default: 10)
+            max_retries: Attempts per request, handed to the API client (default: 3)
+            retry_delay: First back-off in seconds, handed to the API client (default: 1.0)
         """
         # Initialize the API client
         self.api_client = UnifiApiClient(
@@ -45,6 +49,8 @@ class UnifiPortMapper:
             password=password,
             api_token=api_token,
             timeout=timeout,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
         )
 
         # Store parameters for convenience

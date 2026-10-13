@@ -49,6 +49,11 @@ def rec(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Recorder:
         password=None,
         verify_ssl=False,
         timeout=10,
+        max_retries=3,
+        retry_delay=1.0,
+        default_format='png',
+        default_output_dir=None,
+        default_diagram_dir=None,
     )
     monkeypatch.setattr(
         config_module.UnifiConfig, 'from_env', classmethod(lambda cls, *a, **k: fake_config)

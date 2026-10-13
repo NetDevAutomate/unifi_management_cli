@@ -137,26 +137,26 @@ before any subcommand, `discover` included, so a write is never requested by acc
 **Resolution**: put a subcommand's own flags after it: `unifi-mapper discover --apply`,
 `unifi-mapper ports refresh --apply`, `unifi-mapper discover --connected-devices`.
 
-#### `discover` or `diagram` Exits 1: Graphviz's `dot` Not Found
+#### `discover` or `diagram` Writes a Placeholder: Graphviz's `dot` Not Found
 
-**Symptom**: `discover` (or `diagram`) reads the controller, then stops with exit status 1
-and:
+**Symptom**: `discover` (or `diagram`) reads the controller and exits 0, but the PNG or SVG
+file holds one line of text, and the log carries:
 
 ```text
-❌ Error: failed to execute PosixPath('dot'), make sure the Graphviz executables are on your systems' PATH
+WARNING PNG diagram not drawn: Graphviz's dot program is not on PATH. Install it with: brew install graphviz (macOS) or sudo apt install graphviz (Debian/Ubuntu); or use --format html, which needs no Graphviz.
 ```
 
 **Cause**: PNG (the default) and SVG diagrams are drawn by Graphviz's `dot` program. The
-`graphviz` Python package that `uv sync` installs only drives it, so without Graphviz the
-render fails. `discover` draws the diagram before it writes the `-o` report, so the report
-is not written either, and the diagram's DOT source, which names the site's devices, is left
-at the diagram path minus its extension: `./diagrams/network_diagram` by default, which
-`.gitignore` covers when you run from the repository root, where its rules are anchored ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)).
+`graphviz` Python package that `uv sync` installs only drives it. Without Graphviz the render
+is a warning and a placeholder, as it is when the package itself is missing, so `discover`
+still writes its `-o` report and the dry run still exits 0. The DOT source graphviz saves
+beside the diagram is removed ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md);
+before 0.3.0 the command exited 1 with no report, leaving that source behind).
 
 **Resolution**: install Graphviz, `brew install graphviz` (macOS) or `sudo apt install
 graphviz` (Debian or Ubuntu), and run the command again, or draw an interactive diagram with
-`--format html`, which needs no Graphviz. Delete the leftover DOT source once you no longer
-need it.
+`--format html`, which needs no Graphviz. `--format dot` writes the DOT source itself, for
+`dot` on another machine.
 
 ---
 
@@ -810,7 +810,7 @@ The client implements exponential backoff for retryable errors (`UniFiRetryableE
 - Before attempt 2: `retry_delay * 2^0` (1.0s with the default delay)
 - Before attempt 3: `retry_delay * 2^1` (2.0s)
 
-There is no wait after the last attempt, so with the defaults (`max_retries=3`, `retry_delay=1.0`) a failing request spends 3 seconds backing off, plus up to three request timeouts of `UNIFI_TIMEOUT` each. The CLI always uses those defaults: `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` are read but not applied yet ([issue 042](../issues/042-settings-with-no-effect.md)).
+There is no wait after the last attempt, so with the defaults (`max_retries=3`, `retry_delay=1.0`) a failing request spends 3 seconds backing off, plus up to three request timeouts of `UNIFI_TIMEOUT` each. `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` in the config file set the two values for every CLI client ([issue 042](../issues/042-settings-with-no-effect.md)).
 
 `UniFiAuthenticationError` and `UniFiPermissionError` (4xx errors) are NOT retried and raise immediately.
 
@@ -843,8 +843,8 @@ Adjust this in `~/.config/unifi_management_cli/prod.env`:
 UNIFI_TIMEOUT=30
 ```
 
-`UNIFI_MAX_RETRIES` (1-10) and `UNIFI_RETRY_DELAY` (0.1-10.0 seconds) are parsed and
-clamped, but no client uses them yet, so changing them has no effect on `unifi-mapper`
+`UNIFI_MAX_RETRIES` (1-10) and `UNIFI_RETRY_DELAY` (0.1-10.0 seconds) set the attempts per
+request and the first back-off for every client the CLIs build
 ([issue 042](../issues/042-settings-with-no-effect.md)).
 
 #### Prevention
@@ -1438,11 +1438,11 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_PASSWORD` | One of these two methods | None | String | Admin password. |
 | `UNIFI_VERIFY_SSL` | No | `false` | `true` / `false` | Enable SSL certificate verification. Set `false` for self-signed certs. |
 | `UNIFI_TIMEOUT` | No | `10` | `1`-`300` (seconds) | Per-request connection timeout. Clamped to 1-300. |
-| `UNIFI_MAX_RETRIES` | No | `3` | `1`-`10` | Parsed and clamped, but no effect on `unifi-mapper` yet ([issue 042](../issues/042-settings-with-no-effect.md)); requests keep 3 attempts. |
-| `UNIFI_RETRY_DELAY` | No | `1.0` | `0.1`-`10.0` (seconds) | Parsed and clamped, but no effect on `unifi-mapper` yet (issue 042); the back-off starts at 1.0 s. |
-| `UNIFI_DEFAULT_FORMAT` | No | `png` | `png`, `svg`, `html`, `mermaid`, `dot` | No effect on `unifi-mapper` (issue 042): only the legacy `python -m unifi_mapper.cli` reads it. `mermaid` and `dot` write a placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)). |
-| `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
-| `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
+| `UNIFI_MAX_RETRIES` | No | `3` | `1`-`10` | Attempts per request, for every client the CLIs build ([issue 042](../issues/042-settings-with-no-effect.md)). |
+| `UNIFI_RETRY_DELAY` | No | `1.0` | `0.1`-`10.0` (seconds) | First back-off; each later retry doubles it (issue 042). |
+| `UNIFI_DEFAULT_FORMAT` | No | `png` | `png`, `svg`, `html`, `mermaid`, `dot` | `discover`'s diagram format when `--format` is not given (issue 042). |
+| `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path (`~` expanded) | Where `discover` writes `port_mapping_report.md` when `--output` is not given (issue 042). |
+| `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path (`~` expanded) | Where `discover` writes `network_diagram.<format>` when `--diagram` is not given (issue 042). |
 | `UNIFI_CONFIG` | No | XDG search | File path | The env file to read, like `--config` (see section 1). |
 | `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients`, `vlan-traffic sample` and the `gateway` probes (see section 2). |
 | `UNIFI_SSH_USERNAME` | No | `root` | String | Gateway SSH user. |
@@ -1490,7 +1490,7 @@ Root options (before any subcommand):
 | `--apply` / `--dry-run` | Write port names to the controller; `--dry-run` previews | Preview |
 | `--connected-devices` | Include non-UniFi connected devices | Off |
 | `--verify-updates` | Verify that port name updates persist | Off |
-| `--format FORMAT` | Diagram format: `png`, `svg`, `html`, `mermaid`, `dot`. `png` and `svg` need Graphviz's `dot` program (`brew install graphviz`); `html` needs none. `mermaid` and `dot` currently write a one-line placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)) | `png` |
+| `--format FORMAT` | Diagram format: `png`, `svg`, `html`, `mermaid`, `dot`. `png` and `svg` need Graphviz's `dot` program (`brew install graphviz`); `html`, `mermaid` (bare Mermaid source) and `dot` (the Graphviz source) need none | `png` |
 | `--output PATH`, `-o` | Markdown report path | `./reports/port_mapping_report.md` |
 | `--diagram PATH`, `-d` | Diagram path | `./diagrams/network_diagram.<format>` |
 
@@ -1505,7 +1505,7 @@ Root options (before any subcommand):
 | `unifi-mapper ports refresh` | Preview port labels from LLDP and wired clients (`--apply` writes) |
 | `unifi-mapper inventory list` | List devices with optional filters |
 | `unifi-mapper inventory check-updates` | Check for available firmware updates |
-| `unifi-mapper install-completions SHELL` | Install shell completions (`bash` or `zsh`) |
+| `unifi-mapper install-completions SHELL` | Install the manual completion scripts (`bash`, `zsh` or `all`; fish: `--install-completion`) |
 
 #### `unifi-network-toolkit`
 

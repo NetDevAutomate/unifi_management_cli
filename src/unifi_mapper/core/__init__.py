@@ -27,7 +27,7 @@ from unifi_mapper.core.models import (
 
 # Re-export utilities
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
-from unifi_mapper.core.utils.logging import configure_logging, get_logger
+from unifi_mapper.core.utils.logging import get_logger
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.auth import get_credentials
 
@@ -54,7 +54,6 @@ __all__ = [
     'ErrorCodes',
     'ToolError',
     'UniFiClient',
-    'configure_logging',
     'get_credentials',
     'get_logger',
 ]

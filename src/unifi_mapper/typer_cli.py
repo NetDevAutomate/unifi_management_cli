@@ -233,7 +233,7 @@ def main(
             discover(
                 output=None,
                 diagram=None,
-                format='png',
+                format=None,
                 apply=apply,
                 verify_updates=verify_updates,
                 connected_devices=connected_devices,
@@ -292,6 +292,13 @@ app.add_typer(gateway_app, name='gateway')
 app.add_typer(vlan_traffic_app, name='vlan-traffic')
 
 
+def _configured_dir(configured: Optional[str], default_name: str) -> Path:
+    """A directory from the config file (``~`` expanded), or ``./<default_name>``."""
+    if configured:
+        return Path(configured).expanduser()
+    return Path.cwd() / default_name
+
+
 @app.command()
 def discover(
     output: Annotated[
@@ -301,8 +308,16 @@ def discover(
         Optional[Path], typer.Option('--diagram', '-d', help='🖼️ Output path for diagram')
     ] = None,
     format: Annotated[
-        str, typer.Option('--format', help='🎨 Diagram format (png, svg, html, mermaid, dot)')
-    ] = 'png',
+        Optional[str],
+        typer.Option(
+            '--format',
+            help=(
+                '🎨 Diagram format: png, svg (Graphviz), html, mermaid or dot (source files) '
+                '[default: UNIFI_DEFAULT_FORMAT, or png]'
+            ),
+            show_default=False,
+        ),
+    ] = None,
     apply: Annotated[
         bool,
         typer.Option(
@@ -358,9 +373,14 @@ def discover(
         # Re-read the same file: a stray ./.env must never override --config.
         unifi_config = UnifiConfig.from_env(str(config))
 
-        # Set default paths
-        output_path = output or Path.cwd() / 'reports' / 'port_mapping_report.md'
-        diagram_path = diagram or Path.cwd() / 'diagrams' / f'network_diagram.{format}'
+        # The config file's output settings apply when the matching option is not given
+        # (issue 042): UNIFI_DEFAULT_FORMAT, UNIFI_OUTPUT_DIR and UNIFI_DIAGRAM_DIR.
+        if format is None:
+            format = unifi_config.default_format or 'png'
+        output_dir = _configured_dir(unifi_config.default_output_dir, 'reports')
+        diagram_dir = _configured_dir(unifi_config.default_diagram_dir, 'diagrams')
+        output_path = output or output_dir / 'port_mapping_report.md'
+        diagram_path = diagram or diagram_dir / f'network_diagram.{format}'
 
         # Ensure directories exist
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -380,6 +400,8 @@ def discover(
             password=unifi_config.password or '',
             verify_ssl=unifi_config.verify_ssl,
             timeout=unifi_config.timeout,
+            max_retries=unifi_config.max_retries,
+            retry_delay=unifi_config.retry_delay,
         )
 
         if verify_updates:
@@ -448,20 +470,34 @@ def discover(
 
 @app.command()
 def install_completions(
-    shell: str = typer.Argument(..., help='Shell to install completions for (bash/zsh/fish/all)'),
+    shell: str = typer.Argument(
+        ...,
+        help='Shell to install completions for: bash, zsh or all (fish: use --install-completion)',
+    ),
     force: bool = typer.Option(False, '--force', help='🔄 Overwrite existing completion files'),
 ):
-    """💻 Install shell completions (automatic via Typer).
+    """💻 Install the manual bash and zsh completion scripts.
 
-    Note: You can also use the built-in Typer completion:
+    ``all`` installs both. Fish is not covered by these scripts; Typer's built-in
+    completion works for every shell, fish included:
     unifi-mapper --install-completion
+
+    Exits 1 when a script could not be installed.
     """
-    if shell.lower() not in ['bash', 'zsh', 'fish', 'all']:
+    wanted = shell.lower()
+    if wanted == 'fish':
+        console.print('❌ [bold red]No manual completion script for fish[/bold red]')
+        console.print("💡 [bold blue]Use Typer's built-in completion instead:[/bold blue]")
+        console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
+        raise typer.Exit(1)
+    if wanted not in ('bash', 'zsh', 'all', 'both'):
         console.print(f'❌ [bold red]Unsupported shell: {shell}[/bold red]')
-        console.print('Supported shells: [cyan]bash, zsh, fish, all[/cyan]')
+        console.print('Supported shells: [cyan]bash, zsh, all[/cyan]')
         console.print("\n💡 [bold blue]Alternative - Use Typer's built-in completion:[/bold blue]")
         console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
         raise typer.Exit(1)
+    if wanted == 'all':
+        wanted = 'both'  # the installer's name for bash and zsh together
 
     console.print(f'🔧 Installing [bold]{shell}[/bold] completions...')
 
@@ -469,27 +505,24 @@ def install_completions(
     try:
         from .completions import install_completions as manual_install
 
-        success = manual_install(shell, force)
-
-        if success:
-            console.print('✅ [bold green]Manual completions installed successfully![/bold green]')
-        else:
-            console.print('❌ [bold red]Manual completion installation failed[/bold red]')
-            console.print("\n💡 [bold blue]Try Typer's automatic completion instead:[/bold blue]")
-            console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
-
+        success = manual_install(wanted, force)
     except Exception as e:
         console.print(f'❌ [bold red]Completion installation failed: {_error_text(e)}[/bold red]')
-        console.print("\n💡 [bold blue]Alternative - Use Typer's built-in completion:[/bold blue]")
+        success = False
+
+    if not success:
+        console.print('❌ [bold red]Manual completion installation failed[/bold red]')
+        console.print("\n💡 [bold blue]Try Typer's automatic completion instead:[/bold blue]")
         console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
         console.print('   [cyan]unifi-mapper --show-completion[/cyan]')
+        raise typer.Exit(1)
 
+    console.print('✅ [bold green]Manual completions installed successfully![/bold green]')
     console.print('\n📝 [bold]To enable completions:[/bold]')
-    console.print('  🐚 Bash: [dim]source ~/.bashrc[/dim]')
-    console.print('  🐚 Zsh: [dim]source ~/.zshrc[/dim]')
-    console.print('  🐚 Fish: [dim]Automatic on restart[/dim]')
-    console.print("\n🎯 [bold blue]Or use Typer's automatic completion:[/bold blue]")
-    console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
+    if wanted in ('bash', 'both'):
+        console.print('  🐚 Bash: [dim]source ~/.bashrc[/dim]')
+    if wanted in ('zsh', 'both'):
+        console.print('  🐚 Zsh: [dim]source ~/.zshrc[/dim]')
 
 
 @find_app.command('device')
@@ -3102,6 +3135,8 @@ def diagram(
             password=unifi_config.password or '',
             verify_ssl=unifi_config.verify_ssl,
             timeout=unifi_config.timeout,
+            max_retries=unifi_config.max_retries,
+            retry_delay=unifi_config.retry_delay,
         )
 
         # Get ALL UniFi devices for the diagram
@@ -4444,6 +4479,8 @@ def _readonly_client() -> Iterator[tuple[Any, str]]:
         password=unifi_config.password,
         api_token=unifi_config.api_token,
         timeout=unifi_config.timeout,
+        max_retries=unifi_config.max_retries,
+        retry_delay=unifi_config.retry_delay,
     )
     try:
         authenticated = client.login()

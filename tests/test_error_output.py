@@ -602,6 +602,8 @@ def _a_config(*_args: object, **_kwargs: object) -> SimpleNamespace:
         password=None,
         verify_ssl=False,
         timeout=10,
+        max_retries=3,
+        retry_delay=1.0,
         default_format='png',
         default_output_dir=None,
         default_diagram_dir=None,

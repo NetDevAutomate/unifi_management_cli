@@ -145,17 +145,19 @@ UNIFI_CONSOLE_API_TOKEN=your_api_token_here
 UNIFI_VERIFY_SSL=false                  # false for self-signed certificates
 UNIFI_TIMEOUT=10                        # API timeout in seconds
 
-# No effect yet (issue 042): requests keep the built-in 3 attempts and 1.0 s back-off,
-# and discover keeps its --format, --output and --diagram defaults
+# Retries: attempts per request (1-10) and the first back-off in seconds (0.1-10, doubled
+# on each later retry)
 # UNIFI_MAX_RETRIES=3
 # UNIFI_RETRY_DELAY=1.0
+
+# discover's defaults when --format, --output or --diagram is not given (~ is expanded)
 # UNIFI_DEFAULT_FORMAT=png
 # UNIFI_OUTPUT_DIR=~/Documents/network-reports
 # UNIFI_DIAGRAM_DIR=~/Documents/network-diagrams
 ```
 
-These five settings have no effect on `unifi-mapper`
-([issue 042](../issues/042-settings-with-no-effect.md)); `UNIFI_TIMEOUT` does. The optional
+The five optional settings reach every CLI client and `discover`
+([issue 042](../issues/042-settings-with-no-effect.md)). The optional
 credential families (gateway SSH for `diagnose latency-matrix`, `diagnose bandwidth`, the
 `gateway` probes, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and
 `vlan-traffic sample`, `UNIFI_NETWORK_*` and `PROTECT_*` for the MCP network and Protect tools) are
@@ -279,10 +281,11 @@ uv run unifi-mapper diagram --format svg --output ~/diagrams/network.svg
 uv run unifi-mapper diagram --format html --output ~/diagrams/network.html
 ```
 
-`discover --format` also lists `mermaid` and `dot`, but both currently write a one-line
-placeholder instead of a diagram
-([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)); use `svg` or
-`html`.
+`discover --format mermaid` writes the topology as bare Mermaid `graph TB` source (wrap it
+in a ```mermaid fence to embed it in Markdown, or feed it to `mmdc -i`), and
+`--format dot` writes the Graphviz source the PNG and SVG renderers use, for `dot` on
+another machine. Neither needs Graphviz
+([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)).
 
 **Scenario E: Override output paths**
 
@@ -360,7 +363,7 @@ Verified: 11/12
 | Port names revert after update | API cache returns stale data | Use `--verify-updates` flag |
 | Device shown with no LLDP | Device type does not support LLDP (e.g., UAP) | Expected - APs do not generate LLDP |
 | Port naming rejected by API | Firmware limitation on certain models | Check `unifi-mapper capabilities` for device-specific limits |
-| `failed to execute PosixPath('dot')`, exit 1 | Graphviz's `dot` program is missing: PNG and SVG need it, and `discover` then writes no report ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)) | Install it with `brew install graphviz` (macOS) or `sudo apt install graphviz`, or use `--format html` |
+| `PNG diagram not drawn: Graphviz's dot program is not on PATH` (warning; the diagram file holds that line) | Graphviz's `dot` program is missing: PNG and SVG need it; `discover` still writes its report and exits 0 ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)) | Install it with `brew install graphviz` (macOS) or `sudo apt install graphviz`, or use `--format html` |
 
 ---
 
@@ -693,8 +696,8 @@ first (`ports refresh`, then `--apply`; `stp apply --plan <dir>/stp-plan.json`, 
 quoted for bash or zsh, so a pasted command acts on the controller the audit read, from any
 directory. A step
 that fails is reported and the others still run; the exit status is 1 if any failed. Without
-Graphviz's `dot` (Section 1), the port-name step fails at its PNG diagram and leaves the
-diagram's DOT source in the output directory. The
+Graphviz's `dot` (Section 1), the port-name step writes a placeholder instead of its PNG
+diagram, with a warning, and still writes its report. The
 reports are created private (`umask 077`), and an existing `--output-dir` must be empty,
 yours, not writable by other users and not a symbolic link (exit 2 otherwise), so nothing
 planted there receives them.
@@ -1184,9 +1187,8 @@ Connect to a UniFi Protect controller, enumerate cameras and devices, subscribe 
   not support API tokens). The MCP Protect tools haven't been verified against a live console
   yet ([issue 034](../issues/034-protect-has-no-live-account.md)).
 - For MQTT bridge: a running MQTT broker (e.g., Mosquitto)
-- Python `aiomqtt` package for MQTT bridge, which the project does not declare yet
-  ([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md)): `uv add aiomqtt`, or
-  `uv run --with aiomqtt` for one run
+- The `mqtt` extra for the MQTT bridge: `uv sync --extra mqtt` installs `aiomqtt`
+  ([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md))
 
 ### Step-by-Step Instructions
 
@@ -1364,7 +1366,7 @@ sensor.back_door_sensor_battery
 |---------|-------|-----|
 | `AuthenticationError` | Cloud SSO account used | Create a local controller account (System > Administrators) |
 | `ConnectionError` on connect | Protect not reachable | Verify host IP and that Protect is active on the NVR |
-| MQTT bridge `ImportError` | `aiomqtt` not installed | Run `uv add aiomqtt` |
+| MQTT bridge `ImportError` | `aiomqtt` not installed | Run `uv sync --extra mqtt` |
 | HA entities not appearing | Wrong discovery prefix | Ensure `discovery_prefix` matches HA's MQTT integration prefix (default: `homeassistant`) |
 | Smart detection events missing | Third-party camera not paired to AI Port | Configure AI Port pairing in Protect UI |
 
