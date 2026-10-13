@@ -7,9 +7,12 @@ moves the point a comparison is made against.
 
 Writing happens only in :func:`append_history`, behind that explicit flag, through the
 shared capped writer (``core/utils/jsonl.append_capped_jsonl``): an exclusive
-``fcntl.flock`` on a sibling ``.lock`` file, an append, and a compaction through a
-temporary file plus ``os.replace`` only when the age or size cap is exceeded (with
-hysteresis, so a full file is not rewritten on every run). A reader never sees a
+``fcntl.flock`` on a sibling ``.lock`` file (waited for at most
+:data:`HISTORY_LOCK_TIMEOUT_S`, so a lock another account holds fails the run instead of
+stalling it), an append, and a compaction through a temporary file plus ``os.replace`` only
+when the age or size cap is exceeded (with hysteresis, so a full file is not rewritten on
+every run). The history and its lock are ``0o600`` in a ``0o700`` state directory, kept so
+on every append; one owned by another user is refused. A reader never sees a
 half-compacted file, but can see the last line of an append in progress cut short, so
 :func:`read_port_history` skips every line that does not parse.
 
@@ -27,7 +30,11 @@ from unifi_mapper.analysis.port_counter_baseline import SWITCH_DEVICE_TYPES, sta
 from unifi_mapper.core.utils.jsonl import (
     COMPACT_LOW_WATER_RATIO as COMPACT_LOW_WATER_RATIO,  # re-exported: the cap's low water
 )
-from unifi_mapper.core.utils.jsonl import append_capped_jsonl, compact_jsonl_lines
+from unifi_mapper.core.utils.jsonl import (
+    HISTORY_LOCK_TIMEOUT_S,
+    append_capped_jsonl,
+    compact_jsonl_lines,
+)
 from unifi_mapper.diagnostic_reads import crc_errors, int_or_none, normalise_mac, str_or_none
 
 
@@ -238,8 +245,9 @@ def append_history(
 ) -> HistoryWriteResult:
     """Append ``records`` to the history file, then enforce the age and size caps.
 
-    Creates the directory, holds an exclusive ``flock`` on ``<file>.lock`` for the
-    whole append-and-compact, and rewrites the file (temp file + ``os.replace``)
+    Creates the directory (``0o700``), holds an exclusive ``flock`` on ``<file>.lock``
+    (both ``0o600``, waited for at most :data:`HISTORY_LOCK_TIMEOUT_S`) for the whole
+    append-and-compact, and rewrites the file (temp file + ``os.replace``)
     only when it is larger than ``max_bytes``, its first line is unparsable, or
     its oldest line is more than :data:`AGE_COMPACTION_GRACE_SECONDS` older than
     the ``retention_days`` cutoff. A rewrite drops unparsable lines and every line
@@ -259,7 +267,9 @@ def append_history(
 
     Raises:
         ValueError: ``retention_days`` or ``max_bytes`` is out of range.
-        OSError: The file or its directory cannot be written.
+        OSError: The file or its directory cannot be written: ``LockTimeoutError`` when the
+            lock stayed held past :data:`HISTORY_LOCK_TIMEOUT_S`, ``NotOwnedError`` when the
+            file, its lock or the directory is another user's, or any other write failure.
     """
     if not MIN_RETENTION_DAYS <= retention_days <= MAX_RETENTION_DAYS:
         raise ValueError(
@@ -278,6 +288,10 @@ def append_history(
         epoch_of=_line_epoch,
         cutoff_epoch=cutoff,
         age_grace_s=AGE_COMPACTION_GRACE_SECONDS,
+        file_mode=0o600,
+        dir_mode=0o700,
+        enforce_modes=True,
+        lock_timeout_s=HISTORY_LOCK_TIMEOUT_S,
     )
     result = HistoryWriteResult(
         path=str(target),

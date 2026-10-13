@@ -4,10 +4,12 @@ import fcntl
 import json
 import os
 import pytest
+import stat
 import threading
 import time
 from pathlib import Path
 from tests.fixtures_unifi import NOW, SWITCH_ID, SWITCH_MAC, SWITCH_NAME, fake_switch
+from tests.lock_helpers import held_read_only, run_bounded, umask
 from typing import Any
 from unifi_mapper.analysis import counter_history
 from unifi_mapper.analysis.counter_history import (
@@ -26,6 +28,7 @@ from unifi_mapper.analysis.port_counter_baseline import (
     snapshots_from_devices,
     state_dir,
 )
+from unifi_mapper.core.utils.jsonl import LockTimeoutError
 
 
 DAY = 86400
@@ -135,6 +138,41 @@ def test_append_creates_the_directory_under_xdg_state(tmp_path):
     assert result.retention_days == DEFAULT_RETENTION_DAYS
     assert target.is_relative_to(tmp_path)  # the per-test XDG_STATE_HOME isolation
     assert len(_lines(target)) == 1
+
+
+def test_the_history_its_lock_and_directory_are_private_and_kept_so(tmp_path):
+    """Issue 076 item 32: the history and its lock kept the umask mode (0o644 under umask
+    022) and the state directory too, so another account could hold the lock."""
+    directory = tmp_path / 'state'
+    path = directory / 'history.jsonl'
+    with umask(0o022):
+        append_history([_record(NOW)], path=path, now=NOW)
+    lock = Path(f'{path}.lock')
+    modes = [stat.S_IMODE(p.stat().st_mode) for p in (directory, path, lock)]
+    assert modes == [0o700, 0o600, 0o600]
+    os.chmod(directory, 0o755)
+    os.chmod(path, 0o644)
+    os.chmod(lock, 0o644)
+    append_history([_record(NOW + 1)], path=path, now=NOW + 1)
+    modes = [stat.S_IMODE(p.stat().st_mode) for p in (directory, path, lock)]
+    assert modes == [0o700, 0o600, 0o600]
+
+
+def test_append_gives_up_on_a_held_lock_after_the_bound(tmp_path, monkeypatch):
+    """Issue 076 item 32: the append waited for the lock with no limit; under cron the
+    stalled runs piled up and under launchd the recording stopped."""
+    monkeypatch.setattr(counter_history, 'HISTORY_LOCK_TIMEOUT_S', 0.2)
+    path = tmp_path / 'history.jsonl'
+    append_history([_record(NOW)], path=path, now=NOW)
+    with held_read_only(Path(f'{path}.lock')):
+        held = run_bounded(lambda: append_history([_record(NOW + 1)], path=path, now=NOW + 1), 5)
+    assert held.done, 'the append waited on the held lock past its limit'
+    assert isinstance(held.error, LockTimeoutError) and held.elapsed < 1.5
+    assert [line['epoch'] for line in _lines(path)] == [NOW]
+
+
+def test_the_shipped_lock_bound_is_fifteen_seconds():
+    assert counter_history.HISTORY_LOCK_TIMEOUT_S == 15.0
 
 
 def test_age_retention_drops_old_lines(tmp_path):

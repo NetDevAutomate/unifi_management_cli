@@ -6,12 +6,16 @@ and unset, and never resolves relative to the working directory.
 
 import inspect
 import json
+import os
 import pytest
+import stat
 import threading
 from pathlib import Path
+from tests.lock_helpers import held_read_only, run_bounded
 from typer.testing import CliRunner
 from unifi_mapper import typer_cli
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.jsonl import LockTimeoutError, NotOwnedError
 from unifi_mapper.diagnostics import wan_history
 from unifi_mapper.diagnostics.wan_history import (
     SPEEDTEST_HISTORY_MAX_BYTES,
@@ -81,6 +85,62 @@ def test_append_dedups_by_run_time_and_sets_modes(tmp_path: Path) -> None:
     assert path.stat().st_mode & 0o777 == 0o600
     assert path.parent.stat().st_mode & 0o777 == 0o700
     assert append_speedtest(_speedtest(run_epoch=None), path) is None
+
+
+def test_append_tightens_a_permissive_history_and_directory(tmp_path: Path) -> None:
+    """Issue 076 item 7: the modes applied on creation only, so an existing history or
+    directory with group or other bits stayed readable (the gap the MCP call log had)."""
+    path = tmp_path / 'state' / 'history.jsonl'
+    path.parent.mkdir()
+    os.chmod(path.parent, 0o755)
+    path.write_text('', encoding='utf-8')
+    os.chmod(path, 0o644)
+    lock = Path(f'{path}.lock')
+    lock.write_text('', encoding='utf-8')
+    os.chmod(lock, 0o644)
+    assert append_speedtest(_speedtest(), path) is not None
+    modes = [stat.S_IMODE(p.stat().st_mode) for p in (path.parent, path, lock)]
+    assert modes == [0o700, 0o600, 0o600]
+
+
+def test_append_refuses_a_history_owned_by_another_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / 'history.jsonl'
+    append_speedtest(_speedtest(), path)
+    real_fstat = os.fstat
+
+    def someone_elses(fd: int) -> os.stat_result:
+        st = real_fstat(fd)
+        fields = list(st[:10])
+        fields[stat.ST_UID] = st.st_uid + 1
+        return os.stat_result(fields)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(os, 'fstat', someone_elses)
+        with pytest.raises(NotOwnedError, match='owned by another user'):
+            append_speedtest(_speedtest(run_epoch=1_790_003_600), path)
+    assert len(path.read_text().splitlines()) == 1  # nothing appended
+
+
+def test_append_gives_up_on_a_held_lock_after_the_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue 076 item 32: the history waited for its lock with no limit, so another account
+    holding the lock stalled every scheduled `diagnose wan --record`."""
+    monkeypatch.setattr(wan_history, 'HISTORY_LOCK_TIMEOUT_S', 0.2)
+    path = tmp_path / 'history.jsonl'
+    append_speedtest(_speedtest(), path)
+    with held_read_only(Path(f'{path}.lock')):
+        held = run_bounded(lambda: append_speedtest(_speedtest(run_epoch=1_790_003_600), path), 5)
+    assert held.done, 'the append waited on the held lock past its limit'
+    assert isinstance(held.error, LockTimeoutError) and held.elapsed < 1.5
+    assert len(path.read_text().splitlines()) == 1
+    assert wan_history.HISTORY_LOCK_TIMEOUT_S == 0.2  # patched here; the shipped bound is 15 s
+
+
+def test_the_shipped_lock_bound_is_fifteen_seconds() -> None:
+    assert wan_history.HISTORY_LOCK_TIMEOUT_S == 15.0
 
 
 def test_concurrent_appends_of_one_run_write_it_once(tmp_path: Path) -> None:

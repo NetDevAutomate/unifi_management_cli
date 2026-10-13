@@ -17,8 +17,8 @@ skip a line that does not parse; ``read_port_history`` and ``read_speedtest_hist
 A line is valid when the caller's ``epoch_of(line)`` returns a number; :func:`epoch_field`
 builds that function for a top-level numeric field.
 
-With ``enforce_modes`` (the MCP call log), the file and directory modes that are given hold
-on every append, not only on creation: a file, lock file or directory of the current user's
+With ``enforce_modes`` (the MCP call log and the CLI histories), the file and directory modes
+that are given hold on every append, not only on creation: a file, lock file or directory of the current user's
 with any group or other bit is changed to the mode, and one owned by another user raises
 :class:`NotOwnedError`. The file and its lock are then also opened without following a
 symbolic link, so a link in the place of either is refused.
@@ -45,6 +45,11 @@ from pathlib import Path
 # Compaction trims the file to this fraction of max_bytes, so a file at the cap is not
 # rewritten on every append.
 COMPACT_LOW_WATER_RATIO = 0.8
+# The longest a CLI history (the port counter and speedtest histories) waits for its lock:
+# well past a compaction of a full file; a held lock then fails the run with a clear message
+# instead of stalling a scheduled command for good (issue 076 item 32). The MCP call log has
+# its own, shorter bound (mcp/call_audit.LOCK_TIMEOUT_S).
+HISTORY_LOCK_TIMEOUT_S = 15.0
 
 EpochOf = Callable[[str], float | None]
 # The permission bits a private file or directory must not have.
@@ -306,8 +311,9 @@ def append_capped_jsonl(
             existing directory the user named). The lock file and the file are opened
             without following a symbolic link (``O_NOFOLLOW``), so a link in the place of
             either is refused.
-        lock_timeout_s: None waits for the lock as long as it takes (the histories); a
-            number of seconds is the longest wait, after which nothing is appended.
+        lock_timeout_s: None waits for the lock as long as it takes; a number of seconds
+            (:data:`HISTORY_LOCK_TIMEOUT_S` for the CLI histories) is the longest wait,
+            after which nothing is appended.
 
     Returns:
         What was written and what compaction removed.

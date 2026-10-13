@@ -5212,13 +5212,19 @@ def analyze_link_errors(
     A plain run only compares against the baseline (read only). --snapshot sets the
     baseline; --record appends to the counter history read by `ports counters`,
     `ports diagnose` and the MCP port tools. Both write only under the XDG state
-    directory and can be combined (one controller read).
+    directory and can be combined (one controller read). A record that cannot be written
+    (its lock held by another account for over 15 s, a file owned by another user) exits 1
+    with the reason, so a schedule notices.
     """
     import asyncio
     import time
     from datetime import datetime
     from rich.table import Table
-    from unifi_mapper.analysis.counter_history import append_history, build_history_records
+    from unifi_mapper.analysis.counter_history import (
+        append_history,
+        build_history_records,
+        default_history_path,
+    )
     from unifi_mapper.analysis.link_error_tracking import (
         compare_link_errors,
         default_link_error_baseline_path,
@@ -5254,12 +5260,13 @@ def analyze_link_errors(
             epoch = time.time()
             taken_at = datetime.fromtimestamp(epoch).astimezone().isoformat()
             records = build_history_records(devices, taken_at=taken_at, epoch=epoch)
-            written = append_history(
-                records,
-                path=Path(history) if history else None,
-                retention_days=retention_days,
-                now=epoch,
-            )
+            target = Path(history) if history else default_history_path()
+            try:
+                written = append_history(
+                    records, path=target, retention_days=retention_days, now=epoch
+                )
+            except OSError as e:  # a held lock past its bound, another user's file, no space
+                _fail(f'Not recorded: {target}: {_os_error_reason(e)}')
             held = f', holds {written.span_days:g} days' if written.span_days is not None else ''
             console.print(
                 f'🗂️ Recorded {written.records_written} switch(es) to '
@@ -5944,7 +5951,9 @@ def diagnose_wan(
     One read of the controller's health summary: ISP, WAN IP, gateway version, latency,
     drops and the result of the controller's own scheduled speedtest. Never starts a
     speedtest. --record appends that result to a history file under the XDG state
-    directory (skipped when the run is already recorded); diagnose wan-history lists it.
+    directory (skipped when the run is already recorded); diagnose wan-history lists it. A
+    record that cannot be written (its lock held by another account for over 15 s, a file
+    owned by another user) exits 1 with the reason after the report, so a schedule notices.
     Read-only towards the controller.
     """
     from .diagnostics.wan_health import get_wan_health
@@ -5980,8 +5989,17 @@ def diagnose_wan(
         _record_speedtest(report['last_speedtest'])
 
 
+def _os_error_reason(error: OSError) -> str:
+    """An OSError's reason for one line: its strerror, else its message, else its class."""
+    return error.strerror or str(error) or type(error).__name__
+
+
 def _record_speedtest(speedtest: Optional[JsonDict]) -> None:
-    """Append the last speedtest to the history; report the outcome on stderr only."""
+    """Append the last speedtest to the history; report the outcome on stderr only.
+
+    A record that cannot be written (the lock held past its bound, a file owned by another
+    user, no space) is the run's failure, exit 1, after the health report was printed.
+    """
     from .diagnostics.wan_history import append_speedtest, default_speedtest_history_path
 
     if not speedtest:
@@ -5991,12 +6009,7 @@ def _record_speedtest(speedtest: Optional[JsonDict]) -> None:
     try:
         written = append_speedtest(speedtest, path)
     except OSError as e:
-        reason = e.strerror or type(e).__name__
-        err_console.print(
-            f'[yellow]⚠ Not recorded: {escape(str(path))}: {escape(reason)}[/yellow]',
-            soft_wrap=True,
-        )
-        return
+        _fail(f'Not recorded: {path}: {_os_error_reason(e)}')
     if written is None:
         err_console.print('Nothing to record: the last speedtest has no run time.')
     elif written.lines_written == 0:

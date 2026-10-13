@@ -172,16 +172,36 @@ def test_record_without_a_speedtest_says_nothing_to_record(
     assert not default_speedtest_history_path().exists()
 
 
-def test_an_unwritable_history_still_prints_health_and_warns(
+def test_an_unwritable_history_still_prints_health_then_exits_1(
     monkeypatch: pytest.MonkeyPatch, cli: FakeController, tmp_path: Path
 ) -> None:
+    """Issue 076 item 32: a record that could not be written is the run's failure, so a
+    schedule notices; the health report is still printed first."""
     blocker = tmp_path / 'not-a-dir'
     blocker.write_text('a file where the state directory should be\n')
     monkeypatch.setenv('XDG_STATE_HOME', str(blocker))
     result = runner.invoke(app, ['diagnose', 'wan', '--record', '--json'])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 1, result.output
     assert json.loads(result.stdout)['healthy'] is True
-    assert 'Not recorded' in result.stderr
+    assert 'Not recorded' in result.stderr and 'Traceback' not in result.output
+
+
+def test_a_held_lock_fails_the_record_after_the_bound_with_the_reason(
+    monkeypatch: pytest.MonkeyPatch, cli: FakeController
+) -> None:
+    from tests.lock_helpers import held_read_only, run_bounded
+    from unifi_mapper.diagnostics import wan_history
+
+    monkeypatch.setattr(wan_history, 'HISTORY_LOCK_TIMEOUT_S', 0.2)
+    path = default_speedtest_history_path()
+    path.parent.mkdir(parents=True)
+    with held_read_only(Path(f'{path}.lock')):
+        run = run_bounded(lambda: runner.invoke(app, ['diagnose', 'wan', '--record']), 5)
+    assert run.done, 'the command waited on the held lock past its limit'
+    result = run.result
+    assert result is not None and result.exit_code == 1, getattr(result, 'output', None)
+    assert 'Not recorded' in result.stderr and 'lock was held for more than 0.2 s' in result.stderr
+    assert not path.exists()
 
 
 def test_a_controller_failure_is_one_error_line(cli: FakeController) -> None:

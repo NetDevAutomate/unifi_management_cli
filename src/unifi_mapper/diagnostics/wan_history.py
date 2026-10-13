@@ -3,7 +3,10 @@
 ``unifi-mapper diagnose wan --record`` appends the controller's last scheduled speedtest to
 ``state_dir() / 'wan-speedtest-history.jsonl'`` through the shared capped writer: one JSON
 line per run, deduplicated by the run's time under the writer's lock, at most 1 MiB, the
-file ``0o600`` in a ``0o700`` directory. Reading never writes. This module imports no
+file and its lock ``0o600`` in a ``0o700`` directory, kept so on every append (a history,
+lock or directory owned by another user is refused and nothing is written). The writer waits
+at most :data:`HISTORY_LOCK_TIMEOUT_S` for the lock, so a lock another account holds fails
+the run instead of stalling it. Reading never writes. This module imports no
 controller client, so the MCP tool over it (``credentials: none``) can run with no
 credentials at all; it only reads what was recorded.
 """
@@ -15,7 +18,12 @@ from pathlib import Path
 from pydantic import Field
 from typing import Annotated, Any
 from unifi_mapper.analysis.port_counter_baseline import state_dir
-from unifi_mapper.core.utils.jsonl import CappedWriteResult, append_capped_jsonl, epoch_field
+from unifi_mapper.core.utils.jsonl import (
+    HISTORY_LOCK_TIMEOUT_S,
+    CappedWriteResult,
+    append_capped_jsonl,
+    epoch_field,
+)
 
 
 HISTORY_FILENAME = 'wan-speedtest-history.jsonl'
@@ -78,7 +86,9 @@ def append_speedtest(
         result has no run time and nothing was written.
 
     Raises:
-        OSError: The history cannot be written.
+        OSError: The history cannot be written: ``LockTimeoutError`` when its lock stayed
+            held past :data:`HISTORY_LOCK_TIMEOUT_S`, ``NotOwnedError`` when the history,
+            its lock or its directory is another user's, or any other write failure.
     """
     line = speedtest_line(last_speedtest)
     if line is None:
@@ -91,6 +101,8 @@ def append_speedtest(
         dedup_key=_run_time,
         file_mode=0o600,
         dir_mode=0o700,
+        enforce_modes=True,
+        lock_timeout_s=HISTORY_LOCK_TIMEOUT_S,
     )
 
 

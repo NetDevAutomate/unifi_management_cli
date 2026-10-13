@@ -330,7 +330,8 @@ def test_enforced_modes_refuse_a_file_owned_by_another_user(
 
 
 def test_without_enforcement_an_existing_file_keeps_its_mode(tmp_path: Path) -> None:
-    """The other histories (no ``enforce_modes``) still set a mode on creation only."""
+    """Without ``enforce_modes`` a mode is set on creation only (the generic path; every
+    history enforces since issue 076 items 7 and 32)."""
     path = tmp_path / 'h.jsonl'
     path.write_text(_line(1), encoding='utf-8')
     os.chmod(path, 0o644)
@@ -358,7 +359,8 @@ def test_the_lock_is_created_with_the_file_mode(tmp_path: Path) -> None:
 
 
 def test_without_a_file_mode_the_lock_keeps_the_umask_mode(tmp_path: Path) -> None:
-    """The port counter history gives no mode: its lock is created as before."""
+    """A caller that gives no mode gets a lock created as before (the histories all give one
+    since issue 076 item 32; this pins the generic path)."""
     path = tmp_path / 'h.jsonl'
     with umask(0o022):
         append_capped_jsonl(path, [_line(1)], max_bytes=10_000, epoch_of=EPOCH)
