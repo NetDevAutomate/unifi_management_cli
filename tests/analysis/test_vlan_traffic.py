@@ -210,6 +210,37 @@ async def test_a_resolved_interface_with_no_counters_is_skipped(
     assert {s['iface'] for s in result['skipped']} == {'br0', 'br9'}
 
 
+async def test_a_second_untagged_network_is_unresolved_not_overwritten(
+    ssh: FakeSSH, tmp_path: Path
+) -> None:
+    """Two networks without a VLAN ID both derive VLAN 1 (issue 070).
+
+    The store keys raw rows by ``(ts_utc, vlan_id)`` and writes with ``INSERT OR REPLACE``,
+    so a second VLAN-1 row would silently replace the first. The first resolved network
+    keeps the ID; the later one is listed under ``unresolved`` so the CLI's one line counts
+    it, and is never stored under the other network's name.
+    """
+    networks = [
+        {'name': 'LAN', 'purpose': 'corporate', 'ip_subnet': '192.0.2.1/24'},
+        {'name': 'Second LAN', 'purpose': 'corporate', 'ip_subnet': '198.51.100.1/24'},
+    ]
+    controller = FakeController({f'{API}/rest/networkconf': legacy(networks)})
+    path = tmp_path / 'store.sqlite3'
+    async with serving(controller):
+        result = await sample_vlan_traffic(path)
+    assert [(row['vlan_id'], row['network_name']) for row in result['sampled']] == [(1, 'LAN')]
+    assert result['unresolved'] == [
+        {
+            'vlan_id': 1,
+            'network_name': 'Second LAN',
+            'subnet': '198.51.100.0/24',
+            'iface': 'br7',
+            'reason': 'VLAN 1 already sampled from LAN (br0)',
+        }
+    ]
+    assert _rows(path) == {1: (1000, 2000, 'br0')}
+
+
 async def test_a_bridge_whose_counter_could_not_be_read_fails_the_sample(
     ssh: FakeSSH, tmp_path: Path
 ) -> None:
