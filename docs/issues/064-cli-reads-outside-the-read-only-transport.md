@@ -1,7 +1,8 @@
 ---
 title: "CLI read commands that reach the controller outside the read-only transport"
 date: 2026-10-05
-status: open
+status: resolved
+resolved_by: 02bec3a
 severity: medium
 components: [src/unifi_mapper/typer_cli.py]
 found_by: 0.2.0 port design (asyncio.run sites counted by AST)
@@ -52,3 +53,45 @@ the host. Breaks fresh clones, CI or prod: no.
 Move each read path onto `_run_analysis`, one commit per command group, test first, and lower
 `DIRECT_ASYNCIO_RUN_SITES` in the same commit. Leave the write paths on their own guarded
 plan, review and apply flow.
+
+## Resolution
+
+Resolved on 2026-10-13 (`02bec3a`). Every read path now runs through `_run_analysis`, so
+the one `SharedControllerClient` that `_guarded` installs serves the command and a write is
+refused before it leaves the host. The seven write paths listed above stay on their own
+`asyncio.run`, and `DIRECT_ASYNCIO_RUN_SITES` in `tests/test_cli_guard.py` drops from 47 to 7.
+
+Two counts in this issue were stale by the time of the fix: `diagnose all` was already on
+`_run_analysis`, so there were 39 read sites (46 direct sites in all, under a ceiling of 47),
+not 40. All 39 moved in one commit rather than one per group, so that every commit on the
+branch is green; the commit body lists the groups.
+
+Refinements of the recommended fix, from the code:
+
+1. `stp optimize` and `stp report` compose their discovery, priority calculation and report
+   into one coroutine (the latter two never touch the controller), so one login serves the
+   command and the progress lines keep their order. `analyze link-errors --snapshot` writes
+   its baseline inside the device read it already shared with `--record`.
+2. Each command's own `load_env_from_config` call goes, because `_run_analysis` loads the
+   config; a second call would log "Loaded configuration from" twice. `radio optimize` keeps
+   its call, since `channel_moves_from_env()` must read the config before the controller is
+   touched (a malformed rule exits 2 without a round trip), so that command logs the line
+   twice, three times when applying. The write paths that follow a read (`stp optimize
+   --apply`, `ports refresh --apply`, the radio applies) rely on the config the read loaded;
+   a comment at each says so.
+3. The commands that catch `Exception` around their read now re-raise `typer.Exit` first:
+   `_run_analysis` reports a failure on stderr and raises `Exit(1)`, and `Exit` is an
+   `Exception` subclass, so the old clause would have printed a second, empty "Error:" and
+   masked the exit code. The same clause had been turning `stp optimize`'s cancelled
+   confirmation (`Exit(0)`) into "Error:" and exit 1; it now exits 0 as written. A read
+   failure in these commands prints `❌ Error: ...` on stderr instead of stdout, which keeps
+   `--json` output parseable where a command has it; the text is unchanged.
+
+Pinned in `tests/test_cli_guard.py`: for each of the 32 moved command invocations the first
+controller read is replaced by a write through a fresh `UniFiClient()` and the guard's
+`ReadOnlyViolation` is expected, with only the login on the shared mock transport; `radio
+optimize`, which opens its client inline, is shown reading `stat/device` through that
+transport. `tests/analysis/test_stp_optimizer.py` now patches
+`typer_cli.load_env_from_config`, the seam `stp optimize` uses (it patched the local
+`from .cli import` the command no longer has). The architecture overview and codemap no
+longer say the CLI's other reads are outside the guard.
