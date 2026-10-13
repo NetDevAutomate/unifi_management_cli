@@ -1,7 +1,8 @@
 ---
 title: "Class names in the docs are outside the docs-drift guard"
 date: 2026-10-04
-status: open
+status: resolved
+resolved_by: 9b5af8b
 severity: low
 components: [tests/test_docs_consistency.py, docs]
 found_by: docs and repo hygiene review
@@ -49,3 +50,32 @@ negative self-test on a synthetic snippet:
 3. Later, optionally: check `Class.member` references against the class's AST.
 
 Design the allowlist first (where it lives and what may join it), then build the detector.
+
+## Resolution
+
+Resolved on 2026-10-13 (`9b5af8b`). `class_name_problems` in `tests/test_docs_consistency.py`
+reports a backticked CamelCase name (two or more capitals and a lower-case letter, alone,
+called or with a member) in a current doc, and each class a Mermaid `classDiagram` declares
+with `class Name` or relates with one of the class-diagram arrows, when it is neither a class
+under `src/`, nor a module-level CamelCase type alias there, nor one of
+`KNOWN_EXTERNAL_TYPES`.
+
+The allowlist lives beside the detector. It holds the eleven built-in and third-party names
+the current docs use, each checked against its library before joining: `Exception`,
+`ImportError`, `PermissionError` and `ValueError` (Python), `BaseModel` and `SecretStr`
+(pydantic), `CallToolResult` and `ToolAnnotations` (`mcp.types`), `ProtectApiClient`
+(uiprotect), `GetStreamUri` and `XAddr` (ONVIF: the Media operation and the service-address
+element). A name defined under `src/` never joins it, so a renamed or removed class fails.
+Two corrections to the counts above: `UnsubscribeFunc` is not a uiprotect type but a type
+alias in `protect/events.py` (`Callable[[], None]`), which is why module-level CamelCase
+aliases count as known; and the docs now hold 132 distinct such names (324 uses) and name
+`XAddr`, which the list above lacked. Relation ends are checked as well as `class` lines,
+since a renamed class is as stale in `A <|-- B` as in `class B`.
+
+The names come from `src_bindings`, an AST reading of each tracked source into functions,
+classes, module-level names, class attributes and parameters, shared with issue
+[056](056-mcp-name-guard-knows-every-assigned-name.md). The self-test reports a made-up class
+in prose and in a diagram and accepts real, aliased and external ones; without the allowlist
+the detector reports exactly the eleven external names in the current docs and nothing else,
+so no doc needed a fix. `Class.member` references are still not checked against the class's
+AST (the optional third step).

@@ -1974,7 +1974,7 @@ flowchart TB
 
     subgraph Analysis["Analysis Toolkit"]
         G[analysis - 57 tools]
-        H[diagnostics - 11 tools]
+        H[diagnostics - 12 tools]
         I[discovery - 5 tools]
         J[connectivity - 4 tools]
         K[network - 6 tools]

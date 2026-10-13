@@ -869,7 +869,7 @@ The `core/` package provides shared infrastructure consumed by the async analysi
 
 **Authentication.** Prefers token (`X-API-KEY` header). Falls back to username/password POST against `/api/auth/login` (UniFi OS) or `/api/login` (legacy).
 
-**Read-only under MCP.** The shared client the MCP lifespan installs (connect timeout 10 s, request timeout 30 s) sends every request through `core/utils/readonly.py`'s `ReadOnlyAsyncTransport`, which refuses a write with `ReadOnlyViolation` before any I/O. After a 401 it logs in again once and retries the request once. The CLI installs the same holder for each command run through `_run_analysis` or `_run_gateway_ssh` (`typer_cli._guarded`), so those commands log in once and can't write; its other direct async reads are [issue 064](../issues/064-cli-reads-outside-the-read-only-transport.md).
+**Read-only under MCP.** The shared client the MCP lifespan installs (connect timeout 10 s, request timeout 30 s) sends every request through `core/utils/readonly.py`'s `ReadOnlyAsyncTransport`, which refuses a write with `ReadOnlyViolation` before any I/O. After a 401 it logs in again once and retries the request once. The CLI installs the same holder for each read command, run through `_run_analysis` or `_run_gateway_ssh` (`typer_cli._guarded`), so those commands log in once and can't write; only the write paths (`stp apply`, `radio restore` and the like) open a client of their own ([issue 064](../issues/064-cli-reads-outside-the-read-only-transport.md)).
 
 **Dependencies.** `core/utils/auth.py`, `core/utils/errors.py`, `httpx`
 
