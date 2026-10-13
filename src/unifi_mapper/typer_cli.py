@@ -271,7 +271,7 @@ backup_app = typer.Typer(
     help='💾 Offline checks of downloaded config backups', pretty_exceptions_show_locals=False
 )
 gateway_app = typer.Typer(
-    help="🛰️ Live probes run on the gateway over SSH (the gateway's host key is not verified)",
+    help="🛰️ Live probes run on the gateway over SSH (the gateway's host key is verified)",
     pretty_exceptions_show_locals=False,
 )
 vlan_traffic_app = typer.Typer(
@@ -5621,9 +5621,27 @@ def analyze_neighbours(
 
 
 GATEWAY_SSH_NOTICE = (
-    "⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key "
-    'is not verified (issue 038).'
+    "⚠ This command runs on the gateway over SSH as the SSH user; the gateway's host key is "
+    'verified against ~/.ssh/known_hosts.'
 )
+GATEWAY_SSH_UNVERIFIED_NOTICE = (
+    "⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key "
+    'is not verified (UNIFI_SSH_KNOWN_HOSTS=off): a host on the path could receive the SSH '
+    'password.'
+)
+
+
+def gateway_ssh_notice() -> str:
+    """The one-line stderr notice for a gateway SSH command, for the current host-key setting.
+
+    An unrecognised ``UNIFI_SSH_KNOWN_HOSTS`` is reported by ``gateway_session`` itself, so
+    here any value other than ``off`` reads as verification on.
+    """
+    import os
+
+    if (os.environ.get('UNIFI_SSH_KNOWN_HOSTS') or '').strip().lower() == 'off':
+        return GATEWAY_SSH_UNVERIFIED_NOTICE
+    return GATEWAY_SSH_NOTICE
 
 
 def _run_gateway_ssh[T](run: Callable[[], Coroutine[Any, Any, T]]) -> T:
@@ -5640,7 +5658,7 @@ def _run_gateway_ssh[T](run: Callable[[], Coroutine[Any, Any, T]]) -> T:
 
     if not state.ssh_notice_shown:
         state.ssh_notice_shown = True
-        err_console.print(GATEWAY_SSH_NOTICE, style='yellow', markup=False, soft_wrap=True)
+        err_console.print(gateway_ssh_notice(), style='yellow', markup=False, soft_wrap=True)
     try:
         return asyncio.run(_guarded(run))
     except ToolError as e:
@@ -6197,7 +6215,7 @@ def gateway_ping_command(
 
     A name is resolved to its address through the read-only controller client. Prints the
     expected duration first (count x interval: up to 500 s). Runs ping on the gateway as
-    the SSH user; the gateway's host key is not verified.
+    the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
     """
     from .connectivity.gateway_probe import gateway_ping
 
@@ -6230,7 +6248,7 @@ def gateway_traceroute_command(
 ):
     """🧭 Trace the gateway's real forwarding path to a target over SSH.
 
-    Runs traceroute on the gateway as the SSH user; the gateway's host key is not verified.
+    Runs traceroute on the gateway as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
     "Reached the target" only when the last hop is the target itself and answered without an
     ICMP unreachable; the table marks a hop that answered with one "(unreachable)". With
     --json each hop also has "timeout" (no reply) and "unreachable":
@@ -6271,7 +6289,7 @@ def gateway_dns_command(
 ):
     """🔤 Resolve a hostname on the gateway over SSH (nslookup).
 
-    Runs nslookup on the gateway as the SSH user; the gateway's host key is not verified.
+    Runs nslookup on the gateway as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
     """
     from .connectivity.gateway_probe import gateway_dns_check
 
@@ -6311,7 +6329,7 @@ def gateway_http_command(
 
     --vlan resolves to the interface whose address is in that VLAN's subnet, from the
     controller's network list. Runs curl on the gateway as the SSH user; the gateway's host
-    key is not verified.
+    key is verified against ~/.ssh/known_hosts.
     """
     from .connectivity.gateway_probe import gateway_http_check
 
@@ -6344,7 +6362,7 @@ def gateway_flows_command(
     """🔁 The gateway's connection-tracking flows over SSH (conntrack), filtered here.
 
     UNREPLIED flows are traffic that left with nothing back. Runs conntrack -L on the gateway
-    as the SSH user; the gateway's host key is not verified.
+    as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
     """
     from .connectivity.gateway_probe import get_active_flows
 
@@ -6405,7 +6423,7 @@ def diagnose_client_connectivity_command(
     whole run capped at 120 s; a failing layer is reported and the others still run. Exits 1
     when a fault is found or a layer did not complete. Needs SSH enabled on the gateway and
     UNIFI_SSH_PASSWORD (and UNIFI_SSH_USERNAME if not root) in the config; runs on the
-    gateway as the SSH user; the gateway's host key is not verified.
+    gateway as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
     """
     from .diagnostics.client_connectivity import (
         CAPTIVE_PROBE_URL,
@@ -6515,7 +6533,7 @@ def diagnose_ap_health(
     as missing. Read-only, with no power-cycle step. --ping-clients also pings up to 4 of each
     AP's wireless clients from the gateway over SSH: those on 2.4 GHz, the radio the report
     measures, and those whose radio the controller doesn't report (5 and 6 GHz clients are
-    left out), as the SSH user (the gateway's host key is not verified). --output is checked
+    left out), as the SSH user (the gateway's host key is verified). --output is checked
     before the first sample and written after the report is printed. Ctrl-C prints the
     samples taken so far as a partial report (and writes it to --output) and exits 130; a
     failure that ends the run does the same and exits 1.
@@ -6610,10 +6628,9 @@ def vlan_traffic_sample(
     Reads the controller's network list (read-only), runs one fixed script on the gateway
     (each br* interface's byte counters and addresses, 30 s bound), matches each VLAN to the
     interface whose address is in its subnet and stores a row per VLAN. Run it by hand (or
-    from your own schedule) every minute or so; no schedule is published until the gateway's
-    host key can be verified. Exits 1 when the script fails or nothing was stored, so a
-    schedule notices. Runs on the gateway as the SSH user; the gateway's host key is not
-    verified.
+    from your own schedule) every minute or so. Exits 1 when the script fails or nothing was
+    stored, so a schedule notices. Runs on the gateway as the SSH user; the gateway's host key
+    is verified against ~/.ssh/known_hosts.
     """
     from .analysis.vlan_traffic import sample_vlan_traffic
     from datetime import UTC, datetime

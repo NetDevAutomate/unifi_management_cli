@@ -14,7 +14,7 @@ The controller's network list is read through ``UniFiClient()``, which borrows t
 read-only holder the CLI installs (the legacy ``rest/networkconf`` records, whose subnets
 the resolver matches). The SSH command is one fixed script run as ``sh -c`` with no value
 from a user or the controller in it, through ``analysis/gateway_ssh.py`` with a 30 s bound;
-it runs on the gateway as the SSH user, whose host key is not verified (issue 038), which is
+it runs on the gateway as the SSH user, whose host key is verified against known_hosts, which is
 also why no schedule is published for the sampler until 038 is decided. No MCP tool triggers
 a sample (decision D1 in issue 060); the MCP tools read stored results only.
 

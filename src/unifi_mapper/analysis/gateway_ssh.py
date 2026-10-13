@@ -9,8 +9,9 @@ every command runs here (``run_gateway_command``): an argv list, shell-quoted wi
 it goes on a command line, so no value can add a shell command, or an option, of its own. The
 SSH login (``ssh_login``) comes only from ``UNIFI_SSH_USERNAME`` and ``UNIFI_SSH_PASSWORD``.
 
-The gateway's host key is not verified: ``GATEWAY_KNOWN_HOSTS`` is the one constant issue 038
-changes. ``asyncssh.connect`` is called nowhere else in ``src/`` (a test scans for it).
+The gateway's host key is verified against the default known-hosts files (``known_hosts_setting``;
+``UNIFI_SSH_KNOWN_HOSTS=off`` turns it off with a warning on every run, issue 038).
+``asyncssh.connect`` is called nowhere else in ``src/`` (a test scans for it).
 """
 
 import asyncio
@@ -23,6 +24,7 @@ import shlex
 from collections.abc import AsyncIterator, Container, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from loguru import logger
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.redact import redact_text
@@ -42,8 +44,20 @@ SSH_CONNECT_SUGGESTION = (
     'Set UNIFI_SSH_USERNAME (default: root) and UNIFI_SSH_PASSWORD in config. '
     'Ensure SSH is enabled in UniFi OS (Settings > Control Plane > Console).'
 )
-# The gateway's host key is not checked (issue 038 changes this one line).
-GATEWAY_KNOWN_HOSTS: None = None
+# Host-key verification (issue 038). asyncssh checks the gateway's key during the handshake,
+# before any authentication, against ``UserKnownHostsFile`` from ``~/.ssh/config`` else
+# ``~/.ssh/known_hosts``, and fails closed when the entry is missing or different. ``()`` is
+# asyncssh's "use the default files" value; ``None`` turns checking off.
+KNOWN_HOSTS_VAR = 'UNIFI_SSH_KNOWN_HOSTS'
+KNOWN_HOSTS_DEFAULT: tuple[()] = ()
+KNOWN_HOSTS_OFF_WARNING = (
+    f'The gateway SSH host key is not verified ({KNOWN_HOSTS_VAR}=off): a host that intercepts '
+    'the connection receives the gateway SSH password. Unset the variable to verify again.'
+)
+KNOWN_HOSTS_INVALID_SUGGESTION = (
+    f"Set {KNOWN_HOSTS_VAR} to 'default' (verify against ~/.ssh/known_hosts) or 'off' "
+    '(no verification, a warning on every run), or unset it'
+)
 # Seconds allowed for the TCP connect, the SSH handshake and the login together.
 SSH_CONNECT_TIMEOUT = 30
 
@@ -112,6 +126,48 @@ def ssh_login() -> tuple[str, str]:
     return os.environ.get('UNIFI_SSH_USERNAME') or DEFAULT_SSH_USERNAME, password
 
 
+def known_hosts_setting() -> tuple[()] | None:
+    """Return the ``known_hosts`` value for ``asyncssh.connect`` from ``UNIFI_SSH_KNOWN_HOSTS``.
+
+    Returns:
+        ``()`` (verify against the default known-hosts files) when the variable is unset,
+        empty or ``default``; ``None`` (no verification) when it is ``off``.
+
+    Raises:
+        ToolError: ``CONFIG_INVALID`` for any other value, so a typo such as ``false`` can
+            neither silently disable verification nor silently keep it on.
+    """
+    raw = (os.environ.get(KNOWN_HOSTS_VAR) or '').strip().lower()
+    if raw in ('', 'default'):
+        return KNOWN_HOSTS_DEFAULT
+    if raw == 'off':
+        return None
+    raise ToolError(
+        message=f"{KNOWN_HOSTS_VAR}={raw!r} is not a recognised value ('default' or 'off')",
+        error_code=ErrorCodes.CONFIG_INVALID,
+        suggestion=KNOWN_HOSTS_INVALID_SUGGESTION,
+    )
+
+
+def _host_key_error(username: str, target: str, suggestion: str) -> ToolError:
+    """The error for a gateway whose host key is missing from, or differs from, known_hosts."""
+    return ToolError(
+        message=(
+            f'SSH connection to {username}@{target} refused: the gateway host key is not in '
+            '~/.ssh/known_hosts, or differs from the key recorded there, so the password was '
+            'not sent'
+        ),
+        error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
+        suggestion=(
+            f'Connect once with `ssh {username}@{target}` to record the key, after comparing '
+            'the fingerprint it shows with the one in UniFi OS (Settings > Control Plane > '
+            'Console) or over another trusted channel. If the key was recorded before and has '
+            'changed, confirm with the gateway why before trusting the new one. '
+            f'{suggestion}'
+        ),
+    )
+
+
 @asynccontextmanager
 async def gateway_session(
     host: str | None = None,
@@ -122,7 +178,9 @@ async def gateway_session(
     """Open one SSH session to the gateway, and close it on exit.
 
     The login is checked first (``ssh_login``), so a missing ``UNIFI_SSH_PASSWORD`` fails
-    before anything connects. The connect, handshake and login together are bounded by
+    before anything connects, and so is ``UNIFI_SSH_KNOWN_HOSTS``. The gateway's host key is
+    verified against the default known-hosts files unless that setting is ``off``, in which
+    case every session logs a warning. The connect, handshake and login together are bounded by
     ``connect_timeout``, so a gateway that stalls never hangs the command.
 
     Args:
@@ -134,19 +192,24 @@ async def gateway_session(
         The open connection, for ``run_gateway_command``.
 
     Raises:
-        ToolError: ``CONFIG_MISSING`` without ``UNIFI_SSH_PASSWORD``;
-            ``CONTROLLER_UNREACHABLE`` if the connection or the login fails or takes longer
-            than ``connect_timeout``, with the exception text redacted.
+        ToolError: ``CONFIG_MISSING`` without ``UNIFI_SSH_PASSWORD``; ``CONFIG_INVALID`` for an
+            unrecognised ``UNIFI_SSH_KNOWN_HOSTS``; ``CONTROLLER_UNREACHABLE`` if the host key
+            is not trusted (named as such, with how to record it), or if the connection or the
+            login fails or takes longer than ``connect_timeout``, with the exception text
+            redacted.
     """
     username, password = ssh_login()
+    known_hosts = known_hosts_setting()
     target = host if host is not None else Credentials.from_env().host
+    if known_hosts is None:
+        logger.warning(KNOWN_HOSTS_OFF_WARNING)
     try:
         async with asyncio.timeout(connect_timeout):
             conn = await asyncssh.connect(
                 target,
                 username=username,
                 password=password,
-                known_hosts=GATEWAY_KNOWN_HOSTS,
+                known_hosts=known_hosts,
                 client_keys=[],  # don't try local SSH keys
                 preferred_auth='keyboard-interactive,password',
             )
@@ -156,6 +219,8 @@ async def gateway_session(
             error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
             suggestion=suggestion,
         ) from None
+    except asyncssh.HostKeyNotVerifiable:
+        raise _host_key_error(username, target, suggestion) from None
     except Exception as e:
         raise ToolError(
             message=f'SSH connection to {target} failed: {redact_text(e)}',

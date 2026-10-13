@@ -31,10 +31,12 @@ write to it. Read this before running it against a production network.
 - **TLS verification is off by default** (`UNIFI_VERIFY_SSL=false`), because most consoles
   present a self-signed certificate. Set it to `true` if your console has a trusted
   certificate.
-- **The gateway SSH commands do not verify the gateway's host key yet**
-  ([issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)), so a host on the path
-  could impersonate the gateway and receive the SSH password. Run them only from a trusted LAN
-  segment. They are CLI-only and only run when `UNIFI_SSH_PASSWORD` is set.
+- **The gateway SSH commands verify the gateway's host key** against `~/.ssh/known_hosts`
+  (asyncssh's default files) and refuse to connect, before any password is sent, when the key is
+  missing or has changed. Record it once with `ssh root@<gateway>` after comparing the
+  fingerprint over a trusted channel. `UNIFI_SSH_KNOWN_HOSTS=off` disables the check and warns
+  on every run; any other value is rejected. They are CLI-only and only run when
+  `UNIFI_SSH_PASSWORD` is set.
 - **Nothing writes to the controller unless you ask.** Commands that can write preview by
   default and need `--apply` or `--no-dry-run`; the MCP server exposes read-only tools only and
   never opens SSH.

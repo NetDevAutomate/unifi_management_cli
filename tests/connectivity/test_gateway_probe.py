@@ -959,7 +959,7 @@ def test_every_command_prints_json_and_the_notice_once(cli: FakeSSH, args: list[
     result = runner.invoke(app, args)
     assert result.exit_code == 0, result.output
     json.loads(result.stdout)
-    assert result.stderr.count('host key is not verified') == 1
+    assert result.stderr.count('runs on the gateway over SSH') == 1
     assert len(cli.connects) == 1
 
 
@@ -1061,7 +1061,7 @@ def test_every_command_has_help(command: str) -> None:
     result = runner.invoke(app, ['gateway', command, '--help'])
     assert result.exit_code == 0
     flat = ' '.join(result.output.split())
-    assert 'SSH' in flat and 'host key is not verified' in flat
+    assert 'SSH' in flat and 'host key is verified' in flat
     if command == 'traceroute':  # review finding: the JSON hop fields are described
         assert '"unreachable"' in flat and '!H (host)' in flat and '"timeout" (no reply)' in flat
 

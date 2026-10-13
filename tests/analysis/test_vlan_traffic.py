@@ -494,4 +494,4 @@ def test_every_command_has_help(command: str) -> None:
     flat = ' '.join(result.output.split())
     assert '--db' in flat
     if command == 'sample':
-        assert 'SSH' in flat and 'host key is not verified' in flat
+        assert 'SSH' in flat and 'host key is verified' in flat

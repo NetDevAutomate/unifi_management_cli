@@ -253,7 +253,7 @@ line, once per command, comes before every SSH command runs; see
 [issue 038](../issues/038-ssh-host-key-verification-disabled.md)):
 
 ```text
-⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key is not verified (issue 038).
+⚠ This command runs on the gateway over SSH as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
 ❌ [CONFIG_MISSING] UNIFI_SSH_PASSWORD is not set. The gateway SSH login has its own password; UNIFI_PASSWORD (the UniFi OS login) is never sent over SSH
 💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
 ```
@@ -282,9 +282,20 @@ the target was not reached; that is "Not reached").
    and IPv6 zone ids (`%eth0`) are refused before anything connects. The latency matrix
    skips such targets and lists them as skipped.
 
-The SSH session doesn't verify the gateway's host key yet (`known_hosts=None`,
-[issue 038](../issues/038-ssh-host-key-verification-disabled.md)), so run these only on a
-network you trust.
+The SSH session verifies the gateway's host key against `~/.ssh/known_hosts` and refuses a
+missing or changed key before the password is sent:
+
+```text
+❌ [CONTROLLER_UNREACHABLE] SSH connection to root@192.0.2.1 refused: the gateway host key is not in ~/.ssh/known_hosts, or differs from the key recorded there, so the password was not sent
+💡 Suggestion: Connect once with `ssh root@192.0.2.1` to record the key, after comparing the fingerprint it shows with the one in UniFi OS (Settings > Control Plane > Console) or over another trusted channel. ...
+```
+
+Run that `ssh` command once from the same user account and the SSH commands work from then
+on. A key that was recorded before and has changed means the gateway was reinstalled or
+replaced, or something on the path is answering in its place: confirm which before trusting
+the new key. `UNIFI_SSH_KNOWN_HOSTS=off` disables the check with a warning on every run; any
+other value is rejected as `CONFIG_INVALID`
+([issue 038](../issues/038-ssh-host-key-verification-disabled.md)).
 
 #### VLAN Traffic Store Errors
 

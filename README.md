@@ -39,11 +39,12 @@ Read this before pointing it at a production network.
   addresses and your topology remain in them. Review before you post one anywhere.
 - **TLS verification is off by default** (`UNIFI_VERIFY_SSL=false`), because most consoles
   present a self-signed certificate. Turn it on if yours has a trusted one.
-- **Gateway SSH host keys are not verified yet** ([issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)),
-  so a device on the path between you and the gateway could impersonate it and receive the SSH
-  password. Use the SSH-based commands (`gateway *`, `diagnose latency-matrix|bandwidth|client-connectivity|ap-health`,
-  `vlan-traffic sample`) only from a trusted LAN segment; they are CLI-only and run only when
-  `UNIFI_SSH_PASSWORD` is set.
+- **Gateway SSH host keys are verified** against `~/.ssh/known_hosts`, so a device on the path
+  cannot impersonate the gateway and receive the SSH password. Connect once with
+  `ssh root@<gateway>` to record the key before the first SSH-based command (`gateway *`,
+  `diagnose latency-matrix|bandwidth|client-connectivity|ap-health`, `vlan-traffic sample`);
+  they are CLI-only and run only when `UNIFI_SSH_PASSWORD` is set. `UNIFI_SSH_KNOWN_HOSTS=off`
+  turns verification off, with a warning on every run.
 - Tracebacks never print local variables; the config file is never written back.
 
 See [SECURITY.md](SECURITY.md) for the full data-handling contract and how to report a problem.
@@ -197,7 +198,7 @@ every setting, the error codes, the call log and the client configs.
 The open items live in [docs/issues](docs/issues/README.md), one file each, with the
 reasoning. The ones that affect use today:
 
-- Gateway SSH host keys are not verified (038); Protect tools are unverified live (034).
+- Protect tools are unverified live (034).
 - The six Network Integration API tools need `UNIFI_NETWORK_HOST`, `_API_KEY` and `_SITE_ID`
   as well (037); `monitor_lags` misses LAGs on current switch firmware (061).
 - PNG and SVG diagrams need Graphviz's `dot`; without it `discover` writes a placeholder and

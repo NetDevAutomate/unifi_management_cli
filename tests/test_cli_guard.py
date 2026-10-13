@@ -358,8 +358,18 @@ def test_the_host_key_notice_prints_once_per_invocation(
         assert result.exit_code == 0, result.output
         assert result.stderr.count(typer_cli.GATEWAY_SSH_NOTICE) == 1
         assert typer_cli.GATEWAY_SSH_NOTICE not in result.stdout
-    assert 'host key is not verified' in typer_cli.GATEWAY_SSH_NOTICE
-    assert '038' in typer_cli.GATEWAY_SSH_NOTICE
+    assert 'runs on the gateway over SSH' in typer_cli.GATEWAY_SSH_NOTICE
+    assert 'verified against ~/.ssh/known_hosts' in typer_cli.GATEWAY_SSH_NOTICE
+
+
+def test_the_notice_names_the_unverified_host_key_only_when_checking_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv('UNIFI_SSH_KNOWN_HOSTS', raising=False)
+    assert typer_cli.gateway_ssh_notice() == typer_cli.GATEWAY_SSH_NOTICE
+    monkeypatch.setenv('UNIFI_SSH_KNOWN_HOSTS', 'off')
+    assert typer_cli.gateway_ssh_notice() == typer_cli.GATEWAY_SSH_UNVERIFIED_NOTICE
+    assert 'is not verified' in typer_cli.GATEWAY_SSH_UNVERIFIED_NOTICE
 
 
 def test_an_analysis_command_prints_no_host_key_notice(
