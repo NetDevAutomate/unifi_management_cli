@@ -50,8 +50,8 @@ only when the camera offers nothing else) and bounded by a single deadline, so t
 never appears on any command line or in the process list. The command's docstring and output
 promise exactly what the probe checks: the camera accepted the account and returned the
 stream's SDP metadata (printed as codec and dimensions). It does not prove the stream plays,
-which is the council's stated acceptance condition for a DESCRIBE-only probe
-(`.kiro/release-0.3.0/DECISIONS.md`, D-057). No dependency was added. The tests run a fake RTSP
+which is the council's stated acceptance condition for a DESCRIBE-only probe (decision
+D-057, recorded with the 0.3.0 release decisions). No dependency was added. The tests run a fake RTSP
 camera on a Unix socket requiring Digest auth (success, wrong password, Basic fallback, a silent
 camera against the deadline) and assert that `check_rtsp` has no subprocess and that no output
 carries the password. The Axis guide's ffprobe prerequisite and the sentence describing the
