@@ -1505,7 +1505,7 @@ Root options (before any subcommand):
 | `unifi-mapper ports refresh` | Preview port labels from LLDP and wired clients (`--apply` writes) |
 | `unifi-mapper inventory list` | List devices with optional filters |
 | `unifi-mapper inventory check-updates` | Check for available firmware updates |
-| `unifi-mapper install-completions SHELL` | Install shell completions (`bash` or `zsh`) |
+| `unifi-mapper install-completions SHELL` | Install the manual completion scripts (`bash`, `zsh` or `all`; fish: `--install-completion`) |
 
 #### `unifi-network-toolkit`
 

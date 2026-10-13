@@ -448,20 +448,34 @@ def discover(
 
 @app.command()
 def install_completions(
-    shell: str = typer.Argument(..., help='Shell to install completions for (bash/zsh/fish/all)'),
+    shell: str = typer.Argument(
+        ...,
+        help='Shell to install completions for: bash, zsh or all (fish: use --install-completion)',
+    ),
     force: bool = typer.Option(False, '--force', help='🔄 Overwrite existing completion files'),
 ):
-    """💻 Install shell completions (automatic via Typer).
+    """💻 Install the manual bash and zsh completion scripts.
 
-    Note: You can also use the built-in Typer completion:
+    ``all`` installs both. Fish is not covered by these scripts; Typer's built-in
+    completion works for every shell, fish included:
     unifi-mapper --install-completion
+
+    Exits 1 when a script could not be installed.
     """
-    if shell.lower() not in ['bash', 'zsh', 'fish', 'all']:
+    wanted = shell.lower()
+    if wanted == 'fish':
+        console.print('❌ [bold red]No manual completion script for fish[/bold red]')
+        console.print("💡 [bold blue]Use Typer's built-in completion instead:[/bold blue]")
+        console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
+        raise typer.Exit(1)
+    if wanted not in ('bash', 'zsh', 'all', 'both'):
         console.print(f'❌ [bold red]Unsupported shell: {shell}[/bold red]')
-        console.print('Supported shells: [cyan]bash, zsh, fish, all[/cyan]')
+        console.print('Supported shells: [cyan]bash, zsh, all[/cyan]')
         console.print("\n💡 [bold blue]Alternative - Use Typer's built-in completion:[/bold blue]")
         console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
         raise typer.Exit(1)
+    if wanted == 'all':
+        wanted = 'both'  # the installer's name for bash and zsh together
 
     console.print(f'🔧 Installing [bold]{shell}[/bold] completions...')
 
@@ -469,27 +483,24 @@ def install_completions(
     try:
         from .completions import install_completions as manual_install
 
-        success = manual_install(shell, force)
-
-        if success:
-            console.print('✅ [bold green]Manual completions installed successfully![/bold green]')
-        else:
-            console.print('❌ [bold red]Manual completion installation failed[/bold red]')
-            console.print("\n💡 [bold blue]Try Typer's automatic completion instead:[/bold blue]")
-            console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
-
+        success = manual_install(wanted, force)
     except Exception as e:
         console.print(f'❌ [bold red]Completion installation failed: {_error_text(e)}[/bold red]')
-        console.print("\n💡 [bold blue]Alternative - Use Typer's built-in completion:[/bold blue]")
+        success = False
+
+    if not success:
+        console.print('❌ [bold red]Manual completion installation failed[/bold red]')
+        console.print("\n💡 [bold blue]Try Typer's automatic completion instead:[/bold blue]")
         console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
         console.print('   [cyan]unifi-mapper --show-completion[/cyan]')
+        raise typer.Exit(1)
 
+    console.print('✅ [bold green]Manual completions installed successfully![/bold green]')
     console.print('\n📝 [bold]To enable completions:[/bold]')
-    console.print('  🐚 Bash: [dim]source ~/.bashrc[/dim]')
-    console.print('  🐚 Zsh: [dim]source ~/.zshrc[/dim]')
-    console.print('  🐚 Fish: [dim]Automatic on restart[/dim]')
-    console.print("\n🎯 [bold blue]Or use Typer's automatic completion:[/bold blue]")
-    console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
+    if wanted in ('bash', 'both'):
+        console.print('  🐚 Bash: [dim]source ~/.bashrc[/dim]')
+    if wanted in ('zsh', 'both'):
+        console.print('  🐚 Zsh: [dim]source ~/.zshrc[/dim]')
 
 
 @find_app.command('device')

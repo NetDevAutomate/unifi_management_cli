@@ -466,7 +466,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `verify` | Port name verification with ground truth checking |
 | `capabilities` | Analyze device capabilities for port naming support |
 | `version` | Show version information |
-| `install-completions` | Install shell completions |
+| `install-completions` | Install the manual bash/zsh completion scripts (`bash`, `zsh` or `all`; exits 1 on failure; fish: `--install-completion`) |
 | `find device` | Find a device by name, IP or MAC |
 | `find ip` | Where an IP address is: device or client, VLAN, lease and connection |
 | `find mac` | Where a MAC address is: device, client or last known location |
