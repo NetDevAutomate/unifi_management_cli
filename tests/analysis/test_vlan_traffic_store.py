@@ -34,7 +34,6 @@ from unifi_mapper.analysis.vlan_traffic_store import (
     run_rollups,
 )
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
-from unifi_mapper.diagnostics.wan_history import get_wan_speedtest_history
 
 
 FAR_FUTURE = 2_000_000_000  # so the 'now' and '1d' windows include the rows
@@ -678,7 +677,9 @@ def test_an_unwritable_store_is_one_error(tmp_path: Path) -> None:
 
 
 def test_the_handlers_are_coroutine_functions() -> None:
-    for handler in (get_vlan_traffic_report, list_vlan_traffic_periods, get_wan_speedtest_history):
+    # The WAN history tool's check lives in tests/diagnostics/test_wan_history.py (issue 076
+    # item 15).
+    for handler in (get_vlan_traffic_report, list_vlan_traffic_periods):
         assert inspect.iscoroutinefunction(handler)
 
 

@@ -204,6 +204,10 @@ async def test_the_mcp_tool_reads_the_default_path(
     append_speedtest(_speedtest())
     result = await get_wan_speedtest_history(limit=10)
     assert result['total'] == 1 and result['entries'][0]['down_mbps'] == 950.0
+
+
+def test_the_mcp_tool_is_a_coroutine_function() -> None:
+    """Moved here from the VLAN store tests (issue 076 item 15): the handler is awaited."""
     assert inspect.iscoroutinefunction(get_wan_speedtest_history)
 
 
