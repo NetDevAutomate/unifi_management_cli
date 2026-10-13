@@ -62,6 +62,16 @@ asked GitHub Support to purge the superseded commits from the server's object st
 - MCP call log: after a lock timeout the log skips the lock for 30 s and the next successful
   write starts with a `{"kind": "lock_timeout", "dropped": N}` line; writes use a dedicated
   4-thread pool so a failing log can never slow every call (issue 076).
+- `unifi-mapper` (and every CLI sharing its search) resolves the config file in the MCP server's
+  order: `UNIFI_CONFIG`; `$XDG_CONFIG_HOME/unifi_management_cli/{prod,default}.env` (absolute
+  values only); `~/.config/unifi_management_cli/{prod,default}.env`; the legacy
+  `~/.config/unifi_network_mapper/prod.env`. `./.env` is consulted last and only when nothing
+  else exists, with a deprecation warning on stderr; it is removed in 0.4.0, so name it with
+  `--config ./.env` or `UNIFI_CONFIG=./.env` (issue 048).
+- Radio snapshots, the config-drift baseline, the roaming history and the neighbour baseline
+  default to `$XDG_STATE_HOME/unifi_mapper/` (`~/.local/state/unifi_mapper/`) instead of
+  `./reports/`. Files already under `./reports/` are not moved or read: pass the old path once
+  with `--snapshot`, `--baseline` or `--history`, or move the file (issue 010).
 
 ### Changed (behaviour)
 
@@ -124,6 +134,14 @@ asked GitHub Support to purge the superseded commits from the server's object st
 - The `analyze`, `stp`, `radio`, `ports` and `diagnose` read commands that moved onto the shared
   read-only runner print a controller failure as `❌ Error: ...` on stderr (was stdout, same
   text) and exit 1; a script that grepped stdout for it should read stderr (issue 064).
+- The MCP `snapshot_radio_config` tool returns the absolute path it wrote (`file`) and the exact
+  `unifi-mapper radio restore --snapshot <path>` command (`restore_command`, shell-quoted);
+  restore still previews by default. The radio, roaming, config-drift and neighbour path options
+  default to `None` and name the XDG default in `--help` (issue 010).
+- `unifi-mcp --check` and the readiness report carry a `derived` list per family
+  (`host: derived from UNIFI_URL`, `site id: resolved at first call`,
+  `key: console token (same origin)`) and stay offline; the Network API client refuses
+  redirects (issue 037).
 
 ### Added
 
@@ -232,6 +250,15 @@ asked GitHub Support to purge the superseded commits from the server's object st
 - Two concurrent call-log write failures warn once, not twice, and a failure on a file other than
   the log names that file; `get_wan_speedtest_history`'s description names
   `unifi-mapper diagnose wan-history` (issue 076).
+- A relative `XDG_CONFIG_HOME` is ignored by the CLI, the MCP server, `scripts/site_targets.py`
+  and `scripts/unifi-mcp-launch.sh`, as the XDG specification requires, so no search reads a
+  file under the working directory (issue 068).
+- The six `network_api` tools work with only the controller's config: the host is derived from
+  `UNIFI_URL`, the site id from `UNIFI_SITE` at the first call (one `GET /v1/sites`, cached,
+  exactly one match required), and `UNIFI_CONSOLE_API_TOKEN` stands in for the key when the
+  network host is the same origin as `UNIFI_URL`; explicit `UNIFI_NETWORK_*` keys always win,
+  and a derived host inherits `UNIFI_VERIFY_SSL` so the borrowed token never travels over a
+  session the controller family would verify (issue 037).
 
 ### Removed
 

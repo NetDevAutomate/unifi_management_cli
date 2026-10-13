@@ -25,7 +25,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [007](007-bare-discover-writes-by-default.md) | `unifi-mapper --connected-devices` writes port names by default | resolved (`95b822a`) |
 | [008](008-mcp-sdk-v2-migration.md) | Migrate the MCP server to the SDK v2 `MCPServer` API | open |
 | [009](009-mcp-default-tool-surface.md) | Should the MCP server list every tool (the direct surface) by default? | open, decision needed |
-| [010](010-cwd-relative-state-files.md) | Radio snapshots and several baselines are written relative to the working directory | open, decision needed |
+| [010](010-cwd-relative-state-files.md) | Radio snapshots and several baselines are written relative to the working directory | resolved (`edae795`) |
 | [011](011-network-protect-errors-as-success.md) | Network and Protect MCP tools return failures as successful results | resolved (`9c57b2e`) |
 | [012](012-mcp-default-tool-deadline.md) | MCP tool calls have no deadline by default | resolved (`8071f7d`) |
 | [013](013-mcp-audit-log-and-result-cap.md) | No default audit log of MCP calls, and no cap on result size | resolved (`e2fbac2`) |
@@ -52,7 +52,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [034](034-protect-has-no-live-account.md) | The Protect MCP tools are unverified live: no Protect account is configured | open |
 | [035](035-device-statistics-and-port-action-paths.md) | The Integration API client's device-statistics and port-action paths aren't served | resolved (`b975340`) |
 | [036](036-integration-api-models-drift-from-the-reference.md) | Integration API models disagree with the v10.6 reference, so some fields are lost | resolved (`befe82a`) |
-| [037](037-launch-config-network-family-incomplete.md) | With the legacy config file, the six network_api tools return CONFIG_MISSING | open, decision needed |
+| [037](037-launch-config-network-family-incomplete.md) | With the legacy config file, the six network_api tools return CONFIG_MISSING | resolved (`05c9416`) |
 | [038](038-ssh-host-key-verification-disabled.md) | The gateway SSH commands don't verify the gateway's host key (`known_hosts=None`) | open, decision needed |
 | [039](039-promote-the-live-check-harness.md) | Promote the read-only live-check harness into the repo as a config-driven tool | open, decision needed |
 | [040](040-real-identifiers-in-tests.md) | Test fixtures carried MAC addresses and addresses from the live network | resolved (`2650809`) |
@@ -63,7 +63,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [045](045-configure-logging-is-never-called.md) | `configure_logging` is never called, so `UNIFI_MAPPER_DEBUG` does nothing | resolved (`70bbf8b`) |
 | [046](046-real-device-names-in-code-and-history.md) | Tests, scripts and docstrings carried the site's device and room names; the history still does | resolved (`2650809`) |
 | [047](047-install-completions-fish-and-all-fail.md) | `unifi-mapper install-completions` accepts `fish` and `all` but installs only bash and zsh | resolved (`3951920`) |
-| [048](048-cli-and-mcp-config-searches-differ.md) | With `XDG_CONFIG_HOME` set, the CLI and the MCP server search different config files | open, decision needed |
+| [048](048-cli-and-mcp-config-searches-differ.md) | With `XDG_CONFIG_HOME` set, the CLI and the MCP server search different config files | resolved (`e4d8191`) |
 | [049](049-lines-over-99-characters.md) | At `3ea7243`, 225 tracked lines were longer than the 99-character limit, and nothing enforces it | open, decision needed |
 | [050](050-latency-matrix-errors-bypass-the-ssh-error-path.md) | `diagnose latency-matrix` reports errors on stdout and unredacted, unlike `diagnose bandwidth` | resolved (`7b1ef78`) |
 | [051](051-verify-cli-help-example-held-a-password.md) | `verify_cli`'s help example held a real-looking password, and it is in pushed history | resolved (`2650809`) |
@@ -83,7 +83,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [065](065-pre-push-coverage-floor.md) | The pre-push pytest hook fails the 90% coverage floor | resolved (`1a7f2d7`) |
 | [066](066-backup-collections-unverified-on-a-real-backup.md) | `backup verify` names collections by `_type`, unverified on a real backup | open |
 | [067](067-mcp-tool-failure-helper-duplicated.md) | The network and Protect tools each carry a copy of the redacted-failure helper | resolved (`681497f`) |
-| [068](068-relative-xdg-config-home-is-honoured.md) | The config searches honour a relative `XDG_CONFIG_HOME`, so they can read a file under the working directory | open, decision needed |
+| [068](068-relative-xdg-config-home-is-honoured.md) | The config searches honour a relative `XDG_CONFIG_HOME`, so they can read a file under the working directory | resolved (`e4d8191`) |
 | [069](069-vlan-reports-read-tiers-without-recent-data.md) | VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty | resolved (`0b19f3c`) |
 | [070](070-untagged-networks-share-vlan-1-in-the-traffic-store.md) | Two networks without a VLAN ID both sample as VLAN 1, so one overwrites the other in the traffic store | resolved (`b645b1d`) |
 | [071](071-late-vlan-samples-never-reach-the-rollups.md) | A VLAN traffic sample written two hours or more late, into an hour already rolled, never reaches the hourly or daily rollups | resolved (`1146b22`) |
