@@ -22,7 +22,10 @@ optional extra (`brew install graphviz`), for PNG and SVG diagrams.
 
 `ruff check`, `ruff format --check`, `pyright src/` and `pytest -m "not live" --cov` must all
 pass. The pre-push hook runs them; so does CI (`.github/workflows/ci.yml`). The coverage floor
-in `pyproject.toml` is a ratchet: raise it only to a value the whole suite meets.
+in `pyproject.toml` is a ratchet: raise it only to a value the whole suite meets. Python lines
+are 99 characters at most; `E501` is still ignored while the existing long lines are swept
+(issue 049), and `tests/test_line_length_ratchet.py` keeps their count from growing, so wrap
+any new one. Markdown is not wrapped to a limit: tables and links read worse broken.
 
 ## Rules that are not negotiable
 
