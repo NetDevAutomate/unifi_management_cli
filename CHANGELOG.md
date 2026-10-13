@@ -72,6 +72,18 @@ asked GitHub Support to purge the superseded commits from the server's object st
   default to `$XDG_STATE_HOME/unifi_mapper/` (`~/.local/state/unifi_mapper/`) instead of
   `./reports/`. Files already under `./reports/` are not moved or read: pass the old path once
   with `--snapshot`, `--baseline` or `--history`, or move the file (issue 010).
+- The gateway SSH commands verify the gateway's host key against `~/.ssh/known_hosts` and
+  refuse, before the password is sent, a key that is missing or has changed; the error names
+  `user@host` and the one `ssh` command that records the key. Anyone who never ran `ssh` to the
+  gateway from the same account must do so once. `UNIFI_SSH_KNOWN_HOSTS=off` disables the check
+  with a warning on every run; any other value is rejected (issue 038).
+- `security_audit` / `diagnose security` reports only what the controller can show: pending
+  adoption, guest-network overstay and the issue-079 rogue classes. The vendor blacklist, the
+  `unknown_devices` count and the randomised-MAC risk are gone (a randomised MAC is noted as
+  information), MAC-similarity anomalies are computed among clients only, and the report
+  carries a `limitations` block saying its findings are controller-derived signals, not proof of
+  authorisation or of absence of compromise; a check that could not run says "not assessed"
+  (issue 080).
 
 ### Changed (behaviour)
 
@@ -259,6 +271,11 @@ asked GitHub Support to purge the superseded commits from the server's object st
   network host is the same origin as `UNIFI_URL`; explicit `UNIFI_NETWORK_*` keys always win,
   and a derived host inherits `UNIFI_VERIFY_SSL` so the borrowed token never travels over a
   session the controller family would verify (issue 037).
+- `scripts/onvif_stream.py test-rtsp` probes each stream with one RTSP `DESCRIBE` from this
+  process (Digest, or Basic when that is all the camera offers) instead of running ffprobe with
+  the authenticated URI on its command line, so the ONVIF password no longer appears in the
+  process list; an `OK` line means the camera accepted the account and returned the stream's SDP
+  metadata, not that the stream plays (issue 057).
 
 ### Removed
 

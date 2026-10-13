@@ -24,12 +24,12 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [006](006-mcp-guide-and-server-docstrings-stale.md) | The MCP guide and server docstrings miss the observability category and new counts | resolved (`ab32faa`) |
 | [007](007-bare-discover-writes-by-default.md) | `unifi-mapper --connected-devices` writes port names by default | resolved (`95b822a`) |
 | [008](008-mcp-sdk-v2-migration.md) | Migrate the MCP server to the SDK v2 `MCPServer` API | open |
-| [009](009-mcp-default-tool-surface.md) | Should the MCP server list every tool (the direct surface) by default? | open, decision needed |
+| [009](009-mcp-default-tool-surface.md) | Should the MCP server list every tool (the direct surface) by default? | resolved (`54b89b2`) |
 | [010](010-cwd-relative-state-files.md) | Radio snapshots and several baselines are written relative to the working directory | resolved (`edae795`) |
 | [011](011-network-protect-errors-as-success.md) | Network and Protect MCP tools return failures as successful results | resolved (`9c57b2e`) |
 | [012](012-mcp-default-tool-deadline.md) | MCP tool calls have no deadline by default | resolved (`8071f7d`) |
 | [013](013-mcp-audit-log-and-result-cap.md) | No default audit log of MCP calls, and no cap on result size | resolved (`e2fbac2`) |
-| [014](014-optional-dependency-extras.md) | Every uvx launch installs the Protect, backup and ONVIF dependencies | open |
+| [014](014-optional-dependency-extras.md) | Every uvx launch installs the Protect, backup and ONVIF dependencies | resolved (`54b89b2`) |
 | [015](015-other-discover-entry-points-write-by-default.md) | `unifi-network-toolkit discover` and `python -m unifi_mapper.cli` still write port names by default | resolved (`0ac8d0d`) |
 | [016](016-audit-lldp-consistency-tool.md) | Add an LLDP consistency audit (`audit_lldp_consistency` / `analyze lldp`) | open |
 | [017](017-firmware-drift-tool.md) | Add a firmware drift tool (`get_firmware_drift`) and `inventory firmware-skew --json` | resolved (`19ff5ce`) |
@@ -53,7 +53,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [035](035-device-statistics-and-port-action-paths.md) | The Integration API client's device-statistics and port-action paths aren't served | resolved (`b975340`) |
 | [036](036-integration-api-models-drift-from-the-reference.md) | Integration API models disagree with the v10.6 reference, so some fields are lost | resolved (`befe82a`) |
 | [037](037-launch-config-network-family-incomplete.md) | With the legacy config file, the six network_api tools return CONFIG_MISSING | resolved (`05c9416`) |
-| [038](038-ssh-host-key-verification-disabled.md) | The gateway SSH commands don't verify the gateway's host key (`known_hosts=None`) | open, decision needed |
+| [038](038-ssh-host-key-verification-disabled.md) | The gateway SSH commands don't verify the gateway's host key (`known_hosts=None`) | resolved (`7124755`) |
 | [039](039-promote-the-live-check-harness.md) | Promote the read-only live-check harness into the repo as a config-driven tool | open, decision needed |
 | [040](040-real-identifiers-in-tests.md) | Test fixtures carried MAC addresses and addresses from the live network | resolved (`2650809`) |
 | [041](041-onvif-scripts-hard-code-cameras.md) | The ONVIF scripts hard-coded the site's cameras, and `onvif_stream.py` a camera password that is in pushed history | resolved (`2650809`) |
@@ -72,13 +72,13 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [054](054-identifier-guard-skips-public-and-link-local-addresses.md) | The identifier guard skips public IPv4 and link-local IPv6 addresses from the captures | resolved (`bc73af8`) |
 | [055](055-env-guard-counts-a-mention-as-a-read.md) | The env-var guard counts a variable as read when any string in the code names it | resolved (`ff69dc6`) |
 | [056](056-mcp-name-guard-knows-every-assigned-name.md) | The MCP-name guard counts any name assigned in `src/` as known, local variables included | resolved (`16dda92`) |
-| [057](057-onvif-test-rtsp-puts-the-password-on-argv.md) | `onvif_stream.py test-rtsp` passes the ONVIF password to ffprobe on its command line | open, decision needed |
+| [057](057-onvif-test-rtsp-puts-the-password-on-argv.md) | `onvif_stream.py test-rtsp` passes the ONVIF password to ffprobe on its command line | resolved (`2837c45`) |
 | [058](058-tracebacks-print-frame-values.md) | Tracebacks can print secrets: loguru's `diagnose` and Typer's frame locals are on | resolved (`779c14e`) |
 | [059](059-prototype-work-not-ported.md) | Prototype work that was not ported, and why | open |
 | [060](060-decisions-from-the-0.2.0-port.md) | Decisions from the 0.2.0 port | open, decision needed |
 | [061](061-monitor-lags-misses-current-firmware-lags.md) | `monitor_lags` misses LAGs on current switch firmware | resolved (`b314c77`) |
 | [062](062-open-items-from-the-archived-plans.md) | Open items from the archived improvement and STP plans | open |
-| [063](063-execute-tool-result-cap.md) | No cap on `execute_tool` result size | open, decision needed |
+| [063](063-execute-tool-result-cap.md) | No cap on `execute_tool` result size | resolved (`54b89b2`) |
 | [064](064-cli-reads-outside-the-read-only-transport.md) | CLI read commands that reach the controller outside the read-only transport | resolved (`02bec3a`) |
 | [065](065-pre-push-coverage-floor.md) | The pre-push pytest hook fails the 90% coverage floor | resolved (`1a7f2d7`) |
 | [066](066-backup-collections-unverified-on-a-real-backup.md) | `backup verify` names collections by `_type`, unverified on a real backup | open |
@@ -95,7 +95,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [077](077-update-firmware-confirms-instead-of-previewing.md) | `inventory update-firmware` writes after a confirmation prompt, not a preview | open, decision needed |
 | [078](078-cli-and-mcp-feature-parity-is-not-enforced.md) | The CLI and the MCP server do not have feature parity, and nothing checks that they do | resolved (`4d55fa0`) |
 | [079](079-security-audit-counts-every-neighbour-ap-as-a-critical-rogue.md) | `security_audit` counts every neighbouring AP as a critical rogue | resolved (`2f8d2a8`) |
-| [080](080-security-audit-rates-own-devices-and-iot-vendors-as-medium.md) | `security_audit` rates its own adopted devices and every IoT vendor as medium risk | open, decision needed |
+| [080](080-security-audit-rates-own-devices-and-iot-vendors-as-medium.md) | `security_audit` rates its own adopted devices and every IoT vendor as medium risk | resolved (`6cf067e`) |
 | [081](081-device-statistics-model-keys-do-not-match-the-endpoint.md) | `DeviceStatistics` reads keys the live `statistics/latest` endpoint does not send | open |
 | [082](082-device-feature-enum-names-differ-from-the-reference.md) | `DeviceFeature` uses `SWITCH`/`ROUTER` names the Integration API does not send | open |
 | [083](083-acl-create-helpers-default-to-a-rule-type-the-api-rejects.md) | `create_block_rule` / `create_allow_rule` default `rule_type='USER'`, a value the ACL API rejects | open |
