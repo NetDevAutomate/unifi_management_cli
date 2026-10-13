@@ -1,7 +1,8 @@
 ---
 title: "MCP tool calls have no deadline by default"
 date: 2026-10-02
-status: open, decision needed
+status: resolved
+resolved_by: f78bc3c
 severity: low
 components: [mcp/config, mcp/runner]
 found_by: MCP uvx standards work
@@ -75,3 +76,40 @@ The port's longest composite stays CLI only: `diagnose ap-health` runs up to abo
 MCP form waits for decision D4 in issue [060](060-decisions-from-the-0.2.0-port.md) (SDK v2
 tasks, issue [008](008-mcp-sdk-v2-migration.md)), not for a deadline here.
 `diagnose client-connectivity` stops at 120 s but uses SSH, so it waits for 060's D1 as well.
+
+## Resolution
+
+Resolved on 2026-10-13 (`f78bc3c`): D11 approved at 300 s. `ServerSettings.tool_timeout`
+defaults to `300.0` and `load_server_settings` returns that default when
+`UNIFI_MCP_TOOL_TIMEOUT` is unset, empty or invalid (an invalid value used to mean "no
+deadline"); the bounds stay 5–3600 s. A `tool_timeout` of `None` is still honoured by the
+runner (no deadline) for programmatic callers and tests, but the variable cannot set it.
+
+The 2026-10-05 correction is taken the second way: the server default stays at the round
+300 s and the guide's client limits move **above** it, to 330 s (kiro-cli
+`"timeout": 330000`, Codex `tool_timeout_sec = 330`), with a paragraph in the guide's
+client-configuration section saying why a client limit must exceed the server's. Documented
+in `docs/mcp-server/MCP_SERVER_GUIDE.md` (environment table, error-code table, client
+snippets), `docs/mcp-server/MCP_STANDARDS_REVIEW.md` (A12, D11) and `.env.example`.
+
+B14, measured read-only through the CLI against the live controller on 2026-10-13, one run
+each, wall clock including process start-up: `diagnose health` 1.1 s, `diagnose security`
+0.9 s, `diagnose performance` 0.5 s, `analyze traffic-matrix` 0.7 s (8 requests),
+`analyze link-speeds` 1.2 s. `diagnose_switch_port` was not run: its counter sampling
+blocks for `(samples - 1) × interval_seconds`, about 100 s by default, by construction.
+Every figure is far below 300 s, and the sampling window is the only one in the same order
+of magnitude.
+
+Tests: `tests/mcp/test_config_resolution.py::test_tool_timeout_defaults_to_300_seconds`
+(default, empty, invalid) and the renamed deadline cases in
+`tests/mcp/test_error_semantics.py`.
+
+Deliberately not changed, each still open and recorded in this file above:
+
+- **A deadline ends the call, not a worker thread.** The fourteen `asyncio.to_thread` tools
+  run on after `[TIMEOUT]`; the stop-flag fix is a change to each handler and needs its own
+  issue (the coordinator files it from this lane's report).
+- **`get_ap_retry_rates` can outlast the client limit** at `interval_seconds` near 240 s.
+  Bounding each read and capping the interval changes that tool's contract; not done here.
+- **`get_recent_events` pages everything before it keeps the newest** (issue 021's note);
+  a decision on `matched_total`.
