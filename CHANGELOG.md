@@ -1,9 +1,11 @@
 # Changelog
 
 All notable changes to this project. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-The current release is 0.3.0; only the latest release is supported.
+The current release is 0.4.0; only the latest release is supported.
 
 ## [Unreleased]
+
+## [0.4.0] - 2026-10-15
 
 ### Breaking
 
