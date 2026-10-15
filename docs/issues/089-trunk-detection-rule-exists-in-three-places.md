@@ -29,3 +29,35 @@ figure can disagree about the same interval.
 One `is_trunk_profile` in a shared module (`analysis/link_settings` already holds shared port-
 settings helpers) used by all three, with the existing tests of each caller kept; `coverage` to
 use `_measured_grace` like `report`.
+
+## Progress (2026-10-15)
+
+The trunk rule is one function (fix commit bf46966). `vlan_diagnostics.is_trunk_profile` is
+the rule, documented step by step; `foreign_bridges` and `vlan_coverage` call it over the
+same settings `diagnose vlans` reads (the profile with its override on top), and the
+`diagnose vlans` caller's extra "tags a VLAN" test is folded into it. It keeps every answer
+the old function's tests pinned and takes `vlan_coverage`'s hand-built shapes (`is_trunk` /
+`is_access` flags, VLAN lists, access or client names) when a record has no `forward`.
+Where the old rules disagreed, `forward: 'all'` wins over a name that says access, a
+`forward` decides over a bare VLAN key, and `block_all` tags nothing even when
+`tagged_networkconf_ids` linger.
+
+`vlan_coverage` also reads the VLANs a trunk carries from the settings the port runs: the
+port table's own `forward` is not used (a live controller reports `forward: 'all'` on 100
+port-table rows under access profiles), and a `forward: 'all'` trunk carries every VLAN, as
+`diagnose vlans` says. `_merge_profile_port` is unchanged, because `uplink_transparency`
+imports it.
+
+Pinned by `tests/analysis/test_vlan_trunk_rule.py`: every shape the three rules accepted
+with its one answer, and a live-shaped switch on which `diagnose vlans`, `analyze
+vlan-coverage` and `analyze foreign-bridges` name the same trunks.
+
+On the live site `diagnose vlans` is unchanged (8 VLANs, 97 ports, the same 43 trunks, 2
+issues, 1 warning); `analyze vlan-coverage` now audits 39 ports instead of 13 (every trunk
+that is up) with the same 3 findings; `analyze foreign-bridges` is unchanged.
+
+Remaining: the second paragraph of this record. `read_vlan_traffic_periods` in
+`analysis/vlan_traffic_store.py` still sizes the raw tier's gap count with the fixed
+`DEFAULT_SAMPLE_INTERVAL_SECONDS`, while the rate bound uses `_measured_grace`, so the two
+can disagree about one interval. It was outside this change, so the record stays open
+for it.
