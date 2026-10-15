@@ -251,7 +251,9 @@ Authentication issue with devices endpoint. Attempting to re-authenticate...
 `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose
 ap-health --ping-clients`, `vlan-traffic sample` and the `gateway` probes (`ping`,
 `traceroute`, `dns`, `http`, `flows`) run commands on the gateway over SSH. They are the only
-commands that use SSH, and no MCP tool does.
+commands that use SSH. Over MCP, only `gateway_ping`, `gateway_traceroute`, `gateway_dns_check`
+and `run_latency_matrix` do, and only when the server was started with
+`UNIFI_MCP_ALLOW_ACTIVE_PROBES=1` (issue 092); otherwise no MCP tool opens an SSH session.
 
 **Symptom**: each exits 1 before connecting to anything, and prints this on stderr (the first
 line, once per command, comes before every SSH command runs; see

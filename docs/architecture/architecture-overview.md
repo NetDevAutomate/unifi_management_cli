@@ -308,8 +308,9 @@ tiers the whole fleet (`--device` narrows the rows and the verdict, and keeps th
 --plan` does.
 
 **New `gateway` command group** (`connectivity/gateway_probe.py`) — live probes run on the
-gateway over SSH, CLI only (no MCP tool, decision D1 in issue 060): `gateway ping`,
-`traceroute`, `dns`, `http` and `flows`. Each opens one session and runs one argv with its own
+gateway over SSH: `gateway ping`, `traceroute`, `dns`, `http` and `flows`. `ping`, `traceroute`
+and `dns` are also MCP tools when the server starts with `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1`
+(issue 092; off by default); `http` and `flows` stay CLI only (tier 2, decision pending). Each opens one session and runs one argv with its own
 bound through `analysis/gateway_ssh.py`; a device or client name resolves to its address
 through the read-only controller client (exact names, hostnames, MACs and IPs across devices and
 clients first, then a unique partial name; the rule `diagnose client-connectivity` shares), and
@@ -616,7 +617,7 @@ Twelve of the later analysis modules fall into four functional groups. The infra
 | `radio_config.py` | `snapshot_radio_config`, `apply_radio_config`, `restore_radio_config` | Reversible AP radio changes |
 | `channel_optimiser.py` | `analyze_channels`, `optimize_5ghz`, `optimize_24ghz`, `optimize_radio_channels_mcp` | Utilization-weighted channel assignment with DFS penalty scoring |
 
-**SSH-based tools** (CLI only: `diagnose latency-matrix`, `diagnose bandwidth`, the `gateway` probes, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and `vlan-traffic sample`) — require `asyncssh` and gateway SSH credentials (`UNIFI_SSH_PASSWORD`, see [section 10](#10-layer-8-ssh-integration)):
+**SSH-based tools** (`diagnose latency-matrix`, `diagnose bandwidth`, the `gateway` probes, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and `vlan-traffic sample`; CLI only, except `gateway ping`/`traceroute`/`dns` and `diagnose latency-matrix`, which are MCP tools behind `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1`, issue 092) — require `asyncssh` and gateway SSH credentials (`UNIFI_SSH_PASSWORD`, see [section 10](#10-layer-8-ssh-integration)):
 
 | Module | Function | Purpose |
 | --- | --- | --- |
