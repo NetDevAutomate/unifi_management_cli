@@ -64,6 +64,7 @@ def test_new_keys_have_the_design_defaults(tmp_path: Path) -> None:
     assert meta.aliases == {}
     assert meta.credentials == 'controller'
     assert meta.idempotent is True
+    assert meta.active_probe is False
 
 
 def test_default_title_is_the_name_title_cased() -> None:
@@ -92,6 +93,25 @@ def test_every_new_key_is_parsed(tmp_path: Path) -> None:
     assert meta.idempotent is False
 
 
+def test_active_probe_is_parsed(tmp_path: Path) -> None:
+    meta = ToolRegistry(
+        _write(tmp_path, c=_entry('    active_probe: true\n')), strict=True
+    ).get_metadata('t')
+    assert meta is not None
+    assert meta.active_probe is True
+    assert meta.mutates is False
+
+
+def test_active_probe_beside_mutates_is_a_load_error(tmp_path: Path, errors: list[str]) -> None:
+    # Issue 092: a probe sends traffic, a writer changes the controller; one entry is never both.
+    manifests = _write(tmp_path, c=_entry('    active_probe: true\n    mutates: true\n'))
+    with pytest.raises(ManifestError, match='active_probe and mutates'):
+        len(ToolRegistry(manifests, strict=True))
+    registry = ToolRegistry(manifests)
+    assert 't' not in registry
+    assert len([e for e in errors if e.startswith('ERROR')]) == 1
+
+
 @pytest.mark.parametrize(
     'extra',
     [
@@ -106,6 +126,7 @@ def test_every_new_key_is_parsed(tmp_path: Path) -> None:
         '    credentials: keychain\n',
         '    credentials: 1\n',
         '    idempotent: "no"\n',
+        '    active_probe: "yes"\n',
         '    tags: [ok, 3]\n',
         '    tags: one\n',
         '    parameters: [x]\n',
@@ -151,6 +172,7 @@ def test_allow_list_covers_exactly_the_documented_keys() -> None:
         'idempotent',
         'cli',
         'cli_gap',
+        'active_probe',
     }
 
 

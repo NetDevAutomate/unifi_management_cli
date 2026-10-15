@@ -57,6 +57,7 @@ MANIFEST_KEYS: dict[str, type | tuple[type, ...]] = {
     'idempotent': bool,
     'cli': str,
     'cli_gap': str,
+    'active_probe': bool,
 }
 
 
@@ -160,6 +161,9 @@ class ToolMetadata:
     cli: str = ''
     # ...or why there is none ("category: detail", see unifi_mapper.mcp.parity).
     cli_gap: str = ''
+    # Runs a command on the gateway over SSH (issue 092): held back from every MCP surface
+    # unless the server starts with UNIFI_MCP_ALLOW_ACTIVE_PROBES=1. Never beside mutates.
+    active_probe: bool = False
 
     def __post_init__(self) -> None:
         """Fill the default title."""
@@ -178,8 +182,8 @@ def _check_entry(tool_name: str, tool_data: Any) -> tuple[dict[str, Any], list[s
         ``(entry, unknown_keys)``.
 
     Raises:
-        ManifestError: The entry is not a mapping, lacks ``module``, or a value has the
-            wrong type.
+        ManifestError: The entry is not a mapping, lacks ``module``, a value has the
+            wrong type, or it sets both ``active_probe`` and ``mutates``.
     """
     if not isinstance(tool_name, str) or not tool_name:
         raise ManifestError(f'tool name {tool_name!r} is not a non-empty string')
@@ -203,6 +207,8 @@ def _check_entry(tool_name: str, tool_data: Any) -> tuple[dict[str, Any], list[s
         raise ManifestError(
             f'{tool_name}: credentials must be one of {", ".join(CREDENTIAL_FAMILIES)}'
         )
+    if tool_data.get('active_probe') and tool_data.get('mutates'):
+        raise ManifestError(f'{tool_name}: active_probe and mutates cannot both be true')
     return tool_data, unknown
 
 
@@ -410,6 +416,7 @@ class ToolRegistry:
                 idempotent=entry.get('idempotent', True),
                 cli=entry.get('cli', ''),
                 cli_gap=entry.get('cli_gap', ''),
+                active_probe=entry.get('active_probe', False),
             )
             self._metadata[tool_name] = metadata
             self._categories.setdefault(category, []).append(tool_name)
