@@ -54,8 +54,8 @@ CLI_ONLY: dict[str, str] = {
     'diagram': 'by nature: renders topology diagrams to local files',
     # SSH probes left off MCP. Ping, traceroute, DNS and the latency matrix are opt-in tools
     # (issue 092 tier 1, UNIFI_MCP_ALLOW_ACTIVE_PROBES); these wait for the tier-2 decision.
-    'gateway http': 'active probe: curl fetches a URL the agent picks (issue 092 tier 2, pending)',
-    'gateway flows': 'active probe: the whole conntrack table (issue 092 tier 2, pending)',
+    'gateway http': 'active probe: curl fetches a URL the agent picks (issue 092 tier 2)',
+    'gateway flows': 'active probe: the whole conntrack table to a model (issue 092 tier 2)',
     'diagnose client-connectivity': 'active probe: includes an HTTP fetch (issue 092 tier 2)',
     'diagnose bandwidth': 'active probe: iperf3 saturates a link (excluded by issue 092)',
     # Longer than an MCP call.

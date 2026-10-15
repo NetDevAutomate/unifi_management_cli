@@ -8,13 +8,27 @@ registry holds them back: no surface lists them, ``search_tools``, ``get_tool_in
 
 from __future__ import annotations
 
+import asyncssh
 import json
+import os
 import pytest
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from loguru import logger
 from pathlib import Path
+from tests.fake_controller import API, FakeController, legacy, serving
+from tests.fake_gateway import PASSWORD, REAL_CONNECT, Reply, serve, write_known_hosts
+from tests.fixtures_unifi import FAKE_TOKEN
 from typing import Any
+from unifi_mapper.analysis.latency_matrix import run_latency_matrix
+from unifi_mapper.connectivity.gateway_probe import (
+    gateway_dns_check,
+    gateway_ping,
+    gateway_traceroute,
+)
 from unifi_mapper.mcp import server
 from unifi_mapper.mcp.call_audit import CallAuditSetting
+from unifi_mapper.mcp.catalog import annotations_for
 from unifi_mapper.mcp.config import (
     ACTIVE_PROBES_ENV,
     ActiveProbesSettingError,
@@ -22,7 +36,8 @@ from unifi_mapper.mcp.config import (
     load_server_settings,
     parse_active_probes,
 )
-from unifi_mapper.mcp.registry import ToolRegistry
+from unifi_mapper.mcp.registry import ToolMetadata, ToolRegistry
+from unifi_mapper.mcp.runner import _to_jsonable
 
 
 # Tier 1 (issue 092): tool -> (the program it runs on the gateway, its unifi-mapper command).
@@ -199,3 +214,233 @@ def test_check_reports_the_gate(gate_off: Path) -> None:
     report = server.check_report(config, 'direct', ServerSettings())
     assert report['active_probes'] == {'enabled': False, 'held': sorted(PROBES)}
     assert report['tool_count'] == len(ToolRegistry())
+
+
+# ---------------------------------------------------------------------------
+# Gate on: listed with the trust class, run through ToolRunner over a real SSH server
+# ---------------------------------------------------------------------------
+
+GATEWAY = '192.0.2.1'  # UNIFI_URL's host: the gateway the probes connect to
+PING_OK = (
+    '3 packets transmitted, 3 received, 0% packet loss\n'
+    'rtt min/avg/max/mdev = 0.100/0.200/0.300/0.050 ms\n'
+)
+TRACEROUTE_OK = (
+    'traceroute to 192.0.2.10 (192.0.2.10), 5 hops max, 38 byte packets\n'
+    ' 1  192.0.2.10  0.512 ms  0.401 ms  0.388 ms\n'
+)
+NSLOOKUP_OK = (
+    'Server:\t\t127.0.0.1\nAddress:\t127.0.0.1:53\n\n'
+    'Non-authoritative answer:\nName:\texample.com\nAddress: 192.0.2.80\n'
+)
+REPLIES: dict[str, dict[str, Reply]] = {
+    'gateway_ping': {'ping': PING_OK},
+    'gateway_traceroute': {'traceroute': TRACEROUTE_OK},
+    'gateway_dns_check': {'nslookup': NSLOOKUP_OK},
+    'run_latency_matrix': {'ping': PING_OK},
+}
+# The planted gateway SSH password, echoed where each probe's parser copies text into its
+# result (a hop's name, an answer's name) or its error (ping's stderr on a failed run).
+PLANTED: dict[str, dict[str, Reply]] = {
+    'gateway_traceroute': {'traceroute': f' 1  {PASSWORD} (192.0.2.10)  0.512 ms\n'},
+    'gateway_dns_check': {'nslookup': NSLOOKUP_OK.replace('example.com', PASSWORD)},
+}
+HANDLERS = {
+    'gateway_ping': gateway_ping,
+    'gateway_traceroute': gateway_traceroute,
+    'gateway_dns_check': gateway_dns_check,
+    'run_latency_matrix': run_latency_matrix,
+}
+CONTROLLER_ROUTES = {
+    f'{API}/stat/device': legacy(
+        [{'name': 'Core Switch', 'mac': '02:00:00:00:00:01', 'ip': '192.0.2.20'}]
+    ),
+    f'{API}/stat/sta': legacy(
+        [{'hostname': 'laptop', 'mac': '02:00:00:00:00:02', 'ip': '192.0.2.30'}]
+    ),
+}
+
+
+@pytest.fixture(scope='module')
+def host_keys() -> tuple[asyncssh.SSHKey, asyncssh.SSHKey]:
+    return asyncssh.generate_private_key('ssh-ed25519'), asyncssh.generate_private_key(
+        'ssh-ed25519'
+    )
+
+
+@pytest.fixture
+def gate_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Probes on; controller and SSH credentials exported; the call log off."""
+    _use(monkeypatch, ServerSettings(active_probes=True, call_audit=CallAuditSetting('off')))
+    monkeypatch.setenv('UNIFI_URL', f'https://{GATEWAY}')
+    monkeypatch.setenv('UNIFI_CONSOLE_API_TOKEN', FAKE_TOKEN)
+    monkeypatch.setenv('UNIFI_SSH_PASSWORD', PASSWORD)
+
+
+@asynccontextmanager
+async def _gateway(
+    monkeypatch: pytest.MonkeyPatch,
+    present: asyncssh.SSHKey,
+    trusted: asyncssh.SSHKey | None,
+    replies: dict[str, Reply],
+) -> AsyncIterator[tuple[list[str], list[str], list[str]]]:
+    """A real SSH gateway the probes reach through ``asyncssh.connect``, unchanged options.
+
+    The known-hosts file is the default one under ``HOME`` (the test's directory), which is
+    where ``gateway_session``'s ``known_hosts=()`` looks; only the socket is injected.
+    Yields ``(passwords offered, commands run, hosts connected to)``.
+    """
+    write_known_hosts(Path(os.environ['HOME']) / '.ssh' / 'known_hosts', trusted, GATEWAY)
+    commands: list[str] = []
+    hosts: list[str] = []
+    async with serve(present, replies, commands) as (sock, attempts):
+
+        async def connect(host: str, **options: Any) -> Any:
+            hosts.append(host)
+            assert 'sock' not in options and options['known_hosts'] == ()
+            return await REAL_CONNECT(host, sock=sock, **options)
+
+        monkeypatch.setattr(asyncssh, 'connect', connect)
+        yield attempts, commands, hosts
+
+
+@asynccontextmanager
+async def _controller() -> AsyncIterator[None]:
+    async with serving(FakeController(CONTROLLER_ROUTES)):
+        yield
+
+
+def _result(out: Any) -> Any:
+    envelope = out.structuredContent
+    assert envelope is not None and envelope['ok'] is True, envelope
+    return envelope['result']
+
+
+def _without_clock(value: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in value.items() if k != 'timestamp'}
+
+
+async def test_the_probes_are_listed_with_their_trust_class(gate_on: None) -> None:
+    listed = {tool.name: tool for tool in await server.create_server('direct').list_tools()}
+    assert set(PROBES) <= set(listed)
+    for name, (program, _) in PROBES.items():
+        tool = listed[name]
+        assert tool.description is not None
+        assert tool.description.startswith(f'Runs {program} on the gateway over SSH: ')
+        assert tool.annotations is not None
+        a = tool.annotations
+        assert (a.readOnlyHint, a.destructiveHint, a.idempotentHint, a.openWorldHint) == (
+            False,
+            False,
+            False,
+            True,
+        )
+        info = await server.get_tool_info(name)
+        assert info is not None
+        assert info['annotations'] == {
+            'title': tool.title,
+            'readOnlyHint': False,
+            'destructiveHint': False,
+            'idempotentHint': False,
+            'openWorldHint': True,
+        }
+        assert info['input_schema'] == tool.inputSchema
+    assert {hit['name'] for hit in await server.search_tools(query='gateway ssh')} >= set(PROBES)
+    categories = await server.list_categories()
+    assert {'gateway_ping', 'gateway_traceroute', 'gateway_dns_check'} <= set(
+        categories['connectivity']
+    )
+    assert 'run_latency_matrix' in categories['analysis']
+
+
+@pytest.mark.parametrize('name', sorted(PROBES))
+async def test_execute_tool_runs_each_probe_as_the_handler_does(
+    gate_on: None,
+    monkeypatch: pytest.MonkeyPatch,
+    host_keys: tuple[asyncssh.SSHKey, asyncssh.SSHKey],
+    name: str,
+) -> None:
+    key, _ = host_keys
+    async with _controller():
+        async with _gateway(monkeypatch, key, key, REPLIES[name]) as (attempts, commands, hosts):
+            out = await server.execute_tool(name, CALLS[name])
+        async with _gateway(monkeypatch, key, key, REPLIES[name]):
+            direct = await HANDLERS[name](**CALLS[name])
+    result = _result(out)
+    assert attempts == [PASSWORD]  # the key was trusted, then the password sent once
+    assert hosts == [GATEWAY]
+    assert commands and all(c.split()[0] == PROBES[name][0] for c in commands)
+    expected = json.loads(json.dumps(_to_jsonable(direct)))
+    if name == 'run_latency_matrix':
+        assert _without_clock(result) == _without_clock(expected)
+        assert result['targets_reachable'] == 2
+    else:
+        assert result == expected
+
+
+@pytest.mark.parametrize('name', sorted(PLANTED))
+async def test_a_planted_ssh_password_never_reaches_a_result(
+    gate_on: None,
+    monkeypatch: pytest.MonkeyPatch,
+    host_keys: tuple[asyncssh.SSHKey, asyncssh.SSHKey],
+    name: str,
+) -> None:
+    key, _ = host_keys
+    async with _gateway(monkeypatch, key, key, PLANTED[name]):
+        out = await server.execute_tool(name, CALLS[name])
+    async with _gateway(monkeypatch, key, key, PLANTED[name]):
+        direct = await HANDLERS[name](**CALLS[name])
+    assert PASSWORD in json.dumps(direct)  # the plant reached the handler's result...
+    _result(out)
+    assert PASSWORD not in json.dumps(out.structuredContent)  # ...and MCP masked it
+    assert PASSWORD not in out.content[0].text  # type: ignore[union-attr]
+
+
+async def test_a_planted_ssh_password_never_reaches_an_error(
+    gate_on: None, monkeypatch: pytest.MonkeyPatch, host_keys: tuple[asyncssh.SSHKey, ...]
+) -> None:
+    key = host_keys[0]
+    failing: dict[str, Reply] = {'ping': ('', f'ping: {PASSWORD}: permission denied\n', 2)}
+    async with _gateway(monkeypatch, key, key, failing):
+        out = await server.execute_tool('gateway_ping', CALLS['gateway_ping'])
+    envelope = out.structuredContent
+    assert envelope is not None and envelope['error_code'] == 'API_ERROR', envelope
+    assert 'ping could not run on the gateway (exit status 2)' in envelope['message']
+    assert PASSWORD not in json.dumps(envelope)
+    assert PASSWORD not in out.content[0].text  # type: ignore[union-attr]
+
+
+async def test_a_missing_ssh_password_is_config_missing(
+    gate_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv('UNIFI_SSH_PASSWORD')
+    out = await server.execute_tool('gateway_ping', CALLS['gateway_ping'])
+    envelope = out.structuredContent
+    assert envelope is not None and envelope['error_code'] == 'CONFIG_MISSING', envelope
+    assert 'UNIFI_SSH_PASSWORD' in envelope['message']
+
+
+async def test_the_direct_surface_runs_a_probe(
+    gate_on: None, monkeypatch: pytest.MonkeyPatch, host_keys: tuple[asyncssh.SSHKey, ...]
+) -> None:
+    key = host_keys[0]
+    async with _gateway(monkeypatch, key, key, REPLIES['gateway_ping']) as (attempts, _, _):
+        out = await server.create_server('direct').call_tool('gateway_ping', CALLS['gateway_ping'])
+    assert out.isError is False
+    assert out.structuredContent is not None
+    assert out.structuredContent['loss_pct'] == 0.0
+    assert attempts == [PASSWORD]
+
+
+def test_an_active_probe_is_never_annotated_read_only() -> None:
+    # Whatever the entry's other keys say, a probe sends traffic from the gateway.
+    meta = ToolMetadata(
+        'probe', 'm', 'h', 'd', 'c', active_probe=True, open_world=False, idempotent=True
+    )
+    a = annotations_for(meta)
+    assert (a.readOnlyHint, a.destructiveHint, a.idempotentHint, a.openWorldHint) == (
+        False,
+        False,
+        False,
+        True,
+    )
