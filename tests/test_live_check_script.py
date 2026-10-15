@@ -129,3 +129,24 @@ def test_the_report_file_is_part_of_the_scan(
     source = Path(live_check.__file__).read_text()  # type: ignore[attr-defined]
     body = source.split('def main(')[1]
     assert body.index('write_report(out, report)') < body.index('scan_outputs(out, report)')
+
+
+@pytest.mark.parametrize(
+    'cmd',
+    [['gateway', 'ping', '192.0.2.1'], ['gateway', 'traceroute', 'x'], ['diagnose', 'bandwidth']],
+)
+def test_a_configured_ssh_probe_command_is_refused_before_anything_runs(
+    live_check: object, tmp_path: Path, cmd: list[str]
+) -> None:
+    body = 'switch = "core"\nport = 7\ncli_commands = [' + json.dumps(cmd) + ']\n'
+    (tmp_path / 'c.toml').write_text(body)
+    with pytest.raises(SystemExit, match='over SSH'):
+        live_check.load_config(tmp_path / 'c.toml', tmp_path)  # type: ignore[attr-defined]
+
+
+def test_the_mcp_check_re_checks_each_request_against_the_allowlist(live_check: object) -> None:
+    """The MCP side must apply request_allowed() to every request line, as the CLI side does;
+    counting lines is not a check (pass C finding)."""
+    source = Path(live_check.__file__).read_text()  # type: ignore[attr-defined]
+    mcp = source.split('async def run_mcp(')[1].split('def checkout_version(')[0]
+    assert 'request_allowed(' in mcp and 'inside the read-only allowlist' in mcp

@@ -68,7 +68,9 @@ DEFAULT_MCP_TOOLS: tuple[tuple[str, dict[str, Any]], ...] = (
 )
 MUTATING_TOOL = ('apply_stp_changes', {'changes': []})
 # A configured CLI command carrying one of these is refused before anything runs: the harness
-# runs reads only, and every writer in the CLI needs one of them to write.
+# runs reads only, and every writer in the CLI needs one of them to write. A `gateway ...` or
+# `diagnose bandwidth` command (SSH to the gateway) is refused too: the harness reads the
+# controller's API, never the gateway's shell.
 WRITE_FLAGS = frozenset({'--apply', '--force', '--yes', '-y', '--write', '--confirm', '--commit'})
 
 
@@ -146,6 +148,11 @@ def load_config(path: Path, repo_root: Path) -> Config:
         if flagged:
             raise SystemExit(
                 f'config {path}: {" ".join(cmd)!r} carries {flagged}; this harness runs reads only'
+            )
+        if cmd[:1] == ['gateway'] or cmd[:2] == ['diagnose', 'bandwidth']:
+            raise SystemExit(
+                f'config {path}: {" ".join(cmd)!r} runs a command on the gateway over SSH; '
+                'this harness reads the controller only'
             )
     tools = [(t[0], dict(t[1])) for t in DEFAULT_MCP_TOOLS]
     for entry in raw.get('mcp_tools', []):
@@ -355,11 +362,23 @@ async def run_mcp(cfg: Config, out: Path, report: Report) -> None:
         f'{len(refusal)} call line(s), {len(requests_during_refusal)} request line(s) '
         'in its window',
     )
-    requests_total = sum(1 for line in lines if line.get('kind') == 'request')
+    from unifi_mapper.core.utils.readonly import request_allowed
+
+    site = load_env_file()
+    request_lines = [line for line in lines if line.get('kind') == 'request']
+    outside = [
+        f'{line.get("method")} {line.get("path")}'
+        for line in request_lines
+        if not (
+            isinstance(line.get('method'), str)
+            and isinstance(line.get('path'), str)
+            and request_allowed(line['method'], line['path'], site)[0]
+        )
+    ]
     report.add(
-        'mcp: request audit recorded the reads',
-        requests_total > 0,
-        f'{requests_total} request lines',
+        'mcp: every audited request is inside the read-only allowlist',
+        bool(request_lines) and not outside,
+        f'{len(request_lines)} request lines, {len(outside)} outside: {outside[:3]}',
     )
 
 
