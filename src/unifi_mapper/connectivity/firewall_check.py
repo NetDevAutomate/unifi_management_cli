@@ -48,7 +48,10 @@ async def firewall_check(
         - matching_rules: All firewall rules that apply to this traffic
         - rule_order: Order in which rules are evaluated
         - recommendations: Suggestions for rule improvements
-        - vlan_matrix: Visual matrix of VLAN-to-VLAN connectivity
+        - vlan_matrix: When both endpoints are VLANs, ``{'vlans': [{'id', 'name'}, ...],
+          'connectivity_matrix': [{'source', 'destination', 'verdict'}, ...]}``, one record
+          per ordered pair of networks (a list, so a network name is never a mapping key);
+          ``None`` otherwise
 
     Raises:
         ToolError: INVALID_VLAN if source or destination VLAN not found
@@ -226,27 +229,37 @@ def _determine_verdict(matching_rules: list[FirewallRule]) -> Literal['allow', '
 async def _build_vlan_matrix(
     vlans_data: list[dict[str, Any]], firewall_data: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """Build VLAN-to-VLAN connectivity matrix."""
+    """Build the VLAN-to-VLAN connectivity matrix as one record per (source, destination).
+
+    The matrix is a list of ``{'source', 'destination', 'verdict'}`` records, never a map
+    keyed by network name: the output redactors drop or mask a mapping entry whose KEY looks
+    like a secret, so a network the operator named ``IoT-PSK`` would lose its verdicts
+    (issue 091). Names are values here, which neither redactor touches.
+    """
     vlans = [
         {'id': vlan.get('vlan', 1), 'name': vlan.get('name', f'VLAN {vlan.get("vlan", 1)}')}
         for vlan in vlans_data
     ]
 
-    matrix = {}
+    matrix: list[dict[str, str]] = []
 
     for source_vlan in vlans:
-        matrix[source_vlan['name']] = {}
-
         for dest_vlan in vlans:
             if source_vlan['id'] == dest_vlan['id']:
                 # Same VLAN - always allowed
-                matrix[source_vlan['name']][dest_vlan['name']] = 'allow'
+                verdict = 'allow'
             else:
                 # Check inter-VLAN rules (simplified)
                 verdict = _check_inter_vlan_rules(
                     source_vlan['id'], dest_vlan['id'], firewall_data
                 )
-                matrix[source_vlan['name']][dest_vlan['name']] = verdict
+            matrix.append(
+                {
+                    'source': source_vlan['name'],
+                    'destination': dest_vlan['name'],
+                    'verdict': verdict,
+                }
+            )
 
     return {
         'vlans': vlans,

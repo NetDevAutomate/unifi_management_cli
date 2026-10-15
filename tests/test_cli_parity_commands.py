@@ -509,7 +509,7 @@ FIREWALL: dict[str, Any] = {
     ],
     'rule_evaluation_order': [2000],
     'recommendations': ['Add an allow rule above 2000 for the NAS'],
-    'vlan_matrix': {'vlans': [], 'connectivity_matrix': {}},
+    'vlan_matrix': {'vlans': [], 'connectivity_matrix': []},
 }  # fmt: skip
 PERFORMANCE = importlib.import_module(
     'unifi_mapper.diagnostics.performance_analysis'
