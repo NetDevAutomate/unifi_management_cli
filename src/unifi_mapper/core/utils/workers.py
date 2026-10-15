@@ -120,5 +120,10 @@ async def run_blocking(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         finally:
             budget.release()
 
-    threading.Thread(target=_worker, name='unifi-mcp-worker', daemon=True).start()
+    try:
+        threading.Thread(target=_worker, name='unifi-mcp-worker', daemon=True).start()
+    except BaseException:
+        # The thread never ran, so its finally never will: the permit comes back from here.
+        budget.release()
+        raise
     return await future

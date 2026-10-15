@@ -67,6 +67,9 @@ DEFAULT_MCP_TOOLS: tuple[tuple[str, dict[str, Any]], ...] = (
     ('diagnose_switch_port', {}),  # switch and port are filled from the config
 )
 MUTATING_TOOL = ('apply_stp_changes', {'changes': []})
+# A configured CLI command carrying one of these is refused before anything runs: the harness
+# runs reads only, and every writer in the CLI needs one of them to write.
+WRITE_FLAGS = frozenset({'--apply', '--force', '--yes', '-y', '--write', '--confirm', '--commit'})
 
 
 @dataclass
@@ -138,6 +141,12 @@ def load_config(path: Path, repo_root: Path) -> Config:
     cli = [[str(a) for a in cmd] for cmd in raw.get('cli_commands', [])] or [
         list(c) for c in DEFAULT_CLI_COMMANDS
     ]
+    for cmd in cli:
+        flagged = sorted(set(cmd) & WRITE_FLAGS)
+        if flagged:
+            raise SystemExit(
+                f'config {path}: {" ".join(cmd)!r} carries {flagged}; this harness runs reads only'
+            )
     tools = [(t[0], dict(t[1])) for t in DEFAULT_MCP_TOOLS]
     for entry in raw.get('mcp_tools', []):
         tools.append((str(entry['name']), dict(entry.get('args', {}))))
@@ -192,6 +201,28 @@ def _cli_args(cmd: list[str], cfg: Config) -> list[str]:
     return cmd
 
 
+def _guard_every_client(site: str) -> None:
+    """Put the read-only guard on every client this process logs in, whatever command built it.
+
+    The read-only commands guard their own client; a writer would not. Wrapping the class's
+    ``login`` means a configured command that reached a write path would raise
+    ``ReadOnlyViolation`` (recorded as a failed check) instead of writing. Idempotent with the
+    commands' own guard.
+    """
+    from unifi_mapper.api_client import UnifiApiClient
+    from unifi_mapper.core.utils.readonly import install_read_only_guard
+
+    original = UnifiApiClient.login
+
+    def login_then_guard(self: Any, *args: Any, **kwargs: Any) -> bool:
+        ok = original(self, *args, **kwargs)
+        if ok:
+            install_read_only_guard(self, site)
+        return ok
+
+    UnifiApiClient.login = login_then_guard  # type: ignore[method-assign]
+
+
 def run_cli(cfg: Config, out: Path, report: Report) -> str:
     """Run each CLI command through the Typer app in this process; return the site name.
 
@@ -210,6 +241,7 @@ def run_cli(cfg: Config, out: Path, report: Report) -> str:
     site = load_env_file()
     audit_path = out / 'cli-request-audit.jsonl'
     configure_request_audit(audit_path)
+    _guard_every_client(site)
     outputs = out / 'cli-outputs'
     outputs.mkdir()
     runner = CliRunner()
@@ -428,8 +460,9 @@ def main(argv: list[str] | None = None) -> int:
     if not ns.skip_mcp:
         asyncio.run(run_mcp(cfg, out, report))
     check_protect(report)
+    write_report(out, report)  # so the report itself is scanned ...
     scan_outputs(out, report)
-    write_report(out, report)
+    write_report(out, report)  # ... and then carries the scan's own line
     print_report(out, report)
     return 1 if report.failed else 0
 

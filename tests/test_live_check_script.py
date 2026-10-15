@@ -108,3 +108,24 @@ def test_unverified_checks_do_not_fail_the_run(live_check: object) -> None:
     report = live_check.Report()  # type: ignore[attr-defined]
     live_check.check_protect(report)  # type: ignore[attr-defined]
     assert report.checks[-1].status == 'unverified' and not report.failed
+
+
+@pytest.mark.parametrize('flag', ['--apply', '--force', '--yes'])
+def test_a_configured_command_with_a_write_flag_is_refused_before_anything_runs(
+    live_check: object, tmp_path: Path, flag: str
+) -> None:
+    (tmp_path / 'c.toml').write_text(
+        f'switch = "core"\nport = 7\ncli_commands = [["ports", "refresh", "{flag}"]]\n'
+    )
+    with pytest.raises(SystemExit, match='runs reads only'):
+        live_check.load_config(tmp_path / 'c.toml', tmp_path)  # type: ignore[attr-defined]
+
+
+def test_the_report_file_is_part_of_the_scan(
+    live_check: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """main() writes the report before scanning and again after, so a secret that only the
+    report carried would still fail the run (pass C finding)."""
+    source = Path(live_check.__file__).read_text()  # type: ignore[attr-defined]
+    body = source.split('def main(')[1]
+    assert body.index('write_report(out, report)') < body.index('scan_outputs(out, report)')

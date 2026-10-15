@@ -43,6 +43,9 @@ The current release is 0.4.0; only the latest release is supported.
   matched any pair after a protocol/port check; one rule named "block" made every cell `deny`;
   the default policy was never read), so a `deny` or `allow` from an earlier release was not
   evidence of anything. The Mermaid firewall matrix draws the networks and no verdict edge.
+  On a controller running the zone-based firewall (Network 9 and later) the classic rule
+  endpoint this reads is empty, so `basis` lists nothing there until the tool reads the
+  zone-based policies (issue 099, 0.5.0).
   Evaluating each rule's networks against the pair is planned for 0.5.0. (Issue 093.)
 - `analyze vlan-coverage`, `diagnose vlans` and `analyze foreign-bridges` can report different
   counts and findings for an unchanged site: a port with no profile and no override now runs
