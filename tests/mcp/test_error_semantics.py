@@ -280,34 +280,36 @@ async def test_a_timeout_during_a_sync_handler_returns_at_the_deadline(local_run
     assert HANDLER_CALLS['count'] == 1
 
 
-async def test_abandoned_sync_handlers_are_bounded_by_the_thread_limiter(local_runner) -> None:
-    """After N timeouts the live worker threads are bounded by the limiter, not by N.
+async def test_abandoned_sync_handlers_are_bounded_by_the_runner_s_own_limiter(
+    local_runner,
+) -> None:
+    """After N timeouts the live worker threads are bounded by max_concurrency, not by N.
 
-    A call whose deadline fires while it waits for a worker thread never invokes its
-    handler, so the unfinished work a wedged controller can pile up is the limiter's tokens.
+    The runner hops sync handlers on its OWN thread limiter, sized to ``max_concurrency``,
+    so a wedged controller can pile up at most that many abandoned workers, and the default
+    anyio pool the stdio transport reads stdin through is never borrowed from (issue 090,
+    the call log's limiter from issue 076 item 33 is the precedent).
     """
-    limiter = anyio.to_thread.current_default_thread_limiter()
-    original = limiter.total_tokens
-    limiter.total_tokens = 2
-    runner = local_runner(max_concurrency=8, tool_timeout=0.05)
+    shared = anyio.to_thread.current_default_thread_limiter()
+    runner = local_runner(max_concurrency=2, tool_timeout=0.05)
     outcomes: list[str] = []
 
     async def one() -> None:
         out = await runner.run('counting_block', {'seconds': 0.4})
         outcomes.append(out.structuredContent['error_code'])
 
-    try:
-        async with anyio.create_task_group() as tg:
-            for _ in range(6):
-                tg.start_soon(one)
-        assert outcomes == [ErrorCodes.TIMEOUT] * 6
-        assert limiter.statistics().borrowed_tokens <= 2  # the abandoned threads, not six
-        assert HANDLER_CALLS['count'] == 2  # the four that never got a thread never ran
-        with anyio.fail_after(2):  # the abandoned workers run to their end and free the tokens
-            while limiter.statistics().borrowed_tokens:
-                await anyio.sleep(0.02)
-    finally:
-        limiter.total_tokens = original
+    async with anyio.create_task_group() as tg:
+        for _ in range(6):
+            tg.start_soon(one)
+    assert outcomes == [ErrorCodes.TIMEOUT] * 6
+    own = runner._handler_limit()
+    assert own.total_tokens == 2
+    assert own.statistics().borrowed_tokens <= 2  # the abandoned threads, not six
+    assert shared.statistics().borrowed_tokens == 0  # the transport's pool is untouched
+    assert HANDLER_CALLS['count'] == 2  # the four that never got a thread never ran
+    with anyio.fail_after(2):  # the abandoned workers run to their end and free the tokens
+        while own.statistics().borrowed_tokens:
+            await anyio.sleep(0.02)
 
 
 async def test_the_calling_context_reaches_a_sync_handler_in_its_thread(local_runner) -> None:

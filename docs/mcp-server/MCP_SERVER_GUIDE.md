@@ -447,8 +447,11 @@ slots: a call still queued when it fires is `[TIMEOUT]` and its handler never ra
 synchronous handler runs in a worker thread, so it neither blocks other calls nor outlives
 the deadline from the caller's side. A timeout ends the caller's wait, not the controller
 activity: the worker that was serving the call finishes its current request (each is
-bounded by `UNIFI_TIMEOUT` and the retry settings) and its result is dropped; the call log's
-`slot_wait_ms` says how long each call queued.
+bounded by `UNIFI_TIMEOUT` and the retry settings) and its result is dropped. Those workers
+come from the runner's own thread pool, sized to `UNIFI_MCP_MAX_CONCURRENCY`, never from the
+pool the MCP transport reads stdin through, so at most that many abandoned workers can exist
+and a wedged controller cannot stall request reading. The call log's `slot_wait_ms` says how
+long each call queued.
 
 ### kiro-cli
 

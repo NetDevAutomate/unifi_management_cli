@@ -293,6 +293,11 @@ class ToolRunner:
         self._config = config or (lambda: None)
         self._semaphore: anyio.Semaphore | None = None
         self._semaphore_loop: asyncio.AbstractEventLoop | None = None
+        # The sync handlers' own worker-thread budget, sized to max_concurrency (issue 090):
+        # an abandoned worker never borrows from anyio's default pool, which the stdio
+        # transport reads stdin through, so a wedged controller cannot stall request reading.
+        self._handler_limiter: anyio.CapacityLimiter | None = None
+        self._handler_limiter_loop: asyncio.AbstractEventLoop | None = None
 
     def is_direct(self, name: str) -> bool:
         """Return True if ``name`` is a catalog tool listed on the direct surface."""
@@ -305,6 +310,14 @@ class ToolRunner:
             self._semaphore = anyio.Semaphore(self.settings.max_concurrency)
             self._semaphore_loop = loop
         return self._semaphore
+
+    def _handler_limit(self) -> anyio.CapacityLimiter:
+        """Return the sync handlers' thread limiter for the running event loop."""
+        loop = asyncio.get_running_loop()
+        if self._handler_limiter is None or self._handler_limiter_loop is not loop:
+            self._handler_limiter = anyio.CapacityLimiter(self.settings.max_concurrency)
+            self._handler_limiter_loop = loop
+        return self._handler_limiter
 
     async def run(
         self, name: str, params: dict[str, Any] | None, surface: Surface = 'execute_tool'
@@ -547,18 +560,21 @@ class ToolRunner:
             if timing.slot_wait_ms is None:
                 timing.slot_wait_ms = (time.monotonic() - queued) * 1000
 
-    @staticmethod
-    async def _call(tool: Tool, kwargs: dict[str, Any]) -> Any:
+    async def _call(self, tool: Tool, kwargs: dict[str, Any]) -> Any:
         """Call the handler: awaited if async, else run in a worker thread.
 
-        The thread is abandoned when the await is cancelled (the deadline, or the client
-        going away): the caller returns at once and the worker runs to its end on its own,
-        its result dropped. The calling context (contextvars) is copied into the thread.
+        The thread comes from the runner's own limiter (``max_concurrency`` tokens), not
+        anyio's default pool. It is abandoned when the await is cancelled (the deadline, or
+        the client going away): the caller returns at once and the worker runs to its end on
+        its own, its result dropped. The calling context (contextvars) is copied into the
+        thread.
         """
         if tool.is_async:
             return await tool.fn(**kwargs)
         result = await anyio.to_thread.run_sync(
-            functools.partial(tool.fn, **kwargs), abandon_on_cancel=True
+            functools.partial(tool.fn, **kwargs),
+            abandon_on_cancel=True,
+            limiter=self._handler_limit(),
         )
         if inspect.isawaitable(result):
             return await result
