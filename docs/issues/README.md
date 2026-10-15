@@ -108,7 +108,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [090](090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md) | The MCP deadline cannot stop a synchronous handler or a worker thread it started | resolved |
 | [091](091-output-redactor-drops-entries-keyed-by-secret-looking-names.md) | The output redactor drops entries of any map keyed by a name that looks like a secret | resolved |
 | [092](092-gateway-probes-over-mcp-behind-an-opt-in.md) | Expose the gateway SSH probes over MCP behind an explicit opt-in (tier 1 built in 0.4.0; live check and tier 2 pending) | open, decision needed |
-| [093](093-diagnose-firewall-verdicts-are-placeholder-heuristics.md) | `diagnose firewall` verdicts are placeholder heuristics, not derived from the rules | open, decision needed |
+| [093](093-diagnose-firewall-verdicts-are-placeholder-heuristics.md) | `diagnose firewall` verdicts are placeholder heuristics, not derived from the rules | resolved |
 | [094](094-acl-create-helpers-send-filters-the-api-refuses.md) | ACL create helpers send filters without a `type` and with empty lists the API refuses | open, decision needed |
 | [095](095-metrics-collector-per-port-metrics-are-always-empty.md) | `DeviceMetricsCollector` per-port metrics are always empty: `statistics/latest` sends no ports | open, decision needed |
 | [096](096-get-lldp-info-returns-nothing-on-a-current-controller.md) | `get_lldp_info` returns no LLDP neighbours on a current controller, so diagrams draw no LLDP links | open |

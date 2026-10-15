@@ -1,7 +1,8 @@
 ---
 title: "`diagnose firewall` verdicts are placeholder heuristics, not derived from the rules"
 date: 2026-10-15
-status: open, decision needed
+status: resolved
+resolved_by: 3c142a5
 severity: high
 components: [connectivity/firewall_check]
 found_by: 0.4.0 lane 3 (issue 091 reshape) live check
@@ -58,3 +59,26 @@ Either way the first test asserts a pair the rules block is not reported `allow`
 
 Whether 0.4.0 ships (b), labelling the output as not assessed, or defers both until (a) can be
 designed from a live capture.
+
+## Decision and resolution (2026-10-15)
+
+Option (b), decided by the 0.4.0 validation council (pass B, D-093, unanimous) and verified in
+source by the agent; the maintainer can revert before the release merges. Option (a), the
+rule-based evaluation, is 0.5.0 work after a read-only capture of one classic and one
+zone-based rule set.
+
+The verdict and every matrix cell are `not assessed`; a `basis` field says exactly what was
+checked (the enabled rules whose protocol and destination port match, in evaluation order) and
+what was not (each rule's source and destination networks against the pair; the site's default
+policy). The two heuristic functions are deleted. The recommendations say what the listed rules
+are and are not evidence of. The CLI prints the verdict and the basis and its `--help` no
+longer promises a verdict; the Mermaid matrix draws the networks and no verdict edge, with a
+note; the MCP manifest description says the same.
+
+Pinned by `tests/connectivity/test_firewall_not_assessed.py`: the result over the fake
+controller (a rule whose name says block no longer turns any cell `deny`), the CLI JSON and
+human output, the Mermaid rendering, and the help text.
+
+What a user sees: on the maintainer's site, read-only, `diagnose firewall` reports 256 pair
+records all `not assessed` where every one read `allow`. Consumers of the `verdict` field and
+of the matrix cells see the new value; listed under Breaking.

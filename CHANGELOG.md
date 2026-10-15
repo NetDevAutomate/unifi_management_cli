@@ -31,6 +31,26 @@ The current release is 0.3.0; only the latest release is supported.
   calls, and one that overruns the deadline returns `[TIMEOUT]` at the deadline instead of a
   late success; the abandoned worker finishes its current request and its result is dropped.
   The MCP call log gains `slot_wait_ms`. (Issue 090.)
+- `diagnose firewall` and the MCP tool `firewall_check` no longer report an `allow` or `deny`
+  verdict. The verdict and every `connectivity_matrix` cell are `not assessed`, and a new
+  `basis` field says what was checked: the enabled rules whose protocol and destination port
+  match, in evaluation order. The previous verdicts were placeholder heuristics (every rule
+  matched any pair after a protocol/port check; one rule named "block" made every cell `deny`;
+  the default policy was never read), so a `deny` or `allow` from an earlier release was not
+  evidence of anything. The Mermaid firewall matrix draws the networks and no verdict edge.
+  Evaluating each rule's networks against the pair is planned for 0.5.0. (Issue 093.)
+- `analyze vlan-coverage`, `diagnose vlans` and `analyze foreign-bridges` can report different
+  counts and findings for an unchanged site: a port with no profile and no override now runs
+  the VLAN settings its own port-table row reports (a `forward: all` row is a trunk carrying
+  every VLAN), where it was treated as carrying nothing; a port under a profile is unchanged.
+  On the maintainer's site `diagnose vlans` names 64 trunks where it named 43, and
+  `vlan-coverage` audits 47 ports where it audited 39 and clears three findings on
+  profile-less uplinks. The `vlan-traffic coverage` raw-tier gap cutoff also moved from a
+  fixed 360 s to the measured bound `report` uses (600 s at a 60 s cadence), so an existing
+  store can report fewer raw gaps. (Issues 089, 097.)
+- Python callers of `unifi_mapper.network`: `DeviceStatistics.interfaces` is now a
+  `DeviceStatisticsInterfaces` object (`radios`), not a `list[InterfaceStatistics]`; the
+  endpoint sends an object. (Issue 081.)
 
 ### Added
 
