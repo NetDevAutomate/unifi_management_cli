@@ -288,6 +288,42 @@ async def test_a_401_triggers_exactly_one_refresh_and_one_replay(controller: Con
     assert controller.sessions[-1].paths('GET')[0] == DEVICES
 
 
+async def test_two_concurrent_calls_through_one_expiry_share_one_refresh_and_their_own_audits(
+    controller: Controller,
+) -> None:
+    """Council pass B MINOR: concurrency and a 401 together. The session expires once while two
+    calls are in flight: exactly one refresh, and each call's audit holds only its own requests
+    (the refused request and its replay appear in the refused call's audit, nowhere else)."""
+    params = {'switch': SWITCH_NAME, 'port': 5}
+    _result(await server.execute_tool('diagnose_switch_port', params))  # warm: MAC cache built
+    alone = _result(await server.execute_tool('diagnose_switch_port', params))['request_audit']
+    # The live session compiled its route table at construction: swap the devices route there.
+    live = controller.sessions[-1]
+    once = _once_401(_devices_route())
+    live.routes = [
+        (m, p, once if (m == 'GET' and p.pattern.endswith('stat/device$')) else v)
+        for m, p, v in live.routes
+    ]
+    controller.pause = 0.002
+    before = len(controller.calls)  # every session's calls: the refresh moves to a new one
+
+    bundle, history = await asyncio.gather(
+        server.execute_tool('diagnose_switch_port', params),
+        server.execute_tool('get_client_history', {'client': NAS_MAC, 'switch': SWITCH_NAME}),
+    )
+
+    assert controller.logins == 2, 'the first login and ONE refresh for the one expiry'
+    devices = {'method': 'GET', 'path': DEVICES}
+    audit = _result(bundle)['request_audit']
+    # Whichever call drew the 401, the diagnose call's audit is exactly its own requests: either
+    # untouched, or with the refused request in front of its replay. Nothing of the other call.
+    assert audit in (alone, [devices, *alone]), audit
+    assert _result(history)['records']
+    during = controller.calls[before:]
+    assert len(during) > len(audit), 'the other call ran on the shared client, unrecorded here'
+    assert isinstance(controller.clients[0].session, ReadOnlySession)
+
+
 def test_a_second_401_is_returned_as_is_never_a_loop(controller: Controller) -> None:
     controller.routes.update(
         default_routes(devices=(401, {'meta': {'rc': 'error', 'msg': 'api.err.LoginRequired'}}))
