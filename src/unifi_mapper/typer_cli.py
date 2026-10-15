@@ -3096,9 +3096,15 @@ def diagram(
 
     Generates a visual diagram of your UniFi infrastructure without
     performing any LLDP analysis or port name updates.
+
+    PNG and SVG need Graphviz. Without it the file is a placeholder that says why; the
+    command says so instead of reporting a diagram, and exits 1. --format html needs no
+    Graphviz.
     """
     config = state.config_path
     debug = state.debug
+    # Why the PNG or SVG renderer wrote a placeholder instead of an image (issue 086)
+    not_drawn: Optional[str] = None
 
     if not state.debug:
         setup_logging(debug=False)
@@ -3262,16 +3268,22 @@ def diagram(
 
         # Generate diagram
         if format.lower() == 'png':
-            topology.generate_png_diagram(str(diagram_path))
+            not_drawn = topology.generate_png_diagram(str(diagram_path))
         elif format.lower() == 'svg':
-            topology.generate_svg_diagram(str(diagram_path))
+            not_drawn = topology.generate_svg_diagram(str(diagram_path))
         elif format.lower() == 'html':
             topology.generate_html_diagram(str(diagram_path), all_devices)
         else:
             console.print(f'❌ [bold red]Unsupported format: {format}[/bold red]')
             raise typer.Exit(1)
 
-        console.print(f'✅ [bold green]Diagram generated: {diagram_path}[/bold green]')
+        if not_drawn:
+            err_console.print(
+                f'⚠️ [bold yellow]No diagram drawn: {escape(str(diagram_path))} holds a '
+                f'placeholder. {escape(not_drawn)}[/bold yellow]'
+            )
+        else:
+            console.print(f'✅ [bold green]Diagram generated: {diagram_path}[/bold green]')
         console.print(
             f'📊 Devices: [cyan]{len(devices)}[/cyan], '
             f'Connections: [cyan]{len(topology_connections)}[/cyan]'
@@ -3281,6 +3293,12 @@ def diagram(
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
             _print_debug_traceback(console)
+        raise typer.Exit(1)
+
+    if not_drawn:
+        # A placeholder is not the diagram asked for, so the run failed (issue 086). Exit 1, the
+        # reference's "an error ... a check could not run"; exit 2 would need this command named
+        # in the exit-code table's validation row of docs/reference/cli.md.
         raise typer.Exit(1)
 
 

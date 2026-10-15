@@ -124,3 +124,63 @@ def test_diagram_draws_a_uxg_gateway_as_the_gateway(
     assert 'Device types: 1 routers, 1 switches, 1 APs' in result.output
     assert 'Devices: 3' in result.output
     assert _nodes(out) == {'Edge': 'router', 'Core Flex XG': 'switch', 'Hall U6 Pro': 'ap'}
+
+
+# Like `dot -Kdot -T<format> -O <source>`, as graphviz runs it: write <source>.<format>.
+FAKE_DOT = """#!/bin/sh
+for arg in "$@"; do
+    case "$arg" in -T*) format="${arg#-T}" ;; esac
+    source="$arg"
+done
+printf 'drawn\\n' > "$source.$format"
+"""
+
+
+@pytest.fixture
+def no_dot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A PATH with no Graphviz ``dot`` on it."""
+    empty = tmp_path / 'no-dot'
+    empty.mkdir()
+    monkeypatch.setenv('PATH', str(empty))
+
+
+@pytest.fixture
+def fake_dot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A PATH whose ``dot`` writes the requested file and nothing else."""
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    dot = bin_dir / 'dot'
+    dot.write_text(FAKE_DOT, encoding='utf-8')
+    dot.chmod(0o755)
+    monkeypatch.setenv('PATH', f'{bin_dir}:/bin:/usr/bin')
+
+
+@pytest.mark.usefixtures('site', 'no_dot')
+@pytest.mark.parametrize('fmt', ['png', 'svg'])
+def test_a_placeholder_is_reported_and_exits_1(config: Path, tmp_path: Path, fmt: str) -> None:
+    """Issue 086: without Graphviz the renderer writes a placeholder; diagram says so."""
+    out = tmp_path / f'net.{fmt}'
+    result = runner.invoke(
+        app, ['--config', str(config), 'diagram', '--format', fmt, '-o', str(out)]
+    )
+
+    assert result.exit_code == 1, result.output
+    assert 'Diagram generated' not in result.output
+    assert 'No diagram drawn' in result.stderr
+    assert 'placeholder' in result.stderr
+    assert "Graphviz's dot program is not on PATH" in ' '.join(result.output.split())
+    assert out.read_text(encoding='utf-8').startswith(f'{fmt.upper()} generation needs Graphviz')
+
+
+@pytest.mark.usefixtures('site', 'fake_dot')
+@pytest.mark.parametrize('fmt', ['png', 'svg'])
+def test_a_drawn_diagram_is_reported_and_exits_0(config: Path, tmp_path: Path, fmt: str) -> None:
+    out = tmp_path / f'net.{fmt}'
+    result = runner.invoke(
+        app, ['--config', str(config), 'diagram', '--format', fmt, '-o', str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert 'Diagram generated' in result.output
+    assert 'No diagram drawn' not in result.output
+    assert out.read_text(encoding='utf-8') == 'drawn\n'

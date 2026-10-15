@@ -64,20 +64,25 @@ GRAPHVIZ_MISSING_HINT = (
 )
 
 
-def _render_without_dot(output_path: str, output_base: str, image_format: str) -> None:
+def _render_without_dot(output_path: str, output_base: str, image_format: str) -> str:
     """The missing-``dot`` branch of a PNG or SVG render (issue 075).
 
     Mirrors the missing-package branch: a warning that names the install and a placeholder at
     ``output_path``, so the run goes on to write its report. The DOT source graphviz saved at
     ``output_base`` before it looked for ``dot`` is removed: it names the site's devices and
     nothing would clean it up.
+
+    Returns:
+        The placeholder's text, the reason no image was drawn (issue 086).
     """
     log.warning(f'{image_format.upper()} diagram not drawn: {GRAPHVIZ_MISSING_HINT}')
     source = Path(output_base)
     if source != Path(output_path) and source.is_file():
         source.unlink()
+    reason = f'{image_format.upper()} generation needs Graphviz. {GRAPHVIZ_MISSING_HINT}'
     with open(output_path, 'w') as f:
-        f.write(f'{image_format.upper()} generation needs Graphviz. {GRAPHVIZ_MISSING_HINT}\n')
+        f.write(reason + '\n')
+    return reason
 
 
 class NetworkTopology:
@@ -473,12 +478,18 @@ class NetworkTopology:
                         )
                         break
 
-    def generate_png_diagram(self, output_path: str, layout_style: str = 'hierarchical') -> None:
+    def generate_png_diagram(
+        self, output_path: str, layout_style: str = 'hierarchical'
+    ) -> Optional[str]:
         """Generate a PNG diagram using Graphviz with hierarchical layout.
 
         Args:
             output_path: Path to save the PNG file
             layout_style: 'hierarchical' (default, top-down) or 'wide' (left-right)
+
+        Returns:
+            None when the image was drawn; otherwise the reason it was not, which is the
+            text of the placeholder written at ``output_path`` instead (issue 086).
         """
         try:
             import graphviz
@@ -492,26 +503,34 @@ class NetworkTopology:
             try:
                 graph.render(output_base, format='png', cleanup=True, view=False)
             except graphviz.ExecutableNotFound:
-                _render_without_dot(output_path, output_base, 'png')
-                return
+                return _render_without_dot(output_path, output_base, 'png')
 
             log.info(f'Generated PNG diagram ({layout_style} layout): {output_path}')
+            return None
 
         except ImportError:
             log.error('graphviz package not installed. Install it with: uv sync')
             # Create placeholder
+            reason = "PNG generation requires 'graphviz' package. Install it with: uv sync"
             with open(output_path, 'w') as f:
-                f.write("PNG generation requires 'graphviz' package. Install it with: uv sync")
+                f.write(reason)
+            return reason
         except Exception as e:
             log.error(f'Error generating PNG diagram: {e}')
             raise
 
-    def generate_svg_diagram(self, output_path: str, layout_style: str = 'hierarchical') -> None:
+    def generate_svg_diagram(
+        self, output_path: str, layout_style: str = 'hierarchical'
+    ) -> Optional[str]:
         """Generate an SVG diagram using Graphviz with hierarchical layout.
 
         Args:
             output_path: Path to save the SVG file
             layout_style: 'hierarchical' (default, top-down) or 'wide' (left-right)
+
+        Returns:
+            None when the image was drawn; otherwise the reason it was not, which is the
+            text of the placeholder written at ``output_path`` instead (issue 086).
         """
         try:
             import graphviz
@@ -525,15 +544,17 @@ class NetworkTopology:
             try:
                 graph.render(output_base, format='svg', cleanup=True, view=False)
             except graphviz.ExecutableNotFound:
-                _render_without_dot(output_path, output_base, 'svg')
-                return
+                return _render_without_dot(output_path, output_base, 'svg')
 
             log.info(f'Generated SVG diagram ({layout_style} layout): {output_path}')
+            return None
 
         except ImportError:
             log.error('graphviz package not installed. Install it with: uv sync')
+            reason = "SVG generation requires 'graphviz' package. Install it with: uv sync"
             with open(output_path, 'w') as f:
-                f.write("SVG generation requires 'graphviz' package. Install it with: uv sync")
+                f.write(reason)
+            return reason
         except Exception as e:
             log.error(f'Error generating SVG diagram: {e}')
             raise
