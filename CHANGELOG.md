@@ -92,9 +92,9 @@ The current release is 0.4.0; only the latest release is supported.
 ### Deprecated
 
 - Python callers of `unifi_mapper.network`: `DeviceStatistics.ports`, `DeviceStatistics.temperature_celsius`,
-  and on the metrics collector's snapshots `port_metrics`, `temperature_celsius`,
-  `total_throughput_bps`, `active_port_count`, `get_top_ports_by_throughput` and
-  `get_error_ports`. The Integration API's `statistics/latest` sends neither per-port counters
+  the `PortStatistics` model, and on the metrics collector `PortMetrics` and the snapshots'
+  `port_metrics`, `temperature_celsius`, `total_throughput_bps`, `active_port_count`,
+  `get_top_ports_by_throughput` and `get_error_ports`. The Integration API's `statistics/latest` sends neither per-port counters
   nor a temperature, so for a live device these have always been empty or `None`; they are
   removed in 0.5.0. Per-port counters come from the classic `stat/device` path, which the
   port-diagnostics tools already use. (Issue 095.)
