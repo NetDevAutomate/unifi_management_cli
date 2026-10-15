@@ -41,14 +41,21 @@ class DeviceState(str, Enum):
 
 
 class DeviceFeature(str, Enum):
-    """Device feature capabilities."""
+    """A device feature, by the name the Integration API sends (issue 082).
 
-    SWITCH = 'SWITCH'
-    ROUTER = 'ROUTER'
-    ACCESS_POINT = 'ACCESS_POINT'
-    GATEWAY = 'GATEWAY'
-    PROTECT = 'PROTECT'
-    TALK = 'TALK'
+    The reference's ``features`` items are ``switching``, ``accessPoint`` and ``gateway``, the
+    names ``DeviceInfo.feature_names`` returns, so ``DeviceFeature.SWITCHING in
+    device.feature_names`` matches a live device. ``SWITCH`` and ``ROUTER`` are the members'
+    pre-0.4.0 names, kept as aliases; ``PROTECT`` and ``TALK`` were removed because the API
+    sends no such feature.
+    """
+
+    SWITCHING = 'switching'
+    ACCESS_POINT = 'accessPoint'
+    GATEWAY = 'gateway'
+    # Aliases (same value, so the same member): DeviceFeature.SWITCH is DeviceFeature.SWITCHING.
+    SWITCH = 'switching'
+    ROUTER = 'gateway'
 
 
 class ClientType(str, Enum):
