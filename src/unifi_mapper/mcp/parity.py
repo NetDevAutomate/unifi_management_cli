@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 CLI_ONLY_CATEGORIES: dict[str, str] = {
     'writer': 'changes controller state; the control boundary keeps writes on the CLI',
     'by nature': 'only makes sense at a terminal (shell completions, local files, the port-mapper)',
-    'active probe': 'runs a command on the gateway over SSH; issue 060 decision D1 (after 038)',
+    'active probe': 'runs a command on the gateway over SSH; kept off MCP by issue 092',
     'long-running': 'a run outlasts an MCP call; issue 060 decision D4 waits for SDK tasks',
     'not yet built': 'a read the MCP server should offer; tracked by issue 078',
 }
@@ -52,15 +52,12 @@ CLI_ONLY: dict[str, str] = {
     'version': 'by nature: prints the installed version (the server reports its own)',
     'verify': 'by nature: ground-truth verification of the port-naming workflow',
     'diagram': 'by nature: renders topology diagrams to local files',
-    # SSH probes: issue 060 decision D1 keeps them off MCP until issue 038 is fixed.
-    'gateway ping': 'active probe: ping on the gateway over SSH (issue 060 D1)',
-    'gateway traceroute': 'active probe: traceroute on the gateway over SSH (issue 060 D1)',
-    'gateway dns': 'active probe: nslookup on the gateway over SSH (issue 060 D1)',
-    'gateway http': 'active probe: curl on the gateway over SSH (issue 060 D1)',
-    'gateway flows': 'active probe: conntrack on the gateway over SSH (issue 060 D1)',
-    'diagnose latency-matrix': 'active probe: pings every device from the gateway over SSH (issue 060 D1)',
-    'diagnose bandwidth': 'active probe: iperf3 from the gateway over SSH (issue 060 D1)',
-    'diagnose client-connectivity': 'active probe: gateway probes over SSH (issue 060 D1)',
+    # SSH probes left off MCP. Ping, traceroute, DNS and the latency matrix are opt-in tools
+    # (issue 092 tier 1, UNIFI_MCP_ALLOW_ACTIVE_PROBES); these wait for the tier-2 decision.
+    'gateway http': 'active probe: curl fetches a URL the agent picks (issue 092 tier 2, pending)',
+    'gateway flows': 'active probe: the whole conntrack table (issue 092 tier 2, pending)',
+    'diagnose client-connectivity': 'active probe: includes an HTTP fetch (issue 092 tier 2)',
+    'diagnose bandwidth': 'active probe: iperf3 saturates a link (excluded by issue 092)',
     # Longer than an MCP call.
     'diagnose ap-health': 'long-running: samples for up to 10 h (issue 060 D4, issue 008)',
 }
@@ -143,26 +140,30 @@ def parity_report(
     report = ParityReport(cli_only=dict(exempt))
     named_by: dict[str, str] = {}
 
-    for category_tools in registry.get_categories().values():
-        for name in sorted(category_tools):
-            meta = registry.get_metadata(name)
-            assert meta is not None
-            if meta.cli and meta.cli_gap:
-                report.problems.append(f'{name}: declare exactly one of cli: and cli_gap:')
-                continue
-            if meta.cli:
-                if meta.cli not in commands:
-                    report.problems.append(
-                        f'{name}: cli {meta.cli!r} is not a unifi-mapper command'
-                    )
-                report.matched[name] = meta.cli
-                named_by.setdefault(meta.cli, name)
-            elif meta.cli_gap:
-                if category_of(meta.cli_gap) not in CLI_GAP_CATEGORIES:
-                    report.problems.append(f'{name}: cli_gap {meta.cli_gap!r} has no category')
-                report.mcp_only[name] = meta.cli_gap
-            else:
-                report.problems.append(f'{name}: declare cli: or cli_gap:')
+    # Every manifest entry, the active probes a registry holds back included: they are
+    # features of the MCP server whether or not this process lists them (issue 092).
+    entries = {
+        name: meta
+        for tools in registry.get_categories().values()
+        for name in tools
+        if (meta := registry.get_metadata(name)) is not None
+    }
+    entries |= registry.held_active_probes()
+    for name, meta in sorted(entries.items()):
+        if meta.cli and meta.cli_gap:
+            report.problems.append(f'{name}: declare exactly one of cli: and cli_gap:')
+            continue
+        if meta.cli:
+            if meta.cli not in commands:
+                report.problems.append(f'{name}: cli {meta.cli!r} is not a unifi-mapper command')
+            report.matched[name] = meta.cli
+            named_by.setdefault(meta.cli, name)
+        elif meta.cli_gap:
+            if category_of(meta.cli_gap) not in CLI_GAP_CATEGORIES:
+                report.problems.append(f'{name}: cli_gap {meta.cli_gap!r} has no category')
+            report.mcp_only[name] = meta.cli_gap
+        else:
+            report.problems.append(f'{name}: declare cli: or cli_gap:')
 
     for command in sorted(commands):
         if command not in named_by and command not in exempt:

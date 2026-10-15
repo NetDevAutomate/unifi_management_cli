@@ -461,6 +461,60 @@ class ServerSettings:
     tool_timeout: float | None = 270.0
     # UNIFI_MCP_CALL_AUDIT: the call log is on by default (issue 013 D5).
     call_audit: CallAuditSetting = CallAuditSetting('default')
+    # UNIFI_MCP_ALLOW_ACTIVE_PROBES=1: list and run the tools that run a command on the
+    # gateway over SSH (issue 092). Off by default; any other value refuses to start.
+    active_probes: bool = False
+
+
+ACTIVE_PROBES_ENV = 'UNIFI_MCP_ALLOW_ACTIVE_PROBES'
+
+
+class ActiveProbesSettingError(ValueError):
+    """``UNIFI_MCP_ALLOW_ACTIVE_PROBES`` holds a value other than ``1`` (a start-up error)."""
+
+
+def parse_active_probes(raw: str | None) -> bool:
+    """Read ``UNIFI_MCP_ALLOW_ACTIVE_PROBES``: ``1`` is on; unset or empty is off.
+
+    Any other value (``true``, ``yes``, even ``0``) is an error rather than a guess, so a
+    typo can neither leave the probes off while the operator thinks them on, nor the reverse.
+
+    Args:
+        raw: The variable's value, or None when it is unset.
+
+    Returns:
+        True for ``1`` (surrounding whitespace ignored), False for unset or empty.
+
+    Raises:
+        ActiveProbesSettingError: For any other value, naming the variable.
+    """
+    if raw is None or not raw.strip():
+        return False
+    if raw.strip() == '1':
+        return True
+    raise ActiveProbesSettingError(
+        f'{ACTIVE_PROBES_ENV}={raw!r} is not 1: set it to 1 to list the tools that run a '
+        'command on the gateway over SSH, or unset it'
+    )
+
+
+def active_probes_allowed(env: Mapping[str, str] | None = None) -> bool:
+    """Return whether ``UNIFI_MCP_ALLOW_ACTIVE_PROBES`` is ``1``; an invalid value is off.
+
+    For the registry built before ``main()`` validates the setting (``main()`` refuses to
+    start on an invalid value, so the server never runs with this fallback).
+
+    Args:
+        env: The environment; ``None`` means ``os.environ`` at call time.
+
+    Returns:
+        True only for ``1``.
+    """
+    env = os.environ if env is None else env
+    try:
+        return parse_active_probes(env.get(ACTIVE_PROBES_ENV))
+    except ActiveProbesSettingError:
+        return False
 
 
 def _bounded_number(
@@ -496,10 +550,15 @@ def load_server_settings(
 
     Returns:
         The settings, with defaults for unset or invalid values.
+
+    Raises:
+        ActiveProbesSettingError: ``UNIFI_MCP_ALLOW_ACTIVE_PROBES`` is set to anything but
+            ``1``: that one setting has no safe default to fall back to.
     """
     env = os.environ if env is None else env
     warn = warn or _stderr_warning
     defaults = ServerSettings()
+    active_probes = parse_active_probes(env.get(ACTIVE_PROBES_ENV))
 
     log_level = defaults.log_level
     raw_level = env.get('UNIFI_MCP_LOG_LEVEL')
@@ -526,6 +585,7 @@ def load_server_settings(
         ),
         tool_timeout=defaults.tool_timeout if tool_timeout is None else tool_timeout,
         call_audit=call_audit,
+        active_probes=active_probes,
     )
 
 

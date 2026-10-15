@@ -94,12 +94,40 @@ def test_every_new_key_is_parsed(tmp_path: Path) -> None:
 
 
 def test_active_probe_is_parsed(tmp_path: Path) -> None:
-    meta = ToolRegistry(
-        _write(tmp_path, c=_entry('    active_probe: true\n')), strict=True
-    ).get_metadata('t')
+    manifests = _write(tmp_path, c=_entry('    active_probe: true\n'))
+    meta = ToolRegistry(manifests, strict=True, active_probes=True).get_metadata('t')
     assert meta is not None
     assert meta.active_probe is True
     assert meta.mutates is False
+
+
+def test_an_active_probe_is_held_back_by_default(tmp_path: Path) -> None:
+    # Issue 092: loaded and checked, but no lookup, search, category or count sees it.
+    manifests = _write(tmp_path, c=_entry('    active_probe: true\n'), good=GOOD)
+    registry = ToolRegistry(manifests, strict=True)
+    assert registry.active_probes is False
+    assert 't' not in registry and registry.get_metadata('t') is None
+    assert registry.get_tool('t') is None
+    assert 'c' not in registry.get_categories()
+    assert [hit['name'] for hit in registry.search()] == ['alpha_tool', 'zeta_tool']
+    assert len(registry) == 2
+    held = registry.held_active_probes()
+    assert list(held) == ['t'] and held['t'].active_probe is True
+    on = ToolRegistry(manifests, strict=True, active_probes=True)
+    assert 't' in on and len(on) == 3 and on.held_active_probes() == {}
+
+
+async def test_a_held_probe_cannot_be_executed(tmp_path: Path) -> None:
+    registry = ToolRegistry(_write(tmp_path, c=_entry('    active_probe: true\n')))
+    with pytest.raises(UnknownToolError):
+        await registry.execute('t')
+
+
+def test_a_held_probe_still_claims_its_name(tmp_path: Path) -> None:
+    later = 'category: later\ntools:\n  t:\n    module: other.module\n'
+    manifests = _write(tmp_path, a=_entry('    active_probe: true\n'), b=later)
+    with pytest.raises(ManifestError, match='already defined'):
+        len(ToolRegistry(manifests, strict=True))
 
 
 def test_active_probe_beside_mutates_is_a_load_error(tmp_path: Path, errors: list[str]) -> None:
