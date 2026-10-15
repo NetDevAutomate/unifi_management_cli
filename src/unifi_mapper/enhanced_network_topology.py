@@ -208,9 +208,11 @@ class NetworkTopology:
             'u7',
             'uap',
             'usw',
+            'usf',
             'udm',
             'usg',
             'ugw',
+            'uxg',
             'unifi',
             'us-',
             'us8',
@@ -250,6 +252,7 @@ class NetworkTopology:
         # Comprehensive check for switch identifiers
         switch_model_keywords = [
             'usw',
+            'usf',
             'switch',
             'flex',
             'ultra',
@@ -303,7 +306,7 @@ class NetworkTopology:
         model_lower = device.model.lower() if device.model else ''
         name_lower = device.name.lower() if device.name else ''
 
-        router_keywords = ['ugw', 'usg', 'udm', 'gateway', 'router', 'dream machine']
+        router_keywords = ['ugw', 'usg', 'udm', 'uxg', 'gateway', 'router', 'dream machine']
 
         # Check model for router keywords
         for keyword in router_keywords:
@@ -886,9 +889,11 @@ class NetworkTopology:
         model_lower = device.model.lower() if device.model else ''
         name_lower = device.name.lower() if device.name else ''
 
-        # Check model patterns - order matters (most specific first)
+        # Check model patterns - order matters: gateways, then switches, then access points,
+        # because the AP patterns are loose ('xg', 'ac', 'hd') and a gateway or switch model
+        # can contain one (issue 085: UXGPRO and USFXG both hold 'xg').
         # Routers/Gateways
-        if any(x in model_lower for x in ['udm', 'usg', 'ugw', 'gateway', 'dream']):
+        if any(x in model_lower for x in ['udm', 'usg', 'ugw', 'uxg', 'gateway', 'dream']):
             return 'router'
 
         # Switches - includes US-8, US-16, US-24, US-48 series
@@ -898,6 +903,8 @@ class NetworkTopology:
                 'usw',
                 'usl',
                 'usm',
+                'usf',  # USW Flex model codes (USF5P, USFXG for the Flex XG)
+                'us6xg',  # US-XG-6POE (US6XG150)
                 'switch',
                 'flex',
                 'us8',

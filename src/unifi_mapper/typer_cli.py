@@ -3148,8 +3148,10 @@ def diagram(
         else:
             all_devices_list = cast(list[JsonDict], all_devices_response)
 
-        # Filter to UniFi infrastructure devices (gateway, switches, APs)
-        unifi_types = ['ugw', 'usg', 'udm', 'usw', 'uap']
+        # Filter to UniFi infrastructure devices (gateway, switches, APs); a UXG gateway's
+        # stat/device type is 'uxg' (issue 085)
+        gateway_types = ['ugw', 'usg', 'udm', 'uxg']
+        unifi_types = [*gateway_types, 'usw', 'uap']
         infrastructure_devices = [d for d in all_devices_list if d.get('type') in unifi_types]
 
         # Get LLDP data for devices that support it
@@ -3159,7 +3161,7 @@ def diagram(
             device_id = str(device.get('_id') or '')
             device_type = str(device.get('type') or '')
             # Only switches and gateways have LLDP data
-            if device_type in ['ugw', 'usg', 'udm', 'usw'] and device_id:
+            if device_type in [*gateway_types, 'usw'] and device_id:
                 device_lldp = port_mapper.api_client.get_lldp_info(unifi_config.site, device_id)
                 if device_lldp:
                     lldp_data[device_id] = device_lldp
@@ -3178,7 +3180,7 @@ def diagram(
             device_type = str(device_data.get('type') or '')
 
             # Count device types for debug
-            if device_type in ['ugw', 'usg', 'udm']:
+            if device_type in gateway_types:
                 routers_found += 1
             elif device_type == 'usw':
                 switches_found += 1
