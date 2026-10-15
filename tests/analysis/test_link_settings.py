@@ -318,8 +318,6 @@ READS_A_PROFILE_ID = {
     'port_diagnostics.py': (
         'collect_override reports the raw override and port-table ids beside the effective one'
     ),
-    'analysis/mac_analyzer.py': 'issue 030: _is_trunk_port reads a raw id as a profile name',
-    'analysis/vlan_diagnostics.py': 'issue 030: stores an override id as the profile name',
 }
 
 

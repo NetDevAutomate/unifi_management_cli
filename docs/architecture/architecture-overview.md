@@ -232,7 +232,7 @@ The root callback intercepts `--connected-devices`, `--dry-run`, and `--verify-u
 
 `cli.py` is the shared foundation consumed by `typer_cli.py` and `inventory_cli.py` (and, for `load_env_from_config`, `network_cli.py`). It provides:
 
-- **XDG Base Directory resolution** for config files — `get_default_config_path()` tries `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` (or `~/.config/unifi_management_cli/` when `XDG_CONFIG_HOME` is unset), then falls back to `.env` in the current directory. `--config` or `UNIFI_CONFIG` comes first ([section 16](#16-configuration-and-credential-management)).
+- **XDG Base Directory resolution** for config files — `get_default_config_path()` runs the search shared with the MCP server (`core/utils/config_search.py`): `--config` or `UNIFI_CONFIG` first, then `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` (an absolute `XDG_CONFIG_HOME` only), then in `~/.config/unifi_management_cli/`, then the legacy `~/.config/unifi_network_mapper/prod.env` (with a warning), and, for the CLI alone, `.env` in the current directory with a deprecation warning (removed in 0.4.0) ([section 16](#16-configuration-and-credential-management)).
 - **`load_env_from_config(path)`** — reads a `.env` file and injects each key-value pair into `os.environ`.
 
 ### MCP Server (mcp/server.py)
@@ -246,7 +246,7 @@ The `unifi-mcp` server is built on the FastMCP bundled with the official MCP Pyt
 | `get_tool_info` | Fetch the parameters, JSON input/output schemas and annotations for a named tool |
 | `execute_tool` | Run a read-only catalog tool by name; mutating tools are refused with `MUTATION_REFUSED` |
 
-With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) the server also lists the 73 non-mutating, non-pipeline catalog tools directly. The server holds no domain logic. Its modules:
+With `--surface direct` (or `UNIFI_MCP_TOOL_SURFACE=direct`) the server also lists the 82 non-mutating, non-pipeline catalog tools directly. The server holds no domain logic. Its modules:
 
 | Module | Responsibility |
 | --- | --- |
@@ -301,7 +301,8 @@ members) and per-collection document counts, never document contents; it contact
 
 **New `stp audit-priorities` command** (`analysis/stp_audit.py`) — a one-shot,
 read-only priority audit: each switch's current against its recommended priority, a warning
-when non-core switches tie at the lowest priority, and the gateway under "Skipped". It always
+when switches tie at the lowest priority unless every one is core-class, and the gateway under
+"Skipped". It always
 tiers the whole fleet (`--device` narrows the rows and the verdict, and keeps the fleet's as
 `fleet_compliant` and `fleet_summary`) and writes no plan; `stp optimize
 --plan` does.
@@ -459,7 +460,7 @@ graph TD
         NWC["UniFiNetworkClient\nnetwork/client.py\n(httpx, async)"]
         RO["read-only guards\ncore/utils/readonly.py"]
         RED["secret stripping and masking\ncore/utils/redact.py"]
-        TA["ToolkitAdapter\ntoolkit_adapters.py\n(sync versions of 3 tools)"]
+        TA["ToolkitAdapter\ntoolkit_adapters.py\n(sync wrappers for find_device,\nanalyze_link_quality, network_health_check)"]
         CFG["UnifiConfig\nconfig.py"]
         CRED["Credentials\ncore/utils/auth.py"]
     end
@@ -490,7 +491,7 @@ The primary synchronous client for the UniFi Network REST API.
 | API token | `X-API-KEY` header | UniFi OS (UDM, UDR, UDM SE) |
 | Username + password | Session cookie (POST `/api/login`) | Legacy controllers |
 
-**Retry with exponential backoff**: The `_retry_request()` method wraps every outbound call. It respects the retryable vs permanent distinction in the exception hierarchy — authentication failures (401/403) and other 4xx errors are not retried; server errors (5xx), 408 and 429 responses, timeouts, and connection failures are retried up to `max_retries` with `delay * 2^attempt` spacing. Callers keep the defaults (3 attempts, 1.0 s); `UnifiConfig`'s retry settings never reach the client ([issue 042](../issues/042-settings-with-no-effect.md)).
+**Retry with exponential backoff**: The `_retry_request()` method wraps every outbound call. It respects the retryable vs permanent distinction in the exception hierarchy — authentication failures (401/403) and other 4xx errors are not retried; server errors (5xx), 408 and 429 responses, timeouts, and connection failures are retried up to `max_retries` with `delay * 2^attempt` spacing. Every CLI client is built with `UnifiConfig`'s `max_retries` and `retry_delay`, so `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` set them ([issue 042](../issues/042-settings-with-no-effect.md)).
 
 ```python
 def _retry_request(self, func, *args, **kwargs):
@@ -530,7 +531,7 @@ async with UniFiProtectClient(config) as client:
 
 ### UniFiClient (core/utils/client.py)
 
-A second async client built with `httpx` for use by the analysis toolkit. Consumes credentials from the `get_credentials()` fallback chain (see Section 16). This client follows the async context manager pattern and is the standard client for all toolkit tools. Under the MCP server every async controller tool borrows one shared client whose transport is `core/utils/readonly.py`'s `ReadOnlyAsyncTransport`, so a write raises `ReadOnlyViolation` before any I/O; `core/utils/redact.py` then masks secret values in every result and error. The CLI's analysis and SSH commands (those run through `typer_cli._run_analysis` and `_run_gateway_ssh`) borrow one too, installed for the one command by `typer_cli._guarded`; the CLI's other direct async reads don't yet ([issue 064](../issues/064-cli-reads-outside-the-read-only-transport.md)).
+A second async client built with `httpx` for use by the analysis toolkit. Consumes credentials from the `get_credentials()` fallback chain (see Section 16). This client follows the async context manager pattern and is the standard client for all toolkit tools. Under the MCP server every async controller tool borrows one shared client whose transport is `core/utils/readonly.py`'s `ReadOnlyAsyncTransport`, so a write raises `ReadOnlyViolation` before any I/O; `core/utils/redact.py` then masks secret values in every result and error. The CLI's read commands borrow one too, installed for the one command by `typer_cli._guarded` through `typer_cli._run_analysis` or `_run_gateway_ssh`; only the write paths (`stp apply`, `ports refresh --apply` and the like) open a client of their own ([issue 064](../issues/064-cli-reads-outside-the-read-only-transport.md)).
 
 ### ToolkitAdapter (toolkit_adapters.py)
 
@@ -715,7 +716,7 @@ async def compare_link_errors(baseline_path: str, threshold: int) -> dict:
 
 ## 7. Layer 5: Network Control Plane
 
-The `network/` sub-package is the Integration API path. `client.py` holds `UniFiNetworkClient`, an async `httpx` client for `/proxy/network/integrations/v1`, configured by `config.py`'s `NetworkConfig` (`UNIFI_NETWORK_*`); the other modules are managers over it. Its only caller is the MCP `network` category (`mcp/tools/network.py`), which opens one client per call behind the GET-only `ReadOnlyAsyncTransport`; no CLI command uses it.
+The `network/` sub-package is the Integration API path. `client.py` holds `UniFiNetworkClient`, an async `httpx` client for `/proxy/network/integration/v1` (the documented base, with the undocumented plural as a fallback on a 404; issue 003), configured by `config.py`'s `NetworkConfig` (`UNIFI_NETWORK_*`); the other modules are managers over it. Its only caller is the MCP `network` category (`mcp/tools/network.py`), which opens one client per call behind the GET-only `ReadOnlyAsyncTransport`; no CLI command uses it.
 
 ```mermaid
 graph LR
@@ -735,7 +736,7 @@ graph LR
     end
 ```
 
-Each manager maps to one Integration API resource under `/sites/{siteId}` (`firewall/zones`, `firewall/policies`, `acl-rules`, `dns/policies`, `clients`, `networks`, `traffic-matching-lists`, `devices`) or `/dpi`. The six MCP tools read zones, policies, ACL rules, DNS policies, clients and networks. The client also has write methods (device and port actions, guest authorisation, and creating, updating or deleting networks, firewall policies, ACL rules, DNS policies and traffic-matching lists); no MCP tool calls them, and the guard would refuse them. Its device-statistics and port-action paths aren't served by Network 10.6 ([issue 035](../issues/035-device-statistics-and-port-action-paths.md)).
+Each manager maps to one Integration API resource under `/sites/{siteId}` (`firewall/zones`, `firewall/policies`, `acl-rules`, `dns/policies`, `clients`, `networks`, `traffic-matching-lists`, `devices`) or `/dpi`. The six MCP tools read zones, policies, ACL rules, DNS policies, clients and networks. The client also has write methods (device and port actions, guest authorisation, and creating, updating or deleting networks, firewall policies, ACL rules, DNS policies and traffic-matching lists); no MCP tool calls them, and the guard would refuse them. Its device-statistics and port-action paths follow the reference (`.../statistics/latest`, `.../interfaces/ports/{idx}/actions`; [issue 035](../issues/035-device-statistics-and-port-action-paths.md)).
 
 ---
 
@@ -907,7 +908,7 @@ classDiagram
 | `counters.py` | Reset-aware per-VAP counter deltas (`retry_delta`): a counter regression or a missing VAP is a reset, never a negative delta |
 | `errors.py` | `ToolError` structured exception + `ErrorCodes` constants |
 | `jsonl.py` | `append_capped_jsonl()`: the shared capped JSON Lines writer (lock, torn-line repair, optional dedup, size and age compaction through a temp file); the port counter history writes through it |
-| `logging.py` | Loguru helpers: `replace_default_loguru_handler()`, which both CLIs call first so loguru never annotates a traceback with frame values (`diagnose=False`, [issue 058](../issues/058-tracebacks-print-frame-values.md)); nothing calls `configure_logging` ([issue 045](../issues/045-configure-logging-is-never-called.md)) |
+| `logging.py` | Loguru helpers: `replace_default_loguru_handler()`, which both CLIs call first so loguru never annotates a traceback with frame values (`diagnose=False`, [issue 058](../issues/058-tracebacks-print-frame-values.md)); the dead `configure_logging` and its debug variable were removed ([issue 045](../issues/045-configure-logging-is-never-called.md)) |
 | `overrides.py` | `load_stp_overrides()`: the STP overrides YAML (`UNIFI_STP_OVERRIDES`) |
 | `ping_parse.py` | `parse_ping_output()`: GNU and BusyBox ping statistics (the latency matrix reads ping output through it) |
 | `readonly.py` | The read-only guards (`ReadOnlySession`, `ReadOnlyAsyncTransport`) and the opt-in request audit (a file, or a sink such as the MCP call log's buffer) |
@@ -977,7 +978,7 @@ graph TD
 
 **Why SSH?** The UniFi REST API provides no endpoint for active probing (ping, traceroute, iperf3). SSH to the gateway is the only way to measure real latency and throughput from the network's vantage point — analogous to running `show ip route` or `ping` from a router's CLI in traditional networking.
 
-**Connection pattern**: Every SSH tool opens one session per run (each `gateway` probe its own, so `diagnose client-connectivity`, which runs several, opens one per probe) with `gateway_ssh.gateway_session()`, the only caller of `asyncssh.connect()` in `src/` (a test scans for any other). It connects with `known_hosts=None` (the `GATEWAY_KNOWN_HOSTS` constant), which turns off SSH host-key verification (see [issue 038](../issues/038-ssh-host-key-verification-disabled.md); TLS certificates are a separate setting), and `preferred_auth='keyboard-interactive,password'`. The login comes from `gateway_ssh.ssh_login()`: the username from `UNIFI_SSH_USERNAME` (default `root`) and the password only from `UNIFI_SSH_PASSWORD`. Without it each tool stops with `CONFIG_MISSING` before any request (a `gateway` probe checks it before it looks a name up); `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH, because it isn't the console's SSH password and a wrong password leaves failed root logins on the gateway. A failed connect is `CONTROLLER_UNREACHABLE`, "SSH connection to {host} failed: …", with the exception text redacted; the connect, handshake and login together are bounded at 30 s (`SSH_CONNECT_TIMEOUT`), so a stalled gateway ends as "SSH connection to {host} timed out after 30s".
+**Connection pattern**: Every SSH tool opens one session per run (each `gateway` probe its own, so `diagnose client-connectivity`, which runs several, opens one per probe) with `gateway_ssh.gateway_session()`, the only caller of `asyncssh.connect()` in `src/` (a test scans for any other). It verifies the gateway's host key against asyncssh's default known-hosts files (`known_hosts_setting()`: `()` unless `UNIFI_SSH_KNOWN_HOSTS=off`, which disables the check with a warning on every session; any other value is `CONFIG_INVALID`), so a missing or changed key is refused during the handshake, before authentication, as `CONTROLLER_UNREACHABLE` naming `user@host` and the `ssh` command that records the key ([issue 038](../issues/038-ssh-host-key-verification-disabled.md); TLS certificates are a separate setting), and connects with `preferred_auth='keyboard-interactive,password'`. The login comes from `gateway_ssh.ssh_login()`: the username from `UNIFI_SSH_USERNAME` (default `root`) and the password only from `UNIFI_SSH_PASSWORD`. Without it each tool stops with `CONFIG_MISSING` before any request (a `gateway` probe checks it before it looks a name up); `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH, because it isn't the console's SSH password and a wrong password leaves failed root logins on the gateway. A failed connect is `CONTROLLER_UNREACHABLE`, "SSH connection to {host} failed: …", with the exception text redacted; the connect, handshake and login together are bounded at 30 s (`SSH_CONNECT_TIMEOUT`), so a stalled gateway ends as "SSH connection to {host} timed out after 30s".
 
 **Command lines**: every value is checked before it goes on a command line run on the gateway, normally as root (`analysis/gateway_ssh.py`). Each address must parse with `ipaddress` and carry no IPv6 zone id (`ipaddress` accepts any text after `%`); `--count` must be 1–100, `--timeout` 1–60 s, `--duration` 1–86400 s and `--parallel` 1–128 (iperf3's own limits). Each command is an argv list that `run_gateway_command()` joins with `shlex.join`, under a timeout the caller must state (`count × timeout + 5` s per ping, `duration + 15` s for iperf3); a timeout is `TIMEOUT`, naming the program and the bound only. The `gateway` probes bound their own values the same way (ping count 1–100 and interval 0.2–5.0 s, traceroute 1–30 hops, curl `--max-time` 1–60 s, at most 5000 flows; a hostname, URL with no user name or password (its query string is passed as given, so the help says to put no secret in it), or interface name each has its own check) and their timeouts follow their arguments (`count × interval + 12` s for ping, `hops × 6 + 15` s for traceroute, 20 s for nslookup, `--max-time + 10` s for curl, 60 s for conntrack).
 
@@ -1146,7 +1147,7 @@ The MCP server implements a progressive-disclosure pattern designed for AI agent
 3. execute_tool("detect_ip_conflicts", {}) -> {"ok": true, "result": ...}
 ```
 
-This keeps the AI's tool list short (4 tools, about 6.4k characters of `tools/list`) and avoids overwhelming the model with schema for all 96 tools at once. The agent requests detail only for tools it intends to use. Hosts that defer tool schemas themselves can use the direct surface instead (86 tools listed).
+This keeps the AI's tool list short (4 meta-tools, about 6.4k characters of `tools/list`) and avoids overwhelming the model with schema for all 96 tools at once. The agent requests detail only for tools it intends to use. Hosts that defer tool schemas themselves can use the direct surface instead (86 tools listed).
 
 ---
 
@@ -1548,7 +1549,7 @@ Used by `analysis/latency_matrix.py`, `analysis/bandwidth_test.py`, `connectivit
 
 | Interface | Protocol | Auth | Notes |
 | --- | --- | --- | --- |
-| UDM SSH | SSH (port 22) | Password (`UNIFI_SSH_USERNAME` / `UNIFI_SSH_PASSWORD`) | `known_hosts=None`: the host key isn't verified ([issue 038](../issues/038-ssh-host-key-verification-disabled.md)) |
+| UDM SSH | SSH (port 22) | Password (`UNIFI_SSH_USERNAME` / `UNIFI_SSH_PASSWORD`) | Host key verified against `~/.ssh/known_hosts`; `UNIFI_SSH_KNOWN_HOSTS=off` disables it with a warning ([issue 038](../issues/038-ssh-host-key-verification-disabled.md)) |
 
 Commands executed: `ping` (latency matrix, `gateway ping`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients`), `iperf3` (bandwidth test), `traceroute`, `nslookup`, `curl`, `conntrack -L` and `ip -j addr show` (the `gateway` probes, and `client-connectivity`'s DNS, HTTP and flow layers), and one fixed `sh -c` script reading `/sys/class/net/br*/statistics` and `ip -4 -j addr show` (`vlan-traffic sample`).
 
@@ -1566,7 +1567,7 @@ Commands executed: `ping` (latency matrix, `gateway ping`, `diagnose client-conn
 
 The MCP server implements the Model Context Protocol with the FastMCP bundled in the official MCP Python SDK (`mcp>=1.30,<1.31`). AI clients connect over stdio; no network transport is served. The server exports:
 
-- 4 public meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`); with `--surface direct`, also the 73 non-mutating, non-pipeline catalog tools
+- 4 public meta-tools (`search_tools`, `list_categories`, `get_tool_info`, `execute_tool`); with `--surface direct`, also the 82 non-mutating, non-pipeline catalog tools
 - 96 registered tools in YAML manifests, of which 93 run through `execute_tool` (the 3 mutating tools are refused)
 - 2 resources (`unifi://catalog`, `unifi://config/status`) and 2 prompts (`troubleshoot_port_link`, `plan_stp_change`)
 - Server `instructions`, per-tool annotations, and `serverInfo.version` set to the package version
@@ -1577,35 +1578,34 @@ The MCP server implements the Model Context Protocol with the FastMCP bundled in
 
 ### Configuration resolution order
 
-The CLI entry points (`cli.get_default_config_path`, used by `unifi-mapper` and `unifi-inventory`) read one env file:
+The CLI entry points (`cli.get_default_config_path`, used by `unifi-mapper` and `unifi-inventory`) and the MCP server (`mcp.config.resolve_config_path`) run one shared search, `core/utils/config_search.find_config` ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)); the CLI adds only the deprecated working-directory step at the end:
 
 ```mermaid
 flowchart TD
-    EnvCli["--config CLI flag, or UNIFI_CONFIG (unifi-mapper)"]
-    HasXdg{"XDG_CONFIG_HOME set?"}
-    XdgDir["$XDG_CONFIG_HOME/unifi_management_cli/"]
-    HomeDir["~/.config/unifi_management_cli/"]
-    Prod["prod.env in that directory"]
-    Def["default.env in that directory"]
-    DotEnv[".env (current directory)"]
-    Missing["exit 1: Configuration file not found"]
+    EnvCli["--config CLI flag, or UNIFI_CONFIG"]
+    HasXdg{"XDG_CONFIG_HOME set to an absolute path?"}
+    XdgDir["$XDG_CONFIG_HOME/unifi_management_cli/prod.env, then default.env"]
+    HomeDir["~/.config/unifi_management_cli/prod.env, then default.env"]
+    Legacy["~/.config/unifi_network_mapper/prod.env (warning)"]
+    DotEnv["CLI only: .env in the current directory (deprecation warning; removed in 0.4.0)"]
+    Missing["exit 1: lists every path tried"]
     Load["load into os.environ"]
 
     EnvCli -->|"given (exit 1 if missing)"| Load
     EnvCli -->|"not given"| HasXdg
     HasXdg -->|"yes"| XdgDir
-    HasXdg -->|"no"| HomeDir
-    XdgDir --> Prod
-    HomeDir --> Prod
-    Prod -->|"exists"| Load
-    Prod -->|"not found"| Def
-    Def -->|"exists"| Load
-    Def -->|"not found"| DotEnv
+    HasXdg -->|"no, or relative (ignored)"| HomeDir
+    XdgDir -->|"exists"| Load
+    XdgDir -->|"not found"| HomeDir
+    HomeDir -->|"exists"| Load
+    HomeDir -->|"not found"| Legacy
+    Legacy -->|"exists"| Load
+    Legacy -->|"not found"| DotEnv
     DotEnv -->|"exists"| Load
     DotEnv -->|"not found"| Missing
 ```
 
-A set `XDG_CONFIG_HOME` replaces `~/.config` here rather than going before it, unlike the MCP server's search ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)). Of the CLI programs, only the root `--config` option of `unifi-mapper` (`typer_cli.main`) reads `UNIFI_CONFIG`; the MCP server reads it too (below). The standalone `unifi-inventory` program ignores that variable: without its own `--config` it goes straight to the `XDG_CONFIG_HOME` step. The `inventory` commands take their own `--config` and ignore the root one ([issue 043](../issues/043-inventory-ignores-the-root-config.md)); `unifi-network-toolkit` defaults its `--config` to `~/.config/unifi_management_cli/prod.env`.
+A relative `XDG_CONFIG_HOME` is ignored everywhere (the CLI, the MCP server, `scripts/site_targets.py` and `scripts/unifi-mcp-launch.sh`), as the XDG Base Directory spec requires, so no search reads a file under the working directory by accident ([issue 068](../issues/068-relative-xdg-config-home-is-honoured.md)). Of the CLI programs, only the root `--config` option of `unifi-mapper` (`typer_cli.main`) reads `UNIFI_CONFIG`; the MCP server reads it too (below). The standalone `unifi-inventory` program ignores that variable: without its own `--config` it goes straight to the `XDG_CONFIG_HOME` step. The `inventory` commands take their own `--config` and ignore the root one ([issue 043](../issues/043-inventory-ignores-the-root-config.md)); `unifi-network-toolkit` defaults its `--config` to `~/.config/unifi_management_cli/prod.env`.
 
 ### Credential fallback chain (MCP / toolkit)
 
@@ -1617,7 +1617,7 @@ For the async toolkit and MCP server, credentials are resolved at runtime via `g
 
 If all three sources fail, a `ToolError` with `error_code=AUTHENTICATION_FAILED` is raised with a structured suggestion. Under the MCP server the chain runs off the event loop, bounded by `UNIFI_MCP_CREDENTIAL_TIMEOUT` (default 15 s), and an exhausted or slow chain is reported as `CONFIG_MISSING`.
 
-The MCP server does **not** use the resolution order above: it never reads a `.env` in the working directory, and loads its file per credential family (`--config`, `UNIFI_CONFIG`, then the XDG/`~/.config` files, then the legacy `~/.config/unifi_network_mapper/prod.env`). See [Configuration](../mcp-server/MCP_SERVER_GUIDE.md#configuration) in the MCP server guide.
+The MCP server runs the same search minus the last step: it never reads a `.env` in the working directory, and loads its file per credential family (`--config`, `UNIFI_CONFIG`, then the XDG/`~/.config` files, then the legacy `~/.config/unifi_network_mapper/prod.env`). See [Configuration](../mcp-server/MCP_SERVER_GUIDE.md#configuration) in the MCP server guide.
 
 ### UnifiConfig dataclass
 

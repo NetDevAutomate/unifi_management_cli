@@ -54,7 +54,7 @@ async def detect_storms(
 
     Common workflow:
     1. detect_storms() - identify storm conditions
-    2. If storms found, check discover_lldp_topology() for loops
+    2. If storms found, check discover_stp_topology() for loops
     3. Identify source port/device from the report
     4. Isolate problematic port or device
     5. Investigate root cause (STP, device config, hardware)

@@ -62,6 +62,32 @@ def _alarms(*stamps: Any) -> dict[str, Any]:
     return {'data': alarms}
 
 
+# The only POSTs the collector may send: the read-shaped queries of stat/event and the four
+# v2 system-log classes. Pinned by (method, path) (issue 076 item 18): a method-only check
+# would let a POST to any other path through as long as it was a POST.
+READ_POSTS = frozenset(
+    {
+        ('POST', f'/proxy/network/api/s/{SITE}/stat/event'),
+        *(
+            ('POST', f'/proxy/network/v2/api/site/{SITE}/system-log/{cls}')
+            for cls in ('device-alert', 'admin-activity', 'update-alert', 'client-alert')
+        ),
+    }
+)
+
+
+def _assert_reads_only(calls: list[dict[str, Any]]) -> None:
+    """Every call is a GET, or one of the read-shaped POSTs the collector is allowed."""
+    for call in calls:
+        assert call['method'] == 'GET' or (call['method'], call['path']) in READ_POSTS, call
+
+
+def test_the_post_pin_refuses_a_post_to_any_other_path() -> None:
+    with pytest.raises(AssertionError):
+        _assert_reads_only([{'method': 'POST', 'path': f'/proxy/network/api/s/{SITE}/cmd/devmgr'}])
+    _assert_reads_only([{'method': 'GET', 'path': '/anything'}])
+
+
 # --- the window ---------------------------------------------------------------------------
 
 
@@ -74,7 +100,8 @@ def test_one_hour_asks_for_one_hour_from_every_source() -> None:
     assert len(logs) == 4
     assert {c['json']['timestampTo'] - c['json']['timestampFrom'] for c in logs} == {HOUR_MS}
     assert recent.window.since_hours == 1
-    assert {c['method'] for c in session.calls} <= {'GET', 'POST'}
+    _assert_reads_only(session.calls)
+    assert {(c['method'], c['path']) for c in session.calls} >= READ_POSTS  # every source asked
 
 
 def test_alarms_outside_the_window_are_dropped_and_undated_ones_kept() -> None:
@@ -190,7 +217,7 @@ async def test_get_recent_events_returns_the_collector_s_json(sync_client: FakeS
     out = await port_diagnostics_tools.get_recent_events(since_hours=720, max_events=3)
     assert out['returned'] == 3 and out['window']['since_hours'] == 720
     assert FAKE_EVENT_SECRET not in json.dumps(out)
-    assert {c['method'] for c in sync_client.calls} <= {'GET', 'POST'}
+    _assert_reads_only(sync_client.calls)
 
 
 @pytest.mark.parametrize(

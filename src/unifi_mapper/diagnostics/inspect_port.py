@@ -4,6 +4,14 @@ Wraps the synchronous :mod:`unifi_mapper.port_inspect` implementation so the
 same logic backs both the CLI (``unifi-mapper ports inspect``) and the MCP
 server. The sync work is offloaded to a worker thread so it never blocks the
 event loop.
+
+The controller session is the one every sync port-diagnostics tool uses (issue 021):
+:func:`port_diagnostics_tools._readonly_sync_client` logs in once per call, installs the
+read-only guard (which refuses a write before it is sent and records each request in the
+opt-in ``UNIFI_MCP_REQUEST_AUDIT`` file) and logs out; :func:`port_diagnostics_tools._mapped`
+turns a refused write into ``READ_ONLY_VIOLATION``. Both are looked up on the module at
+call time, as the sibling tools do, so one test seam (patching
+``port_diagnostics_tools._readonly_sync_client``) covers every sync tool.
 """
 
 from __future__ import annotations
@@ -11,49 +19,23 @@ from __future__ import annotations
 import asyncio
 from pydantic import Field
 from typing import Annotated, Any
-from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.diagnostics import port_diagnostics_tools as _sync_tools
 
 
 def _inspect_sync(switch: str, port: int) -> dict[str, Any]:
     """Run the blocking inspection behind the read-only guard; return a JSON-serialisable result.
 
-    The guard is the one the CLI's ``ports inspect`` and the sibling port-diagnostics
-    tools install: it refuses any controller write before it is sent, and records each
-    request it lets through in the opt-in ``UNIFI_MCP_REQUEST_AUDIT`` file.
+    ``resolve_switch`` and ``inspect_port`` raise ``LookupError`` (not the
+    ``diagnostic_reads`` exceptions ``_mapped`` knows), so this maps them to the tool's own
+    ``DEVICE_NOT_FOUND`` and ``INVALID_PORT``; the login failure and a refused write are
+    mapped by the shared helpers.
     """
-    from unifi_mapper.api_client import UnifiApiClient
-    from unifi_mapper.core.utils.readonly import ReadOnlyViolation, install_read_only_guard
     from unifi_mapper.port_inspect import inspect_port, resolve_switch
 
-    creds = Credentials.from_env()
-    scheme = 'https' if creds.port != 80 else 'http'
-    base_url = f'{scheme}://{creds.host}:{creds.port}'
-
-    client = UnifiApiClient(
-        base_url=base_url,
-        site=creds.site,
-        verify_ssl=creds.verify_ssl,
-        username=creds.username,
-        password=creds.password,
-        api_token=creds.api_token,
-    )
-
-    if not client.login():
-        raise ToolError(
-            message=f'Could not authenticate to the UniFi controller at {creds.host}',
-            error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
-            suggestion=(
-                'Check UNIFI_URL and UNIFI_CONSOLE_API_TOKEN (or '
-                'UNIFI_USERNAME/UNIFI_PASSWORD). The account must be local to the '
-                'controller, not a UniFi Cloud account.'
-            ),
-        )
-
-    try:
-        install_read_only_guard(client, creds.site)
+    with _sync_tools._readonly_sync_client() as (client, site):
         try:
-            target = resolve_switch(client, creds.site, switch)
+            target = resolve_switch(client, site, switch)
         except LookupError as e:
             raise ToolError(
                 message=str(e),
@@ -63,27 +45,19 @@ def _inspect_sync(switch: str, port: int) -> dict[str, Any]:
                     'Use find_device to list candidates.'
                 ),
                 related_tools=['find_device', 'find_mac'],
-            )
+            ) from e
 
         try:
-            result = inspect_port(client, creds.site, target, port)
+            result = inspect_port(client, site, target, port)
         except LookupError as e:
             raise ToolError(
                 message=str(e),
                 error_code=ErrorCodes.INVALID_PORT,
                 suggestion='Use a port index that exists on this switch.',
                 related_tools=['find_device'],
-            )
+            ) from e
 
         return result.to_dict()
-    except ReadOnlyViolation as e:
-        raise ToolError(
-            message=f'A controller write was refused by the read-only guard: {e}',
-            error_code=ErrorCodes.READ_ONLY_VIOLATION,
-            suggestion='This is a bug in the diagnostic tool; nothing was written. Report it.',
-        ) from e
-    finally:
-        client.logout()
 
 
 async def inspect_switch_port(
@@ -129,9 +103,9 @@ async def inspect_switch_port(
 
     Common workflow:
     1. inspect_switch_port() to establish the port's VLAN and addressing state
-    2. If addressing is "no_address", check_uplink_transparency() to verify
+    2. If addressing is "no_address", audit_uplink_transparency() to verify
        every hop carries that VLAN
-    3. vlan_coverage() to confirm trunk membership end to end
+    3. audit_vlan_coverage() to confirm trunk membership end to end
     4. analyze_link_quality() if the fault looks physical rather than logical
 
     Args:
@@ -146,9 +120,9 @@ async def inspect_switch_port(
 
     Raises:
         ToolError: DEVICE_NOT_FOUND if the switch cannot be resolved uniquely.
-        ToolError: INVALID_PARAMETER if the port does not exist on the switch.
-        ToolError: CONTROLLER_UNREACHABLE if authentication fails.
+        ToolError: INVALID_PORT if the port does not exist on the switch.
+        ToolError: CONTROLLER_UNREACHABLE if the login fails or raises.
         ToolError: READ_ONLY_VIOLATION if the inspection attempted a controller
             write (a bug; the read-only guard refuses it before it is sent).
     """
-    return await asyncio.to_thread(_inspect_sync, switch, port)
+    return await asyncio.to_thread(_sync_tools._mapped, _inspect_sync, switch, port)

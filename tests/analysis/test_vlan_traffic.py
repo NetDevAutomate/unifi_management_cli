@@ -13,6 +13,7 @@ import json
 import pytest
 import shlex
 import sqlite3
+import subprocess
 from pathlib import Path
 from tests.fake_controller import API, FakeController, legacy, route_cli, serving
 from tests.fake_ssh import FakeSSH
@@ -149,6 +150,46 @@ def test_the_script_is_a_constant_with_one_marker() -> None:
     assert SAMPLE_TIMEOUT == 30
 
 
+def _run_script_against(root: Path) -> str:
+    """Run the sample script under this host's ``sh`` with ``root`` in place of /sys/class/net.
+
+    ``ip`` is not on a workstation, so its one call is replaced by an empty address list; the
+    loop over ``br*`` and its counter lines run as they would on the gateway.
+    """
+    script = SAMPLE_SCRIPT.replace('/sys/class/net', str(root)).replace(
+        'ip -4 -j addr show', 'echo []'
+    )
+    assert script != SAMPLE_SCRIPT
+    return subprocess.run(['sh', '-c', script], capture_output=True, text=True, check=True).stdout
+
+
+def test_the_script_prints_one_counter_line_per_bridge(tmp_path: Path) -> None:
+    for name, rx, tx in (('br0', 1000, 2000), ('br7', 500, 700)):
+        stats = tmp_path / name / 'statistics'
+        stats.mkdir(parents=True)
+        (stats / 'rx_bytes').write_text(f'{rx}\n', encoding='utf-8')
+        (stats / 'tx_bytes').write_text(f'{tx}\n', encoding='utf-8')
+    (tmp_path / 'eth0').mkdir()  # not a bridge: never printed
+    counters_text, addresses = split_sample_output(_run_script_against(tmp_path))
+    assert parse_bridge_counters(counters_text) == {
+        'br0': {'rx_bytes': 1000, 'tx_bytes': 2000},
+        'br7': {'rx_bytes': 500, 'tx_bytes': 700},
+    }
+    assert addresses == []
+
+
+def test_a_gateway_without_bridges_gives_no_bridge_line_not_a_misleading_error(
+    tmp_path: Path,
+) -> None:
+    """Issue 076 item 30: with no ``br*`` interface POSIX sh keeps the literal glob, so the
+    script printed a ``br*`` line with empty counters and the sample failed with "printed a
+    bridge line without two integer counters" where "no bridge interfaces" was meant."""
+    (tmp_path / 'eth0').mkdir()
+    counters_text, addresses = split_sample_output(_run_script_against(tmp_path))
+    assert counters_text.strip() == ''
+    assert parse_bridge_counters(counters_text) == {} and addresses == []
+
+
 # --- one sample ----------------------------------------------------------------------------
 
 
@@ -208,6 +249,37 @@ async def test_a_resolved_interface_with_no_counters_is_skipped(
         result = await sample_vlan_traffic(path)
     assert [row['vlan_id'] for row in result['sampled']] == [30]
     assert {s['iface'] for s in result['skipped']} == {'br0', 'br9'}
+
+
+async def test_a_second_untagged_network_is_unresolved_not_overwritten(
+    ssh: FakeSSH, tmp_path: Path
+) -> None:
+    """Two networks without a VLAN ID both derive VLAN 1 (issue 070).
+
+    The store keys raw rows by ``(ts_utc, vlan_id)`` and writes with ``INSERT OR REPLACE``,
+    so a second VLAN-1 row would silently replace the first. The first resolved network
+    keeps the ID; the later one is listed under ``unresolved`` so the CLI's one line counts
+    it, and is never stored under the other network's name.
+    """
+    networks = [
+        {'name': 'LAN', 'purpose': 'corporate', 'ip_subnet': '192.0.2.1/24'},
+        {'name': 'Second LAN', 'purpose': 'corporate', 'ip_subnet': '198.51.100.1/24'},
+    ]
+    controller = FakeController({f'{API}/rest/networkconf': legacy(networks)})
+    path = tmp_path / 'store.sqlite3'
+    async with serving(controller):
+        result = await sample_vlan_traffic(path)
+    assert [(row['vlan_id'], row['network_name']) for row in result['sampled']] == [(1, 'LAN')]
+    assert result['unresolved'] == [
+        {
+            'vlan_id': 1,
+            'network_name': 'Second LAN',
+            'subnet': '198.51.100.0/24',
+            'iface': 'br7',
+            'reason': 'VLAN 1 already sampled from LAN (br0)',
+        }
+    ]
+    assert _rows(path) == {1: (1000, 2000, 'br0')}
 
 
 async def test_a_bridge_whose_counter_could_not_be_read_fails_the_sample(
@@ -463,4 +535,6 @@ def test_every_command_has_help(command: str) -> None:
     flat = ' '.join(result.output.split())
     assert '--db' in flat
     if command == 'sample':
-        assert 'SSH' in flat and 'host key is not verified' in flat
+        assert 'SSH' in flat and 'host key is verified' in flat
+    if command == 'report':  # issue 076 item 3: no tier smooths a peak
+        assert 'smooth' not in flat.lower() and 'largest sample rate' in flat

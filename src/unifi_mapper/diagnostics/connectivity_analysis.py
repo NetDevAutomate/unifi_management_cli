@@ -92,8 +92,8 @@ async def connectivity_analysis() -> ConnectivityAnalysisReport:
     1. Run connectivity_analysis() to understand overall connectivity health
     2. Focus on critical connectivity_issues first
     3. Use find_device() to investigate devices in bandwidth_bottlenecks
-    4. Use port_map() to understand physical connections of critical paths
-    5. Use network_topology() to visualize problematic network segments
+    4. Use get_switch_ports() to understand physical connections of critical paths
+    5. Use discover_stp_topology() to visualize problematic network segments
 
     What to do next:
     - If connectivity_score < 70: Address critical connectivity issues immediately
@@ -139,7 +139,6 @@ async def connectivity_analysis() -> ConnectivityAnalysisReport:
                     message='Cannot connect to UniFi controller for connectivity analysis',
                     error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
                     suggestion='Verify controller IP, credentials, and network connectivity',
-                    related_tools=['network_health_check', 'find_device'],
                 )
             raise ToolError(
                 message=f'Error performing connectivity analysis: {str(e)}',

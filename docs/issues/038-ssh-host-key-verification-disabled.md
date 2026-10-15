@@ -1,7 +1,8 @@
 ---
 title: "The gateway SSH commands don't verify the gateway's host key (`known_hosts=None`)"
 date: 2026-10-03
-status: open, decision needed
+status: resolved
+resolved_by: 7124755
 severity: medium
 components: [analysis/gateway_ssh, analysis/latency_matrix, analysis/bandwidth_test, connectivity/gateway_probe, diagnostics/client_connectivity, analysis/ap_health, analysis/vlan_traffic]
 found_by: review of the CLI-only SSH commands (`diagnose latency-matrix`, `diagnose bandwidth`)
@@ -84,3 +85,29 @@ every user, so it is the user's call.
 - The VLAN traffic sampler is held off every schedule: `scripts/unifi-cron.sh` has no
   `vlan-traffic sample` task. An unattended root SSH login every few minutes should wait for
   this decision.
+
+## Resolution
+
+Resolved on 2026-10-13 by `7124755`. `gateway_session` no longer passes `known_hosts=None`:
+asyncssh checks the gateway's key against `UserKnownHostsFile` from `~/.ssh/config`, else
+`~/.ssh/known_hosts`, during the handshake and before any authentication, and fails closed when
+the entry is missing or different. The refusal is `CONTROLLER_UNREACHABLE`, names `user@host`,
+says to connect once with `ssh <user>@<host>` after comparing the fingerprint over a trusted
+channel, and never suggests deleting a recorded key. `UNIFI_SSH_KNOWN_HOSTS` takes `default`
+(or unset) and `off`; `off` logs a warning on every session and the per-command stderr notice
+says the key is not verified; any other value is `CONFIG_INVALID` before anything connects.
+Connection-level tests with a stub of `asyncssh.connect` cover the refusal (the handshake fails
+with the password still unsent), a trusted key, `off` warning twice for two sessions, and six
+rejected values. README, SECURITY, the CLI reference, the runbook, `.env.example` and the
+architecture overview describe the new default; the runbook shows the refusal and the one
+command that clears it. Breaking for anyone who never ran `ssh` to the gateway from the same
+account (decision D-038 of the 0.3.0 release council).
+
+The connection-level tests above stub `asyncssh.connect`, which proves the arguments and the
+error mapping but not the library's ordering. `tests/analysis/test_gateway_ssh_handshake.py`
+(added after the release council's validation pass) runs a real asyncssh server over a Unix
+socket pair, counts every password it is offered, and calls the real `asyncssh.connect` with
+`gateway_connect_options`, the exact keyword set `gateway_session` uses: a missing and a
+changed host key both end the handshake with `HostKeyNotVerifiable` and zero passwords received,
+and a trusted key authenticates. With `known_hosts` forced back to `None` both refusal tests
+fail, so they guard the defect this issue fixed.

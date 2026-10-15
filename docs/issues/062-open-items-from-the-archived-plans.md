@@ -86,3 +86,8 @@ From the 2026-07-24 notes:
 
 File each item as its own issue when it is picked up; close this one when all are filed or
 dropped. Breaks fresh clones, CI or prod: no.
+
+## Decision (2026-10-13)
+
+Not in 0.3.0. The eighteen items stay the 0.4.0 backlog by the 0.3.0 release council's decision
+(D-016/018/062); none was started in this release.

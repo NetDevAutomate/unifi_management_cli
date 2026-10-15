@@ -33,17 +33,19 @@ Read this before pointing it at a production network.
   secrets from every result.
 - **Secrets are stripped, not masked**, from anything the tool prints, logs or saves. The
   stripping is by key name (`x_*`, and keys containing password, secret, token, authkey, psk,
-  preshared, passphrase, api_key, private_key, plus the SNMP community and syslog key); only
+  preshared or pre-shared, passphrase, api_key, private_key, plus the SNMP community and
+  syslog key); only
   the paths of what was removed are reported. A credential typed into a free-text field under
   some other key would not be caught. **Reports are still sensitive**: device names, MAC and IP
   addresses and your topology remain in them. Review before you post one anywhere.
 - **TLS verification is off by default** (`UNIFI_VERIFY_SSL=false`), because most consoles
   present a self-signed certificate. Turn it on if yours has a trusted one.
-- **Gateway SSH host keys are not verified yet** ([issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)),
-  so a device on the path between you and the gateway could impersonate it and receive the SSH
-  password. Use the SSH-based commands (`gateway *`, `diagnose latency-matrix|bandwidth|client-connectivity|ap-health`,
-  `vlan-traffic sample`) only from a trusted LAN segment; they are CLI-only and run only when
-  `UNIFI_SSH_PASSWORD` is set.
+- **Gateway SSH host keys are verified** against `~/.ssh/known_hosts`, so a device on the path
+  cannot impersonate the gateway and receive the SSH password. Connect once with
+  `ssh root@<gateway>` to record the key before the first SSH-based command (`gateway *`,
+  `diagnose latency-matrix|bandwidth|client-connectivity|ap-health`, `vlan-traffic sample`);
+  they are CLI-only and run only when `UNIFI_SSH_PASSWORD` is set. `UNIFI_SSH_KNOWN_HOSTS=off`
+  turns verification off, with a warning on every run.
 - Tracebacks never print local variables; the config file is never written back.
 
 See [SECURITY.md](SECURITY.md) for the full data-handling contract and how to report a problem.
@@ -106,9 +108,12 @@ uv run unifi-mapper discover --format html --apply  # only when the preview look
 `diagnose all` prints one line per check (`✅`, `⚠️` or `❌` with the finding), then a
 pass/warn/fail count; it exits 2 when any check fails, so it works in a script or a cron job.
 
-`unifi-mapper` finds the config at `--config PATH` or `UNIFI_CONFIG`, else
-`${XDG_CONFIG_HOME:-~/.config}/unifi_management_cli/prod.env`, then `default.env` there, then
-`./.env`. When none exists it lists every path it tried. [`.env.example`](.env.example)
+`unifi-mapper` and `unifi-mcp` share one config search: `--config PATH` or `UNIFI_CONFIG`,
+else `$XDG_CONFIG_HOME/unifi_management_cli/{prod,default}.env` (an absolute
+`XDG_CONFIG_HOME` only), then `~/.config/unifi_management_cli/{prod,default}.env`, then the
+legacy `~/.config/unifi_network_mapper/prod.env` with a warning. The CLI alone still reads
+`./.env` last, with a deprecation warning; that fallback is removed in 0.4.0. When none
+exists it lists every path it tried. [`.env.example`](.env.example)
 documents every key, including the optional gateway SSH, Network Integration API and Protect
 settings.
 
@@ -197,13 +202,9 @@ every setting, the error codes, the call log and the client configs.
 The open items live in [docs/issues](docs/issues/README.md), one file each, with the
 reasoning. The ones that affect use today:
 
-- Gateway SSH host keys are not verified (038); Protect tools are unverified live (034).
-- The six Network Integration API tools need `UNIFI_NETWORK_HOST`, `_API_KEY` and `_SITE_ID`
-  as well (037); `monitor_lags` misses LAGs on current switch firmware (061).
-- `discover --format mermaid|dot` writes a placeholder, not a diagram (044); PNG and SVG need
-  Graphviz (075); MQTT needs `aiomqtt` installed separately (074).
-- Radio snapshots and some baselines are written under `./reports/` in the working directory
-  rather than the state directory (010).
+- Protect tools are unverified live (034).
+- PNG and SVG diagrams need Graphviz's `dot`; without it `discover` writes a placeholder and
+  its report (075). MQTT needs the `mqtt` extra: `uv sync --extra mqtt` (074).
 
 ## Documentation
 

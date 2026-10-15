@@ -102,99 +102,7 @@ async def monitor_lags(
     async with UniFiClient() as client:
         try:
             devices = await client.get_devices()
-
-            devices_analyzed = 0
-            lag_groups: list[LAGGroup] = []
-            all_issues: list[dict[str, Any]] = []
-            recommendations: list[str] = []
-
-            healthy_count = 0
-            degraded_count = 0
-            critical_count = 0
-            total_bandwidth_gbps = 0.0
-            active_bandwidth_gbps = 0.0
-
-            for device in devices:
-                device_type = device.get('type', '')
-                if device_type not in ('usw', 'switch', 'udm', 'udmpro'):
-                    continue
-
-                # Filter to specific device if requested
-                if device_id:
-                    if device.get('_id') != device_id and device.get('mac') != device_id:
-                        continue
-
-                devices_analyzed += 1
-                dev_id = device.get('_id', '')
-                dev_name = device.get('name', device.get('mac', 'Unknown'))
-
-                # Extract LAG groups from device
-                device_lags = _extract_lag_groups(device, dev_id, dev_name)
-
-                for lag in device_lags:
-                    lag_groups.append(lag)
-                    total_bandwidth_gbps += lag.total_bandwidth_mbps / 1000
-                    active_bandwidth_gbps += lag.active_bandwidth_mbps / 1000
-
-                    # Count by status
-                    if lag.status == LAGStatus.HEALTHY:
-                        healthy_count += 1
-                    elif lag.status == LAGStatus.DEGRADED:
-                        degraded_count += 1
-                        for issue in lag.issues:
-                            all_issues.append(
-                                {
-                                    'severity': 'warning',
-                                    'message': issue,
-                                    'lag_id': lag.lag_id,
-                                    'device_name': lag.device_name,
-                                    'timestamp': datetime.now().isoformat(),
-                                }
-                            )
-                    elif lag.status in (LAGStatus.CRITICAL, LAGStatus.MISCONFIGURED):
-                        critical_count += 1
-                        for issue in lag.issues:
-                            all_issues.append(
-                                {
-                                    'severity': 'critical',
-                                    'message': issue,
-                                    'lag_id': lag.lag_id,
-                                    'device_name': lag.device_name,
-                                    'timestamp': datetime.now().isoformat(),
-                                }
-                            )
-
-                # Check if specific device was found
-                if device_id and devices_analyzed > 0:
-                    break
-
-            # Handle device not found
-            if device_id and devices_analyzed == 0:
-                raise ToolError(
-                    message=f'Device with ID {device_id} not found',
-                    error_code=ErrorCodes.DEVICE_NOT_FOUND,
-                    suggestion='Use find_device to search for the correct device ID',
-                    related_tools=['find_device'],
-                )
-
-            # Generate recommendations
-            recommendations = _generate_recommendations(lag_groups)
-
-            return LAGHealthReport(
-                timestamp=datetime.now().isoformat(),
-                devices_analyzed=devices_analyzed,
-                total_lags=len(lag_groups),
-                healthy_lags=healthy_count,
-                degraded_lags=degraded_count,
-                critical_lags=critical_count,
-                lag_groups=lag_groups,
-                total_lag_bandwidth_gbps=round(total_bandwidth_gbps, 2),
-                active_lag_bandwidth_gbps=round(active_bandwidth_gbps, 2),
-                issues=all_issues,
-                recommendations=recommendations,
-                network_healthy=critical_count == 0 and degraded_count == 0,
-            )
-
+            return monitor_lags_from_data(devices, device_id=device_id)
         except ToolError:
             raise
         except Exception as e:
@@ -209,6 +117,100 @@ async def monitor_lags(
                 error_code=ErrorCodes.API_ERROR,
                 suggestion='Check controller status and try again',
             )
+
+
+def monitor_lags_from_data(
+    devices: list[dict[str, Any]],
+    device_id: str | None = None,
+) -> LAGHealthReport:
+    """Build the LAG health report from UniFi device dictionaries (pure; no I/O).
+
+    A LAG is read from every shape the controller has used: ``link_aggregation_groups``
+    and a master port's ``port_overrides`` entry with ``op_mode: 'aggregate'`` (current
+    firmware), and the legacy ``port_aggregates`` list. Member state comes from the master
+    port's ``lacp_state`` where the firmware provides it; a ``masked`` subordinate's own
+    ``up: false, speed: 0`` is cosmetic and never read as a failed member.
+
+    Raises:
+        ToolError: DEVICE_NOT_FOUND if ``device_id`` is given and no switch matches it.
+    """
+    devices_analyzed = 0
+    lag_groups: list[LAGGroup] = []
+    all_issues: list[dict[str, Any]] = []
+
+    healthy_count = 0
+    degraded_count = 0
+    critical_count = 0
+    total_bandwidth_gbps = 0.0
+    active_bandwidth_gbps = 0.0
+
+    for device in devices:
+        device_type = device.get('type', '')
+        if device_type not in ('usw', 'switch', 'udm', 'udmpro'):
+            continue
+
+        # Filter to specific device if requested
+        if device_id:
+            if device.get('_id') != device_id and device.get('mac') != device_id:
+                continue
+
+        devices_analyzed += 1
+        dev_id = str(device.get('_id', ''))
+        dev_name = str(device.get('name', device.get('mac', 'Unknown')))
+
+        for lag in _extract_lag_groups(device, dev_id, dev_name):
+            lag_groups.append(lag)
+            total_bandwidth_gbps += lag.total_bandwidth_mbps / 1000
+            active_bandwidth_gbps += lag.active_bandwidth_mbps / 1000
+
+            if lag.status == LAGStatus.HEALTHY:
+                healthy_count += 1
+            elif lag.status == LAGStatus.DEGRADED:
+                degraded_count += 1
+                all_issues.extend(_issue_rows(lag, 'warning'))
+            elif lag.status in (LAGStatus.CRITICAL, LAGStatus.MISCONFIGURED):
+                critical_count += 1
+                all_issues.extend(_issue_rows(lag, 'critical'))
+
+        # Check if specific device was found
+        if device_id and devices_analyzed > 0:
+            break
+
+    if device_id and devices_analyzed == 0:
+        raise ToolError(
+            message=f'Device with ID {device_id} not found',
+            error_code=ErrorCodes.DEVICE_NOT_FOUND,
+            suggestion='Use find_device to search for the correct device ID',
+            related_tools=['find_device'],
+        )
+
+    return LAGHealthReport(
+        timestamp=datetime.now().isoformat(),
+        devices_analyzed=devices_analyzed,
+        total_lags=len(lag_groups),
+        healthy_lags=healthy_count,
+        degraded_lags=degraded_count,
+        critical_lags=critical_count,
+        lag_groups=lag_groups,
+        total_lag_bandwidth_gbps=round(total_bandwidth_gbps, 2),
+        active_lag_bandwidth_gbps=round(active_bandwidth_gbps, 2),
+        issues=all_issues,
+        recommendations=_generate_recommendations(lag_groups),
+        network_healthy=critical_count == 0 and degraded_count == 0,
+    )
+
+
+def _issue_rows(lag: LAGGroup, severity: str) -> list[dict[str, Any]]:
+    return [
+        {
+            'severity': severity,
+            'message': issue,
+            'lag_id': lag.lag_id,
+            'device_name': lag.device_name,
+            'timestamp': datetime.now().isoformat(),
+        }
+        for issue in lag.issues
+    ]
 
 
 async def find_lag_candidates(min_links: int = 2) -> LAGCandidateReport:
@@ -318,6 +320,92 @@ def find_lag_candidates_from_data(
     )
 
 
+class _LagDeclaration:
+    """One LAG as the controller declares it, whichever shape it used."""
+
+    def __init__(
+        self,
+        lag_id: str,
+        lag_name: str,
+        member_ports: list[int],
+        master_port: int | None,
+    ) -> None:
+        self.lag_id = lag_id
+        self.lag_name = lag_name
+        self.member_ports = member_ports
+        self.master_port = master_port
+
+
+def _lag_declarations(device: dict[str, Any], device_id: str) -> list[_LagDeclaration]:
+    """Every LAG the device declares, each once, from the current and the legacy shape.
+
+    Current firmware lists a LAG in ``link_aggregation_groups`` and on the master port's
+    ``port_overrides`` entry (``op_mode: 'aggregate'``); a LAG present in both is one LAG.
+    Older firmware used ``port_aggregates`` with ``member_ports``.
+    """
+    declarations: list[_LagDeclaration] = []
+    seen: set[frozenset[int]] = set()
+    ports_by_idx = _ports_by_idx(device)
+
+    def _add(lag_idx: Any, members: list[int], master: int | None, name: str | None) -> None:
+        if not members:
+            return
+        key = frozenset(members)
+        if key in seen:
+            return
+        seen.add(key)
+        if master is None:
+            master = _master_port_of(members, ports_by_idx)
+        idx_text = str(lag_idx) if lag_idx not in (None, '') else str(master)
+        declarations.append(
+            _LagDeclaration(
+                lag_id=f'{device_id}_lag_{idx_text}',
+                lag_name=name or f'LAG-{idx_text}',
+                member_ports=sorted(members),
+                master_port=master,
+            )
+        )
+
+    for group in _dict_list(device.get('link_aggregation_groups')):
+        _add(group.get('lag_idx'), _int_list(group.get('aggregate_members')), None, None)
+
+    for override in _dict_list(device.get('port_overrides')):
+        if override.get('op_mode') != 'aggregate':
+            continue
+        master = _as_int(override.get('port_idx')) or None
+        members = _int_list(override.get('aggregate_members'))
+        if master and master not in members:
+            members.append(master)
+        _add(override.get('lag_idx'), members, master, None)
+
+    for index, aggregate in enumerate(_dict_list(device.get('port_aggregates'))):
+        members = _int_list(aggregate.get('member_ports'))
+        legacy_id = str(aggregate.get('_id') or f'{device_id}_lag_{index}')
+        name = aggregate.get('name')
+        if not members or frozenset(members) in seen:
+            continue
+        seen.add(frozenset(members))
+        declarations.append(
+            _LagDeclaration(
+                lag_id=legacy_id,
+                lag_name=str(name) if name else f'LAG-{legacy_id[-4:]}',
+                member_ports=sorted(members),
+                master_port=_master_port_of(members, ports_by_idx),
+            )
+        )
+
+    return declarations
+
+
+def _master_port_of(members: list[int], ports_by_idx: dict[int, dict[str, Any]]) -> int | None:
+    """The member whose port_table entry carries the LAG state, else the lowest member."""
+    for member in sorted(members):
+        port = ports_by_idx.get(member, {})
+        if port.get('op_mode') == 'aggregate' or isinstance(port.get('lacp_state'), list):
+            return member
+    return min(members) if members else None
+
+
 def _extract_lag_groups(
     device: dict[str, Any],
     device_id: str,
@@ -325,22 +413,14 @@ def _extract_lag_groups(
 ) -> list[LAGGroup]:
     """Extract LAG groups from device configuration."""
     lag_groups: list[LAGGroup] = []
+    ports_by_idx = _ports_by_idx(device)
 
-    port_table = device.get('port_table', [])
-    port_overrides = device.get('port_overrides', [])
-
-    # Build port override lookup (reserved for future enhancement)
-    _override_by_port = {po.get('port_idx'): po for po in port_overrides}  # noqa: F841
-
-    # Find LAG configurations in UniFi
-    aggregates = device.get('port_aggregates', [])
-
-    for agg in aggregates:
-        lag_id = agg.get('_id', f'{device_id}_lag_{len(lag_groups)}')
-        member_ports = agg.get('member_ports', [])
-
-        if not member_ports:
-            continue
+    for declaration in _lag_declarations(device, device_id):
+        master = ports_by_idx.get(declaration.master_port or -1, {})
+        lacp_by_member: dict[int, dict[str, Any]] = {
+            _as_int(entry.get('member_port')): entry
+            for entry in _dict_list(master.get('lacp_state'))
+        }
 
         members: list[LAGMember] = []
         active_members = 0
@@ -349,17 +429,11 @@ def _extract_lag_groups(
         total_rx_bytes = 0
         total_tx_bytes = 0
 
-        for port_idx in member_ports:
-            empty_port: dict[str, Any] = {}
-            port_data = cast(
-                dict[str, Any],
-                next((p for p in port_table if p.get('port_idx') == port_idx), empty_port),
+        for port_idx in declaration.member_ports:
+            port_data = ports_by_idx.get(port_idx, {})
+            link_up, is_active, speed = _member_state(
+                port_data, lacp_by_member.get(port_idx), master
             )
-
-            link_up = bool(port_data.get('up', False))
-            enabled = bool(port_data.get('enable', True))
-            is_active = link_up and enabled
-            speed = _as_int(port_data.get('speed'))
 
             member = LAGMember(
                 port_idx=port_idx,
@@ -401,24 +475,25 @@ def _extract_lag_groups(
 
         # Determine status and issues
         status, issues = _determine_lag_status(
-            expected_members=len(member_ports),
+            expected_members=len(declaration.member_ports),
             active_members=active_members,
             members=members,
             load_balance_score=load_balance_score,
         )
 
         lag = LAGGroup(
-            lag_id=lag_id,
+            lag_id=declaration.lag_id,
             device_id=device_id,
             device_name=device_name,
-            lag_name=agg.get('name', f'LAG-{lag_id[-4:]}'),
+            lag_name=declaration.lag_name,
             members=members,
-            expected_members=len(member_ports),
+            expected_members=len(declaration.member_ports),
             active_members=active_members,
             total_bandwidth_mbps=total_bandwidth,
             active_bandwidth_mbps=active_bandwidth,
             total_rx_bytes=total_rx_bytes,
             total_tx_bytes=total_tx_bytes,
+            partner_system_id=str(master.get('partner_system_id') or ''),
             status=status,
             efficiency_percent=round(efficiency, 1),
             load_balance_score=round(load_balance_score, 1),
@@ -430,14 +505,54 @@ def _extract_lag_groups(
     return lag_groups
 
 
+def _member_state(
+    port_data: dict[str, Any],
+    lacp_entry: dict[str, Any] | None,
+    master: dict[str, Any],
+) -> tuple[bool, bool, int]:
+    """``(link_up, is_active, speed_mbps)`` for one member port.
+
+    The master's ``lacp_state`` entry is authoritative when present. Without one, a
+    ``masked`` subordinate (``aggregated_by`` the master) inherits the master's link, since
+    its own ``up: false, speed: 0`` is cosmetic while it forwards traffic. Any other port
+    reports its own link.
+    """
+    if lacp_entry is not None:
+        is_active = bool(lacp_entry.get('active', False))
+        speed = _as_int(lacp_entry.get('speed'))
+        return is_active, is_active, speed
+    source = port_data
+    if bool(port_data.get('masked')) and _as_int(port_data.get('aggregated_by')):
+        source = master or port_data
+    link_up = bool(source.get('up', False))
+    enabled = bool(port_data.get('enable', True))
+    return link_up, link_up and enabled, _as_int(source.get('speed'))
+
+
 def _existing_lag_ports(device: dict[str, Any]) -> set[int]:
+    """Every port the device reports as part of a LAG, in any firmware shape."""
     ports: set[int] = set()
-    for aggregate in _dict_list(device.get('port_aggregates')):
-        members = aggregate.get('member_ports')
-        if isinstance(members, list):
-            member_values = cast(list[Any], members)
-            ports.update(_as_int(member) for member in member_values)
+    for declaration in _lag_declarations(device, str(device.get('_id', ''))):
+        ports.update(declaration.member_ports)
+    for port in _dict_list(device.get('port_table')):
+        master = _as_int(port.get('aggregated_by'))
+        if master:
+            ports.add(_as_int(port.get('port_idx')))
+            ports.add(master)
+        if isinstance(port.get('lacp_state'), list):
+            ports.add(_as_int(port.get('port_idx')))
+            ports.update(
+                _as_int(entry.get('member_port')) for entry in _dict_list(port.get('lacp_state'))
+            )
+    ports.discard(0)
     return ports
+
+
+def _int_list(value: Any) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    values = cast(list[Any], value)
+    return [_as_int(item) for item in values if _as_int(item)]
 
 
 def _ports_by_idx(device: dict[str, Any]) -> dict[int, dict[str, Any]]:

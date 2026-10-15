@@ -12,13 +12,11 @@ write to it. Read this before running it against a production network.
   dedicated read-only or view-only account is recommended for anything that does not write.
 - Controller payloads are stripped of secrets before they are printed, logged or saved:
   keys starting with `x_` and keys containing `password`, `secret`, `token`, `authkey`, `psk`,
-  `preshared`, `passphrase`, `api_key` or `private_key`, plus the SNMP
-  `community` string, `syslog_key` and `lcm_tracker_seed`, are removed, and only the paths of
-  what was removed are reported. The match is by key name: a credential someone typed into a
-  free-text field under another key (a device note, say) is not recognised, and a key spelt
-  `pre-shared` or `pre_shared` is not matched yet
-  ([issue 076, item 6](docs/issues/076-0.2.0-port-final-review-follow-ups.md)). Tracebacks never
-  print local variables.
+  `preshared` (also spelt `pre-shared`, `pre_shared` or `pre shared`), `passphrase`, `api_key`
+  or `private_key`, plus the SNMP `community` string, `syslog_key` and `lcm_tracker_seed`, are
+  removed, and only the paths of what was removed are reported. The match is by key name: a
+  credential someone typed into a free-text field under another key (a device note, say) is
+  not recognised. Tracebacks never print local variables.
 - **Stripping is not anonymisation.** Reports, evidence bundles and MCP results still carry
   device and client names, MAC and IP addresses, SSIDs and your topology. Treat every output
   as sensitive and review it before posting it to a forum or a ticket.
@@ -31,10 +29,12 @@ write to it. Read this before running it against a production network.
 - **TLS verification is off by default** (`UNIFI_VERIFY_SSL=false`), because most consoles
   present a self-signed certificate. Set it to `true` if your console has a trusted
   certificate.
-- **The gateway SSH commands do not verify the gateway's host key yet**
-  ([issue 038](docs/issues/038-ssh-host-key-verification-disabled.md)), so a host on the path
-  could impersonate the gateway and receive the SSH password. Run them only from a trusted LAN
-  segment. They are CLI-only and only run when `UNIFI_SSH_PASSWORD` is set.
+- **The gateway SSH commands verify the gateway's host key** against `~/.ssh/known_hosts`
+  (asyncssh's default files) and refuse to connect, before any password is sent, when the key is
+  missing or has changed. Record it once with `ssh root@<gateway>` after comparing the
+  fingerprint over a trusted channel. `UNIFI_SSH_KNOWN_HOSTS=off` disables the check and warns
+  on every run; any other value is rejected. They are CLI-only and only run when
+  `UNIFI_SSH_PASSWORD` is set.
 - **Nothing writes to the controller unless you ask.** Commands that can write preview by
   default and need `--apply` or `--no-dry-run`; the MCP server exposes read-only tools only and
   never opens SSH.

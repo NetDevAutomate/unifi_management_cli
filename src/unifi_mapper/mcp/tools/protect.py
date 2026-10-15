@@ -6,33 +6,51 @@ and provide a consistent async interface for MCP tool execution.
 Each call opens its own ``UniFiProtectClient(config, read_only=True)``, whose
 ``ReadOnlyProtectApiClient`` sends GET and HEAD (to the opt-in request audit) and the
 session login, and refuses anything else before any I/O. A refused write propagates, so
-the runner reports ``READ_ONLY_VIOLATION``; other failures still return ``{'error': ...}``.
+the runner reports ``READ_ONLY_VIOLATION``.
+
+A failure is an error result, never a success value (issue 011): a client error the wrapper
+can name is a :class:`ToolError` with its domain code (``CONTROLLER_UNREACHABLE``,
+``AUTHENTICATION_FAILED``, ``API_ERROR``; ``NO_DATA`` when the controller reports no NVR);
+anything else propagates to the runner, which reports it as ``TOOL_FAILED``.
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
-from loguru import logger
 from typing import Any
-from unifi_mapper.core.utils.readonly import ReadOnlyViolation
-from unifi_mapper.core.utils.redact import redact_text
-from unifi_mapper.protect.client import UniFiProtectClient
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.mcp.failure_text import tool_failure
+from unifi_mapper.protect.client import (
+    AuthenticationError,
+    ConnectionError,
+    ProtectClientError,
+    UniFiProtectClient,
+)
 from unifi_mapper.protect.config import ProtectConfig
 
 
-# Long enough that a real message is never cut (the runner caps errors at 2,000).
-FAILURE_TEXT_LIMIT = 2000
+CONNECTION_SUGGESTION = 'Check PROTECT_HOST and that the Protect controller is reachable.'
+AUTHENTICATION_SUGGESTION = 'Check PROTECT_USERNAME and PROTECT_PASSWORD.'
+API_SUGGESTION = 'Check the Protect controller status and try again.'
 
 
-def _failure(action: str, error: Exception) -> str:
-    """Log a tool's failure and return its error text, both redacted.
+def _tool_error(action: str, error: ProtectClientError) -> ToolError:
+    """Map a Protect client failure to a ``ToolError`` with its domain code.
 
-    A lower layer's message can carry a credential, and the server's stderr ends up in the
-    MCP client's own logs, so neither the log line nor the returned ``error`` shows it raw.
+    Args:
+        action: What the tool was doing, for the log line.
+        error: The client's typed exception.
+
+    Returns:
+        The error to raise; its message is the client's text, redacted.
     """
-    text = redact_text(error, limit=FAILURE_TEXT_LIMIT)
-    logger.error('Failed to {}: {}', action, text)
-    return text
+    if isinstance(error, AuthenticationError):
+        code, suggestion = ErrorCodes.AUTHENTICATION_FAILED, AUTHENTICATION_SUGGESTION
+    elif isinstance(error, ConnectionError):
+        code, suggestion = ErrorCodes.CONTROLLER_UNREACHABLE, CONNECTION_SUGGESTION
+    else:
+        code, suggestion = ErrorCodes.API_ERROR, API_SUGGESTION
+    return ToolError(message=tool_failure(action, error), error_code=code, suggestion=suggestion)
 
 
 @lru_cache(maxsize=1)
@@ -45,7 +63,7 @@ async def get_cameras() -> list[dict[str, Any]]:
     """Get all cameras and their status.
 
     Returns:
-        List of camera data as dictionaries, or error dict on failure.
+        List of camera data as dictionaries.
     """
     try:
         config = _get_config()
@@ -62,24 +80,29 @@ async def get_cameras() -> list[dict[str, Any]]:
                 }
                 for cam in cameras.values()
             ]
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return [{'error': _failure('get cameras', e)}]
+    except ProtectClientError as e:
+        raise _tool_error('get cameras', e) from e
 
 
 async def get_nvr_info() -> dict[str, Any]:
     """Get NVR (Network Video Recorder) information and status.
 
     Returns:
-        NVR data as dictionary, or error dict on failure.
+        NVR data as dictionary.
+
+    Raises:
+        ToolError: ``NO_DATA`` when the controller reports no NVR.
     """
     try:
         config = _get_config()
         async with UniFiProtectClient(config, read_only=True) as client:
             nvr = client.nvr
             if nvr is None:
-                return {'error': 'NVR not available'}
+                raise ToolError(
+                    message='NVR not available',
+                    error_code=ErrorCodes.NO_DATA,
+                    suggestion='The Protect controller reported no NVR; check its status.',
+                )
             return {
                 'id': nvr.id,
                 'name': nvr.name,
@@ -88,17 +111,15 @@ async def get_nvr_info() -> dict[str, Any]:
                 'uptime': getattr(nvr, 'uptime', None),
                 'is_connected': getattr(nvr, 'is_connected', False),
             }
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return {'error': _failure('get NVR info', e)}
+    except ProtectClientError as e:
+        raise _tool_error('get NVR info', e) from e
 
 
 async def get_sensors() -> list[dict[str, Any]]:
     """Get door/window sensors and their status.
 
     Returns:
-        List of sensor data as dictionaries, or error dict on failure.
+        List of sensor data as dictionaries.
     """
     try:
         config = _get_config()
@@ -115,17 +136,15 @@ async def get_sensors() -> list[dict[str, Any]]:
                 }
                 for sensor in sensors.values()
             ]
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return [{'error': _failure('get sensors', e)}]
+    except ProtectClientError as e:
+        raise _tool_error('get sensors', e) from e
 
 
 async def get_lights() -> list[dict[str, Any]]:
     """Get smart lights and floodlights.
 
     Returns:
-        List of light data as dictionaries, or error dict on failure.
+        List of light data as dictionaries.
     """
     try:
         config = _get_config()
@@ -141,17 +160,15 @@ async def get_lights() -> list[dict[str, Any]]:
                 }
                 for light in lights.values()
             ]
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return [{'error': _failure('get lights', e)}]
+    except ProtectClientError as e:
+        raise _tool_error('get lights', e) from e
 
 
 async def get_doorbells() -> list[dict[str, Any]]:
     """Get video doorbells and their status.
 
     Returns:
-        List of doorbell data as dictionaries, or error dict on failure.
+        List of doorbell data as dictionaries.
     """
     try:
         config = _get_config()
@@ -172,7 +189,5 @@ async def get_doorbells() -> list[dict[str, Any]]:
                 }
                 for db in doorbells
             ]
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return [{'error': _failure('get doorbells', e)}]
+    except ProtectClientError as e:
+        raise _tool_error('get doorbells', e) from e

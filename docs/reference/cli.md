@@ -196,9 +196,9 @@ because no VLAN matched a gateway interface with byte counters, exit 1, so a sch
 own notices. `rollup`, `report` and `coverage` work on the store
 alone. `report now`, `1d` and `1w` read the raw samples (kept 8 days); `1m` reads hourly rows
 and `1y` daily rows, which `rollup` writes for every complete hour and day (run it hourly, say;
-each run also recomputes the newest two hours and the newest day, so a sample written late
-still counts if a run comes less than two hours after its hour is complete; a later one stays
-in the raw samples only, [issue 071](../issues/071-late-vlan-samples-never-reach-the-rollups.md)).
+each run also recomputes the newest two hours and the newest day and every hour a sample has
+been written into since the last run, so a sample written late still reaches `1m` and `1y`,
+however late, [issue 071](../issues/071-late-vlan-samples-never-reach-the-rollups.md)).
 As ported from the prototype, `1w` was always empty and `1m` and `1y` left out the newest 8 and about
 61 days, because the prototype rolled an hour only once it was 8 days old ([issue
 069](../issues/069-vlan-reports-read-tiers-without-recent-data.md)). The MCP tools
@@ -227,7 +227,7 @@ your config, plus `UNIFI_SSH_USERNAME` if the SSH user isn't `root`. Without
 [issue 038](../issues/038-ssh-host-key-verification-disabled.md)):
 
 ```text
-⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key is not verified (issue 038).
+⚠ This command runs on the gateway over SSH as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
 ❌ [CONFIG_MISSING] UNIFI_SSH_PASSWORD is not set. The gateway SSH login has its own password; UNIFI_PASSWORD (the UniFi OS login) is never sent over SSH
 💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
 ```
@@ -237,10 +237,11 @@ Any other failure of these commands is also a line on stderr, with secrets redac
 `UNIFI_PASSWORD`, the UniFi OS login, is never sent over SSH. Every address and number is
 checked before it reaches the gateway's command line, which is shell-quoted as well:
 `diagnose bandwidth` refuses a target that isn't an IP address (an IPv6 zone id included),
-and the latency matrix skips such a target and says why. The SSH session doesn't verify the
-gateway's host key yet (`known_hosts=None`,
-[issue 038](../issues/038-ssh-host-key-verification-disabled.md)), so run these only on a
-network you trust.
+and the latency matrix skips such a target and says why. The SSH session verifies the
+gateway's host key against `~/.ssh/known_hosts` and refuses, before the password is sent, a key
+that is missing or has changed: record it once with `ssh <user>@<gateway>`.
+`UNIFI_SSH_KNOWN_HOSTS=off` disables the check with a warning on every run
+([issue 038](../issues/038-ssh-host-key-verification-disabled.md)).
 
 ## Radio Management
 
@@ -455,6 +456,30 @@ unifi-mapper analyze neighbours --diff --signal-delta 15
 - `scripts/unifi-cron.sh` runs `analyze link-errors --record` every 5 minutes (the task is
   still named `link-error-snapshot`).
 
+### Radio snapshots and the other baselines
+
+The remaining state files default to the same directory,
+`${XDG_STATE_HOME:-~/.local/state}/unifi_mapper/` (a relative `XDG_STATE_HOME` is ignored),
+never the working directory ([issue 010](../issues/010-cwd-relative-state-files.md)):
+
+| File | Written by | Read by |
+|---|---|---|
+| `radio-snapshot.json` | `radio snapshot`, `radio optimize --apply`, the MCP `snapshot_radio_config` tool | `radio restore` |
+| `radio-pre-optimization.json` | the MCP `apply_radio_optimization` handler, before it writes | `radio restore --snapshot <path>` |
+| `radio-pre-autochannel.json` | `radio auto-channel --apply`, before it writes | `radio restore --snapshot <path>` |
+| `config-baseline.json` | `analyze config-drift --snapshot` | `analyze config-drift` |
+| `client-roaming-history.json` | `analyze roaming --snapshot` | `analyze roaming`, the RF strategy plan |
+| `neighbour-baseline.json` | `analyze neighbours --snapshot` | `analyze neighbours --diff` |
+
+- An explicit `--output`, `--snapshot`, `--baseline` or `--history` path is used as given;
+  only the defaults moved. Each command's `--help` names its default.
+- The MCP `snapshot_radio_config` tool returns the absolute path it wrote (`file`) and the
+  exact command to preview a restore from it (`restore_command`, path shell-quoted):
+  `unifi-mapper radio restore --snapshot <path>`; add `--apply` to write.
+- Files written by earlier releases under `./reports/` are **not** moved or read. Pass the
+  old path once (`analyze config-drift --baseline ./reports/config-baseline.json`) or move the
+  file into the state directory.
+
 ## Command Reference
 
 Every command on the `unifi-mapper` entry point. All are read-only unless noted.
@@ -466,7 +491,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `verify` | Port name verification with ground truth checking |
 | `capabilities` | Analyze device capabilities for port naming support |
 | `version` | Show version information |
-| `install-completions` | Install shell completions |
+| `install-completions` | Install the manual bash/zsh completion scripts (`bash`, `zsh` or `all`; exits 1 on failure; fish: `--install-completion`) |
 | `find device` | Find a device by name, IP or MAC |
 | `find ip` | Where an IP address is: device or client, VLAN, lease and connection |
 | `find mac` | Where a MAC address is: device, client or last known location |
@@ -507,7 +532,7 @@ Every command on the `unifi-mapper` entry point. All are read-only unless noted.
 | `analyze neighbours` | Passive neighbour AP detection and trend |
 | `diagnose all` | Run every diagnostic with a pass/warn/fail summary |
 | `diagnose health` | Overall network health check |
-| `diagnose security` | Security audit: unknown and anomalous devices, rogue APs, guest and VLAN violations |
+| `diagnose security` | Security audit: pending adoption, guest overstay, rogue APs, VLAN isolation |
 | `diagnose vlans` | Every VLAN, the trunk ports that carry them, and the VLAN diagnostic checks |
 | `diagnose freshness` | How old each device's telemetry is; `--sample` compares two reads a gap apart |
 | `diagnose performance` | CPU, memory, load and drops per device, scored and ranked, with bottlenecks |
@@ -568,7 +593,7 @@ Exit codes, across the commands:
 | --- | --- |
 | 0 | Done; a diagnosis found no fault |
 | 1 | An error, reported as one line on stderr (a traceback only with `--debug`, without local variables): a failed read or connection, missing data, or a value a command checks once it runs, such as a `gateway` probe's URL, hostname or interface, or a `diagnose bandwidth` target. Some diagnoses (`diagnose client-connectivity`, for example) also exit 1 when they find a fault or a check could not run |
-| 2 | A usage error, before anything is read: an unknown option, a value outside an option's stated range, a file option naming a directory, an `--output` that can't be written; or an invalid path or value given to a command that contacts nothing (`backup verify`, `diagnose wan-history`, the `vlan-traffic` readers) or to `controller events`' window. Also a check that failed: the validating commands (`analyze port-profiles`, `mtu`, `vlan-coverage`, `uplink-transparency`, `power-budget`, `link-speeds` and `port-profile-usage`, `diagnose all` and `inter-vlan`, `stp drift` and `validate-10g`) exit 2 when their validation fails, `stp apply` and `stp rollback` when a change failed, and `diagnose ap-health` when the printed report could not be written to `--output` |
+| 2 | A usage error, before anything is read: an unknown option, a value outside an option's stated range, a file option naming a directory, an `--output` that can't be written; or an invalid path or value given to a command that contacts nothing (`backup verify`, `diagnose wan-history`, the `vlan-traffic` readers) or to `controller events`' window. Also a check that failed: the validating commands (`analyze port-profiles`, `mtu`, `vlan-coverage`, `uplink-transparency`, `power-budget`, `link-speeds` and `port-profile-usage`, `diagnose all` and `inter-vlan`, `stp drift` and `validate-10g`) exit 2 when their validation fails, `stp apply` and `stp rollback` when a change failed, and `diagnose ap-health` when `--essid` names an SSID the target's 2.4 GHz radio does not carry (after the discovery read, before any sample) or when the printed report could not be written to `--output` |
 | 130 | Interrupted with Ctrl-C after a partial report was printed (`diagnose ap-health`) |
 
 > Invoke commands through the installed `unifi-mapper` script. `uv run python -m

@@ -17,19 +17,29 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from unifi_mapper.analysis.neighbour_scan import filter_live_rogue_entries
+from unifi_mapper.analysis.port_counter_baseline import state_dir
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.local_paths import check_snapshot_path
 
 
-DEFAULT_BASELINE_PATH = 'reports/neighbour-baseline.json'
+NEIGHBOUR_BASELINE_FILENAME = 'neighbour-baseline.json'
+
+
+def default_neighbour_baseline_path() -> Path:
+    """Return ``state_dir() / 'neighbour-baseline.json'`` (read at call time).
+
+    The baseline lives under ``$XDG_STATE_HOME/unifi_mapper/`` (issue 010); nothing is created.
+    """
+    return state_dir() / NEIGHBOUR_BASELINE_FILENAME
+
 
 # Signal change threshold (dB) — below this, treat as noise
 DEFAULT_SIGNAL_DELTA_DB = 10
 
 
 async def snapshot_neighbours(
-    output_path: str = DEFAULT_BASELINE_PATH,
+    output_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Capture the current neighbour AP landscape as a baseline.
 
@@ -61,7 +71,7 @@ async def snapshot_neighbours(
         'entries': entries,
     }
 
-    path = Path(output_path)
+    path = Path(output_path) if output_path else default_neighbour_baseline_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(snapshot, indent=2))
     return snapshot
@@ -144,22 +154,23 @@ def _compare_snapshots(
 
 
 async def detect_neighbour_trend(
-    baseline_path: str = DEFAULT_BASELINE_PATH,
+    baseline_path: str | Path | None = None,
     signal_delta_threshold: int = DEFAULT_SIGNAL_DELTA_DB,
 ) -> dict[str, Any]:
     """Compare current neighbour landscape against baseline snapshot.
 
     Args:
-        baseline_path: Path to baseline JSON (produced by snapshot_neighbours)
+        baseline_path: Path to baseline JSON (produced by snapshot_neighbours); ``None``
+            means :func:`default_neighbour_baseline_path`
         signal_delta_threshold: Absolute dB change to flag as significant
 
     Returns:
         Dict with counts and per-category lists of changes.
     """
-    path = Path(baseline_path)
+    path = Path(baseline_path) if baseline_path else default_neighbour_baseline_path()
     if not path.exists():
         raise ToolError(
-            message=f'No neighbour baseline found at {baseline_path}. Run snapshot first.',
+            message=f'No neighbour baseline found at {path}. Run snapshot first.',
             error_code=ErrorCodes.NO_DATA,
             suggestion='Run: unifi-mapper analyze neighbours --snapshot',
         )

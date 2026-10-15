@@ -23,7 +23,7 @@ from tests.fixtures_unifi import FAKE_PW, FAKE_TOKEN
 from types import SimpleNamespace
 from typing import Any
 from uiprotect import ProtectApiClient
-from unifi_mapper.core.utils.errors import ErrorCodes
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.readonly import (
     ReadOnlyAsyncTransport,
     ReadOnlyViolation,
@@ -38,6 +38,7 @@ from unifi_mapper.mcp.tools import network as network_tools
 from unifi_mapper.mcp.tools import protect as protect_tools
 from unifi_mapper.network import client as network_client
 from unifi_mapper.network.config import NetworkConfig
+from unifi_mapper.protect.client import ConnectionError as ProtectConnectionError
 from unifi_mapper.protect.client import ReadOnlyProtectApiClient, UniFiProtectClient
 from unifi_mapper.protect.config import ProtectConfig
 from unittest.mock import AsyncMock
@@ -46,7 +47,10 @@ from unittest.mock import AsyncMock
 SITE_ID = '550e8400-e29b-41d4-a716-446655440000'
 NETWORK_HOST = '192.0.2.1'
 PROTECT_HOST = '192.0.2.10'
-INTEGRATION = f'/proxy/network/integrations/v1/sites/{SITE_ID}/'
+API = '/proxy/network/integration/v1/'
+INTEGRATION = f'{API}sites/{SITE_ID}/'
+# The client's one base-path probe per connection (issue 003): a GET the guard lets through.
+PROBE = ('GET', f'{API}info')
 NETWORK_TOOLS = [
     'get_firewall_zones',
     'get_firewall_policies',
@@ -179,8 +183,8 @@ async def test_each_network_tool_sends_only_audited_gets(
     result = await getattr(network_tools, tool)()
     assert (result['clients'] if tool == 'get_clients' else result) == []  # a page of none
 
-    assert recorder.calls, 'the tool sent no request'
-    assert all(m == 'GET' and p.startswith(INTEGRATION) for m, p in recorder.calls), recorder.calls
+    assert recorder.calls[0] == PROBE and len(recorder.calls) > 1, 'the tool sent no request'
+    assert all(m == 'GET' and p.startswith(API) for m, p in recorder.calls), recorder.calls
     lines = _audit_lines(sink)
     assert [(line['method'], line['path']) for line in lines] == recorder.calls
     assert all(set(line) == {'t', 'method', 'path'} for line in lines)
@@ -192,11 +196,6 @@ async def test_each_network_tool_sends_only_audited_gets(
 LEAKY = (
     'request failed: password=' + 'FAKE-TOOL-ERROR-PASSWORD-MUST-NOT-APPEAR'
 )  # pragma: allowlist secret
-
-
-def _error_texts(result: Any) -> list[str]:
-    items = result if isinstance(result, list) else [result]
-    return [str(item['error']) for item in items if isinstance(item, dict) and 'error' in item]
 
 
 @pytest.fixture
@@ -218,10 +217,10 @@ async def test_a_network_tool_s_error_and_log_line_are_redacted(
 
     transport = httpx.MockTransport(_fail)
     monkeypatch.setattr(network_tools, '_inner_transport', lambda _config: transport)
-    result = await getattr(network_tools, tool)()
-    errors = _error_texts(result)
-    assert errors, result
-    assert all('FAKE-TOOL-ERROR-PASSWORD' not in e for e in errors)
+    with pytest.raises(ToolError) as info:  # issue 011: a failure is raised, never returned
+        await getattr(network_tools, tool)()
+    assert info.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    assert 'FAKE-TOOL-ERROR-PASSWORD' not in info.value.message
     assert logged and all('FAKE-TOOL-ERROR-PASSWORD' not in line for line in logged)
 
 
@@ -234,17 +233,17 @@ async def test_a_protect_tool_s_error_and_log_line_are_redacted(
             pass
 
         async def __aenter__(self) -> None:
-            raise RuntimeError(LEAKY)
+            raise ProtectConnectionError(LEAKY)
 
         async def __aexit__(self, *_exc: object) -> None:
             return None
 
     monkeypatch.setattr(protect_tools, '_get_config', lambda: object())
     monkeypatch.setattr(protect_tools, 'UniFiProtectClient', _Failing)
-    result = await getattr(protect_tools, tool)()
-    errors = _error_texts(result)
-    assert errors, result
-    assert all('FAKE-TOOL-ERROR-PASSWORD' not in e for e in errors)
+    with pytest.raises(ToolError) as info:  # issue 011: a failure is raised, never returned
+        await getattr(protect_tools, tool)()
+    assert info.value.error_code == ErrorCodes.CONTROLLER_UNREACHABLE
+    assert 'FAKE-TOOL-ERROR-PASSWORD' not in info.value.message
     assert logged and all('FAKE-TOOL-ERROR-PASSWORD' not in line for line in logged)
 
 
@@ -271,8 +270,9 @@ async def test_network_writes_are_refused_before_any_io(
     async with network_tools._read_only_client() as client:
         with pytest.raises(ReadOnlyViolation):
             await getattr(client, method)(*args, **kwargs)
-    assert recorder.calls == []
-    assert _audit_lines(sink) == []
+    # Only the base-path probe went out; the write itself never reached the transport.
+    assert recorder.calls == [PROBE]
+    assert [(line['method'], line['path']) for line in _audit_lines(sink)] == [PROBE]
 
 
 async def test_a_write_inside_a_network_tool_is_read_only_violation(
@@ -293,7 +293,7 @@ async def test_a_write_inside_a_network_tool_is_read_only_violation(
 
     assert out.structuredContent is not None
     assert out.structuredContent['error_code'] == ErrorCodes.READ_ONLY_VIOLATION
-    assert recorder.calls == []
+    assert recorder.calls == [PROBE]
 
 
 # --- protect --------------------------------------------------------------------------------
@@ -456,7 +456,8 @@ async def test_every_protect_tool_opens_a_read_only_client(
             self.cameras: dict[str, Any] = {}
             self.sensors: dict[str, Any] = {}
             self.lights: dict[str, Any] = {}
-            self.nvr = None
+            # Issue 011: a missing NVR is NO_DATA, so the fake carries one.
+            self.nvr = SimpleNamespace(id='nvr-1', name='NVR', type='UNVR')
 
         async def __aenter__(self) -> 'RecordingClient':
             return self

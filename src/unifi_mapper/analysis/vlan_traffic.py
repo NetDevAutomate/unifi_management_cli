@@ -14,7 +14,7 @@ The controller's network list is read through ``UniFiClient()``, which borrows t
 read-only holder the CLI installs (the legacy ``rest/networkconf`` records, whose subnets
 the resolver matches). The SSH command is one fixed script run as ``sh -c`` with no value
 from a user or the controller in it, through ``analysis/gateway_ssh.py`` with a 30 s bound;
-it runs on the gateway as the SSH user, whose host key is not verified (issue 038), which is
+it runs on the gateway as the SSH user, whose host key is verified against known_hosts, which is
 also why no schedule is published for the sampler until 038 is decided. No MCP tool triggers
 a sample (decision D1 in issue 060); the MCP tools read stored results only.
 
@@ -43,8 +43,12 @@ from unifi_mapper.core.utils.redact import redact_text
 
 # For each br* interface print "iface rx_bytes tx_bytes", then a marker line, then the
 # interfaces' addresses as JSON for the subnet match. A constant: nothing is interpolated.
+# With no br* interface POSIX sh keeps the literal glob, so the `[ -e ]` guard skips it: a
+# gateway without bridges prints no counter line (issue 076 item 30), and the sample ends as
+# "nothing stored" rather than a bridge line without counters.
 SAMPLE_SCRIPT = (
     'for i in /sys/class/net/br*; do '
+    '[ -e "$i" ] || continue; '
     'n=$(basename "$i"); '
     'echo "$n $(cat "$i"/statistics/rx_bytes) $(cat "$i"/statistics/tx_bytes)"; '
     'done; echo "===ADDR==="; ip -4 -j addr show'
@@ -153,9 +157,10 @@ async def sample_vlan_traffic(db_path: Path | None = None) -> dict[str, Any]:
 
     Returns:
         ``ts`` (the sample's Unix time), ``sampled`` (``{vlan_id, network_name, iface,
-        rx_bytes, tx_bytes}`` each), ``unresolved`` (VLANs with no live interface), and
-        ``skipped`` (resolved VLANs whose interface printed no counter line, such as one that
-        is not a ``br*`` bridge).
+        rx_bytes, tx_bytes}`` each), ``unresolved`` (VLANs with no live interface, and any
+        later network that derives a VLAN ID already sampled this run, such as a second
+        untagged LAN, with a ``reason``), and ``skipped`` (resolved VLANs whose interface
+        printed no counter line, such as one that is not a ``br*`` bridge).
 
     Raises:
         ToolError: ``CONFIG_MISSING`` without the SSH password; the controller's and the SSH
@@ -178,11 +183,29 @@ async def sample_vlan_traffic(db_path: Path | None = None) -> dict[str, Any]:
     resolution = resolve_vlan_interfaces([n for n in networks if isinstance(n, dict)], addresses)
     ts = int(time.time())
     sampled, skipped = [], []
+    unresolved = list(resolution['unresolved'])
+    taken: dict[int, dict[str, Any]] = {}
     for entry in resolution['resolved']:
         counter = counters.get(entry['iface'])
         if counter is None:
             skipped.append(entry)
             continue
+        # Raw rows are keyed by (ts_utc, vlan_id) and written with INSERT OR REPLACE, so two
+        # networks that derive the same VLAN ID (two untagged LANs are both VLAN 1) would
+        # overwrite each other. The first keeps the ID; the rest are counted as unresolved.
+        first = taken.get(entry['vlan_id'])
+        if first is not None:
+            unresolved.append(
+                {
+                    **entry,
+                    'reason': (
+                        f'VLAN {entry["vlan_id"]} already sampled from '
+                        f'{first["network_name"]} ({first["iface"]})'
+                    ),
+                }
+            )
+            continue
+        taken[entry['vlan_id']] = entry
         sampled.append(
             {
                 'ts_utc': ts,
@@ -197,6 +220,6 @@ async def sample_vlan_traffic(db_path: Path | None = None) -> dict[str, Any]:
     return {
         'ts': ts,
         'sampled': sampled,
-        'unresolved': resolution['unresolved'],
+        'unresolved': unresolved,
         'skipped': skipped,
     }

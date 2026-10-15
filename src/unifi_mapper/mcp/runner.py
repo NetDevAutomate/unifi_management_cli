@@ -4,8 +4,9 @@
 
 1. lookup, 2. mutation gate, 3. lazy catalog build, 4. alias rewrite,
 5. unknown-key check, 6. argument validation against the handler signature,
-7. credential gate by the tool's family, 8. execution under a concurrency cap (and a
-deadline only when ``UNIFI_MCP_TOOL_TIMEOUT`` is set), 9. error mapping to stable codes,
+7. credential gate by the tool's family, 8. execution under a concurrency cap and the
+per-call deadline (``UNIFI_MCP_TOOL_TIMEOUT``, 270 s by default), 9. error mapping to stable
+codes,
 10. masking of every result and error text, 11. the result for the surface, then one line
 in the call log (``mcp/call_audit.py``) when the server gave the runner one.
 
@@ -22,7 +23,7 @@ import inspect
 import os
 import pydantic_core
 import time
-from .call_audit import CANCELLED, CallAuditLog
+from .call_audit import CANCELLED, MAX_CONCURRENT_WRITES, CallAuditLog
 from .catalog import ToolCatalog, ToolNotLoadableError
 from .config import (
     FOREIGN_FILE_SUGGESTION,
@@ -32,6 +33,7 @@ from .config import (
     ensure_controller_credentials,
     family_status,
 )
+from .failure_text import ERROR_TEXT_LIMIT
 from .registry import InvalidParamsError, MutationRefusedError, ToolRegistry, UnknownToolError
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, is_dataclass
@@ -53,7 +55,6 @@ from unifi_mapper.core.utils.redact import (
 Surface = Literal['execute_tool', 'direct']
 
 TOOL_FAILED_TEXT_LIMIT = 500
-ERROR_TEXT_LIMIT = 2000
 # Plan decision P1 (design D1): failures carry isError: true. One constant to revert.
 ERRORS_SET_IS_ERROR = True
 
@@ -80,8 +81,9 @@ UNKNOWN_PARAMETER_HINTS: dict[tuple[str, str], str] = {
 
 _FAMILY_SUGGESTIONS = {
     'network_api': (
-        'set UNIFI_CONFIG to an env file with UNIFI_NETWORK_HOST, UNIFI_NETWORK_API_KEY '
-        'and UNIFI_NETWORK_SITE_ID, or export them'
+        'set UNIFI_CONFIG to an env file with UNIFI_NETWORK_API_KEY (UNIFI_NETWORK_HOST and '
+        'UNIFI_NETWORK_SITE_ID are derived from UNIFI_URL and UNIFI_SITE when unset; the '
+        'console token stands in for the key on the same origin), or export them'
     ),
     'protect': (
         'set UNIFI_CONFIG to an env file with PROTECT_HOST, PROTECT_USERNAME and '
@@ -257,7 +259,7 @@ class ToolRunner:
 
         Args:
             registry: The manifest registry.
-            settings: Concurrency cap, credential timeout and optional tool deadline.
+            settings: Concurrency cap, credential timeout and per-call deadline.
             config: Returns the resolved MCP config (for the paths tried), if any.
             catalog: The SDK tool catalog; built from ``registry`` when omitted.
             call_audit: Where each call is logged (the server's; None logs nothing).
@@ -266,6 +268,9 @@ class ToolRunner:
         self.catalog = catalog or ToolCatalog(registry)
         self.settings = settings or ServerSettings()
         self.call_audit = call_audit
+        # The call log's own worker-thread budget (issue 076 item 33); made on first use,
+        # inside the event loop, as anyio requires.
+        self._audit_limiter: anyio.CapacityLimiter | None = None
         self._config = config or (lambda: None)
         self._semaphore: anyio.Semaphore | None = None
         self._semaphore_loop: asyncio.AbstractEventLoop | None = None
@@ -332,7 +337,12 @@ class ToolRunner:
     async def _log_call(
         self, name: str, params: dict[str, Any] | None, surface: str, started: float, outcome: str
     ) -> None:
-        """Write the call's line in a worker thread, shielded, so a cancelled call is logged."""
+        """Write the call's line in a worker thread, shielded, so a cancelled call is logged.
+
+        The thread comes from the call log's own :data:`MAX_CONCURRENT_WRITES`-token limiter,
+        not anyio's default one, which the SDK's stdio transport shares: a slow or failing
+        log never queues behind the transport's threads or starves them.
+        """
         audit = self.call_audit
         if audit is None or not audit.enabled:
             return
@@ -348,8 +358,10 @@ class ToolRunner:
                 duration_ms=(time.monotonic() - started) * 1000,
                 outcome=outcome,
             )
+            if self._audit_limiter is None:
+                self._audit_limiter = anyio.CapacityLimiter(MAX_CONCURRENT_WRITES)
             with anyio.CancelScope(shield=True):
-                await anyio.to_thread.run_sync(record)
+                await anyio.to_thread.run_sync(record, limiter=self._audit_limiter)
         except Exception:  # noqa: BLE001 - logging a call never changes its result
             logger.warning('MCP call log: the line for {} was not written', name)
 
@@ -460,7 +472,7 @@ class ToolRunner:
     # --- steps 8-9 --------------------------------------------------------------------
 
     async def _execute(self, name: str, tool: Tool, kwargs: dict[str, Any]) -> Any:
-        """Run the handler under the concurrency cap and the optional deadline."""
+        """Run the handler under the concurrency cap and the deadline (None: no deadline)."""
         timeout = self.settings.tool_timeout
         scope: anyio.CancelScope | None = None
         try:

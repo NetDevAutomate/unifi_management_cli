@@ -1,7 +1,8 @@
 ---
 title: "The identifier guard skips public IPv4 and link-local IPv6 addresses from the captures"
 date: 2026-10-04
-status: open
+status: resolved
+resolved_by: bc73af8
 severity: low
 components: [tests/test_docs_consistency.py]
 found_by: docs and repo hygiene review
@@ -52,3 +53,31 @@ cares about most.
 
 Which capture fields carry the WAN address is the design step: matching every public
 address in the captures would also catch the vendors' cloud and update hosts.
+
+## Resolution
+
+Resolved on 2026-10-13 (`bc73af8`). `captured_identifiers` now also collects, by exact value:
+
+- every public IPv4 address in an **address field** of a capture: a key that is or ends in
+  `ip`, `ip6`, `ipv6`, `gateway` or `gw`, or is `wan`, `wan1`, `wan2` (`ADDRESS_KEY`), and
+  does not name a DNS, NTP, server, host, resolver or speedtest field
+  (`NOT_A_SITE_ADDRESS_KEY`). That is the design step's answer to "which fields carry the
+  WAN address": the field's name, not an enumeration of controller payloads, so a vendor's
+  cloud or update host (a `*_host` or `*server*` field) is never collected. The public
+  resolvers of Cloudflare, Google, Quad9 and OpenDNS (`PUBLIC_RESOLVERS`), the documentation
+  ranges, loopback, multicast, reserved space, "this network" and the broadcast address
+  (`NOT_PUBLIC_V4`) are left out as well;
+- every link-local IPv6 address (`fe80::/10`), from any field.
+
+`captured_identifier_problems` reports them as `public IPv4 address` and `link-local IPv6
+address` "from the local captures", with the file and line only. A public address counts by
+value, not by network: its /24 neighbour is not reported, since a public /24 is the ISP's,
+not the site's. The self-test builds a WAN address, its neighbour, an allowlisted resolver,
+a public address in a non-address field and a link-local address at run time, and expects
+exactly the WAN and link-local lines.
+
+Run against the fourteen local captures, the extended guard collects no public and no
+link-local address (the captures' only public values are three resolver addresses in `dns1`
+and `dns2` fields) and reports nothing under `tests/` or `scripts/`, so no fixture needed a
+documentation value. The committed guard now matches the local privacy scan in the two
+cases this issue named.

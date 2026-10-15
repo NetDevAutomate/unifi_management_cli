@@ -12,7 +12,7 @@ bounds (``connectivity/gateway_probe.py``); and the whole chain has a 120 s budg
 so one failing layer never hides the others, and a layer the budget leaves no time for is
 reported ``not_run: budget``. The controller reads borrow the read-only holder the CLI
 installs, so none of them can write; the probes run on the gateway as the SSH user, whose
-host key is not verified (issue 038).
+host key is verified against ~/.ssh/known_hosts (issue 038).
 
 Ported from the prototype (a local archive, not in the repo): the verdict's layers and wording
 are the prototype's. Adapted: the HTTP probe takes the client's VLAN, resolved to the gateway interface

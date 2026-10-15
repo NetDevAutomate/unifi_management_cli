@@ -52,7 +52,7 @@ src/unifi_mapper/mcp/
 | uvx, git | `uvx --python 3.12 --from git+https://github.com/NetDevAutomate/unifi_management_cli@v0.2.0 unifi-mcp` | Serves what is pushed and tagged on GitHub. Until `main` is pushed and `v0.2.0` is tagged, this mode serves an older release (a user action, design D7) |
 | Installed tool | `uv tool install --python 3.12 /ABS/PATH/TO/unifi_management_cli`, then point the client at the absolute path of the installed `unifi-mcp` (usually `~/.local/bin/unifi-mcp`) | GUI apps start with a minimal `PATH`, so use the absolute path |
 | Legacy dev | `uv --directory /ABS/PATH/TO/unifi_management_cli run unifi-mcp` with `UNIFI_CONFIG=/path/to/prod.env` in the client's `env` | Runs from the repo's `.venv` and `uv.lock` |
-| Legacy wrapper | `scripts/unifi-mcp-launch.sh` | Sources `$UNIFI_MCP_ENV` (default `${XDG_CONFIG_HOME:-~/.config}/unifi_management_cli/prod.env`), exports every key, then runs the legacy dev command. Still supported, unchanged |
+| Legacy wrapper | `scripts/unifi-mcp-launch.sh` | Sources `$UNIFI_MCP_ENV` (default `$XDG_CONFIG_HOME/unifi_management_cli/prod.env` when that variable is absolute, else `~/.config/unifi_management_cli/prod.env`), exports every key, then runs the legacy dev command. Still supported |
 
 Only the two legacy modes read `uv.lock`. The uvx and installed-tool modes resolve from the
 dependency bounds in `pyproject.toml`. The cache keys below also apply to the legacy modes'
@@ -102,7 +102,8 @@ whatever the MCP client chose). It picks **one** env file, first match wins:
 2. `UNIFI_CONFIG=/path/to/file.env` (a leading `~` is expanded). If that file is missing, the
    server warns on stderr, loads **no** file (it never falls through to another, which might be
    a different site) and still starts.
-3. `$XDG_CONFIG_HOME/unifi_management_cli/prod.env`, then `default.env`.
+3. `$XDG_CONFIG_HOME/unifi_management_cli/prod.env`, then `default.env`, when `XDG_CONFIG_HOME`
+   is set to an absolute path (a relative one is ignored, as the XDG spec says).
 4. `~/.config/unifi_management_cli/prod.env`, then `default.env`.
 5. `~/.config/unifi_network_mapper/prod.env` (legacy; loaded with a deprecation warning).
 6. Nothing: the server still starts. `search_tools`, `get_tool_info` and the resources work;
@@ -118,16 +119,24 @@ controllers:
 | Family | Keys | Ready when |
 | --- | --- | --- |
 | `controller` | `UNIFI_URL`/`UNIFI_HOST`, `UNIFI_PORT`, `UNIFI_SITE`, `UNIFI_VERIFY_SSL`, `UNIFI_CONSOLE_API_TOKEN`/`UNIFI_API_TOKEN`, `UNIFI_USERNAME`, `UNIFI_PASSWORD`, `UNIFI_SSH_USERNAME`, `UNIFI_SSH_PASSWORD` | URL or host, plus a token or username and password |
-| `network_api` | `UNIFI_NETWORK_*` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID` |
+| `network_api` | `UNIFI_NETWORK_*` | `UNIFI_NETWORK_HOST`, `UNIFI_NETWORK_API_KEY` and `UNIFI_NETWORK_SITE_ID`, each of which the controller family can stand in for (below) |
 | `protect` | `PROTECT_*` | `PROTECT_HOST`, `PROTECT_USERNAME` and `PROTECT_PASSWORD` |
 
 - `UNIFI_SSH_USERNAME` and `UNIFI_SSH_PASSWORD` travel with the controller family so a file
   stays one site, but no MCP tool uses them: only the CLI's `diagnose latency-matrix` and
   `diagnose bandwidth` SSH to the gateway.
-- The `network_api` family needs all three keys. A file that sets only
-  `UNIFI_NETWORK_API_KEY`, as the legacy `~/.config/unifi_network_mapper/prod.env` in
-  [issue 037](../issues/037-launch-config-network-family-incomplete.md) does, leaves the six
-  network tools at `[CONFIG_MISSING]`.
+- The `network_api` family no longer needs its own three keys when the controller family is
+  configured ([issue 037](../issues/037-launch-config-network-family-incomplete.md)). With
+  `UNIFI_NETWORK_HOST` unset the host, port and scheme come from `UNIFI_URL`; with
+  `UNIFI_NETWORK_SITE_ID` unset the site id is resolved at the first call by one
+  `GET /v1/sites` matched on `internalReference == UNIFI_SITE` (`default` when unset) and
+  cached for the process, and zero or several matches are a `[CONFIG_INVALID]` naming what
+  was found; with `UNIFI_NETWORK_API_KEY` unset, `UNIFI_CONSOLE_API_TOKEN` stands in **only**
+  when the network host is the same origin (scheme, host and port) as `UNIFI_URL`. The
+  console token is never sent to another host, and the client follows no redirect. An
+  explicit `UNIFI_NETWORK_*` key always wins. `--check` reports the deferred steps under the
+  family's `derived` list (`host: derived from UNIFI_URL`, `site id: resolved at first call`,
+  `key: console token (same origin)`) without contacting the controller.
 - For `protect`, use a dedicated local, view-only Protect account, not the console's admin
   login. The five Protect tools haven't been verified against a live console yet
   ([issue 034](../issues/034-protect-has-no-live-account.md)).
@@ -159,23 +168,24 @@ second 401 is reported as an error. Credentials are re-resolved for that login, 
 config file is read into the process environment at start-up, so a token or password
 changed in the file still needs a server restart (issue 020). The sync port-diagnostics tools (`diagnose_switch_port`, `get_switch_ports`,
 `diff_port_profiles`, `get_client_history`, `get_device_events`, `get_port_counter_rates`,
-`audit_link_speeds`, `audit_port_profile_usage`) keep one guarded login per call.
-`inspect_switch_port` also logs in per call, through its own sync client behind the same
-read-only guard. The `network_api` and `protect` tools open their own guarded client per call
+`audit_link_speeds`, `audit_port_profile_usage`, `inspect_switch_port`) keep one guarded login
+per call through the same `_readonly_sync_client()` helper (issue 021 step 1 brought
+`inspect_switch_port` onto it). The `network_api` and `protect` tools open their own guarded client per call
 (the Integration API's GET-only transport, and `ReadOnlyProtectApiClient`).
 
 `get_clients` returns one page, `{total, returned, offset, limit, next_offset, truncated,
 clients}`: `limit` 1-1000 (default 200), sorted by client ID. It reads the controller's whole
 list on every call and filters it first, so `total` counts every client that matches (only
 connected clients while `active_only` is true, the default; every client when it is false);
-pass a page's `next_offset` as the next `offset` until it is null. A failure is `{error}`.
+pass a page's `next_offset` as the next `offset` until it is null. A failure is an error
+result (`CONTROLLER_UNREACHABLE`, `AUTHENTICATION_FAILED` or `API_ERROR`), never a page.
 
 > [!IMPORTANT]
 > **Breaking change in the 0.2.0 port: `get_clients` returns a page object, not a list.**
 > Before, it returned a bare list of client objects, and `[{error}]` on failure. A caller
-> that iterates the result, or reads `result[0]['error']`, must read `result['clients']`
-> and `result['error']` instead, and follow `next_offset` to get more than one page
-> (200 clients by default).
+> that iterates the result must read `result['clients']` instead, and follow `next_offset`
+> to get more than one page (200 clients by default). Since 0.3.0 a failure is an error
+> result with `isError: true` (issue 011), so there is no `error` key to read at all.
 
 ```json
 {
@@ -198,7 +208,7 @@ Call it again with `offset: 200` for the last 30 clients (`next_offset` is then 
 | --- | --- | --- | --- |
 | `UNIFI_CONFIG` | unset | path to a readable env file | stderr warning; no file loaded; server starts |
 | `UNIFI_MCP_TOOL_SURFACE` | `discovery` | `discovery`, `direct` (case-insensitive) | stderr warning; `discovery` |
-| `UNIFI_MCP_TOOL_TIMEOUT` | unset (no deadline) | seconds, 5–3600 | stderr warning; no deadline |
+| `UNIFI_MCP_TOOL_TIMEOUT` | 270 | seconds, 5–3600 | stderr warning; 270 |
 | `UNIFI_MCP_CREDENTIAL_TIMEOUT` | 15 | seconds, 1–120 | stderr warning; 15 |
 | `UNIFI_MCP_MAX_CONCURRENCY` | 4 | integer, 1–32 | stderr warning; 4 |
 | `UNIFI_MCP_LOG_LEVEL` | `WARNING` | a loguru level name | stderr warning; `WARNING` |
@@ -238,12 +248,16 @@ other write permission, the log turns off with one warning and writes nothing th
 The log is capped at 16 MiB (compacted to 80%, oldest lines first) and locked per write, so
 several server processes can share it. A write waits at most 5 s to take the lock. If the lock
 is still held then, that write's lines (the call line and any buffered request lines) are
-dropped with one warning (once per process), and the log stays on, so later calls are written
-once the lock is free. The 5 s covers only that wait, so it is not a limit on a call's total
-time: the append and any compaction after the lock is taken, a wait for a worker thread when
+dropped with one warning (once per process), and the log stays on. For the next 30 s, writes
+drop their lines without trying the lock, so a lock that is never released does not cost
+every logged call 5 s; the next write that takes the lock starts with a
+`{"kind": "lock_timeout", "dropped": N}` line counting the lines dropped since the last one
+written, so a gap leaves a trace. The writes run in their own pool of at most 4 worker
+threads, never the pool the MCP transport uses, so a slow log cannot hold up or be held up by
+the transport. The 5 s covers only the wait, so it is not a limit on a call's total time: the
+append and any compaction after the lock is taken, a wait for one of the log's threads when
 many calls run at once, and the last write of buffered request lines when the server exits
-(which waits for the lock the same way) are outside it. A lock that is never released costs
-every logged call up to 5 s, and after the first warning the dropped lines leave no trace.
+(which waits for the lock the same way) are outside it.
 
 Any other write that fails (an unwritable path, no home directory, another user's file, lock
 or directory, a symbolic link, a given directory others can write to) logs one warning and
@@ -297,8 +311,11 @@ schema with `get_tool_info`, then calls `execute_tool`.
 
 **Meta-tools.**
 
-- `search_tools(query, category, tags, detail_level)`: find tools; `detail_level="full"` adds
-  each tool's `input_schema`.
+- `search_tools(query, category, tags, detail_level)`: find tools. Every word of `query`
+  (split on spaces, `_` and `-`) must appear in a tool's name, description or tags, and
+  results are ranked by where the words hit (name, then tags, then description), then
+  priority; `category` is case-insensitive; a mutating tool's summary carries
+  `mutates: true`. `detail_level="full"` adds each tool's `input_schema`.
 - `list_categories()`: category → tool names.
 - `get_tool_info(tool_name)`: description, parameters, `input_schema`, `output_schema` and
   annotations.
@@ -350,7 +367,8 @@ over SSH, `vlan-traffic rollup` offline). `now`, `1d` and `1w` read its raw samp
 days); `1m` and `1y` read the hourly and daily rows `rollup` writes for every complete hour and
 day, so they are as current as its last run. Each VLAN's `valid_sample_pct` is the share of
 its samples (or rollup rows) in the period that gave a rate (a first sample with none before
-it, or one after a counter reset, gives none), not the share of the period that was sampled:
+it, one after a counter reset, or one across a sampler outage, gives none), not the share of
+the period that was sampled:
 `list_vlan_traffic_periods` gives each tier's earliest and latest time and its gaps. As
 ported from the prototype the tool's `1w` was
 always empty and `1m` and `1y` left out the newest 8 and about 61 days ([issue
@@ -376,7 +394,7 @@ failed call. On the direct surface a failure is a single text block,
 | `MUTATION_REFUSED` | The tool changes the controller; use the CLI |
 | `INVALID_PARAMETERS` | Unknown key or a type/range error; the envelope adds `parameters` and `input_schema` |
 | `CONFIG_MISSING` | The tool's credential family isn't ready, or the Keychain/1Password lookup didn't finish in time; names the files tried |
-| `TIMEOUT` | The call exceeded `UNIFI_MCP_TOOL_TIMEOUT` (only when set) |
+| `TIMEOUT` | The call exceeded `UNIFI_MCP_TOOL_TIMEOUT` (270 s by default) |
 | `READ_ONLY_VIOLATION` | A tool tried a write and a read-only guard refused it (a bug; nothing was written) |
 | `TOOL_FAILED` | Any other exception, as `ExceptionClass: text` |
 | domain codes | Raised by the tool itself, e.g. `DEVICE_NOT_FOUND`, `PROFILE_NOT_FOUND`, `CONTROLLER_UNREACHABLE`, `AUTHENTICATION_FAILED`, `CONFIG_INVALID`, `NO_DATA` |
@@ -386,10 +404,12 @@ variable is replaced wherever it appears, and values under secret-named keys are
 Error messages are capped at 2,000 characters (`TOOL_FAILED` at 500). A `TOOL_FAILED` call
 (and an unexpected error in the credential check) is also logged on stderr as one ERROR
 line, the tool, the exception's type and its text masked the same way; its traceback,
-masked too, only at `UNIFI_MCP_LOG_LEVEL=DEBUG`. The Network and Protect
-wrappers still return `{"error": …}` inside an `ok: true` result on failure; issue 011 tracks
-turning that into `TOOL_FAILED`. A write their read-only guard refuses is the exception: it is
-reported as `READ_ONLY_VIOLATION`.
+masked too, only at `UNIFI_MCP_LOG_LEVEL=DEBUG`. The Network and Protect wrappers raise
+like every other tool (issue 011): a connection failure is `CONTROLLER_UNREACHABLE`, a 401 or
+403 (or a Protect login failure) `AUTHENTICATION_FAILED`, another API status `API_ERROR`, a
+Protect controller with no NVR `NO_DATA`, and anything else `TOOL_FAILED`; a write their
+read-only guard refuses is `READ_ONLY_VIOLATION`. Before 0.3.0 they returned `{"error": …}`
+inside an `ok: true` result.
 
 ## Client Configuration
 
@@ -398,10 +418,20 @@ config. Replace `/ABS/PATH/TO/unifi_management_cli` with the absolute path of yo
 `/Users/you` with your home directory. These are examples; the server never edits client
 configs.
 
+Every call has a server-side deadline, `UNIFI_MCP_TOOL_TIMEOUT` (270 s by default, 5–3600;
+issue [012](../issues/012-mcp-default-tool-deadline.md)): a wedged controller or a stuck
+helper ends as a `[TIMEOUT]` error result, logged on stderr, and frees its concurrency slot.
+The default is above the longest read-only tools (counter sampling blocks for about 100 s)
+and 30 s below the 300 s per-call limit the snippets below give the client: if the client's
+limit were the lower one, it would give up first and the server's `[TIMEOUT]` would never
+reach the model. If you raise one, keep the client's limit above the server's. The deadline
+interrupts an async handler; a handler that blocks the event loop runs to its end first
+(the issue records which tools and why).
+
 ### kiro-cli
 
 `~/.kiro/settings/mcp.json` (Kiro defers MCP tool schemas, so use the direct surface; `timeout`
-is in milliseconds, and counter sampling can block for about 100 s):
+is in milliseconds, 30 s above the server's 270 s deadline):
 
 ```json
 {
@@ -455,7 +485,7 @@ or the equivalent project-scoped `.mcp.json`:
 command = "uvx"
 args = ["--python", "3.12", "--from", "/ABS/PATH/TO/unifi_management_cli", "unifi-mcp"]
 env = { UNIFI_CONFIG = "/Users/you/.config/unifi_management_cli/prod.env" }
-# Counter sampling (get_port_counter_rates, diagnose_switch_port) blocks for about 100 s.
+# 30 s above the server's own 270 s deadline (UNIFI_MCP_TOOL_TIMEOUT), so [TIMEOUT] arrives.
 tool_timeout_sec = 300
 ```
 
@@ -581,7 +611,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `audit_sfp_diagnostics` | `controller` |  | Pull SFP/SFP+ module identity and DOM diagnostics from UniFi port tables |
 | `audit_stp_guard_recommendations` | `none` | pipeline | Audit Root Guard candidates and STP topology-change counters |
 | `audit_stp_path_costs` | `controller` | pipeline | Audit STP path costs for IEEE long-path-cost consistency |
-| `audit_stp_priorities` | `controller` |  | One-shot STP priority audit for the whole fleet, or narrowed to one switch: each switch's current, recommended and delta bridge priority and tier, a warning when two non-core switches tie at the lowest priority (the root would be decided by MAC), and the gateway under skipped (its bridge runs with STP disabled). Tiers always come from the whole fleet; narrowed to one switch, compliant and summary describe that switch and fleet_compliant and fleet_summary the fleet. Remediation names the CLI commands (stp optimize --plan, then stp apply --plan, which previews unless --no-dry-run); STP writes never run over MCP. Read-only. |
+| `audit_stp_priorities` | `controller` |  | One-shot STP priority audit for the whole fleet, or narrowed to one switch: each switch's current, recommended and delta bridge priority and tier, a warning when switches tie at the lowest priority unless every one is core-class (the root would be decided by MAC), and the gateway under skipped (its bridge runs with STP disabled). Tiers always come from the whole fleet; narrowed to one switch, compliant and summary describe that switch and fleet_compliant and fleet_summary the fleet. Remediation names the CLI commands (stp optimize --plan, then stp apply --plan, which previews unless --no-dry-run); STP writes never run over MCP. Read-only. |
 | `audit_uplink_transparency` | `controller` |  | Detect switches whose elected uplink port cannot carry tagged VLANs (for example a switch that re-homed onto an access port with tagged_vlan_mgmt=block_all), which silently severs every tagged VLAN behind it while untagged traffic keeps working |
 | `audit_vlan_coverage` | `controller` |  | Check required VLAN coverage on trunk and planned uplink ports |
 | `calculate_optimal_priorities` | `controller` | pipeline | Calculate optimal bridge priorities based on network hierarchy |
@@ -612,7 +642,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `scan_neighbour_aps` | `controller` |  | Neighbouring access points and interference sources from the controller's passive background scan (stat/rogueap): per neighbour the SSID, BSSID, channel, band, signal and the UniFi AP that hears it, with per-channel congestion. No scan is triggered and nothing waits; the data is what the APs reported last. Read-only. |
 | `compare_neighbour_baseline` | `controller` |  | The neighbouring APs seen now against the baseline `unifi-mapper analyze neighbours --snapshot` wrote: new and disappeared neighbours, channel moves and signal changes of at least the threshold. Read live and compared in memory; never writes a baseline. The baseline path must be absolute and end in .json. Read-only. |
 | `get_radio_channel_report` | `controller` |  | Generate a channel utilization report showing current state and recommended changes for all APs. For one device's radio and VAP counters, use get_device_stats. |
-| `get_vlan_traffic_report` | `none` |  | Per-VLAN average and peak receive and transmit bits per second over a period, from the local store that `unifi-mapper vlan-traffic sample` fills by reading the gateway's bridge byte counters (a CLI command, run by a person; nothing here starts a sample). now, 1d and 1w read raw samples (kept 8 days), 1m hourly rollups and 1y daily rollups (whose peaks are smoothed), each up to the newest complete hour or day that `unifi-mapper vlan-traffic rollup` has rolled; methodology names the tier. Needs no credentials and sends no request; a missing store is NO_DATA. analyze_traffic_matrix reads the controller's own traffic statistics instead. Read-only. |
+| `get_vlan_traffic_report` | `none` |  | Per-VLAN average and peak receive and transmit bits per second over a period, from the local store that `unifi-mapper vlan-traffic sample` fills by reading the gateway's bridge byte counters (a CLI command, run by a person; nothing here starts a sample). now, 1d and 1w read raw samples (kept 8 days), 1m hourly rollups and 1y daily rollups, each up to the newest complete hour or day that `unifi-mapper vlan-traffic rollup` has rolled; methodology names the tier. Every tier's peak is the largest sample rate in its window, so bursts shorter than the sampling interval are under-represented in every tier. Needs no credentials and sends no request; a missing store is NO_DATA. analyze_traffic_matrix reads the controller's own traffic statistics instead. Read-only. |
 | `list_vlan_traffic_periods` | `none` |  | What the local VLAN traffic store holds per tier (raw, hourly, daily): earliest and latest time, row count and gaps over 5 minutes, so an idle VLAN (0 bps) can be told from a window with no samples. Needs no credentials and sends no request; a missing store is NO_DATA. Read-only. |
 | `monitor_lags` | `controller` |  | LAG (Link Aggregation Group) health monitoring |
 | `optimize_radio_channels` | `controller` |  | Auto-optimise Wi-Fi channel assignments based on utilization data. Returns recommendations for both 5GHz and 2.4GHz bands with before/after comparison. |
@@ -643,12 +673,12 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | `diff_port_profiles` | `controller` |  | Key-by-key diff of two port profiles (rest/portconf) with identity and attr_* metadata kept separate, referenced networks resolved to names and VLANs, and every switch port that runs each profile with its live speed. Read-only. |
 | `get_switch_ports` | `controller` |  | Every port on one switch with the switch identity. Per port the name, media, speed, duplex, autoneg, up, STP state, effective profile and whether an override sets it, raw speed_caps, PoE, LLDP neighbour, clients and error, CRC and link-down counters. Device model, firmware, uptime, state, system stats and thermal and power fields. Read-only. |
 | `get_wan_health` | `controller` |  | WAN and internet status from stat/health (ISP, WAN IP, gateway version, latency, drops, throughput) and the result of the controller's last scheduled speedtest. Never starts a speedtest. get_wan_speedtest_history lists the recorded results. Read-only. |
-| `get_wan_speedtest_history` | `none` |  | WAN speedtest results recorded by `unifi-mapper diagnose wan --record` (hourly when scheduled), newest first, from the history file under the XDG state directory. Needs no credentials and sends no request; an empty history returns a note on how to record. Read-only. |
+| `get_wan_speedtest_history` | `none` |  | WAN speedtest results recorded by `unifi-mapper diagnose wan --record` (hourly when scheduled), newest first, from the history file under the XDG state directory; the CLI form is `unifi-mapper diagnose wan-history`. Needs no credentials and sends no request; an empty history returns a note on how to record. Read-only. |
 | `inspect_switch_port` | `controller` |  | Deep inspection of a single switch port: link state, effective VLAN and port profile, the connected device (UniFi or third-party, with fingerprint model and confidence), DHCP lease vs static addressing verdict, LLDP neighbour resolved to an adopted device, error counters and PoE state |
 | `network_health_check` | `controller` |  | Overall infrastructure health monitoring and assessment |
 | `run_all_diagnostics` | `controller` |  | Every read-only diagnostic in one run, with a PASS, WARN or FAIL per check: the fifteen infrastructure checks `unifi-mapper diagnose all` runs (link quality, capacity, port profiles, MTU, SFP, radio, firmware, DHCP pools, PoE and power budgets, client density, uplink redundancy and VLAN transparency, foreign bridges, telemetry freshness), each naming the tool that gives its detail. A check that cannot run is a FAIL with a one-line reason; the others still run. Fifteen controller reads, so slower than one tool. Read-only. |
 | `performance_analysis` | `controller` |  | Network performance analysis and bottleneck identification |
-| `security_audit` | `controller` |  | Security audit: unknown, unauthorised and anomalous devices, MAC anomalies, guest and VLAN violations, and rogue APs told apart from neighbours (a rogue impersonates one of this site's SSIDs, is flagged on the wired network by the controller, or is unadopted UniFi hardware heard on the premises) |
+| `security_audit` | `controller` |  | Security audit from the controller's own data: infrastructure pending adoption, clients overstaying the guest network, MAC anomalies among the clients, VLAN isolation, and rogue APs told apart from neighbours (a rogue impersonates one of this site's SSIDs, is flagged on the wired network by the controller, or is unadopted UniFi hardware heard on the premises). Authorised/unauthorised are the controller's verdicts only; the report lists its limitations and any check that could not run as not assessed |
 | `verify_config_backup` | `none` |  | Check a downloaded UniFi config backup (.unf) offline: does it decrypt, extract and decompress, and how many documents does each collection hold (device, networkconf, wlanconf, setting and the rest)? The backup is not valid when a document fails to decode or bytes follow the last whole document (a truncated download). Reports structure only, never document contents: known collection names (others counted as other) and the version only when it is a version number. The path must be absolute, end in .unf and name a regular file of at most 512 MiB; the database member and the decompressed database are each capped at 1 GiB, an oversized member is refused before it is inflated, and a database of more than 64 gzip members is refused. Contacts no controller. Read-only. |
 
 ### discovery (5)

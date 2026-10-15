@@ -1,7 +1,8 @@
 ---
 title: "`onvif_stream.py test-rtsp` passes the ONVIF password to ffprobe on its command line"
 date: 2026-10-05
-status: open, decision needed
+status: resolved
+resolved_by: 2837c45
 severity: medium
 components: [scripts/onvif_stream.py]
 found_by: docs and repo hygiene review
@@ -40,3 +41,18 @@ credentials.
      with that reason.
 3. Verify against a local RTSP test server (for example mediamtx), never a real camera, and
    keep the masked-output tests green.
+
+## Resolution
+
+Resolved on 2026-10-13 by `2837c45`. `test-rtsp` no longer starts ffprobe: `rtsp_describe`
+sends one RTSP `DESCRIBE` from this process over TCP, answering a Digest challenge (or Basic,
+only when the camera offers nothing else) and bounded by a single deadline, so the password
+never appears on any command line or in the process list. The command's docstring and output
+promise exactly what the probe checks: the camera accepted the account and returned the
+stream's SDP metadata (printed as codec and dimensions). It does not prove the stream plays,
+which is the council's stated acceptance condition for a DESCRIBE-only probe (decision
+D-057, recorded with the 0.3.0 release decisions). No dependency was added. The tests run a fake RTSP
+camera on a Unix socket requiring Digest auth (success, wrong password, Basic fallback, a silent
+camera against the deadline) and assert that `check_rtsp` has no subprocess and that no output
+carries the password. The Axis guide's ffprobe prerequisite and the sentence describing the
+exposure were replaced.

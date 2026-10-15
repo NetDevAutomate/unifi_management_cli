@@ -113,13 +113,18 @@ first of:
 
 1. `--config PATH`, or `UNIFI_CONFIG=PATH` (the inventory commands take their own
    `--config` instead, [issue 043](../issues/043-inventory-ignores-the-root-config.md))
-2. `prod.env` in `$XDG_CONFIG_HOME/unifi_management_cli/`, or in
-   `~/.config/unifi_management_cli/` when `XDG_CONFIG_HOME` is unset
-3. `default.env` in that same directory
-4. `.env` in the current directory (legacy fallback)
+2. `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` when
+   `XDG_CONFIG_HOME` is set to an absolute path (a relative one is ignored, as the XDG spec
+   says)
+3. `prod.env`, then `default.env`, in `~/.config/unifi_management_cli/`
+4. the legacy `~/.config/unifi_network_mapper/prod.env` (loaded with a deprecation warning)
+5. `.env` in the current directory (deprecated: loaded with a warning on stderr before any
+   controller connection; removed in 0.4.0. Name it with `--config ./.env` or
+   `UNIFI_CONFIG=./.env` instead)
 
-A set `XDG_CONFIG_HOME` replaces `~/.config` here; the MCP server tries both
-([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
+This is the MCP server's search too (one shared function,
+`core/utils/config_search.py`), minus step 5: the server never reads a `.env` in its
+working directory ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
 
 **Step 3: Create the configuration file**
 
@@ -145,17 +150,19 @@ UNIFI_CONSOLE_API_TOKEN=your_api_token_here
 UNIFI_VERIFY_SSL=false                  # false for self-signed certificates
 UNIFI_TIMEOUT=10                        # API timeout in seconds
 
-# No effect yet (issue 042): requests keep the built-in 3 attempts and 1.0 s back-off,
-# and discover keeps its --format, --output and --diagram defaults
+# Retries: attempts per request (1-10) and the first back-off in seconds (0.1-10, doubled
+# on each later retry)
 # UNIFI_MAX_RETRIES=3
 # UNIFI_RETRY_DELAY=1.0
+
+# discover's defaults when --format, --output or --diagram is not given (~ is expanded)
 # UNIFI_DEFAULT_FORMAT=png
 # UNIFI_OUTPUT_DIR=~/Documents/network-reports
 # UNIFI_DIAGRAM_DIR=~/Documents/network-diagrams
 ```
 
-These five settings have no effect on `unifi-mapper`
-([issue 042](../issues/042-settings-with-no-effect.md)); `UNIFI_TIMEOUT` does. The optional
+The five optional settings reach every CLI client and `discover`
+([issue 042](../issues/042-settings-with-no-effect.md)). The optional
 credential families (gateway SSH for `diagnose latency-matrix`, `diagnose bandwidth`, the
 `gateway` probes, `diagnose client-connectivity`, `diagnose ap-health --ping-clients` and
 `vlan-traffic sample`, `UNIFI_NETWORK_*` and `PROTECT_*` for the MCP network and Protect tools) are
@@ -279,10 +286,11 @@ uv run unifi-mapper diagram --format svg --output ~/diagrams/network.svg
 uv run unifi-mapper diagram --format html --output ~/diagrams/network.html
 ```
 
-`discover --format` also lists `mermaid` and `dot`, but both currently write a one-line
-placeholder instead of a diagram
-([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)); use `svg` or
-`html`.
+`discover --format mermaid` writes the topology as bare Mermaid `graph TB` source (wrap it
+in a ```mermaid fence to embed it in Markdown, or feed it to `mmdc -i`), and
+`--format dot` writes the Graphviz source the PNG and SVG renderers use, for `dot` on
+another machine. Neither needs Graphviz
+([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)).
 
 **Scenario E: Override output paths**
 
@@ -360,7 +368,7 @@ Verified: 11/12
 | Port names revert after update | API cache returns stale data | Use `--verify-updates` flag |
 | Device shown with no LLDP | Device type does not support LLDP (e.g., UAP) | Expected - APs do not generate LLDP |
 | Port naming rejected by API | Firmware limitation on certain models | Check `unifi-mapper capabilities` for device-specific limits |
-| `failed to execute PosixPath('dot')`, exit 1 | Graphviz's `dot` program is missing: PNG and SVG need it, and `discover` then writes no report ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)) | Install it with `brew install graphviz` (macOS) or `sudo apt install graphviz`, or use `--format html` |
+| `PNG diagram not drawn: Graphviz's dot program is not on PATH` (warning; the diagram file holds that line) | Graphviz's `dot` program is missing: PNG and SVG need it; `discover` still writes its report and exits 0 ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)) | Install it with `brew install graphviz` (macOS) or `sudo apt install graphviz`, or use `--format html` |
 
 ---
 
@@ -693,8 +701,8 @@ first (`ports refresh`, then `--apply`; `stp apply --plan <dir>/stp-plan.json`, 
 quoted for bash or zsh, so a pasted command acts on the controller the audit read, from any
 directory. A step
 that fails is reported and the others still run; the exit status is 1 if any failed. Without
-Graphviz's `dot` (Section 1), the port-name step fails at its PNG diagram and leaves the
-diagram's DOT source in the output directory. The
+Graphviz's `dot` (Section 1), the port-name step writes a placeholder instead of its PNG
+diagram, with a warning, and still writes its report. The
 reports are created private (`umask 077`), and an existing `--output-dir` must be empty,
 yours, not writable by other users and not a symbolic link (exit 2 otherwise), so nothing
 planted there receives them.
@@ -935,15 +943,16 @@ uv run unifi-mapper vlan-traffic coverage
 Rates come from the difference between two samples, so take them regularly (every minute or
 so) for honest averages and peaks. The report's `Valid samples` column (`valid_sample_pct`
 with `--json`) is the share of the window's samples that gave a rate (a first sample with
-none before it, or one after a counter reset, gives none), not how much of the period was
+none before it, one after a counter reset, or one across a sampler outage, gives none), not
+how much of the period was
 sampled: `vlan-traffic coverage` shows each tier's earliest and latest time and its gaps. A sample whose script fails on the gateway (a bridge
 counter it could not read included: nothing is stored, never a partial sample), or that stores
 nothing because no VLAN matched an interface with byte counters, exits 1. `1m` and `1y` show
 what `rollup` has rolled: an hour or a day counts once it ended twice the sampling interval
-ago (at least 5 minutes), and each run recomputes the newest two hours and the newest day, so
-a sample written late still counts if `rollup` runs less than two hours after its hour is
-complete; a later one stays in the raw samples (`now`, `1d`, `1w`) and never reaches `1m` or
-`1y` ([issue 071](../issues/071-late-vlan-samples-never-reach-the-rollups.md)). As ported
+ago (at least 5 minutes), and each run recomputes the newest two hours and the newest day and
+every hour a sample has been written into since the last run (and its day), so a sample
+written late still reaches `1m` and `1y`, however late
+([issue 071](../issues/071-late-vlan-samples-never-reach-the-rollups.md)). As ported
 from the prototype these reports were broken: it rolled
 an hour only once it was 8 days old, so `1w` was always empty and `1m` and `1y` left out the
 newest 8 and about 61 days ([issue 069](../issues/069-vlan-reports-read-tiers-without-recent-data.md)).
@@ -1184,9 +1193,8 @@ Connect to a UniFi Protect controller, enumerate cameras and devices, subscribe 
   not support API tokens). The MCP Protect tools haven't been verified against a live console
   yet ([issue 034](../issues/034-protect-has-no-live-account.md)).
 - For MQTT bridge: a running MQTT broker (e.g., Mosquitto)
-- Python `aiomqtt` package for MQTT bridge, which the project does not declare yet
-  ([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md)): `uv add aiomqtt`, or
-  `uv run --with aiomqtt` for one run
+- The `mqtt` extra for the MQTT bridge: `uv sync --extra mqtt` installs `aiomqtt`
+  ([issue 074](../issues/074-mqtt-needs-an-undeclared-dependency.md))
 
 ### Step-by-Step Instructions
 
@@ -1364,7 +1372,7 @@ sensor.back_door_sensor_battery
 |---------|-------|-----|
 | `AuthenticationError` | Cloud SSO account used | Create a local controller account (System > Administrators) |
 | `ConnectionError` on connect | Protect not reachable | Verify host IP and that Protect is active on the NVR |
-| MQTT bridge `ImportError` | `aiomqtt` not installed | Run `uv add aiomqtt` |
+| MQTT bridge `ImportError` | `aiomqtt` not installed | Run `uv sync --extra mqtt` |
 | HA entities not appearing | Wrong discovery prefix | Ensure `discovery_prefix` matches HA's MQTT integration prefix (default: `homeassistant`) |
 | Smart detection events missing | Third-party camera not paired to AI Port | Configure AI Port pairing in Protect UI |
 
@@ -1757,17 +1765,19 @@ flowchart TD
     A([Load config]) --> B{--config flag set?}
     B -->|Yes| C[Use specified path]
     B -->|No| D{UNIFI_CONFIG env var set?}
-    D -->|Yes| E[Use env var path]
-    D -->|No| F{XDG_CONFIG_HOME set?}
-    F -->|Yes| G[Check XDG_CONFIG_HOME/unifi_management_cli/prod.env]
-    F -->|No| H[Check ~/.config/unifi_management_cli/prod.env]
-    G --> I{prod.env exists?}
-    H --> I
+    D -->|Yes| E[Use env var path, never fall through]
+    D -->|No| F{XDG_CONFIG_HOME set to an absolute path?}
+    F -->|Yes| G[Check XDG_CONFIG_HOME/unifi_management_cli/prod.env, then default.env]
+    F -->|No or relative| H[Check ~/.config/unifi_management_cli/prod.env, then default.env]
+    G --> I{found?}
+    I -->|No| H
     I -->|Yes| C
-    I -->|No| J[Check default.env in same dir]
-    J --> K{default.env exists?}
+    H --> K{found?}
     K -->|Yes| C
-    K -->|No| L[Fall back to .env in CWD]
+    K -->|No| L[Check legacy ~/.config/unifi_network_mapper/prod.env, warn if used]
+    L --> M{found?}
+    M -->|Yes| C
+    M -->|No| N[CLI only: ./.env, deprecation warning; removed in 0.4.0]
 ```
 
 ---
@@ -1971,7 +1981,7 @@ flowchart TB
 
     subgraph Analysis["Analysis Toolkit"]
         G[analysis - 57 tools]
-        H[diagnostics - 11 tools]
+        H[diagnostics - 12 tools]
         I[discovery - 5 tools]
         J[connectivity - 4 tools]
         K[network - 6 tools]

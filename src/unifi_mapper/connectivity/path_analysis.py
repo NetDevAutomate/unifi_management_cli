@@ -21,14 +21,14 @@ async def path_analysis(
     Common workflow:
     1. Run traceroute() to get the basic path
     2. Use path_analysis() on the result for detailed breakdown
-    3. Use link_quality() on any hops showing high latency
-    4. Use system_load() on devices showing performance issues
+    3. Use analyze_link_quality() on any hops showing high latency
+    4. Use performance_analysis() on devices showing performance issues
 
     What to do next:
-    - For high latency hops: Use link_quality() and system_load()
+    - For high latency hops: Use analyze_link_quality() and performance_analysis()
     - For VLAN crossing issues: Use check_inter_vlan_routing() and firewall_check()
-    - For duplex problems: Use get_port_map() to check port settings
-    - For routing issues: Use best_practice_check() for configuration review
+    - For duplex problems: Use get_switch_ports() to check port settings
+    - For routing issues: Use security_audit() for configuration review
 
     Args:
         path: NetworkPath object from traceroute() containing path details
@@ -299,8 +299,8 @@ def _generate_path_recommendations(
     # Performance recommendations
     if performance_metrics.get('performance_rating') == 'poor':
         recommendations.append(
-            'Path shows poor performance. Use system_load() to check device health '
-            'and link_quality() to check for interface errors.'
+            'Path shows poor performance. Use performance_analysis() to check device health '
+            'and analyze_link_quality() to check for interface errors.'
         )
 
     # VLAN recommendations
@@ -321,21 +321,21 @@ def _generate_path_recommendations(
     if bottlenecks:
         recommendations.append(
             f'{len(bottlenecks)} potential bottlenecks identified. '
-            'Check system_load() and link_quality() on affected devices.'
+            'Check performance_analysis() and analyze_link_quality() on affected devices.'
         )
 
     # Complexity recommendations
     if len(path.hops) > 6:
         recommendations.append(
             'Path has many hops, potentially indicating network design issues. '
-            'Use get_device_tree() to review network topology.'
+            'Use discover_stp_topology() to review network topology.'
         )
 
     # Default recommendation if path looks good
     if not recommendations:
         recommendations.append(
             'Path analysis looks normal. If experiencing issues, '
-            'use link_quality() and system_load() for deeper diagnostics.'
+            'use analyze_link_quality() and performance_analysis() for deeper diagnostics.'
         )
 
     return recommendations

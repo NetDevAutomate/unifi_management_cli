@@ -57,6 +57,29 @@ def _render_base(output_path: str, extension: str) -> str:
     return str(path.with_suffix('') if path.suffix == extension else path)
 
 
+GRAPHVIZ_MISSING_HINT = (
+    "Graphviz's dot program is not on PATH. Install it with: brew install graphviz "
+    '(macOS) or sudo apt install graphviz (Debian/Ubuntu); or use --format html, '
+    'which needs no Graphviz.'
+)
+
+
+def _render_without_dot(output_path: str, output_base: str, image_format: str) -> None:
+    """The missing-``dot`` branch of a PNG or SVG render (issue 075).
+
+    Mirrors the missing-package branch: a warning that names the install and a placeholder at
+    ``output_path``, so the run goes on to write its report. The DOT source graphviz saved at
+    ``output_base`` before it looked for ``dot`` is removed: it names the site's devices and
+    nothing would clean it up.
+    """
+    log.warning(f'{image_format.upper()} diagram not drawn: {GRAPHVIZ_MISSING_HINT}')
+    source = Path(output_base)
+    if source != Path(output_path) and source.is_file():
+        source.unlink()
+    with open(output_path, 'w') as f:
+        f.write(f'{image_format.upper()} generation needs Graphviz. {GRAPHVIZ_MISSING_HINT}\n')
+
+
 class NetworkTopology:
     """Class for managing network topology visualization."""
 
@@ -463,7 +486,11 @@ class NetworkTopology:
             # Render to PNG
             graph = graphviz.Source(dot_source)
             output_base = _render_base(output_path, '.png')
-            graph.render(output_base, format='png', cleanup=True, view=False)
+            try:
+                graph.render(output_base, format='png', cleanup=True, view=False)
+            except graphviz.ExecutableNotFound:
+                _render_without_dot(output_path, output_base, 'png')
+                return
 
             log.info(f'Generated PNG diagram ({layout_style} layout): {output_path}')
 
@@ -492,7 +519,11 @@ class NetworkTopology:
             # Render to SVG
             graph = graphviz.Source(dot_source)
             output_base = _render_base(output_path, '.svg')
-            graph.render(output_base, format='svg', cleanup=True, view=False)
+            try:
+                graph.render(output_base, format='svg', cleanup=True, view=False)
+            except graphviz.ExecutableNotFound:
+                _render_without_dot(output_path, output_base, 'svg')
+                return
 
             log.info(f'Generated SVG diagram ({layout_style} layout): {output_path}')
 
@@ -910,24 +941,71 @@ class NetworkTopology:
         return 'unknown'
 
     def generate_dot_diagram(self, output_path: str) -> None:
-        """Generate a DOT diagram of the network topology.
+        """Write the Graphviz DOT source of the network topology (issue 044).
+
+        The same source the PNG and SVG renderers hand to ``dot``, for ``dot`` on another
+        machine or any other Graphviz tool.
 
         Args:
             output_path: Path to save the DOT file
         """
-        # Create a simple text file as a placeholder
         with open(output_path, 'w') as f:
-            f.write('DOT diagram would be generated here')
+            f.write(self._generate_dot_source() + '\n')
+        log.info(f'Generated DOT source: {output_path}')
+
+    def _mermaid_topology_data(self) -> dict:
+        """The devices and links in the shape ``render_mermaid``'s topology renderer takes.
+
+        One parent per device: the first connection that targets it names ``connected_to``
+        (the source's node key) and ``port_idx`` (the source's port). The node key is the
+        MAC, or the device id when the MAC is not one (an unadopted AP from the client list
+        can carry ``Unknown MAC``, and a space breaks a Mermaid node id).
+        """
+        kinds = {'router': 'gateway', 'switch': 'switch', 'ap': 'ap', 'unknown': 'client'}
+
+        def node_key(device_id: str) -> str:
+            mac = self.devices[device_id].mac or ''
+            return mac if mac and not any(c.isspace() for c in mac) else device_id
+
+        parents: dict[str, tuple[str, Optional[int]]] = {}
+        for conn in self.connections:
+            src = conn.get('source_device_id', '')
+            tgt = conn.get('target_device_id', '')
+            if src in self.devices and tgt in self.devices and tgt not in parents:
+                parents[tgt] = (node_key(src), conn.get('source_port_idx'))
+
+        devices = []
+        for device_id, device in self.devices.items():
+            parent = parents.get(device_id)
+            devices.append(
+                {
+                    'mac': node_key(device_id),
+                    'name': device.name,
+                    'model': device.model,
+                    'type': kinds[self._determine_device_type(device)],
+                    'connected_to': parent[0] if parent else None,
+                    'port_idx': parent[1] if parent else None,
+                }
+            )
+        return {'devices': devices}
 
     def generate_mermaid_diagram(self, output_path: str) -> None:
-        """Generate a Mermaid diagram of the network topology.
+        """Write the network topology as Mermaid ``graph`` source (issue 044).
+
+        Drawn by the topology renderer in ``utility/render_mermaid.py``; the file holds the
+        bare source (no Markdown fence), so ``mmdc -i`` reads it and a ```mermaid fence
+        embeds it.
 
         Args:
             output_path: Path to save the Mermaid file
         """
-        # Create a simple text file as a placeholder
+        from .utility.render_mermaid import _render_topology_diagram
+
+        block = _render_topology_diagram(self._mermaid_topology_data())
+        lines = [line for line in block.splitlines() if not line.startswith('```')]
         with open(output_path, 'w') as f:
-            f.write('Mermaid diagram would be generated here')
+            f.write('\n'.join(lines) + '\n')
+        log.info(f'Generated Mermaid source: {output_path}')
 
     def generate_html_diagram(
         self, output_path: str, show_connected_devices: bool = False

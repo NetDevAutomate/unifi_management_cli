@@ -38,21 +38,28 @@ def no_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_the_default_search_falls_back_to_the_working_directory(no_config: Path) -> None:
-    assert cli.get_default_config_path() == Path('.env')
+    """Nothing found anywhere: the (missing) ``./.env`` is returned, absolute, so the error
+    below can tell the default search from an explicit ``--config .env``."""
+    assert cli.get_default_config_path() == no_config / 'cwd' / '.env'
 
 
 def test_a_missing_default_config_names_every_searched_path(
     no_config: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """With no --config, the error lists the XDG candidates, the fallback and what to create."""
+    """With no --config, the error lists every path of the shared search, the fallback and
+    what to create (issue 048: the CLI searches what the MCP server searches)."""
     with caplog.at_level(logging.ERROR, logger='unifi_mapper.cli'):
         with pytest.raises(SystemExit) as exit_info:
             cli.load_env_from_config(str(cli.get_default_config_path()))
     assert exit_info.value.code == 1
     text = caplog.text
     xdg = no_config / 'xdg' / 'unifi_management_cli'
+    home = no_config / 'home' / '.config'
     assert str(xdg / 'prod.env') in text
     assert str(xdg / 'default.env') in text
+    assert str(home / 'unifi_management_cli' / 'prod.env') in text
+    assert str(home / 'unifi_management_cli' / 'default.env') in text
+    assert str(home / 'unifi_network_mapper' / 'prod.env') in text
     assert str((no_config / 'cwd' / '.env').resolve()) in text
     assert 'UNIFI_URL' in text and 'UNIFI_CONSOLE_API_TOKEN' in text
     assert '--config' in text and 'UNIFI_CONFIG' in text

@@ -8,6 +8,7 @@ import anyio
 import json
 import pydantic_core
 import pytest
+import time
 from mcp.types import CallToolResult, TextContent
 from pathlib import Path
 from tests.mcp import fakes
@@ -176,12 +177,46 @@ async def test_success_text_contract(runner) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_no_deadline_by_default(runner) -> None:
+async def test_default_deadline_is_270_seconds_and_a_quick_call_passes(runner) -> None:
+    assert (
+        runner.settings.tool_timeout == 270.0
+    )  # issue 012 (D11, council: below the 300 s clients)
     out = await _envelope(runner, 'sleeper', {'seconds': 0.1})
     assert out == {'ok': True, 'result': {'slept': 0.1}}
 
 
-async def test_timeout_only_when_configured(make_runner) -> None:
+async def test_an_async_handler_past_the_deadline_is_timeout(make_runner) -> None:
+    started = time.monotonic()
+    out = await make_runner(tool_timeout=0.05).run('sleeper', {'seconds': 0.5})
+    assert out.structuredContent['error_code'] == ErrorCodes.TIMEOUT
+    assert time.monotonic() - started < 0.4  # the await was interrupted, not waited out
+
+
+async def test_a_sync_handler_is_not_interrupted_by_the_deadline(make_runner) -> None:
+    """Documented limitation (issue 012): the deadline cannot interrupt a blocking sync handler.
+
+    ``ToolRunner._execute`` opens ``anyio.fail_after`` inside the concurrency semaphore and
+    ``_call`` runs a sync handler inline on the event loop. A sync handler that blocks holds
+    the loop, so the deadline's timer cannot fire until the handler returns; by then the
+    cancel scope exits without having cancelled anything and the call is reported as a
+    success, having held its slot (and the whole loop) for the handler's full duration. Nine
+    shipped handlers are sync (the STP analysis and formatting tools). Cooperative
+    cancellation for sync handlers is a runner redesign, out of scope here.
+    """
+    started = time.monotonic()
+    out = await make_runner(tool_timeout=0.05).run('blocks', {'seconds': 0.3})
+    elapsed = time.monotonic() - started
+    assert out.structuredContent == {'ok': True, 'result': {'blocked': 0.3}}  # not [TIMEOUT]
+    assert elapsed >= 0.3  # the slot was held until the handler returned
+
+
+async def test_no_deadline_when_tool_timeout_is_none(make_runner) -> None:
+    runner = make_runner(tool_timeout=None)
+    out = await _envelope(runner, 'sleeper', {'seconds': 0.1})
+    assert out == {'ok': True, 'result': {'slept': 0.1}}
+
+
+async def test_a_configured_timeout_is_the_timeout_code(make_runner) -> None:
     out = await make_runner(tool_timeout=0.05).run('sleeper', {'seconds': 0.5})
     assert out.structuredContent['error_code'] == 'TIMEOUT'
     assert 'UNIFI_MCP_TOOL_TIMEOUT' in out.structuredContent['message']
@@ -418,4 +453,13 @@ async def test_get_tool_info_and_full_search_add_schemas(tmp_path, monkeypatch) 
     assert set(full['read_port']['input_schema']['properties']) == {'switch', 'port'}
     assert full['apply_things']['input_schema'] is None
     summary = await server.search_tools(detail_level='summary')
-    assert all(set(r) == {'name', 'description'} for r in summary)
+    # Issue 022: a mutating tool's summary carries mutates: true; the others stay two keys.
+    assert all(
+        set(r)
+        == (
+            {'name', 'description', 'mutates'}
+            if r['name'] == 'apply_things'
+            else {'name', 'description'}
+        )
+        for r in summary
+    )

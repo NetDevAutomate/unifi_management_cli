@@ -1,7 +1,9 @@
 """Async HTTP client for UniFi Network API.
 
 This module provides an async HTTP client for interacting with the
-UniFi Network API (10.1.68) with proper connection lifecycle management.
+UniFi Network Integration API with proper connection lifecycle management.
+The base path is resolved on the first request: the documented
+``/proxy/network/integration`` first, the undocumented plural on a 404 (issue 003).
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ import httpx
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, TypeVar
-from unifi_mapper.network.config import NetworkConfig
+from unifi_mapper.network.config import INTEGRATION_BASES, NetworkConfig
 from unifi_mapper.network.models import (
     ACLRule,
     ClientInfo,
@@ -59,6 +61,22 @@ class NetworkConnectionError(NetworkClientError):
     pass
 
 
+class NetworkSiteResolutionError(NetworkClientError):
+    """``UNIFI_SITE`` matched no Integration API site, or more than one (issue 037)."""
+
+    pass
+
+
+# Site ids resolved from a site name, per process: ``(origin, site name) -> id``. One
+# ``GET /v1/sites`` per controller and name, however many clients a server opens.
+_SITE_IDS: dict[tuple[str, str], str] = {}
+
+
+def clear_site_id_cache() -> None:
+    """Forget every resolved site id (tests, or after a controller re-provision)."""
+    _SITE_IDS.clear()
+
+
 class UniFiNetworkClient:
     """Async client for the UniFi Network API.
 
@@ -88,6 +106,9 @@ class UniFiNetworkClient:
         self._transport = transport
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
+        # The Integration API base path that answered the probe, e.g. '/proxy/network/integration';
+        # None until the first request (issue 003).
+        self._base_path: str | None = None
 
     async def __aenter__(self) -> UniFiNetworkClient:
         """Async context manager entry."""
@@ -105,11 +126,14 @@ class UniFiNetworkClient:
                 return
 
             self._client = httpx.AsyncClient(
-                base_url=self.config.api_base_url,
+                base_url=self.config.base_url,
                 headers=self.config.get_headers(),
                 verify=self.config.verify_ssl,
                 timeout=httpx.Timeout(self.config.timeout),
                 transport=self._transport,
+                # The API key (or the console token standing in for it) goes to this origin
+                # only: a redirect elsewhere is an error, never followed with the header.
+                follow_redirects=False,
             )
 
             if self.config.debug:
@@ -123,12 +147,91 @@ class UniFiNetworkClient:
             if self._client is not None:
                 await self._client.aclose()
                 self._client = None
+                self._base_path = None
                 log.debug('Disconnected from Network API')
 
     @property
     def is_connected(self) -> bool:
         """Check if client is connected."""
         return self._client is not None
+
+    @property
+    def base_path_used(self) -> str | None:
+        """The Integration API base path that answered, or None before the first request.
+
+        One of :data:`~unifi_mapper.network.config.INTEGRATION_BASES`: the documented
+        ``/proxy/network/integration`` when the console serves it, the undocumented plural
+        when only that one does (issue 003).
+        """
+        return self._base_path
+
+    async def _resolve_base_path(self, client: httpx.AsyncClient) -> str:
+        """Pick the Integration API base path, as ``port_diagnostics`` does.
+
+        Sends ``GET {base}/v1/info`` for each base in ``INTEGRATION_BASES``, the documented one
+        first. A 404 tries the next base; any other failure is raised as the request's own
+        error would be; the first base that answers is used for every later request.
+
+        Raises:
+            NetworkClientError: If no base answers (status 404), or the probe fails otherwise.
+        """
+        for base in INTEGRATION_BASES:
+            response = await client.get(f'{base}/v1/info')
+            if response.status_code == 404:
+                continue
+            self._raise_for_status(response)
+            log.debug(f'Integration API answered at {base}')
+            return base
+        raise NetworkClientError(
+            f'Integration API not found at {" or ".join(INTEGRATION_BASES)}', status_code=404
+        )
+
+    async def _base_path_for(self, client: httpx.AsyncClient) -> str:
+        """Return the resolved base path, probing once per connection (serialised)."""
+        if self._base_path is None:
+            async with self._lock:
+                if self._base_path is None:
+                    self._base_path = await self._resolve_base_path(client)
+        return self._base_path
+
+    @staticmethod
+    def _raise_for_status(response: httpx.Response) -> None:
+        """Raise the client's error for a 3xx/4xx/5xx response.
+
+        A redirect is an error, not followed: the API key (or the console token standing in
+        for it, issue 037) is for this origin only, and ``follow_redirects`` is off.
+        """
+        if 300 <= response.status_code < 400:
+            target = (
+                httpx.URL(response.headers.get('location', ''))
+                if response.headers.get('location')
+                else None
+            )
+            where = f' to {target.host}' if target is not None and target.host else ''
+            raise NetworkClientError(
+                f'API request redirected ({response.status_code}){where}; redirects are not '
+                'followed, so the API key never leaves this origin',
+                status_code=response.status_code,
+            )
+
+        if response.status_code == 401:
+            raise NetworkAuthenticationError(
+                'Authentication failed - check API key',
+                status_code=401,
+            )
+
+        if response.status_code == 403:
+            raise NetworkAuthenticationError(
+                'Access forbidden - check API key permissions',
+                status_code=403,
+            )
+
+        if response.status_code >= 400:
+            error_msg = response.text
+            raise NetworkClientError(
+                f'API request failed: {error_msg}',
+                status_code=response.status_code,
+            )
 
     async def _request(
         self,
@@ -142,7 +245,7 @@ class UniFiNetworkClient:
 
         Args:
             method: HTTP method.
-            path: API endpoint path.
+            path: API endpoint path, relative to the Integration API's ``/v1``.
             params: Query parameters.
             json: JSON body.
 
@@ -155,36 +258,17 @@ class UniFiNetworkClient:
         if self._client is None:
             raise NetworkConnectionError('Client not connected')
 
-        # Replace site_id placeholder
-        path = path.replace('{siteId}', self.config.site_id)
-
         try:
+            if '{siteId}' in path:
+                path = path.replace('{siteId}', await self.site_id())
+            base = await self._base_path_for(self._client)
             response = await self._client.request(
                 method,
-                path,
+                f'{base}/v1{path}',
                 params=params,
                 json=json,
             )
-
-            if response.status_code == 401:
-                raise NetworkAuthenticationError(
-                    'Authentication failed - check API key',
-                    status_code=401,
-                )
-
-            if response.status_code == 403:
-                raise NetworkAuthenticationError(
-                    'Access forbidden - check API key permissions',
-                    status_code=403,
-                )
-
-            if response.status_code >= 400:
-                error_msg = response.text
-                raise NetworkClientError(
-                    f'API request failed: {error_msg}',
-                    status_code=response.status_code,
-                )
-
+            self._raise_for_status(response)
             return response.json()
 
         except httpx.ConnectError as e:
@@ -199,6 +283,48 @@ class UniFiNetworkClient:
     ) -> dict[str, Any]:
         """Make a GET request."""
         return await self._request('GET', path, params=params)
+
+    async def site_id(self) -> str:
+        """Return the site id, resolving it from ``config.site_name`` at first use.
+
+        With ``config.site_id`` set it is returned as is. Otherwise one ``GET /v1/sites`` is
+        read (all pages) and the site whose ``internalReference`` equals ``site_name`` is
+        taken, exactly as ``port_diagnostics.fetch_integration_ports`` matches; the result is
+        cached for the process per ``(origin, site name)``.
+
+        Raises:
+            NetworkSiteResolutionError: No site, or more than one, has that
+                ``internalReference``; the message names what was found (names or ids,
+                never the key).
+            NetworkClientError: The listing itself failed.
+        """
+        if self.config.site_id:
+            return self.config.site_id
+        name = (self.config.site_name or '').strip()
+        key = (self.config.base_url, name)
+        cached = _SITE_IDS.get(key)
+        if cached is not None:
+            return cached
+
+        sites = [site async for site in self._paginate('/sites')]
+        matches = [
+            str(site.get('id') or '')
+            for site in sites
+            if str(site.get('internalReference') or '') == name and site.get('id')
+        ]
+        if len(matches) != 1:
+            found = sorted(str(s.get('internalReference') or '?') for s in sites)
+            if not matches:
+                detail = f'found: {", ".join(found) if found else "no sites"}'
+            else:
+                detail = f'{len(matches)} sites have it: {", ".join(matches)}'
+            raise NetworkSiteResolutionError(
+                f'UNIFI_SITE {name!r} does not name exactly one Integration API site '
+                f'(internalReference); {detail}'
+            )
+        _SITE_IDS[key] = matches[0]
+        log.debug(f'Resolved site {name!r} to {matches[0]}')
+        return matches[0]
 
     async def _post(
         self,
@@ -298,7 +424,10 @@ class UniFiNetworkClient:
         return DeviceInfo.model_validate(response.get('data', response))
 
     async def get_device_statistics(self, device_id: str) -> DeviceStatistics:
-        """Get real-time statistics for a device.
+        """Get the latest statistics for a device.
+
+        Reads ``/sites/{siteId}/devices/{deviceId}/statistics/latest``, the reference's
+        path (Network 10.6 answers 404 for ``.../statistics``; issue 035).
 
         Args:
             device_id: Device UUID.
@@ -306,7 +435,7 @@ class UniFiNetworkClient:
         Returns:
             Device statistics.
         """
-        response = await self._get(f'/sites/{{siteId}}/devices/{device_id}/statistics')
+        response = await self._get(f'/sites/{{siteId}}/devices/{device_id}/statistics/latest')
         data = response.get('data', response)
         data['deviceId'] = device_id
         return DeviceStatistics.model_validate(data)
@@ -338,6 +467,9 @@ class UniFiNetworkClient:
     ) -> dict[str, Any]:
         """Execute an action on a device port.
 
+        Posts to ``/sites/{siteId}/devices/{deviceId}/interfaces/ports/{portIdx}/actions``,
+        the reference's path (issue 035).
+
         Args:
             device_id: Device UUID.
             port_idx: Port index.
@@ -348,7 +480,7 @@ class UniFiNetworkClient:
         """
         payload = {'action': action}
         return await self._post(
-            f'/sites/{{siteId}}/devices/{device_id}/ports/{port_idx}/actions',
+            f'/sites/{{siteId}}/devices/{device_id}/interfaces/ports/{port_idx}/actions',
             json=payload,
         )
 
@@ -607,7 +739,7 @@ class UniFiNetworkClient:
         Returns:
             Current site information.
         """
-        return await self.get_site(self.config.site_id)
+        return await self.get_site(await self.site_id())
 
     async def update_site(
         self,

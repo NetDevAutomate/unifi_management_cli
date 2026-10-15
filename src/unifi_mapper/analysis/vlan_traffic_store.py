@@ -54,9 +54,9 @@ HOURLY_RETENTION_SECONDS = 60 * 24 * 3600
 # A bucket is complete, and rolled, once it ended at least twice the sampling interval ago,
 # and never less than this, so a sample written just after the bucket's end is counted.
 MIN_GRACE_SECONDS = 300
-# Every run also recomputes the newest complete hours and day, so a sample written late into
-# one of them still counts; one written into an older bucket that a run has already rolled
-# never does (issue 071).
+# Every run also recomputes the newest complete hours and day, so a row written straight into
+# the table (not through insert_samples, which marks its hour dirty) still counts when a run
+# comes soon enough; the sampler's own late writes are caught by the dirty buckets (issue 071).
 TRAILING_HOURS = 2
 TRAILING_DAYS = 1
 # The newest raw timestamps the sampling interval (their median gap) is measured over.
@@ -84,16 +84,19 @@ _TIER_METHODOLOGY: dict[str, dict[str, Any]] = {
         'caveats': [
             'Raw samples (the store keeps 8 days of them); averages and peaks are exact within '
             'the sampled window. The first sample in the window is paired with the one before.',
-            'A VLAN at 0% valid samples had no measured interval (a first sample, or a '
-            'counter reset), so its zero rates are not a measurement.',
+            'A VLAN at 0% valid samples had no measured interval (a first sample, a '
+            'counter reset, or a sampler outage), so its zero rates are not a measurement.',
+            'An interval across a sampler outage (two samples further apart than the gap '
+            'threshold plus the sampling grace) gives no rate: its sample counts, so '
+            'valid_sample_pct drops.',
         ],
     },
     'hourly': {
         'interval_s': 3600,
         'caveats': [
             'Hourly-rollup data: averages are the mean of per-sample rates within each hour, '
-            'and peaks are the max sample rate seen in that hour; bursts shorter than the '
-            'sampling interval may be under-represented.',
+            'and peaks are the largest sample rate seen in that hour; bursts shorter than the '
+            'sampling interval are under-represented in every tier.',
             'Only complete hours that `vlan-traffic rollup` has rolled are included: run it '
             '(hourly, say) to keep this view current.',
         ],
@@ -101,8 +104,9 @@ _TIER_METHODOLOGY: dict[str, dict[str, Any]] = {
     'daily': {
         'interval_s': 86400,
         'caveats': [
-            'Daily-rollup data: a rollup of a rollup. A 1y peak is the max of hourly peaks, so '
-            'it smooths out short bursts more than a raw or hourly view would.',
+            'Daily-rollup data: a rollup of a rollup. A daily peak is the largest hourly peak '
+            'of the day, so it is still the largest sample rate in its window; bursts shorter '
+            'than the sampling interval are under-represented in every tier.',
             'Only complete days that `vlan-traffic rollup` has rolled are included.',
         ],
     },
@@ -146,6 +150,12 @@ CREATE TABLE IF NOT EXISTS daily_rollup (
 CREATE TABLE IF NOT EXISTS rollup_state (
     tier TEXT PRIMARY KEY,
     last_rolled_bucket INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dirty_buckets (
+    tier TEXT NOT NULL,
+    bucket INTEGER NOT NULL,
+    PRIMARY KEY (tier, bucket)
 );
 """
 
@@ -233,7 +243,12 @@ def open_store(path: Path, *, writable: bool) -> sqlite3.Connection:
 
 
 def insert_samples(path: Path, rows: list[dict[str, Any]]) -> None:
-    """Write one sample's rows (``ts_utc, vlan_id, network_name, iface, rx/tx_bytes``) at once."""
+    """Write one sample's rows (``ts_utc, vlan_id, network_name, iface, rx/tx_bytes``) at once.
+
+    The same transaction marks each hour a row lands in dirty (``dirty_buckets``), so the
+    next :func:`run_rollups` recomputes that hour, and its day, however late the row is
+    written (issue 071).
+    """
     conn = open_store(path, writable=True)
     try:
         with conn:
@@ -243,6 +258,7 @@ def insert_samples(path: Path, rows: list[dict[str, Any]]) -> None:
                 'VALUES (:ts_utc, :vlan_id, :network_name, :iface, :rx_bytes, :tx_bytes)',
                 rows,
             )
+            _mark_dirty(conn, 'hourly', (floor_to_hour(int(row['ts_utc'])) for row in rows))
     except sqlite3.Error as e:
         raise _store_error(e, path, writing=True) from None
     finally:
@@ -253,31 +269,51 @@ def insert_samples(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def compute_rates(
-    prev_sample: dict[str, Any] | None, cur_sample: dict[str, Any]
+    prev_sample: dict[str, Any] | None,
+    cur_sample: dict[str, Any],
+    *,
+    max_interval: int | None = None,
 ) -> dict[str, float] | None:
-    """Return the interval's ``{rx_bps, tx_bps}``, reset-aware. Pure.
+    """Return the interval's ``{rx_bps, tx_bps}``, reset-aware and gap-aware. Pure.
 
     Cumulative interface byte counters reset on an interface flap or a gateway reboot, so a
     negative delta on either counter means the interval has no honest rate (as
-    ``core/utils/counters.retry_delta`` treats a reset).
+    ``core/utils/counters.retry_delta`` treats a reset). An interval longer than
+    ``max_interval`` spans a sampler outage: averaging days of traffic into one "current"
+    rate is not a measurement either (issue 072).
 
     Args:
         prev_sample: The previous ``{ts_utc, rx_bytes, tx_bytes}``, or None for the first.
         cur_sample: The current one.
+        max_interval: The longest interval that counts as a measurement, in seconds
+            (:func:`max_measured_interval`); None for no bound.
 
     Returns:
-        The rates, or None with no previous sample, a non-positive interval or a reset.
+        The rates, or None with no previous sample, a non-positive interval, an interval
+        past the bound, or a reset.
     """
     if prev_sample is None:
         return None
     dt = cur_sample['ts_utc'] - prev_sample['ts_utc']
     if dt <= 0:
         return None
+    if max_interval is not None and dt > max_interval:
+        return None
     d_rx = cur_sample['rx_bytes'] - prev_sample['rx_bytes']
     d_tx = cur_sample['tx_bytes'] - prev_sample['tx_bytes']
     if d_rx < 0 or d_tx < 0:
         return None
     return {'rx_bps': (d_rx * 8) / dt, 'tx_bps': (d_tx * 8) / dt}
+
+
+def max_measured_interval(grace: int) -> int:
+    """The longest interval between two samples that is a measurement, not a gap. Pure.
+
+    :data:`GAP_THRESHOLD_SECONDS` plus the sampling grace (:func:`sampling_grace`: twice the
+    measured sampling interval, at least 5 minutes), so a missed sample or two is still an
+    honest average and a sampler outage is not.
+    """
+    return GAP_THRESHOLD_SECONDS + grace
 
 
 def _rollup(rows: list[dict[str, Any]], bucket_key: str) -> list[dict[str, Any]]:
@@ -354,6 +390,27 @@ def _set_high_water_mark(conn: sqlite3.Connection, tier: str, bucket: int) -> No
     )
 
 
+def _mark_dirty(conn: sqlite3.Connection, tier: str, buckets: Iterable[int]) -> None:
+    """Record buckets of ``tier`` whose source rows changed, so a run recomputes them."""
+    conn.executemany(
+        'INSERT OR IGNORE INTO dirty_buckets (tier, bucket) VALUES (?, ?)',
+        [(tier, bucket) for bucket in sorted(set(buckets))],
+    )
+
+
+def _dirty_buckets(conn: sqlite3.Connection, tier: str, upto: int) -> list[int]:
+    """The dirty buckets of ``tier`` that are complete (``<= upto``), oldest first."""
+    rows = conn.execute(
+        'SELECT bucket FROM dirty_buckets WHERE tier = ? AND bucket <= ? ORDER BY bucket',
+        (tier, upto),
+    ).fetchall()
+    return [int(row[0]) for row in rows]
+
+
+def _clear_dirty(conn: sqlite3.Connection, tier: str, upto: int) -> None:
+    conn.execute('DELETE FROM dirty_buckets WHERE tier = ? AND bucket <= ?', (tier, upto))
+
+
 def sampling_grace(stamps: Iterable[int]) -> int:
     """How long after its end a bucket counts as complete: twice the sampling interval. Pure.
 
@@ -387,12 +444,16 @@ def _first_bucket(
     return first if first is not None and first <= last else None
 
 
-def _roll_hours(conn: sqlite3.Connection, start: int, last: int) -> tuple[int, int]:
+def _roll_hours(
+    conn: sqlite3.Connection, start: int, last: int, max_interval: int | None = None
+) -> tuple[int, int]:
     """(Re)compute the hourly row of every hour from ``start`` to ``last``, each in full.
 
     Each VLAN's samples in the range are paired in time order, the first with that VLAN's
     newest earlier sample, so a recomputed hour equals its first computation plus any late
-    sample. Rows are written with ``INSERT OR REPLACE``: recomputed, never accumulated.
+    sample. A pair further apart than ``max_interval`` (the carry across a sampler outage,
+    or one inside the range) is a gap and gives no rate (issue 072). Rows are written with
+    ``INSERT OR REPLACE``: recomputed, never accumulated.
 
     Returns:
         ``(raw rows read in the range, hourly rows written)``.
@@ -412,7 +473,7 @@ def _roll_hours(conn: sqlite3.Connection, start: int, last: int) -> tuple[int, i
     read = 0
     for row in raw:
         cur = {'ts_utc': row['ts_utc'], 'rx_bytes': row['rx_bytes'], 'tx_bytes': row['tx_bytes']}
-        rates = compute_rates(prev_by_vlan.get(row['vlan_id']), cur)
+        rates = compute_rates(prev_by_vlan.get(row['vlan_id']), cur, max_interval=max_interval)
         prev_by_vlan[row['vlan_id']] = cur
         bucket = floor_to_hour(row['ts_utc'])
         if bucket < start:
@@ -499,13 +560,19 @@ def _prune_hourly(conn: sqlite3.Connection, cutoff: int) -> int:
     return max(cursor.rowcount, 0)
 
 
-def _run_rollups(conn: sqlite3.Connection, now: int) -> dict[str, int]:
-    """One rollup run at ``now`` on an open, writable store; see :func:`run_rollups`."""
+def _measured_grace(conn: sqlite3.Connection) -> int:
+    """The sampling grace from the newest :data:`INTERVAL_STAMPS` raw sample times."""
     newest = conn.execute(
         'SELECT DISTINCT ts_utc FROM raw_samples ORDER BY ts_utc DESC LIMIT ?',
         (INTERVAL_STAMPS,),
     ).fetchall()
-    grace = sampling_grace(row[0] for row in newest)
+    return sampling_grace(row[0] for row in newest)
+
+
+def _run_rollups(conn: sqlite3.Connection, now: int) -> dict[str, int]:
+    """One rollup run at ``now`` on an open, writable store; see :func:`run_rollups`."""
+    grace = _measured_grace(conn)
+    max_interval = max_measured_interval(grace)
     last_hour = floor_to_hour(now - grace) - 3600  # the newest complete hour
     last_day = floor_to_day(now - grace) - 86400  # the newest complete day
     counts: dict[str, int] = dict.fromkeys(
@@ -529,12 +596,28 @@ def _run_rollups(conn: sqlite3.Connection, now: int) -> dict[str, int]:
         3600,
         TRAILING_HOURS,
     )
+    # Hours from here on are whole: no earlier run can have pruned them (its cutoff was no
+    # later than this one's). A dirty hour before it was pruned, or is about to be, so it is
+    # dropped rather than rewritten from the carry sample alone.
+    whole_hours_from = None if hour_mark is None else _raw_cutoff(now, hour_mark)
+    dirty_days: set[int] = set()
     if first_hour is not None:
         counts['raw_rows_rolled'], counts['hourly_rows_written'] = _roll_hours(
-            conn, first_hour, last_hour
+            conn, first_hour, last_hour, max_interval
         )
         hour_mark = last_hour if hour_mark is None else max(hour_mark, last_hour)
         _set_high_water_mark(conn, 'hourly', hour_mark)
+    for hour in _dirty_buckets(conn, 'hourly', last_hour):
+        if first_hour is not None and hour >= first_hour:
+            continue  # recomputed above, and its day by the daily range below
+        if whole_hours_from is not None and hour < whole_hours_from:
+            continue
+        read, written = _roll_hours(conn, hour, hour, max_interval)
+        counts['raw_rows_rolled'] += read
+        counts['hourly_rows_written'] += written
+        dirty_days.add(floor_to_day(hour))
+    _clear_dirty(conn, 'hourly', last_hour)
+    _mark_dirty(conn, 'daily', dirty_days)
 
     day_mark = _get_high_water_mark(conn, 'daily')
     earliest_hour = conn.execute('SELECT MIN(hour_utc) FROM hourly_rollup').fetchone()[0]
@@ -545,21 +628,41 @@ def _run_rollups(conn: sqlite3.Connection, now: int) -> dict[str, int]:
         86400,
         TRAILING_DAYS,
     )
+    whole_days_from = None if day_mark is None else _hourly_cutoff(now, day_mark)
     if first_day is not None:
         counts['hourly_rows_rolled'], counts['daily_rows_written'] = _roll_days(
             conn, first_day, last_day
         )
         day_mark = last_day if day_mark is None else max(day_mark, last_day)
         _set_high_water_mark(conn, 'daily', day_mark)
+    for day in _dirty_buckets(conn, 'daily', last_day):
+        if first_day is not None and day >= first_day:
+            continue  # recomputed above
+        if whole_days_from is not None and day < whole_days_from:
+            continue
+        read, written = _roll_days(conn, day, day)
+        counts['hourly_rows_rolled'] += read
+        counts['daily_rows_written'] += written
+    _clear_dirty(conn, 'daily', last_day)
 
-    # Retention, but never a row whose hour (or day) has not been rolled yet.
+    # Retention on bucket boundaries, and never a row whose hour (or day) is not rolled yet,
+    # so an hour (or a day) is kept whole or not at all and no bucket is ever recomputed
+    # from part of its data.
     if hour_mark is not None:
-        cutoff = min(now - RAW_RETENTION_SECONDS, hour_mark + 3600)
-        counts['raw_rows_pruned'] = _prune_raw(conn, cutoff)
+        counts['raw_rows_pruned'] = _prune_raw(conn, _raw_cutoff(now, hour_mark))
     if day_mark is not None:
-        cutoff = min(now - HOURLY_RETENTION_SECONDS, day_mark + 86400)
-        counts['hourly_rows_pruned'] = _prune_hourly(conn, cutoff)
+        counts['hourly_rows_pruned'] = _prune_hourly(conn, _hourly_cutoff(now, day_mark))
     return counts
+
+
+def _raw_cutoff(now: int, hour_mark: int) -> int:
+    """The hour boundary before which raw samples are past retention and rolled."""
+    return floor_to_hour(min(now - RAW_RETENTION_SECONDS, hour_mark + 3600))
+
+
+def _hourly_cutoff(now: int, day_mark: int) -> int:
+    """The day boundary before which hourly rows are past retention and rolled."""
+    return floor_to_day(min(now - HOURLY_RETENTION_SECONDS, day_mark + 86400))
 
 
 def run_rollups(path: Path | None = None, *, now: int | None = None) -> dict[str, int]:
@@ -567,20 +670,20 @@ def run_rollups(path: Path | None = None, *, now: int | None = None) -> dict[str
 
     Every complete hour of raw samples becomes an hourly row and every complete day of hourly
     rows a daily row; raw samples are pruned after 8 days and hourly rows after 60, once
-    rolled. A bucket is complete once it ended at least the grace ago (:func:`sampling_grace`:
-    twice the sampling interval, at least 5 minutes). Each run computes every complete bucket
-    after a tier's high-water mark (``rollup_state``) and recomputes the newest
-    :data:`TRAILING_HOURS` hours and :data:`TRAILING_DAYS` day as well, each row in full from
-    the tier below and written with ``INSERT OR REPLACE``, so two runs give identical rows,
-    and every sample written before its hour is first rolled is counted whatever the
-    cadence. A sample written after that is counted only by a run less than
-    :data:`TRAILING_HOURS` hours after its hour became complete (its day's row follows); a
-    later one stays in the raw tier, which ``now``, ``1d`` and ``1w`` read, but never reaches
-    the hourly or daily rows (issue 071). A store the prototype's code left (hours rolled only once
-    8 days old) upgrades in place on its first run: no schema change, every hour after its
-    mark is rolled from raw, so none is skipped. Opening the store writable also rolls back a
-    hot journal a crashed sampler left, so this recovers a store a read reported as needing
-    recovery.
+    rolled, and on hour and day boundaries only. A bucket is complete once it ended at least
+    the grace ago (:func:`sampling_grace`: twice the sampling interval, at least 5 minutes).
+    Each run computes every complete bucket after a tier's high-water mark (``rollup_state``),
+    recomputes the newest :data:`TRAILING_HOURS` hours and :data:`TRAILING_DAYS` day, and
+    recomputes every complete hour that :func:`insert_samples` has marked dirty since the last
+    run (``dirty_buckets``), and the day of each, so a sample reaches its hourly and daily rows
+    however late the sampler wrote it (issue 071). Each row is computed in full from the tier
+    below and written with ``INSERT OR REPLACE``, so two runs give identical rows, whatever
+    the cadence. A dirty hour whose samples are past retention is dropped, never rewritten
+    from the carry sample alone. A store the prototype's code left (hours rolled only once
+    8 days old) upgrades in place on its first run: every hour after its mark is rolled from
+    raw, so none is skipped; a store made before the dirty table existed gains it on its
+    first writable open. Opening the store writable also rolls back a hot journal a crashed
+    sampler left, so this recovers a store a read reported as needing recovery.
 
     Args:
         path: The store (default :func:`default_db_path`).
@@ -633,7 +736,10 @@ def _raw_rates(conn: sqlite3.Connection, since: int, until: int) -> dict[int, di
 
     Each VLAN's first sample in the window is paired with its newest sample before the window,
     so the window's first interval counts (at a 5-minute cadence, ``now`` holds one sample).
+    A pair further apart than :func:`max_measured_interval` spans a sampler outage: the later
+    sample counts in ``samples`` but gives no rate, so ``valid_sample_pct`` drops (issue 072).
     """
+    max_interval = max_measured_interval(_measured_grace(conn))
     prev_by_vlan: dict[int, dict[str, Any]] = {
         row['vlan_id']: {
             'ts_utc': row['ts_utc'],
@@ -654,7 +760,7 @@ def _raw_rates(conn: sqlite3.Connection, since: int, until: int) -> dict[int, di
         (since, until),
     ):
         cur = {'ts_utc': row['ts_utc'], 'rx_bytes': row['rx_bytes'], 'tx_bytes': row['tx_bytes']}
-        rates = compute_rates(prev_by_vlan.get(row['vlan_id']), cur)
+        rates = compute_rates(prev_by_vlan.get(row['vlan_id']), cur, max_interval=max_interval)
         prev_by_vlan[row['vlan_id']] = cur
         agg = result.setdefault(row['vlan_id'], _empty_aggregate(row['network_name']))
         agg['samples'] += 1
@@ -722,7 +828,8 @@ def read_vlan_traffic_report(
         per second, ``samples``, ``valid_sample_pct``) and ``methodology``.
         ``valid_sample_pct`` is the share of the VLAN's samples (or rollup rows) in the
         period that gave a rate, ``100 * valid / samples``: a first sample with none before
-        it and one after a counter reset give none. It is not time coverage; for the time
+        it, one after a counter reset, and one across a sampler outage (an interval longer
+        than :func:`max_measured_interval`) give none. It is not time coverage; for the time
         each tier covers, and its gaps, see :func:`read_vlan_traffic_periods`
         (``vlan-traffic coverage``).
 
@@ -823,9 +930,12 @@ async def get_vlan_traffic_report(
     counters, read over SSH by a person or a schedule; none is published until issue 038 is
     decided). now, 1d and 1w read raw samples (the store keeps 8 days), 1m hourly rollups
     and 1y daily rollups, each up to the newest complete hour or day that `unifi-mapper
-    vlan-traffic rollup` has rolled; methodology names the tier and how much it smooths
-    peaks. Needs no credentials and sends no request. Run list_vlan_traffic_periods first to
-    tell an idle VLAN (0 bps) from a window with no samples.
+    vlan-traffic rollup` has rolled; methodology names the tier. Every tier's peak is the
+    largest sample rate in its window (an hourly peak the largest sample rate in the hour,
+    a daily peak the largest hourly peak), so bursts shorter than the sampling interval are
+    under-represented in every tier. Needs no credentials and sends no request. Run
+    list_vlan_traffic_periods first to tell an idle VLAN (0 bps) from a window with no
+    samples.
 
     Args:
         period: now, 1d, 1w, 1m or 1y.

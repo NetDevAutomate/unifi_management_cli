@@ -231,11 +231,15 @@ async def search_tools(
     tools first, then execute specific tools as needed.
 
     Args:
-        query: Text search in tool names and descriptions
+        query: Words to find, e.g. "port vlan" or "link speed"; every word must appear in
+            a tool's name, description or tags (case-insensitive). Results are ranked by
+            where the words hit: name, then tags, then description.
         category: Filter by category (analysis, connectivity, diagnostics,
-                  discovery, network, observability, protect)
+                  discovery, network, observability, protect; any case)
         tags: Filter by tags (e.g., ["ip", "vlan", "stp"])
-        detail_level: "summary" (name + description) or "full" (includes parameters)
+        detail_level: "summary" (name + description; a tool that changes the controller
+            carries mutates: true and is refused by execute_tool) or "full" (includes
+            parameters)
 
     Returns:
         List of matching tools with requested detail level

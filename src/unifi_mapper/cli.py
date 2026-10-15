@@ -8,7 +8,9 @@ import importlib.metadata
 import logging
 import os
 import sys
+from .core.utils.config_search import config_candidates, find_config
 from .core.utils.envfile import parse_env_value
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -31,9 +33,10 @@ def load_env_from_config(config_path: str) -> None:
 
     if not env_file.exists():
         if env_file == Path('.env').resolve():
-            # The legacy fallback is only reached when no config was given and none of the
-            # searched files exist, so name them all: a new user who put the file somewhere
-            # else learns where the CLI looked, not just that ./.env is missing.
+            # The deprecated working-directory fallback is only reached when no config was
+            # given and none of the searched files exist, so name them all: a new user who
+            # put the file somewhere else learns where the CLI looked, not just that ./.env
+            # is missing.
             searched = '\n'.join(f'  {p}' for p in default_config_candidates())
             log.error(
                 'No configuration file found. Nothing was given with --config or '
@@ -70,49 +73,51 @@ def load_env_from_config(config_path: str) -> None:
         sys.exit(1)
 
 
+def _stderr_warning(message: str) -> None:
+    """Write one warning line to stderr (a seam for tests; never stdout, which may carry data)."""
+    print(f'warning: {message}', file=sys.stderr)
+
+
 def default_config_candidates() -> list[Path]:
     """The config files the CLI looks for when none is given, in search order.
 
+    The shared search (:mod:`unifi_mapper.core.utils.config_search`, the MCP server's order)
+    plus the CLI's deprecated last resort:
+
     0. the file named by ``UNIFI_CONFIG``, when that variable is set (it is then the only
        candidate: a wrong path is reported, not silently replaced by another file)
-    1. ``prod.env`` in ``$XDG_CONFIG_HOME/unifi_management_cli/``, or in
-       ``~/.config/unifi_management_cli/`` when ``XDG_CONFIG_HOME`` is unset
-    2. ``default.env`` in that same directory
-    3. ``.env`` in the current directory (legacy fallback), as an absolute path
+    1. ``prod.env``, then ``default.env``, in ``$XDG_CONFIG_HOME/unifi_management_cli/``
+       when ``XDG_CONFIG_HOME`` is set to an absolute path (a relative one is ignored)
+    2. ``prod.env``, then ``default.env``, in ``~/.config/unifi_management_cli/``
+    3. the legacy ``~/.config/unifi_network_mapper/prod.env`` (loaded with a warning)
+    4. ``.env`` in the current directory, as an absolute path (deprecated; removed in 0.4.0)
     """
-    explicit = os.environ.get('UNIFI_CONFIG')
-    if explicit:
-        return [Path(explicit).expanduser()]
-    xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
-    if xdg_config_home:
-        config_dir = Path(xdg_config_home) / 'unifi_management_cli'
-    else:
-        config_dir = Path.home() / '.config' / 'unifi_management_cli'
-    return [config_dir / 'prod.env', config_dir / 'default.env', Path('.env').resolve()]
+    return [path for _, path in config_candidates(os.environ, Path.home(), cwd=Path.cwd())]
 
 
-def get_default_config_path() -> Path:
-    """Get default config path following XDG Base Directory specification.
+def get_default_config_path(warn: Callable[[str], None] | None = None) -> Path:
+    """Return the config file to load when none is given: the first existing candidate.
 
-    The first file in :func:`default_config_candidates` that exists wins; when none does,
-    the legacy ``.env`` (current directory) is returned even though it is missing, and
-    :func:`load_env_from_config` then reports the whole search.
+    With ``UNIFI_CONFIG`` set that path is returned as given, even when it is missing, so
+    :func:`load_env_from_config` reports it. When none of the searched files exists, the
+    (missing) ``.env`` in the current directory is returned, absolute, and
+    :func:`load_env_from_config` then reports the whole search. The legacy directory and the
+    working-directory ``.env`` each win with a warning on stderr, emitted here, before any
+    command can contact the controller.
 
-    A set ``XDG_CONFIG_HOME`` replaces ``~/.config`` here; the MCP server's search
-    (``mcp.config.resolve_config_path``) tries it first and then ``~/.config`` too.
+    Args:
+        warn: Receives the warning; defaults to a stderr line.
 
     Returns:
-        Path to default config file.
+        Path to the config file.
     """
-    candidates = default_config_candidates()
-    if len(candidates) == 1:  # UNIFI_CONFIG names the file; a missing one is reported as such
-        return candidates[0]
-    for candidate in candidates[:-1]:
-        if candidate.exists():
-            return candidate
-
-    # Fallback to .env in current directory (legacy)
-    return Path('.env')
+    if os.environ.get('UNIFI_CONFIG'):
+        return default_config_candidates()[0]
+    warn = warn or _stderr_warning
+    _, found, tried, warning = find_config(os.environ, Path.home(), cwd=Path.cwd())
+    if warning:
+        warn(warning)
+    return found if found is not None else tried[-1]
 
 
 def main():
@@ -140,8 +145,13 @@ def main():
     parser.add_argument(
         '--config',
         '-c',
-        help='Path to .env configuration file (default: XDG_CONFIG_HOME or .env)',
-        default=get_default_config_path(),
+        help=(
+            'Path to .env configuration file (default: UNIFI_CONFIG, then '
+            '$XDG_CONFIG_HOME or ~/.config/unifi_management_cli/{prod,default}.env, then the '
+            'legacy ~/.config/unifi_network_mapper/prod.env, then ./.env with a deprecation '
+            'warning; ./.env is removed in 0.4.0)'
+        ),
+        default=None,
     )
 
     parser.add_argument(
@@ -204,7 +214,11 @@ def main():
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Load configuration from specified file
+    # Load configuration from the given file, else the first the shared search finds. The
+    # search runs here, not at parser build time, so --help and --version never warn about
+    # a ./.env they do not load.
+    if args.config is None:
+        args.config = str(get_default_config_path())
     load_env_from_config(args.config)
 
     # Import after env loaded
@@ -266,6 +280,8 @@ def main():
             password=config.password,
             verify_ssl=config.verify_ssl,
             timeout=config.timeout,
+            max_retries=config.max_retries,
+            retry_delay=config.retry_delay,
         )
 
         # Check if smart mapping is needed (when verification is enabled)

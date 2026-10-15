@@ -1,6 +1,6 @@
 [project]
 name = "unifi-management-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "Discover, diagnose and document a UniFi network from the command line, with a read-only MCP server"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -42,6 +42,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
+
+[project.optional-dependencies]
+# The Home Assistant MQTT bridge (protect/mqtt.py): uv sync --extra mqtt (issue 074)
+mqtt = ["aiomqtt>=2,<3"]
 
 [project.urls]
 Homepage = "https://github.com/NetDevAutomate/unifi_management_cli"

@@ -3,14 +3,18 @@
 PNG and SVG are drawn by Graphviz's ``dot`` program through the ``graphviz`` package; HTML
 is a d3 page written without it. Each case runs the real ``graphviz`` package, with ``dot``
 hidden from ``PATH`` or replaced by a fake that writes the file it is asked for, so the
-suite needs no Graphviz install and skips nothing.
+suite needs no Graphviz install and skips nothing. Without ``dot`` a render is a warning and
+a placeholder, as it is without the package, and ``discover`` still writes its report.
 """
 
 import graphviz
+import logging
 import pytest
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from unifi_mapper.enhanced_network_topology import NetworkTopology
+from unifi_mapper.run_methods import run_port_mapper
 
 
 pytestmark = pytest.mark.usefixtures('block_network')
@@ -60,15 +64,115 @@ def fake_dot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 @pytest.mark.parametrize('fmt', ['png', 'svg'])
 @pytest.mark.usefixtures('no_dot')
-def test_without_dot_a_render_raises_and_leaves_its_dot_source(tmp_path: Path, fmt: str) -> None:
-    """Issue 075: the render fails, no image is written, and the DOT source stays at the
-    diagram path minus its extension (the reason everything under diagrams/ is ignored)."""
+def test_without_dot_a_render_writes_a_placeholder_and_leaves_no_source(
+    tmp_path: Path, fmt: str
+) -> None:
+    """Issue 075: like the missing-package branch, a missing ``dot`` is a warning and a
+    placeholder that names the install, not an exception; the DOT source graphviz leaves at the
+    diagram path minus its extension (the site's device names) is removed."""
     out = tmp_path / 'diagrams' / f'network.{fmt}'
     out.parent.mkdir()
-    with pytest.raises(graphviz.ExecutableNotFound, match=r"failed to execute PosixPath\('dot'\)"):
+    _render(_topology(), fmt)(str(out))
+    text = out.read_text(encoding='utf-8')
+    assert 'brew install graphviz' in text and 'apt install graphviz' in text
+    assert '--format html' in text
+    assert sorted(p.name for p in out.parent.iterdir()) == [out.name]
+
+
+@pytest.mark.parametrize('fmt', ['png', 'svg'])
+@pytest.mark.usefixtures('no_dot')
+def test_without_dot_a_render_warns_with_the_install_command(
+    tmp_path: Path, fmt: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    out = tmp_path / f'network.{fmt}'
+    with caplog.at_level(logging.WARNING, logger='unifi_mapper.enhanced_network_topology'):
         _render(_topology(), fmt)(str(out))
-    assert not out.exists()
-    assert (out.parent / 'network').is_file()
+    [record] = [r for r in caplog.records if 'graphviz' in r.getMessage().lower()]
+    assert record.levelno == logging.WARNING
+    assert 'brew install graphviz' in record.getMessage()
+    assert '--format html' in record.getMessage()
+
+
+class _FakeApiClient:
+    """The reads ``run_port_mapper`` makes, answered for one gateway and one switch."""
+
+    is_authenticated = True
+    base_url = 'https://192.0.2.1'
+    is_unifi_os = True
+    timeout = 1
+
+    def get_devices(self, site_id: str) -> dict[str, Any]:
+        return {
+            'data': [
+                {
+                    '_id': 'gw',
+                    'name': 'Gateway',
+                    'model': 'UXG',
+                    'mac': '02:00:00:00:00:01',
+                    'ip': '192.0.2.1',
+                    'type': 'ugw',
+                },
+                {
+                    '_id': 'sw',
+                    'name': 'Switch A',
+                    'model': 'USW-Lite-8',
+                    'mac': '02:00:00:00:00:02',
+                    'ip': '192.0.2.2',
+                    'type': 'usw',
+                },
+            ]
+        }
+
+    def get_device_ports(self, site_id: str, device_id: str) -> list[dict[str, Any]]:
+        return []
+
+    def get_lldp_info(self, site_id: str, device_id: str) -> dict[str, Any]:
+        return {}
+
+    def get_clients(self, site_id: str) -> dict[str, Any]:
+        return {'data': []}
+
+
+class _FakePortMapper:
+    api_client = _FakeApiClient()
+
+    def get_client_port_mapping(self, device_mac: str) -> dict[int, list[Any]]:
+        return {}
+
+    def batch_update_port_names(self, *args: object, **kwargs: object) -> bool:
+        raise AssertionError('a dry run reached the writer')
+
+
+@pytest.fixture
+def dot_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """graphviz's renderer raising what it raises when ``dot`` is not on PATH."""
+
+    def no_dot(self: graphviz.Source, *_args: object, **_kwargs: object) -> str:
+        raise graphviz.ExecutableNotFound(['dot', '-Kdot', '-Tpng'])
+
+    monkeypatch.setattr(graphviz.Source, 'render', no_dot)
+
+
+@pytest.mark.parametrize('fmt', ['png', 'svg'])
+@pytest.mark.usefixtures('dot_missing')
+def test_discover_still_writes_its_report_without_dot(tmp_path: Path, fmt: str) -> None:
+    """Issue 075: the diagram is drawn before the report, so the render's exception used to
+    end the dry run with no report written."""
+    report = tmp_path / 'reports' / 'port_mapping_report.md'
+    diagram = tmp_path / 'diagrams' / f'network_diagram.{fmt}'
+
+    devices, _connections = run_port_mapper(
+        _FakePortMapper(),
+        'default',
+        dry_run=True,
+        output_path=str(report),
+        diagram_path=str(diagram),
+        diagram_format=fmt,
+    )
+
+    assert set(devices) == {'gw', 'sw'}
+    assert 'Switch A' in report.read_text(encoding='utf-8')
+    assert 'brew install graphviz' in diagram.read_text(encoding='utf-8')
 
 
 @pytest.mark.parametrize('fmt', ['png', 'svg'])

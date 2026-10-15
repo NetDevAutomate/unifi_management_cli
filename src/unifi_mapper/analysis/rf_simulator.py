@@ -24,7 +24,6 @@ from unifi_mapper.analysis.rf_strategy import (
     Band,
     Mode,
 )
-from unifi_mapper.analysis.roaming_analysis import DEFAULT_ROAMING_PATH
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
 
@@ -114,7 +113,7 @@ async def simulate_disable(
     ap_name: str,
     band: Band,
     mode_override: Mode | None = None,
-    history_path: str = DEFAULT_ROAMING_PATH,
+    history_path: str | None = None,
     min_history_hours: float = _rfs.MIN_HISTORY_HOURS,
 ) -> SimulationResult:
     """Simulate disabling (or softening) a band on a specific AP.
@@ -124,7 +123,7 @@ async def simulate_disable(
         band: 2.4 GHz or 5 GHz.
         mode_override: Force a specific :class:`Mode`. ``None`` (default)
             lets the scorecard pick.
-        history_path: Path to the roaming history file.
+        history_path: Path to the roaming history file; ``None`` means the XDG default.
         min_history_hours: Reject if history is too short (same gate as
             :func:`generate_plan`; raises ``ToolError(CONFIG_INVALID)``).
 
@@ -140,7 +139,7 @@ async def simulate_width_change(
     ap_name: str,
     band: Band,
     width_mhz: Literal[20, 40, 80],
-    history_path: str = DEFAULT_ROAMING_PATH,
+    history_path: str | None = None,
     min_history_hours: float = _rfs.MIN_HISTORY_HOURS,
 ) -> SimulationResult:
     """Simulate setting a specific channel width on an AP/band.

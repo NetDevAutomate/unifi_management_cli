@@ -135,7 +135,12 @@ def main(
         typer.Option(
             '--config',
             '-c',
-            help='📁 Path to .env configuration file',
+            help=(
+                '📁 Path to .env configuration file (default: UNIFI_CONFIG, then '
+                '$XDG_CONFIG_HOME or ~/.config/unifi_management_cli/{prod,default}.env, then '
+                'the legacy ~/.config/unifi_network_mapper/prod.env, then ./.env with a '
+                'deprecation warning; ./.env is removed in 0.4.0)'
+            ),
             envvar='UNIFI_CONFIG',
         ),
     ] = None,
@@ -233,7 +238,7 @@ def main(
             discover(
                 output=None,
                 diagram=None,
-                format='png',
+                format=None,
                 apply=apply,
                 verify_updates=verify_updates,
                 connected_devices=connected_devices,
@@ -271,7 +276,7 @@ backup_app = typer.Typer(
     help='💾 Offline checks of downloaded config backups', pretty_exceptions_show_locals=False
 )
 gateway_app = typer.Typer(
-    help="🛰️ Live probes run on the gateway over SSH (the gateway's host key is not verified)",
+    help="🛰️ Live probes run on the gateway over SSH (the gateway's host key is verified)",
     pretty_exceptions_show_locals=False,
 )
 vlan_traffic_app = typer.Typer(
@@ -292,6 +297,13 @@ app.add_typer(gateway_app, name='gateway')
 app.add_typer(vlan_traffic_app, name='vlan-traffic')
 
 
+def _configured_dir(configured: Optional[str], default_name: str) -> Path:
+    """A directory from the config file (``~`` expanded), or ``./<default_name>``."""
+    if configured:
+        return Path(configured).expanduser()
+    return Path.cwd() / default_name
+
+
 @app.command()
 def discover(
     output: Annotated[
@@ -301,8 +313,16 @@ def discover(
         Optional[Path], typer.Option('--diagram', '-d', help='🖼️ Output path for diagram')
     ] = None,
     format: Annotated[
-        str, typer.Option('--format', help='🎨 Diagram format (png, svg, html, mermaid, dot)')
-    ] = 'png',
+        Optional[str],
+        typer.Option(
+            '--format',
+            help=(
+                '🎨 Diagram format: png, svg (Graphviz), html, mermaid or dot (source files) '
+                '[default: UNIFI_DEFAULT_FORMAT, or png]'
+            ),
+            show_default=False,
+        ),
+    ] = None,
     apply: Annotated[
         bool,
         typer.Option(
@@ -358,9 +378,14 @@ def discover(
         # Re-read the same file: a stray ./.env must never override --config.
         unifi_config = UnifiConfig.from_env(str(config))
 
-        # Set default paths
-        output_path = output or Path.cwd() / 'reports' / 'port_mapping_report.md'
-        diagram_path = diagram or Path.cwd() / 'diagrams' / f'network_diagram.{format}'
+        # The config file's output settings apply when the matching option is not given
+        # (issue 042): UNIFI_DEFAULT_FORMAT, UNIFI_OUTPUT_DIR and UNIFI_DIAGRAM_DIR.
+        if format is None:
+            format = unifi_config.default_format or 'png'
+        output_dir = _configured_dir(unifi_config.default_output_dir, 'reports')
+        diagram_dir = _configured_dir(unifi_config.default_diagram_dir, 'diagrams')
+        output_path = output or output_dir / 'port_mapping_report.md'
+        diagram_path = diagram or diagram_dir / f'network_diagram.{format}'
 
         # Ensure directories exist
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -380,6 +405,8 @@ def discover(
             password=unifi_config.password or '',
             verify_ssl=unifi_config.verify_ssl,
             timeout=unifi_config.timeout,
+            max_retries=unifi_config.max_retries,
+            retry_delay=unifi_config.retry_delay,
         )
 
         if verify_updates:
@@ -448,20 +475,34 @@ def discover(
 
 @app.command()
 def install_completions(
-    shell: str = typer.Argument(..., help='Shell to install completions for (bash/zsh/fish/all)'),
+    shell: str = typer.Argument(
+        ...,
+        help='Shell to install completions for: bash, zsh or all (fish: use --install-completion)',
+    ),
     force: bool = typer.Option(False, '--force', help='🔄 Overwrite existing completion files'),
 ):
-    """💻 Install shell completions (automatic via Typer).
+    """💻 Install the manual bash and zsh completion scripts.
 
-    Note: You can also use the built-in Typer completion:
+    ``all`` installs both. Fish is not covered by these scripts; Typer's built-in
+    completion works for every shell, fish included:
     unifi-mapper --install-completion
+
+    Exits 1 when a script could not be installed.
     """
-    if shell.lower() not in ['bash', 'zsh', 'fish', 'all']:
+    wanted = shell.lower()
+    if wanted == 'fish':
+        console.print('❌ [bold red]No manual completion script for fish[/bold red]')
+        console.print("💡 [bold blue]Use Typer's built-in completion instead:[/bold blue]")
+        console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
+        raise typer.Exit(1)
+    if wanted not in ('bash', 'zsh', 'all', 'both'):
         console.print(f'❌ [bold red]Unsupported shell: {shell}[/bold red]')
-        console.print('Supported shells: [cyan]bash, zsh, fish, all[/cyan]')
+        console.print('Supported shells: [cyan]bash, zsh, all[/cyan]')
         console.print("\n💡 [bold blue]Alternative - Use Typer's built-in completion:[/bold blue]")
         console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
         raise typer.Exit(1)
+    if wanted == 'all':
+        wanted = 'both'  # the installer's name for bash and zsh together
 
     console.print(f'🔧 Installing [bold]{shell}[/bold] completions...')
 
@@ -469,27 +510,24 @@ def install_completions(
     try:
         from .completions import install_completions as manual_install
 
-        success = manual_install(shell, force)
-
-        if success:
-            console.print('✅ [bold green]Manual completions installed successfully![/bold green]')
-        else:
-            console.print('❌ [bold red]Manual completion installation failed[/bold red]')
-            console.print("\n💡 [bold blue]Try Typer's automatic completion instead:[/bold blue]")
-            console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
-
+        success = manual_install(wanted, force)
     except Exception as e:
         console.print(f'❌ [bold red]Completion installation failed: {_error_text(e)}[/bold red]')
-        console.print("\n💡 [bold blue]Alternative - Use Typer's built-in completion:[/bold blue]")
+        success = False
+
+    if not success:
+        console.print('❌ [bold red]Manual completion installation failed[/bold red]')
+        console.print("\n💡 [bold blue]Try Typer's automatic completion instead:[/bold blue]")
         console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
         console.print('   [cyan]unifi-mapper --show-completion[/cyan]')
+        raise typer.Exit(1)
 
+    console.print('✅ [bold green]Manual completions installed successfully![/bold green]')
     console.print('\n📝 [bold]To enable completions:[/bold]')
-    console.print('  🐚 Bash: [dim]source ~/.bashrc[/dim]')
-    console.print('  🐚 Zsh: [dim]source ~/.zshrc[/dim]')
-    console.print('  🐚 Fish: [dim]Automatic on restart[/dim]')
-    console.print("\n🎯 [bold blue]Or use Typer's automatic completion:[/bold blue]")
-    console.print('   [cyan]unifi-mapper --install-completion[/cyan]')
+    if wanted in ('bash', 'both'):
+        console.print('  🐚 Bash: [dim]source ~/.bashrc[/dim]')
+    if wanted in ('zsh', 'both'):
+        console.print('  🐚 Zsh: [dim]source ~/.zshrc[/dim]')
 
 
 @find_app.command('device')
@@ -584,9 +622,6 @@ def analyze_port_profiles():
 
     For usage and speed forcing see `analyze port-profile-usage`.
     """
-    import asyncio
-
-    config = state.config_path
     debug = state.debug
 
     if not state.debug:
@@ -595,11 +630,9 @@ def analyze_port_profiles():
     console.print('🔌 [bold]Port Profile Validation[/bold]')
 
     try:
-        load_env_from_config(str(config))
-
         from .analysis.port_profile_validation import validate_port_profiles
 
-        report = asyncio.run(validate_port_profiles())
+        report = _run_analysis(validate_port_profiles)
         console.print(f'Devices analyzed: [cyan]{report.devices_analyzed}[/cyan]')
         console.print(f'Ports analyzed: [cyan]{report.ports_analyzed}[/cyan]')
         console.print(f'Findings: [yellow]{report.findings_count}[/yellow]')
@@ -646,18 +679,15 @@ def analyze_lag_candidates(
     min_links: int = typer.Option(2, '--min-links', help='Minimum parallel links', min=2),
 ):
     """🔗 Find parallel links that may be LACP candidates."""
-    import asyncio
-
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('🔗 [bold]LAG Candidate Finder[/bold]')
 
     try:
-        load_env_from_config(str(state.config_path))
         from .analysis.lag_monitoring import find_lag_candidates
 
-        report = asyncio.run(find_lag_candidates(min_links=min_links))
+        report = _run_analysis(lambda: find_lag_candidates(min_links=min_links))
         console.print(f'Devices analyzed: [cyan]{report.devices_analyzed}[/cyan]')
         console.print(f'Candidates: [yellow]{report.candidate_count}[/yellow]')
 
@@ -679,6 +709,8 @@ def analyze_lag_candidates(
             console.print(table)
         else:
             console.print('No LAG candidates detected.')
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
@@ -689,18 +721,15 @@ def analyze_lag_candidates(
 @analyze_app.command('mtu')
 def analyze_mtu():
     """📏 Audit MTU consistency across inter-switch links."""
-    import asyncio
-
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('📏 [bold]MTU Consistency Audit[/bold]')
 
     try:
-        load_env_from_config(str(state.config_path))
         from .analysis.mtu_audit import audit_mtu_consistency
 
-        report = asyncio.run(audit_mtu_consistency())
+        report = _run_analysis(audit_mtu_consistency)
         console.print(f'Links analyzed: [cyan]{report.links_analyzed}[/cyan]')
         console.print(f'Findings: [yellow]{report.findings_count}[/yellow]')
         if report.findings:
@@ -731,18 +760,15 @@ def analyze_mtu():
 @analyze_app.command('radio')
 def analyze_radio():
     """📶 Analyze Wi-Fi radio channel and transmit power optimisation."""
-    import asyncio
-
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('📶 [bold]Radio Optimisation Analysis[/bold]')
 
     try:
-        load_env_from_config(str(state.config_path))
         from .analysis.radio_optimization import analyze_radio_optimization
 
-        report = asyncio.run(analyze_radio_optimization())
+        report = _run_analysis(analyze_radio_optimization)
         console.print(f'APs analyzed: [cyan]{report.aps_analyzed}[/cyan]')
         console.print(f'Radios analyzed: [cyan]{report.radios_analyzed}[/cyan]')
         console.print(f'Findings: [yellow]{report.findings_count}[/yellow]')
@@ -764,6 +790,8 @@ def analyze_radio():
                     finding.message,
                 )
             console.print(table)
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
@@ -774,18 +802,15 @@ def analyze_radio():
 @analyze_app.command('sfp')
 def analyze_sfp():
     """🔦 Audit SFP/SFP+ transceiver diagnostics."""
-    import asyncio
-
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('🔦 [bold]SFP Diagnostics[/bold]')
 
     try:
-        load_env_from_config(str(state.config_path))
         from .analysis.sfp_diagnostics import audit_sfp_diagnostics
 
-        report = asyncio.run(audit_sfp_diagnostics())
+        report = _run_analysis(audit_sfp_diagnostics)
         console.print(f'SFP ports analyzed: [cyan]{report.ports_analyzed}[/cyan]')
         console.print(f'Modules found: [cyan]{report.modules_found}[/cyan]')
         console.print(f'Diagnostics available: [cyan]{report.diagnostics_available}[/cyan]')
@@ -828,6 +853,8 @@ def analyze_sfp():
                     finding.message,
                 )
             console.print(findings_table)
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
@@ -849,19 +876,16 @@ def analyze_vlan_coverage(
     ),
 ):
     """🔀 Audit VLAN coverage on trunk and planned uplink ports."""
-    import asyncio
-
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('🔀 [bold]VLAN Coverage Audit[/bold]')
 
     try:
-        load_env_from_config(str(state.config_path))
         from .analysis.vlan_coverage import audit_vlan_coverage
 
         vlans = _parse_csv_ints(required_vlans)
-        report = asyncio.run(audit_vlan_coverage(vlans, planned_uplinks=planned_uplink))
+        report = _run_analysis(lambda: audit_vlan_coverage(vlans, planned_uplinks=planned_uplink))
         console.print(f'Devices analyzed: [cyan]{report.devices_analyzed}[/cyan]')
         console.print(f'Ports analyzed: [cyan]{report.ports_analyzed}[/cyan]')
         console.print(
@@ -910,19 +934,16 @@ def analyze_uplink_transparency(
     ),
 ):
     """🚧 Check that each switch's elected uplink can actually carry tagged VLANs."""
-    import asyncio
-
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('🚧 [bold]Uplink VLAN Transparency Audit[/bold]')
 
     try:
-        load_env_from_config(str(state.config_path))
         from .analysis.uplink_transparency import audit_uplink_transparency
 
-        report = asyncio.run(
-            audit_uplink_transparency(mgmt_vlan=mgmt_vlan, stale_after_seconds=stale_after)
+        report = _run_analysis(
+            lambda: audit_uplink_transparency(mgmt_vlan=mgmt_vlan, stale_after_seconds=stale_after)
         )
         console.print(f'Devices analyzed: [cyan]{report.devices_analyzed}[/cyan]')
         console.print(f'Uplinks analyzed: [cyan]{report.uplinks_analyzed}[/cyan]')
@@ -989,18 +1010,17 @@ def analyze_power_budget(
     ),
 ):
     """🔌 Audit switch INPUT power headroom (distinct from PoE output budget)."""
-    import asyncio
-
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('🔌 [bold]Device Input Power Budget Audit[/bold]')
 
     try:
-        load_env_from_config(str(state.config_path))
         from .analysis.power_budget import audit_power_budget
 
-        report = asyncio.run(audit_power_budget(warn_pct=warn_pct, base_watts=base_watts))
+        report = _run_analysis(
+            lambda: audit_power_budget(warn_pct=warn_pct, base_watts=base_watts)
+        )
         console.print(f'Switches analyzed: [cyan]{report.devices_analyzed}[/cyan]')
         if report.skipped_not_informing:
             console.print(
@@ -1477,18 +1497,15 @@ def analyze_traffic_matrix_cmd(
     top: int = typer.Option(10, '--top', help='Number of flows/talkers to show', min=1),
 ):
     """📈 Analyze traffic matrix/top talkers from available UniFi statistics."""
-    import asyncio
-
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('📈 [bold]Traffic Matrix[/bold]')
 
     try:
-        load_env_from_config(str(state.config_path))
         from .analysis.traffic_matrix import analyze_traffic_matrix
 
-        report = asyncio.run(analyze_traffic_matrix(top_n=top))
+        report = _run_analysis(lambda: analyze_traffic_matrix(top_n=top))
         console.print(f'Records analyzed: [cyan]{report.records_analyzed}[/cyan]')
         console.print(f'Flows: [cyan]{report.flow_count}[/cyan]')
         console.print(f'Total bytes: [cyan]{report.total_bytes}[/cyan]')
@@ -1514,6 +1531,8 @@ def analyze_traffic_matrix_cmd(
             console.print('\nRecommendations:')
             for recommendation in report.recommendations:
                 console.print(f'  • {recommendation.recommendation}')
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if state.debug:
@@ -1615,13 +1634,15 @@ MAX_RISK_ROWS = 40  # a site that hears many neighbour APs reports hundreds of '
 def diagnose_security(
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
 ):
-    """🛡️ Security audit: unknown or anomalous devices, rogue APs, guest and VLAN violations.
+    """🛡️ Security audit: pending adoption, guest overstay, rogue APs, VLAN isolation.
 
-    Classifies every device and client the controller knows (authorised, unauthorised,
-    anomalous, unknown), lists the critical, high and medium risks with their flags, MAC
-    anomalies, new devices, rogue APs, guest-network violations and per-VLAN isolation, and
-    ends with the immediate actions and recommendations. The same report as the MCP tool
-    `security_audit`. Read-only.
+    Reports what the controller's own data can show: infrastructure pending adoption, clients
+    overstaying the guest network, rogue APs told apart from neighbours, MAC anomalies among
+    the clients, new devices and per-VLAN isolation, then the immediate actions and
+    recommendations. Authorised and unauthorised are the controller's verdicts (adopted or
+    pending devices, blocked or noted clients); vendor, randomised MAC, name and traffic are
+    not risks. Ends with the report's limitations, including any check that could not run
+    (not assessed). The same report as the MCP tool `security_audit`. Read-only.
     """
     from .diagnostics.security_audit import security_audit
 
@@ -1635,7 +1656,6 @@ def diagnose_security(
         f'Authorised: [green]{report.authorized_devices}[/green]  '
         f'Unauthorised: [red]{report.unauthorized_devices}[/red]  '
         f'Anomalous: [yellow]{report.anomalous_devices}[/yellow]  '
-        f'Unknown: [yellow]{report.unknown_devices}[/yellow]  '
         f'Rogue APs: [{"red" if report.rogue_aps else "green"}]{len(report.rogue_aps)}[/]  '
         f'Neighbour APs: [dim]{report.neighbour_aps}[/dim]'
     )
@@ -1715,6 +1735,7 @@ def diagnose_security(
     _print_list('MAC anomalies', [str(a) for a in report.mac_anomalies], style='yellow')
     _print_list('Immediate actions', [str(a) for a in report.immediate_actions], style='red')
     _print_list('Recommendations', [str(r) for r in report.security_recommendations])
+    _print_list('Limitations', [str(line) for line in report.limitations], style='dim')
 
 
 @analyze_app.command('storms')
@@ -2913,7 +2934,11 @@ def diagnose_latency_matrix(
         False, '--devices-only', help='Skip clients, only ping infrastructure'
     ),
 ):
-    """📡 SSH to gateway and ping all devices to build a latency matrix."""
+    """📡 SSH to gateway and ping all devices to build a latency matrix.
+
+    A target whose ping could not run on the gateway (ping missing, or refused for the SSH
+    user) is listed under "Ping could not run" with the reason, never as 100% loss.
+    """
     from rich.table import Table
     from unifi_mapper.analysis.latency_matrix import run_latency_matrix
 
@@ -2954,7 +2979,12 @@ def diagnose_latency_matrix(
             status = '[green]✅[/green]'
             rtt_avg = f'{r.rtt_avg:.1f}ms' if r.rtt_avg else '—'
             rtt_max = f'{r.rtt_max:.1f}ms' if r.rtt_max else '—'
-            loss = f'{r.packet_loss:.0f}%' if r.packet_loss > 0 else '0%'
+            loss = f'{r.packet_loss:.0f}%' if r.packet_loss else '0%'
+        elif r.error is not None:  # ping could not run: no loss figure
+            status = '[yellow]⚠ not run[/yellow]'
+            rtt_avg = '—'
+            rtt_max = '—'
+            loss = '—'
         else:
             status = '[red]❌[/red]'
             rtt_avg = '—'
@@ -2969,6 +2999,12 @@ def diagnose_latency_matrix(
         console.print(f'\n[red]Unreachable ({len(report.unreachable_devices)}):[/red]')
         for name in report.unreachable_devices:
             console.print(f'  ❌ {name}')
+
+    failed = [r for r in report.results if r.error is not None]
+    if failed:
+        console.print(f'\n[yellow]Ping could not run ({len(failed)}):[/yellow]')
+        for r in failed:
+            console.print(f'  ⚠ {escape(r.name)}: {escape(r.error or "")}')
 
     if report.skipped_targets:
         console.print(
@@ -2988,9 +3024,6 @@ def diagnose_inter_vlan(
     port: Optional[str] = typer.Option(None, '--port', help='Optional destination port'),
 ):
     """🔀 Check inter-VLAN routing and firewall verdict between two endpoints."""
-    import asyncio
-
-    config = state.config_path
     debug = state.debug
 
     if not state.debug:
@@ -3001,12 +3034,10 @@ def diagnose_inter_vlan(
     console.print(f'Destination: [cyan]{destination}[/cyan]')
 
     try:
-        load_env_from_config(str(config))
-
         from .connectivity.inter_vlan import check_inter_vlan_routing
 
-        report = asyncio.run(
-            check_inter_vlan_routing(
+        report = _run_analysis(
+            lambda: check_inter_vlan_routing(
                 source=source,
                 destination=destination,
                 protocol=protocol,
@@ -3102,6 +3133,8 @@ def diagram(
             password=unifi_config.password or '',
             verify_ssl=unifi_config.verify_ssl,
             timeout=unifi_config.timeout,
+            max_retries=unifi_config.max_retries,
+            retry_delay=unifi_config.retry_delay,
         )
 
         # Get ALL UniFi devices for the diagram
@@ -3350,9 +3383,6 @@ def stp_analyze(
     Shows all switches with their STP configuration, bridge priorities,
     and hierarchy tiers (Core, Distribution, Access).
     """
-    import asyncio
-
-    config = state.config_path
     debug = state.debug
 
     if not state.debug:
@@ -3361,13 +3391,9 @@ def stp_analyze(
     console.print('🌳 [bold]STP Topology Analysis[/bold]')
 
     try:
-        from .cli import load_env_from_config
-
-        load_env_from_config(str(config))
-
         from .analysis.stp_optimizer import discover_stp_topology
 
-        topology = asyncio.run(discover_stp_topology(device_id=device))
+        topology = _run_analysis(lambda: discover_stp_topology(device_id=device))
 
         # Display summary
         console.print('\n📊 [bold]Summary[/bold]')
@@ -3402,6 +3428,8 @@ def stp_analyze(
                 f'\n⚠️ [yellow]Found {topology.blocked_ports_count} blocked port(s) - indicates redundant paths[/yellow]'
             )
 
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
@@ -3434,8 +3462,9 @@ def stp_audit_priorities(
     """📋 One-shot STP priority audit: each switch's current vs recommended priority.
 
     Discovers the whole fleet (tiers need every switch), computes the recommended
-    priorities and reports the delta per switch, a warning when two non-core switches tie
-    at the lowest priority, and the gateway, which is skipped. --device narrows the rows and
+    priorities and reports the delta per switch, a warning when switches tie at the lowest
+    priority unless every one is core-class (the root would be decided by MAC address), and
+    the gateway, which is skipped. --device narrows the rows and
     the verdict to one switch, by name, MAC or ID, and prints the fleet's verdict after it.
     Writes no plan: stp optimize --plan does. Read-only.
     """
@@ -3500,7 +3529,6 @@ def stp_optimize(
     """
     import asyncio
 
-    config = state.config_path
     debug = state.debug
 
     if not state.debug:
@@ -3518,10 +3546,6 @@ def stp_optimize(
         console.print('⚡ [yellow]Apply mode - changes will be made[/yellow]')
 
     try:
-        from .cli import load_env_from_config
-
-        load_env_from_config(str(config))
-
         from .analysis.stp_optimizer import (
             apply_stp_changes,
             calculate_optimal_priorities,
@@ -3529,14 +3553,17 @@ def stp_optimize(
             gateway_skipped_line,
             is_gateway_switch,
         )
+        from .core.models.stp import STPChange, STPTopology
 
-        # Discover topology
-        console.print('📡 [dim]Discovering STP topology...[/dim]')
-        topology = asyncio.run(discover_stp_topology())
+        async def _plan() -> tuple[STPTopology, list[STPChange]]:
+            console.print('📡 [dim]Discovering STP topology...[/dim]')
+            topology = await discover_stp_topology()
+            console.print('🧮 [dim]Calculating optimal priorities...[/dim]')
+            return topology, await calculate_optimal_priorities(topology)
 
-        # Calculate optimal priorities
-        console.print('🧮 [dim]Calculating optimal priorities...[/dim]')
-        changes = asyncio.run(calculate_optimal_priorities(topology))
+        # The read runs behind the read-only transport and loads the config the apply
+        # below relies on; the apply itself must write, so it stays outside the guard.
+        topology, changes = _run_analysis(_plan)
         for switch in topology.switches:
             if is_gateway_switch(switch, topology):
                 console.print(f'[dim]{escape(gateway_skipped_line(switch))}[/dim]')
@@ -3599,6 +3626,8 @@ def stp_optimize(
                 for failure in result.get('failed', []):
                     console.print(f'   • {failure["device_name"]}: {failure["error"]}')
 
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
@@ -3729,9 +3758,6 @@ def stp_report(
     - Mermaid diagrams (current vs optimal)
     - Configuration diff
     """
-    import asyncio
-
-    config = state.config_path
     debug = state.debug
 
     if not state.debug:
@@ -3741,28 +3767,23 @@ def stp_report(
     console.print(f'📄 Output: [cyan]{output}[/cyan]')
 
     try:
-        from .cli import load_env_from_config
-
-        load_env_from_config(str(config))
-
         from .analysis.stp_optimizer import (
             calculate_optimal_priorities,
             discover_stp_topology,
             format_stp_report_markdown,
             generate_stp_report,
         )
+        from .core.models.stp import STPOptimizationReport
 
-        # Discover topology
-        console.print('📡 [dim]Discovering STP topology...[/dim]')
-        topology = asyncio.run(discover_stp_topology())
+        async def _report() -> STPOptimizationReport:
+            console.print('📡 [dim]Discovering STP topology...[/dim]')
+            topology = await discover_stp_topology()
+            console.print('🧮 [dim]Calculating optimal priorities...[/dim]')
+            changes = await calculate_optimal_priorities(topology)
+            console.print('📝 [dim]Generating report...[/dim]')
+            return await generate_stp_report(topology, changes)
 
-        # Calculate optimal priorities
-        console.print('🧮 [dim]Calculating optimal priorities...[/dim]')
-        changes = asyncio.run(calculate_optimal_priorities(topology))
-
-        # Generate report
-        console.print('📝 [dim]Generating report...[/dim]')
-        report = asyncio.run(generate_stp_report(topology, changes))
+        report = _run_analysis(_report)
 
         # Format and write markdown
         markdown = format_stp_report_markdown(report)
@@ -3779,6 +3800,8 @@ def stp_report(
             for issue in report.issues:
                 console.print(f'   • {issue}')
 
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
@@ -3793,21 +3816,17 @@ def stp_snapshot(
     ],
 ):
     """Capture a replayable STP topology snapshot."""
-    import asyncio
-
     debug = state.debug
 
     if not state.debug:
         setup_logging(debug=False)
 
     try:
-        load_env_from_config(str(state.config_path))
-
         from .analysis.stp_optimizer import discover_stp_topology
         from .analysis.stp_snapshot import snapshot_stp_topology
 
         console.print('📸 [bold]STP Snapshot[/bold]')
-        topology = asyncio.run(discover_stp_topology())
+        topology = _run_analysis(discover_stp_topology)
         snapshot = snapshot_stp_topology(topology)
 
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -3816,6 +3835,8 @@ def stp_snapshot(
         console.print(f'Root bridge: [green]{snapshot.root_bridge_name or "Unknown"}[/green]')
         console.print(f'Switches: [cyan]{len(snapshot.switches)}[/cyan]')
 
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
@@ -3831,16 +3852,12 @@ def stp_diff(
     ] = None,
 ):
     """Diff a saved STP snapshot against the current live topology."""
-    import asyncio
-
     debug = state.debug
 
     if not state.debug:
         setup_logging(debug=False)
 
     try:
-        load_env_from_config(str(state.config_path))
-
         from .analysis.stp_optimizer import discover_stp_topology
         from .analysis.stp_snapshot import (
             STPSnapshot,
@@ -3850,7 +3867,7 @@ def stp_diff(
 
         console.print('🔎 [bold]STP Snapshot Diff[/bold]')
         before = STPSnapshot.model_validate_json(baseline.read_text())
-        topology = asyncio.run(discover_stp_topology())
+        topology = _run_analysis(discover_stp_topology)
         after = snapshot_stp_topology(topology)
         diff = diff_stp_snapshots(before, after)
 
@@ -3877,6 +3894,8 @@ def stp_diff(
             output.write_text(diff.model_dump_json(indent=2))
             console.print(f'📄 Diff saved to [cyan]{output}[/cyan]')
 
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
@@ -3901,22 +3920,18 @@ def stp_preflight(
     ] = None,
 ):
     """Simulate adding planned switches and report expected STP root/priority state."""
-    import asyncio
-
     debug = state.debug
 
     if not state.debug:
         setup_logging(debug=False)
 
     try:
-        load_env_from_config(str(state.config_path))
-
         from .analysis.stp_optimizer import discover_stp_topology
         from .analysis.stp_preflight import stp_preflight_simulate_add
 
         console.print('🧪 [bold]STP Preflight Simulation[/bold]')
         planned_models = _parse_planned_switches(planned_switches)
-        topology = asyncio.run(discover_stp_topology())
+        topology = _run_analysis(discover_stp_topology)
         report = stp_preflight_simulate_add(
             topology,
             planned_models=planned_models,
@@ -3943,6 +3958,8 @@ def stp_preflight(
             output.write_text(report.model_dump_json(indent=2))
             console.print(f'📄 Preflight report saved to [cyan]{output}[/cyan]')
 
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
@@ -3960,21 +3977,17 @@ def stp_guard(
     ),
 ):
     """🛡️ Audit Root Guard candidates and STP topology-change counters."""
-    import asyncio
-
     debug = state.debug
 
     if not state.debug:
         setup_logging(debug=False)
 
     try:
-        load_env_from_config(str(state.config_path))
-
         from .analysis.stp_guard import audit_stp_guard_recommendations
         from .analysis.stp_optimizer import discover_stp_topology
 
         console.print('🛡️ [bold]STP Guard Audit[/bold]')
-        topology = asyncio.run(discover_stp_topology())
+        topology = _run_analysis(discover_stp_topology)
         report = audit_stp_guard_recommendations(topology, tcn_threshold=tcn_threshold)
 
         console.print(f'Ports analyzed: [cyan]{report.ports_analyzed}[/cyan]')
@@ -3999,6 +4012,8 @@ def stp_guard(
         else:
             console.print('✅ [bold green]No STP guard findings detected[/bold green]')
 
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
@@ -4015,16 +4030,12 @@ def stp_drift(
     ),
 ):
     """📋 Compare live STP state against an intent file."""
-    import asyncio
-
     debug = state.debug
 
     if not state.debug:
         setup_logging(debug=False)
 
     try:
-        load_env_from_config(str(state.config_path))
-
         from .analysis.stp_drift import (
             STPIntentMapping,
             detect_stp_config_drift,
@@ -4033,7 +4044,7 @@ def stp_drift(
         from .analysis.stp_optimizer import discover_stp_topology
 
         console.print('📋 [bold]STP Config Drift[/bold]')
-        topology = asyncio.run(discover_stp_topology())
+        topology = _run_analysis(discover_stp_topology)
         desired = cast(STPIntentMapping, load_stp_intent(intent))
         report = detect_stp_config_drift(topology, desired)
 
@@ -4098,9 +4109,6 @@ def stp_validate_10g(
     ] = None,
 ):
     """Validate STP, 10G uplinks, and port errors before adding Flex XG switches."""
-    import asyncio
-
-    config = state.config_path
     debug = state.debug
 
     if not state.debug:
@@ -4110,18 +4118,14 @@ def stp_validate_10g(
     console.print(f'🔌 Planned USW Flex XG switches: [cyan]{planned_switches}[/cyan]')
 
     try:
-        from .cli import load_env_from_config
-
-        load_env_from_config(str(config))
-
         from .analysis.stp_optimizer import (
             format_10g_validation_report_markdown,
             validate_10g_expansion_readiness,
         )
 
         console.print('📡 [dim]Discovering STP topology and port counters...[/dim]')
-        report = asyncio.run(
-            validate_10g_expansion_readiness(
+        report = _run_analysis(
+            lambda: validate_10g_expansion_readiness(
                 planned_flex_xg_switches=planned_switches,
                 target_speed_mbps=target_speed,
                 drops_threshold=drops_threshold,
@@ -4266,13 +4270,14 @@ def ports_refresh(
     from rich.table import Table
     from unifi_mapper.analysis.port_naming import analyse_port_names, apply_port_names
 
-    load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('🔌 [bold]Port Label Refresh[/bold]\n')
 
-    plan = asyncio.run(analyse_port_names())
+    # The preview runs behind the read-only transport and loads the config the apply
+    # below relies on; the apply itself must write, so it stays outside the guard.
+    plan = _run_analysis(analyse_port_names)
     if not plan.count:
         console.print('[green]All port labels already match live topology.[/green]')
         return
@@ -4444,6 +4449,8 @@ def _readonly_client() -> Iterator[tuple[Any, str]]:
         password=unifi_config.password,
         api_token=unifi_config.api_token,
         timeout=unifi_config.timeout,
+        max_retries=unifi_config.max_retries,
+        retry_delay=unifi_config.retry_delay,
     )
     try:
         authenticated = client.login()
@@ -4815,26 +4822,34 @@ def ports_diagnose(
 
 @radio_app.command('snapshot')
 def radio_snapshot(
-    output: str = typer.Option(
-        'reports/radio-snapshot.json', '--output', '-o', help='Output file path'
+    output: Optional[str] = typer.Option(
+        None,
+        '--output',
+        '-o',
+        help='Output file path (default: $XDG_STATE_HOME/unifi_mapper/radio-snapshot.json)',
     ),
 ):
-    """📸 Snapshot current radio config for all APs (backup before changes)."""
-    import asyncio
-    from unifi_mapper.analysis.radio_config import snapshot_radio_config
+    """📸 Snapshot current radio config for all APs (backup before changes).
 
-    load_env_from_config(str(state.config_path))
+    Without --output the snapshot goes under the XDG state directory, where `radio restore`
+    and the MCP `snapshot_radio_config` tool look by default; never the working directory.
+    """
+    from unifi_mapper.analysis.radio_config import (
+        default_radio_snapshot_path,
+        restore_command,
+        snapshot_radio_config,
+    )
+
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('📸 [bold]Radio Configuration Snapshot[/bold]\n')
 
-    snapshot = asyncio.run(snapshot_radio_config(output_path=output))
+    path = Path(output) if output else default_radio_snapshot_path()
+    snapshot = _run_analysis(lambda: snapshot_radio_config(output_path=path))
     console.print(f'APs captured: [cyan]{len(snapshot["aps"])}[/cyan]')
-    console.print(f'Saved to: [green]{output}[/green]')
-    console.print(
-        f'\n💡 Use [cyan]unifi-mapper radio restore --snapshot {output}[/cyan] to revert changes'
-    )
+    console.print(f'Saved to: [green]{path}[/green]')
+    console.print(f'\n💡 Use [cyan]{restore_command(path)}[/cyan] to revert changes')
 
 
 @radio_app.command('optimize')
@@ -4842,8 +4857,11 @@ def radio_optimize(
     dry_run: bool = typer.Option(
         True, '--dry-run/--apply', help='Preview changes without applying'
     ),
-    snapshot: str = typer.Option(
-        'reports/radio-snapshot.json', '--snapshot', '-s', help='Auto-snapshot before apply'
+    snapshot: Optional[str] = typer.Option(
+        None,
+        '--snapshot',
+        '-s',
+        help='Auto-snapshot before apply (default: $XDG_STATE_HOME/unifi_mapper/radio-snapshot.json)',
     ),
 ):
     """⚡ Apply recommended radio optimisations (80MHz 5GHz, reduce 2.4GHz power, min RSSI)."""
@@ -4853,11 +4871,12 @@ def radio_optimize(
         apply_radio_config,
         build_optimisation_plan,
         channel_moves_from_env,
+        default_radio_snapshot_path,
         snapshot_radio_config,
     )
     from unifi_mapper.core.utils.client import UniFiClient
 
-    load_env_from_config(str(state.config_path))
+    load_env_from_config(str(state.config_path))  # channel_moves_from_env reads the config
     if not state.debug:
         setup_logging(debug=False)
     try:
@@ -4872,7 +4891,7 @@ def radio_optimize(
             devices = await client.get_devices()
         return devices
 
-    devices = asyncio.run(run())
+    devices = _run_analysis(run)
     changes = build_optimisation_plan(devices, channel_moves)
 
     if not changes:
@@ -4902,9 +4921,10 @@ def radio_optimize(
         console.print(f'A snapshot will be saved to [cyan]{snapshot}[/cyan] before applying')
         return
 
-    # Take snapshot before applying
+    # Take snapshot before applying (a read, behind the guard); the apply must write.
     console.print(f'\n📸 Saving snapshot to [cyan]{snapshot}[/cyan]...')
-    asyncio.run(snapshot_radio_config(output_path=snapshot))
+    snapshot_file = Path(snapshot) if snapshot else default_radio_snapshot_path()
+    _run_analysis(lambda: snapshot_radio_config(output_path=snapshot_file))
 
     # Apply
     console.print('⚡ Applying changes...')
@@ -4920,8 +4940,11 @@ def radio_optimize(
 
 @radio_app.command('restore')
 def radio_restore(
-    snapshot_path: str = typer.Option(
-        'reports/radio-snapshot.json', '--snapshot', '-s', help='Snapshot file to restore from'
+    snapshot_path: Optional[str] = typer.Option(
+        None,
+        '--snapshot',
+        '-s',
+        help='Snapshot file to restore from (default: $XDG_STATE_HOME/unifi_mapper/radio-snapshot.json)',
     ),
     dry_run: bool = typer.Option(
         True, '--dry-run/--apply', help='Preview restore without applying'
@@ -4929,16 +4952,20 @@ def radio_restore(
 ):
     """🔄 Restore radio config from a snapshot file."""
     import asyncio
-    from unifi_mapper.analysis.radio_config import restore_radio_config
+    from unifi_mapper.analysis.radio_config import (
+        default_radio_snapshot_path,
+        restore_radio_config,
+    )
 
     load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
 
+    snapshot_file = Path(snapshot_path) if snapshot_path else default_radio_snapshot_path()
     console.print('🔄 [bold]Radio Configuration Restore[/bold]\n')
-    console.print(f'Snapshot: [cyan]{snapshot_path}[/cyan]\n')
+    console.print(f'Snapshot: [cyan]{snapshot_file}[/cyan]\n')
 
-    results = asyncio.run(restore_radio_config(snapshot_path, dry_run=dry_run))
+    results = asyncio.run(restore_radio_config(snapshot_file, dry_run=dry_run))
 
     for r in results:
         status = r['status']
@@ -4980,16 +5007,22 @@ def radio_auto_channel(
         optimize_5ghz,
         optimize_24ghz,
     )
-    from unifi_mapper.analysis.radio_config import apply_radio_config, snapshot_radio_config
+    from unifi_mapper.analysis.radio_config import (
+        RADIO_PRE_AUTOCHANNEL_FILENAME,
+        apply_radio_config,
+        default_radio_snapshot_path,
+        restore_command,
+        snapshot_radio_config,
+    )
 
-    load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('📶 [bold]Auto-Channel Optimiser[/bold]\n')
 
-    # Analyze current state
-    channel_state = asyncio.run(analyze_channels())
+    # Analyze current state (behind the read-only transport; this also loads the config
+    # the apply below relies on)
+    channel_state = _run_analysis(analyze_channels)
     aps = channel_state['aps']
     nb = channel_state.get('neighbour_scores', {})
 
@@ -5062,9 +5095,10 @@ def radio_auto_channel(
             console.print('\n[yellow]DRY RUN[/yellow] — run with [cyan]--apply[/cyan] to execute')
         return
 
-    # Snapshot before applying
+    # Snapshot before applying (a read, behind the guard); the apply must write.
     console.print('\n📸 Saving snapshot...')
-    asyncio.run(snapshot_radio_config(output_path='reports/radio-pre-autochannel.json'))
+    pre_snapshot = default_radio_snapshot_path(RADIO_PRE_AUTOCHANNEL_FILENAME)
+    _run_analysis(lambda: snapshot_radio_config(output_path=pre_snapshot))
 
     # Build change list
     changes = []
@@ -5084,9 +5118,7 @@ def radio_auto_channel(
         icon = '✅' if r['status'] == 'APPLIED' else '❌'
         console.print(f'  {icon} {r["name"]} ({r["radio"]}): {r["status"]}')
 
-    console.print(
-        '\n💡 To revert: [cyan]unifi-mapper radio restore -s reports/radio-pre-autochannel.json --apply[/cyan]'
-    )
+    console.print(f'\n💡 To revert: [cyan]{restore_command(pre_snapshot)} --apply[/cyan]')
 
 
 @radio_app.command('report')
@@ -5096,7 +5128,6 @@ def radio_report(
     ),
 ):
     """📄 Generate a channel utilization report (table + markdown)."""
-    import asyncio
     from pathlib import Path
     from rich.table import Table
     from unifi_mapper.analysis.channel_optimiser import (
@@ -5107,13 +5138,12 @@ def radio_report(
         optimize_24ghz,
     )
 
-    load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
 
     console.print('📄 [bold]Channel Report[/bold]\n')
 
-    channel_state = asyncio.run(analyze_channels())
+    channel_state = _run_analysis(analyze_channels)
     aps = channel_state['aps']
     rec_5 = optimize_5ghz(aps)
     rec_24 = optimize_24ghz(aps)
@@ -5196,13 +5226,19 @@ def analyze_link_errors(
     A plain run only compares against the baseline (read only). --snapshot sets the
     baseline; --record appends to the counter history read by `ports counters`,
     `ports diagnose` and the MCP port tools. Both write only under the XDG state
-    directory and can be combined (one controller read).
+    directory and can be combined (one controller read). A record that cannot be written
+    (its lock held by another run or account for over 5 s, a file owned by another user)
+    exits 1 naming the lock and the reason, so a schedule notices. A --history path's
+    existing directory is left as it is; the default state directory is kept private.
     """
-    import asyncio
     import time
     from datetime import datetime
     from rich.table import Table
-    from unifi_mapper.analysis.counter_history import append_history, build_history_records
+    from unifi_mapper.analysis.counter_history import (
+        append_history,
+        build_history_records,
+        default_history_path,
+    )
     from unifi_mapper.analysis.link_error_tracking import (
         compare_link_errors,
         default_link_error_baseline_path,
@@ -5211,21 +5247,20 @@ def analyze_link_errors(
     )
     from unifi_mapper.analysis.port_counter_baseline import default_baseline_path
 
-    load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
 
     if snapshot or record:
-        try:
-            devices = asyncio.run(fetch_devices())
-        except Exception as e:  # noqa: BLE001 - any read failure ends the command cleanly
-            from .core.utils.redact import redact_text
+        target = Path(baseline) if baseline else default_link_error_baseline_path()
 
-            _fail(f'Error: {redact_text(e)}')
-        if snapshot:
+        async def _read() -> tuple[list[dict[str, Any]], dict | None]:
+            devices = await fetch_devices()  # one controller read serves both flags
+            written = await snapshot_link_errors(target, devices=devices) if snapshot else None
+            return devices, written
+
+        devices, result = _run_analysis(_read)
+        if result is not None:
             console.print('📸 [bold]Link Error Baseline Snapshot[/bold]\n')
-            target = Path(baseline) if baseline else default_link_error_baseline_path()
-            result = asyncio.run(snapshot_link_errors(target, devices=devices))
             dev_count = len(result['devices'])
             port_count = sum(len(d['ports']) for d in result['devices'])
             console.print(f'Captured: {dev_count} devices, {port_count} ports')
@@ -5238,12 +5273,16 @@ def analyze_link_errors(
             epoch = time.time()
             taken_at = datetime.fromtimestamp(epoch).astimezone().isoformat()
             records = build_history_records(devices, taken_at=taken_at, epoch=epoch)
-            written = append_history(
-                records,
-                path=Path(history) if history else None,
-                retention_days=retention_days,
-                now=epoch,
-            )
+            target = Path(history) if history else default_history_path()
+            try:
+                written = append_history(
+                    records,
+                    path=Path(history) if history else None,  # None: the default's directory
+                    retention_days=retention_days,
+                    now=epoch,
+                )
+            except OSError as e:  # a held lock past its bound, another user's file, no space
+                _fail(f'Not recorded: {target}: {_os_error_reason(e)}')
             held = f', holds {written.span_days:g} days' if written.span_days is not None else ''
             console.print(
                 f'🗂️ Recorded {written.records_written} switch(es) to '
@@ -5259,11 +5298,7 @@ def analyze_link_errors(
         return
 
     console.print('📈 [bold]Link Error Rate Analysis[/bold]\n')
-    try:
-        report = asyncio.run(compare_link_errors(baseline, threshold))
-    except Exception as e:
-        console.print(f'[red]Error:[/red] {_error_text(e)}')
-        raise typer.Exit(1)
+    report = _run_analysis(lambda: compare_link_errors(baseline, threshold))
 
     if report.get('legacy_baseline'):
         err_console.print(
@@ -5334,37 +5369,36 @@ def analyze_link_errors(
 @analyze_app.command('roaming')
 def analyze_roaming_cmd(
     snapshot: bool = typer.Option(False, '--snapshot', help='Record current client associations'),
-    history: str = typer.Option(
-        'reports/client-roaming-history.json', '--history', '-h', help='History file path'
+    history: Optional[str] = typer.Option(
+        None,
+        '--history',
+        '-h',
+        help='History file path (default: $XDG_STATE_HOME/unifi_mapper/client-roaming-history.json)',
     ),
 ):
     """📡 Analyze client roaming patterns and detect sticky clients."""
-    import asyncio
     from rich.table import Table
     from unifi_mapper.analysis.roaming_analysis import (
         analyze_roaming,
+        default_roaming_history_path,
         snapshot_client_associations,
     )
 
-    load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
+    history_file = Path(history) if history else default_roaming_history_path()
 
     if snapshot:
         console.print('📸 [bold]Client Association Snapshot[/bold]\n')
-        result = asyncio.run(snapshot_client_associations(history))
+        result = _run_analysis(lambda: snapshot_client_associations(history_file))
         console.print(f'Clients tracked: {result["clients_tracked"]}')
         console.print(f'Snapshots stored: {result["snapshots_stored"]}')
-        console.print(f'History: [green]{history}[/green]')
+        console.print(f'History: [green]{history_file}[/green]')
         console.print('\n💡 Run periodically (every 5 min) to build roaming history')
         return
 
     console.print('📡 [bold]Client Roaming Analysis[/bold]\n')
-    try:
-        report = asyncio.run(analyze_roaming(history))
-    except Exception as e:
-        console.print(f'[red]Error:[/red] {_error_text(e)}')
-        raise typer.Exit(1)
+    report = _run_analysis(lambda: analyze_roaming(history_file))
 
     console.print(f'Snapshots analyzed: {report["snapshots_analyzed"]}')
     console.print(f'Time span: {report["time_span"]}')
@@ -5406,33 +5440,35 @@ def analyze_roaming_cmd(
 @analyze_app.command('config-drift')
 def analyze_config_drift(
     snapshot: bool = typer.Option(False, '--snapshot', help='Take a config baseline snapshot'),
-    baseline: str = typer.Option(
-        'reports/config-baseline.json', '--baseline', '-b', help='Baseline file path'
+    baseline: Optional[str] = typer.Option(
+        None,
+        '--baseline',
+        '-b',
+        help='Baseline file path (default: $XDG_STATE_HOME/unifi_mapper/config-baseline.json)',
     ),
 ):
     """🔍 Detect configuration drift from baseline (catches manual UI changes)."""
-    import asyncio
     from rich.table import Table
-    from unifi_mapper.analysis.config_drift import detect_drift, snapshot_config
+    from unifi_mapper.analysis.config_drift import (
+        default_config_baseline_path,
+        detect_drift,
+        snapshot_config,
+    )
 
-    load_env_from_config(str(state.config_path))
     if not state.debug:
         setup_logging(debug=False)
+    baseline_file = Path(baseline) if baseline else default_config_baseline_path()
 
     if snapshot:
         console.print('📸 [bold]Configuration Baseline Snapshot[/bold]\n')
-        result = asyncio.run(snapshot_config(baseline))
+        result = _run_analysis(lambda: snapshot_config(baseline_file))
         console.print(f'Devices captured: {len(result["devices"])}')
-        console.print(f'Saved to: [green]{baseline}[/green]')
+        console.print(f'Saved to: [green]{baseline_file}[/green]')
         console.print('\n💡 Run without --snapshot to detect drift from this baseline')
         return
 
     console.print('🔍 [bold]Configuration Drift Detection[/bold]\n')
-    try:
-        report = asyncio.run(detect_drift(baseline))
-    except Exception as e:
-        console.print(f'[red]Error:[/red] {_error_text(e)}')
-        raise typer.Exit(1)
+    report = _run_analysis(lambda: detect_drift(baseline_file))
 
     console.print(f'Baseline: {report["baseline_timestamp"]}')
     console.print(f'Devices checked: {report["devices_checked"]}')
@@ -5477,23 +5513,27 @@ def analyze_neighbours(
     diff: bool = typer.Option(
         False, '--diff', help='Compare current landscape against the baseline snapshot'
     ),
-    baseline: str = typer.Option(
-        'reports/neighbour-baseline.json', '--baseline', '-b', help='Baseline snapshot file path'
+    baseline: Optional[str] = typer.Option(
+        None,
+        '--baseline',
+        '-b',
+        help='Baseline snapshot file path (default: $XDG_STATE_HOME/unifi_mapper/neighbour-baseline.json)',
     ),
     signal_delta: int = typer.Option(
         10, '--signal-delta', help='dB change threshold for signal-change flagging'
     ),
 ):
     """📡 Scan for neighbouring APs and external interference sources."""
-    import asyncio
     from rich.table import Table
     from unifi_mapper.analysis.neighbour_scan import scan_neighbours
     from unifi_mapper.analysis.neighbour_trend import (
+        default_neighbour_baseline_path,
         detect_neighbour_trend,
         snapshot_neighbours,
     )
 
-    load_env_from_config(str(state.config_path))
+    baseline_file = Path(baseline) if baseline else default_neighbour_baseline_path()
+
     if not state.debug:
         setup_logging(debug=False)
 
@@ -5505,20 +5545,16 @@ def analyze_neighbours(
     # ── Snapshot mode ────────────────────────────────────────────────────
     if snapshot:
         console.print('📸 [bold]Neighbour Baseline Snapshot[/bold]\n')
-        result = asyncio.run(snapshot_neighbours(baseline))
+        result = _run_analysis(lambda: snapshot_neighbours(baseline_file))
         console.print(f'Captured: {result["entry_count"]} neighbour entries')
-        console.print(f'Saved to: [green]{baseline}[/green]')
+        console.print(f'Saved to: [green]{baseline_file}[/green]')
         console.print('\n💡 Run again with --diff to compare future scans against this baseline')
         return
 
     # ── Diff mode ────────────────────────────────────────────────────────
     if diff:
         console.print('📊 [bold]Neighbour Landscape Trend[/bold]\n')
-        try:
-            report = asyncio.run(detect_neighbour_trend(baseline, signal_delta))
-        except Exception as e:
-            console.print(f'[red]Error:[/red] {_error_text(e)}')
-            raise typer.Exit(1)
+        report = _run_analysis(lambda: detect_neighbour_trend(baseline_file, signal_delta))
 
         console.print(f'Baseline: {report["baseline_timestamp"]}')
         console.print(f'Current:  {report["current_timestamp"]}\n')
@@ -5621,7 +5657,7 @@ def analyze_neighbours(
     # ── Default: live scan ───────────────────────────────────────────────
     console.print('📡 [bold]Neighbour AP Scan[/bold]\n')
 
-    report = asyncio.run(scan_neighbours(ap_name=ap_name))
+    report = _run_analysis(lambda: scan_neighbours(ap_name=ap_name))
 
     if not report['aps']:
         console.print('[yellow]No neighbour data available.[/yellow]')
@@ -5663,9 +5699,27 @@ def analyze_neighbours(
 
 
 GATEWAY_SSH_NOTICE = (
-    "⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key "
-    'is not verified (issue 038).'
+    "⚠ This command runs on the gateway over SSH as the SSH user; the gateway's host key is "
+    'verified against ~/.ssh/known_hosts.'
 )
+GATEWAY_SSH_UNVERIFIED_NOTICE = (
+    "⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key "
+    'is not verified (UNIFI_SSH_KNOWN_HOSTS=off): a host on the path could receive the SSH '
+    'password.'
+)
+
+
+def gateway_ssh_notice() -> str:
+    """The one-line stderr notice for a gateway SSH command, for the current host-key setting.
+
+    An unrecognised ``UNIFI_SSH_KNOWN_HOSTS`` is reported by ``gateway_session`` itself, so
+    here any value other than ``off`` reads as verification on.
+    """
+    import os
+
+    if (os.environ.get('UNIFI_SSH_KNOWN_HOSTS') or '').strip().lower() == 'off':
+        return GATEWAY_SSH_UNVERIFIED_NOTICE
+    return GATEWAY_SSH_NOTICE
 
 
 def _run_gateway_ssh[T](run: Callable[[], Coroutine[Any, Any, T]]) -> T:
@@ -5682,7 +5736,7 @@ def _run_gateway_ssh[T](run: Callable[[], Coroutine[Any, Any, T]]) -> T:
 
     if not state.ssh_notice_shown:
         state.ssh_notice_shown = True
-        err_console.print(GATEWAY_SSH_NOTICE, style='yellow', markup=False, soft_wrap=True)
+        err_console.print(gateway_ssh_notice(), style='yellow', markup=False, soft_wrap=True)
     try:
         return asyncio.run(_guarded(run))
     except ToolError as e:
@@ -5928,8 +5982,10 @@ def diagnose_wan(
     One read of the controller's health summary: ISP, WAN IP, gateway version, latency,
     drops and the result of the controller's own scheduled speedtest. Never starts a
     speedtest. --record appends that result to a history file under the XDG state
-    directory (skipped when the run is already recorded); diagnose wan-history lists it.
-    Read-only towards the controller.
+    directory (skipped when the run is already recorded); diagnose wan-history lists it. A
+    record that cannot be written (its lock held by another run or account for over 5 s, a
+    file owned by another user) exits 1 after the report, naming the lock and the reason, so
+    a schedule notices. Read-only towards the controller.
     """
     from .diagnostics.wan_health import get_wan_health
 
@@ -5964,8 +6020,17 @@ def diagnose_wan(
         _record_speedtest(report['last_speedtest'])
 
 
+def _os_error_reason(error: OSError) -> str:
+    """An OSError's reason for one line: its strerror, else its message, else its class."""
+    return error.strerror or str(error) or type(error).__name__
+
+
 def _record_speedtest(speedtest: Optional[JsonDict]) -> None:
-    """Append the last speedtest to the history; report the outcome on stderr only."""
+    """Append the last speedtest to the history; report the outcome on stderr only.
+
+    A record that cannot be written (the lock held past its bound, a file owned by another
+    user, no space) is the run's failure, exit 1, after the health report was printed.
+    """
     from .diagnostics.wan_history import append_speedtest, default_speedtest_history_path
 
     if not speedtest:
@@ -5975,12 +6040,7 @@ def _record_speedtest(speedtest: Optional[JsonDict]) -> None:
     try:
         written = append_speedtest(speedtest, path)
     except OSError as e:
-        reason = e.strerror or type(e).__name__
-        err_console.print(
-            f'[yellow]⚠ Not recorded: {escape(str(path))}: {escape(reason)}[/yellow]',
-            soft_wrap=True,
-        )
-        return
+        _fail(f'Not recorded: {path}: {_os_error_reason(e)}')
     if written is None:
         err_console.print('Nothing to record: the last speedtest has no run time.')
     elif written.lines_written == 0:
@@ -6239,7 +6299,7 @@ def gateway_ping_command(
 
     A name is resolved to its address through the read-only controller client. Prints the
     expected duration first (count x interval: up to 500 s). Runs ping on the gateway as
-    the SSH user; the gateway's host key is not verified.
+    the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
     """
     from .connectivity.gateway_probe import gateway_ping
 
@@ -6272,7 +6332,7 @@ def gateway_traceroute_command(
 ):
     """🧭 Trace the gateway's real forwarding path to a target over SSH.
 
-    Runs traceroute on the gateway as the SSH user; the gateway's host key is not verified.
+    Runs traceroute on the gateway as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
     "Reached the target" only when the last hop is the target itself and answered without an
     ICMP unreachable; the table marks a hop that answered with one "(unreachable)". With
     --json each hop also has "timeout" (no reply) and "unreachable":
@@ -6313,7 +6373,7 @@ def gateway_dns_command(
 ):
     """🔤 Resolve a hostname on the gateway over SSH (nslookup).
 
-    Runs nslookup on the gateway as the SSH user; the gateway's host key is not verified.
+    Runs nslookup on the gateway as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
     """
     from .connectivity.gateway_probe import gateway_dns_check
 
@@ -6353,7 +6413,7 @@ def gateway_http_command(
 
     --vlan resolves to the interface whose address is in that VLAN's subnet, from the
     controller's network list. Runs curl on the gateway as the SSH user; the gateway's host
-    key is not verified.
+    key is verified against ~/.ssh/known_hosts.
     """
     from .connectivity.gateway_probe import gateway_http_check
 
@@ -6386,7 +6446,7 @@ def gateway_flows_command(
     """🔁 The gateway's connection-tracking flows over SSH (conntrack), filtered here.
 
     UNREPLIED flows are traffic that left with nothing back. Runs conntrack -L on the gateway
-    as the SSH user; the gateway's host key is not verified.
+    as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
     """
     from .connectivity.gateway_probe import get_active_flows
 
@@ -6447,7 +6507,7 @@ def diagnose_client_connectivity_command(
     whole run capped at 120 s; a failing layer is reported and the others still run. Exits 1
     when a fault is found or a layer did not complete. Needs SSH enabled on the gateway and
     UNIFI_SSH_PASSWORD (and UNIFI_SSH_USERNAME if not root) in the config; runs on the
-    gateway as the SSH user; the gateway's host key is not verified.
+    gateway as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
     """
     from .diagnostics.client_connectivity import (
         CAPTIVE_PROBE_URL,
@@ -6530,7 +6590,12 @@ def diagnose_ap_health(
         None, '--reference', help='A known-good AP to sample alongside it'
     ),
     essid: Optional[str] = typer.Option(
-        None, '--essid', help='The SSID whose 2.4 GHz VAP to track (default the busiest)'
+        None,
+        '--essid',
+        help=(
+            "The SSID whose 2.4 GHz VAP to track (default the busiest); one the target's "
+            '2.4 GHz radio carries, else exit 2 naming the SSIDs it has'
+        ),
     ),
     samples: int = typer.Option(6, '--samples', min=1, max=60, help='Samples to take (1-60)'),
     interval: int = typer.Option(
@@ -6553,11 +6618,14 @@ def diagnose_ap_health(
 
     Takes --samples reads --interval seconds apart (60 reads 600 s apart take about 10 h; the
     expected duration is printed first) and reports each sample and the mean interval retry
-    rate, beside a --reference AP when given. A sample whose read times out or fails is recorded
-    as missing. Read-only, with no power-cycle step. --ping-clients also pings up to 4 of each
+    rate, beside a --reference AP when given. An AP whose 2.4 GHz radio does not carry the
+    tracked SSID gets no rate ("SSID not present"), never another SSID's; an --essid the target
+    does not carry exits 2 after the discovery read, naming the SSIDs it has. A sample whose
+    read times out or fails is recorded as missing. Read-only, with no power-cycle step.
+    --ping-clients also pings up to 4 of each
     AP's wireless clients from the gateway over SSH: those on 2.4 GHz, the radio the report
     measures, and those whose radio the controller doesn't report (5 and 6 GHz clients are
-    left out), as the SSH user (the gateway's host key is not verified). --output is checked
+    left out), as the SSH user (the gateway's host key is verified). --output is checked
     before the first sample and written after the report is printed. Ctrl-C prints the
     samples taken so far as a partial report (and writes it to --output) and exits 130; a
     failure that ends the run does the same and exits 1.
@@ -6573,6 +6641,7 @@ def diagnose_ap_health(
         render_markdown,
         run_ap_health_capture,
     )
+    from .core.utils.errors import ErrorCodes, ToolError
 
     output = _file_option(output, '--output')
     if output is not None:
@@ -6590,10 +6659,17 @@ def diagnose_ap_health(
         note = ' (missing)' if info['missing'] else ''
         err_console.print(f'Sample {info["sample"]} of {info["of"]}{note}', style='dim')
 
-    def run() -> Coroutine[Any, Any, dict]:
-        return run_ap_health_capture(
-            target, reference, essid, samples, interval, ping_clients, progress, sink=capture
-        )
+    usage_error = False  # a refused argument before any sample (an --essid the AP lacks)
+
+    async def run() -> dict:
+        nonlocal usage_error
+        try:
+            return await run_ap_health_capture(
+                target, reference, essid, samples, interval, ping_clients, progress, sink=capture
+            )
+        except ToolError as e:
+            usage_error = e.error_code == ErrorCodes.CONFIG_INVALID and not capture.samples
+            raise
 
     failure_code = 0
     try:
@@ -6602,7 +6678,7 @@ def diagnose_ap_health(
         report = build_report(capture, partial=True)
     except typer.Exit as e:  # the error line is printed; keep the samples taken so far
         if not capture.samples:
-            raise
+            raise typer.Exit(2) if usage_error else e
         failure_code = e.exit_code or 1
         report = build_report(capture, partial=True)
     markdown = render_markdown(report)
@@ -6652,10 +6728,9 @@ def vlan_traffic_sample(
     Reads the controller's network list (read-only), runs one fixed script on the gateway
     (each br* interface's byte counters and addresses, 30 s bound), matches each VLAN to the
     interface whose address is in its subnet and stores a row per VLAN. Run it by hand (or
-    from your own schedule) every minute or so; no schedule is published until the gateway's
-    host key can be verified. Exits 1 when the script fails or nothing was stored, so a
-    schedule notices. Runs on the gateway as the SSH user; the gateway's host key is not
-    verified.
+    from your own schedule) every minute or so. Exits 1 when the script fails or nothing was
+    stored, so a schedule notices. Runs on the gateway as the SSH user; the gateway's host key
+    is verified against ~/.ssh/known_hosts.
     """
     from .analysis.vlan_traffic import sample_vlan_traffic
     from datetime import UTC, datetime
@@ -6682,13 +6757,13 @@ def vlan_traffic_rollup(
 
     Every complete hour of raw samples becomes an hourly row and every complete day a daily
     row; a bucket is complete once it ended twice the sampling interval ago, and at least 5
-    minutes. Each run also recomputes the newest two hours and the newest day, so two runs
-    give the same rows, and a sample written late still counts if a run comes less than two
-    hours after its hour became complete; a later one stays in the raw samples (now, 1d,
-    1w) but never reaches 1m or 1y. Raw samples are kept 8 days and hourly rows 60 days, and
-    none is pruned before its hour or day is rolled. Run it hourly, say, to keep the 1m and
-    1y reports current. Opening the store to write also rolls back what a crashed sample
-    left, so this is the fix a report's "store needs recovery" asks for. Contacts nothing.
+    minutes. Each run also recomputes the newest two hours and the newest day, and every
+    hour a sample has been written into since the last run (and that hour's day), so two
+    runs give the same rows and a sample written late still reaches 1m and 1y, however late.
+    Raw samples are kept 8 days and hourly rows 60 days, pruned on hour and day boundaries,
+    and none before its hour or day is rolled. Run it hourly, say, to keep the 1m and 1y
+    reports current. Opening the store to write also rolls back what a crashed sample left,
+    so this is the fix a report's "store needs recovery" asks for. Contacts nothing.
     """
     from .analysis.vlan_traffic_store import run_rollups
 
@@ -6714,10 +6789,12 @@ def vlan_traffic_report(
     """📊 Per-VLAN average and peak throughput over a period, from the store (offline).
 
     now, 1d and 1w read raw samples (kept 8 days); 1m reads hourly rollups and 1y daily
-    rollups (smoothed peaks), each up to the newest complete hour or day `vlan-traffic
-    rollup` has rolled. Valid samples is the share of the window's samples that gave a
-    rate, not time coverage: `vlan-traffic coverage` shows the time each tier covers. A
-    missing store exits 1 with a hint to sample first. Contacts nothing.
+    rollups, each up to the newest complete hour or day `vlan-traffic rollup` has rolled.
+    Every tier's peak is the largest sample rate in its window, so bursts shorter than the
+    sampling interval are under-represented in every tier. Valid samples is the share of the
+    window's samples that gave a rate, not time coverage: `vlan-traffic coverage` shows the
+    time each tier covers. A missing store exits 1 with a hint to sample first. Contacts
+    nothing.
     """
     from .analysis.vlan_traffic_store import read_vlan_traffic_report
 

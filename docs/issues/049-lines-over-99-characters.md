@@ -46,3 +46,14 @@ development notes that the limit applies to new code only, and check added lines
 
 Why this needs a decision: the sweep touches 56 files across `src/`, `tests/` and the site
 scripts, and enforcing `E501` changes what every future change must pass.
+
+## Decision (2026-10-13)
+
+Deferred past 0.3.0, as the release council allowed when the sweep could not be isolated: at the
+release branch 240 lines exceed 99 characters (385 raw, 240 that ruff reports), almost all
+f-strings and string literals that `ruff format` cannot split, so the sweep is a hand edit of
+240 lines across `src/`, `tests/` and `scripts/` and would have mixed a large reformat into the
+behaviour changes. `E501` stays in the ignore list for 0.3.0. `tests/test_line_length_ratchet.py`
+pins the count at 240 so it can only fall; the sweep lands after the release, lowers the ceiling
+to 0 and removes `E501` from the ignore list, which retires the ratchet. Markdown lines are left
+as they are (tables and links wrap badly) and `CONTRIBUTING.md` says so.

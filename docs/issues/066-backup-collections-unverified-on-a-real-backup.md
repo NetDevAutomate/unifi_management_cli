@@ -34,3 +34,8 @@ Run `unifi-mapper backup verify` on a backup downloaded from the controller (off
 contacts nothing) and compare its collection counts with the controller's own. If they are
 all `other`, teach the walk the real layout (a marker document sets the collection for the
 documents after it and is not counted itself), with a synthetic test of that layout.
+
+## Status (2026-10-13)
+
+Blocked on operator input: a backup downloaded from the controller is needed to check the
+collection names `backup verify` reports. No code change in 0.3.0.

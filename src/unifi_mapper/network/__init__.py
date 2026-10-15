@@ -53,6 +53,8 @@ from unifi_mapper.network.models import (
     IPSecFilter,
     # Device Info
     DeviceInfo,
+    DeviceInterfaces,
+    DevicePortInterface,
     DeviceState,
     DeviceFeature,
     UplinkInfo,
@@ -69,8 +71,11 @@ from unifi_mapper.network.models import (
     ACLDeviceFilter,
     ACLTrafficFilter,
     ACLRule,
+    ACLRuleMetadata,
+    ACLRuleOrigin,
     # DNS Policies
     DNSPolicy,
+    DNSRecordType,
     # Traffic Matching Lists
     PortMatching,
     IPAddressMatching,
@@ -158,6 +163,8 @@ __all__ = [
     'IPSecFilter',
     # Device Models
     'DeviceInfo',
+    'DeviceInterfaces',
+    'DevicePortInterface',
     'DeviceState',
     'DeviceFeature',
     'UplinkInfo',
@@ -192,6 +199,9 @@ __all__ = [
     'ACLDeviceFilter',
     'ACLTrafficFilter',
     'ACLRule',
+    'ACLRuleMetadata',
+    'ACLRuleOrigin',
+    'DNSRecordType',
     # DNS Models
     'DNSPolicy',
     # Traffic Matching Models

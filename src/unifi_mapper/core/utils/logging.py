@@ -1,4 +1,4 @@
-"""Structured JSON logging configuration, and the CLIs' loguru handler.
+"""The CLIs' loguru handler and the correlation-id logger helpers.
 
 Every loguru handler in ``src/`` sets ``diagnose=False``: with it on, a logged traceback shows
 the failing frames' variable values, which can hold a credential (issue 058).
@@ -7,7 +7,6 @@ the failing frames' variable values, which can hold a credential (issue 058).
 import os
 import sys
 from loguru import logger
-from pathlib import Path
 from typing import Any
 
 
@@ -36,54 +35,6 @@ def replace_default_loguru_handler(handler_id: int = 0) -> int | None:
         return None
     level = os.environ.get('LOGURU_LEVEL') or 'DEBUG'
     return logger.add(_stderr_sink, level=level, diagnose=False)
-
-
-def configure_logging(
-    log_file: str | None = None,
-    log_level: str = 'DEBUG',
-    include_console: bool = False,
-) -> None:
-    """Configure structured JSON logging.
-
-    Args:
-        log_file: Path to log file (defaults to ~/.unifi-mapper/logs/unifi_mapper.log)
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
-        include_console: Whether to also log to console
-    """
-    # Remove default handler
-    logger.remove()
-
-    # Create log directory
-    if not log_file:
-        log_dir = Path.home() / '.unifi-mapper' / 'logs'
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = str(log_dir / 'unifi_mapper.log')
-
-    # JSON file logging with rotation
-    logger.add(
-        log_file,
-        format='{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {extra[correlation_id]} | {message}',
-        serialize=True,  # JSON output
-        rotation='10 MB',
-        retention='7 days',
-        compression='gz',
-        level=log_level,
-        backtrace=True,
-        diagnose=False,
-    )
-
-    # Optional console logging for development
-    if include_console or os.getenv('UNIFI_MAPPER_DEBUG'):
-        logger.add(
-            sys.stderr,
-            format='<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>',
-            level=log_level,
-            colorize=True,
-            diagnose=False,
-        )
-
-    # Set default correlation ID
-    logger.configure(extra={'correlation_id': ''})
 
 
 def get_logger(correlation_id: str = '') -> Any:

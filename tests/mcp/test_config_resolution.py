@@ -219,7 +219,11 @@ def test_lab_export_with_prod_discovered_file_is_not_applied() -> None:
     assert status['controller'].ready
     assert status['network_api'].source == 'none'
     assert status['network_api'].skipped_reason == config.FOREIGN_FILE_REASON
-    assert not status['network_api'].ready
+    # The prod file's network keys were not applied; the family is ready only by derivation
+    # from the exported lab controller (issue 037), never with the prod file's key.
+    assert status['network_api'].ready
+    assert 'key: console token (same origin)' in status['network_api'].derived
+    assert status['network_api'].present == ()
     assert status['protect'].skipped_reason == config.FOREIGN_FILE_REASON
 
 
@@ -249,7 +253,7 @@ def test_partial_export_is_never_topped_up() -> None:
     to_set, status, _ = apply_file(env, PROD_FILE, explicit=False)
     net = status['network_api']
     assert net.source == 'environment' and not net.ready
-    assert 'UNIFI_NETWORK_API_KEY' in net.missing
+    assert any(m.startswith('UNIFI_NETWORK_API_KEY') for m in net.missing)
     assert not any(k.startswith('UNIFI_NETWORK_') for k in to_set)
 
 
@@ -362,6 +366,11 @@ PROTECT_FULL = {
 }
 
 
+# Keys a loader resolves later instead of refusing at load time (issue 037: the network site
+# id is looked up from UNIFI_SITE, 'default' when unset, at the first call).
+DEFERRED_KEYS = {'network_api': {'UNIFI_NETWORK_SITE_ID'}}
+
+
 @pytest.mark.parametrize(
     ('family', 'full', 'loader'),
     [
@@ -379,6 +388,10 @@ def test_credential_keys_match_config_loaders(
     assert all(FAMILY_KEYS[family](k) for k in listed)
     for key in listed:
         monkeypatch.setattr(os, 'environ', {k: v for k, v in full.items() if k != key})
+        if key in DEFERRED_KEYS.get(family, set()):
+            loaded = loader()  # type: ignore[operator]
+            assert loaded.site_id is None and loaded.site_name == 'default'
+            continue
         with pytest.raises(ValueError):
             loader()  # type: ignore[operator]
 
@@ -601,8 +614,22 @@ async def test_op_is_spawned_with_stdin_from_devnull(monkeypatch: pytest.MonkeyP
 
 def test_server_settings_defaults() -> None:
     assert config.load_server_settings({}, warn=pytest.fail) == config.ServerSettings(
-        log_level='WARNING', credential_timeout=15.0, max_concurrency=4, tool_timeout=None
+        log_level='WARNING', credential_timeout=15.0, max_concurrency=4, tool_timeout=270.0
     )
+
+
+def test_tool_timeout_defaults_to_270_seconds() -> None:
+    """Issue 012 (D11): a wedged controller becomes [TIMEOUT] before a 300 s client limit."""
+    assert config.ServerSettings().tool_timeout == 270.0
+    assert config.load_server_settings({}, warn=pytest.fail).tool_timeout == 270.0
+    unset = {'UNIFI_MCP_TOOL_TIMEOUT': ''}
+    assert config.load_server_settings(unset, warn=pytest.fail).tool_timeout == 270.0
+    messages, warn = _collect()
+    assert (
+        config.load_server_settings({'UNIFI_MCP_TOOL_TIMEOUT': '2'}, warn=warn).tool_timeout
+        == 270.0
+    )
+    assert len(messages) == 1 and 'UNIFI_MCP_TOOL_TIMEOUT' in messages[0]
 
 
 def test_server_settings_valid_values() -> None:

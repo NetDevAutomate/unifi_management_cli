@@ -69,8 +69,9 @@ addresses in every notation, its addresses in four subnets mapped to RFC 5737 do
 addresses with the host part kept, and the removed internal document paths). The rewritten
 history was verified over every object (blob, commit, tag and tree name) before and after the
 push, reviewed by a four-model council in three passes, and force-pushed to `main` with a
-lease on the previous tip. The superseded heads (`d045079`, `fef2344`, `3a8d731`) are still
-served by GitHub by SHA until the Support purge request completes; see
+lease on the previous tip. The superseded heads (`d045079`, `fef2344`, `3a8d731`) were purged
+from GitHub by Support (ticket closed 2026-10-15; verified that day: the commits API answers
+422, the commit pages 404, and a fetch by SHA is refused with `not our ref`); see
 [the rewrite notice](../../CHANGELOG.md) for what a clone holding the old history must do.
 The `verify_cli` example value of this issue is absent from every historical revision; the
 help text carries a placeholder throughout the history.

@@ -1,4 +1,13 @@
-"""Security audit diagnostic tool for detecting unauthorized devices and anomalies."""
+"""Security audit: what the controller's own data can show about devices and the air.
+
+The risks are exactly the things the controller has a source of truth for: an infrastructure
+device pending adoption (``stat/device`` ``adopted``), a client on the guest network for more
+than a day (``stat/sta`` ``is_guest``/``network`` and ``uptime``), and the rogue classes of
+issue 079 (``stat/rogueap`` against this site's own radios and SSIDs). Vendor, MAC pattern,
+randomised MAC, device name and traffic volume are not risks (issue 080): a vendor is a
+chipset, a randomised MAC is the platform default, and the site's own switches have
+sequential batch MACs. A check that could not run is reported as not assessed, never as zero.
+"""
 
 import re
 from datetime import datetime, timedelta
@@ -13,6 +22,19 @@ from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 STRONG_SIGNAL_DBM = -60
 # Neighbours listed for interference context; the rest are counted only.
 STRONGEST_NEIGHBOURS = 3
+# A client on the guest network longer than this is an overstay.
+GUEST_OVERSTAY_SECONDS = 86400
+
+# Every report carries these; a check that could not run adds a "not assessed" line.
+STANDING_LIMITATIONS: tuple[str, ...] = (
+    "Findings are signals derived from the controller's own data (stat/device, stat/sta, "
+    'stat/rogueap, rest/wlanconf, rest/networkconf). They are not proof that a device is '
+    'authorised, nor proof of the absence of compromise.',
+    'A device is authorised or unauthorised only where the controller says so: an adopted or '
+    'pending device, a client it has blocked or noted, a rogue AP. Every other client is not '
+    'assessed. Vendor, MAC pattern, randomised MAC, name and traffic volume are not risks.',
+    'A check that could not run is listed below as not assessed; it is not a zero.',
+)
 
 
 class SecurityDevice(BaseModel):
@@ -21,15 +43,25 @@ class SecurityDevice(BaseModel):
     mac: str = Field(description='Device MAC address')
     name: str = Field(description='Device name/hostname')
     ip: Optional[str] = Field(description='Device IP address')
-    type: str = Field(description='Device type: infrastructure, client, or unknown')
-    vendor: Optional[str] = Field(description='Device vendor from OUI lookup')
+    type: str = Field(description='Device type: infrastructure, client, or rogue_ap')
+    vendor: Optional[str] = Field(
+        description='Vendor from the OUI lookup (clients) or the model (adopted devices)'
+    )
     first_seen: Optional[str] = Field(description='When device was first detected')
     last_seen: Optional[str] = Field(description='When device was last active')
 
     # Security flags
-    is_authorized: Optional[bool] = Field(description='Whether device is explicitly authorized')
+    is_authorized: Optional[bool] = Field(
+        description=(
+            "The controller's verdict where it has one: True for an adopted device or a noted "
+            'client, False for a device pending adoption, a blocked client or a rogue AP. '
+            'None means not assessed (the controller has no source of truth for this device).'
+        )
+    )
     is_anomalous: bool = Field(description='Whether device exhibits anomalous behavior')
-    security_flags: List[str] = Field(description='Security concerns and flags')
+    security_flags: List[str] = Field(
+        description='Findings and information about the device (information does not raise risk)'
+    )
     risk_level: str = Field(description='Risk level: low, medium, high, critical')
 
 
@@ -62,10 +94,15 @@ class SecurityAuditReport(BaseModel):
 
     # Device security summary
     total_devices: int = Field(description='Total devices analyzed')
-    authorized_devices: int = Field(description='Number of authorized devices')
-    unauthorized_devices: int = Field(description='Number of unauthorized devices')
+    authorized_devices: int = Field(
+        description='Devices the controller vouches for: adopted devices and noted clients'
+    )
+    unauthorized_devices: int = Field(
+        description=(
+            'Devices the controller rules out: pending adoption, blocked clients, rogue APs'
+        )
+    )
     anomalous_devices: int = Field(description='Number of anomalous devices')
-    unknown_devices: int = Field(description='Number of unknown/unidentified devices')
 
     # Security findings
     critical_risks: List[SecurityDevice] = Field(
@@ -101,6 +138,16 @@ class SecurityAuditReport(BaseModel):
     immediate_actions: List[str] = Field(description='Immediate security actions required')
     security_recommendations: List[str] = Field(description='General security recommendations')
 
+    # What this report can and cannot say
+    limitations: List[str] = Field(
+        default_factory=lambda: list(STANDING_LIMITATIONS),
+        description=(
+            'What the findings are (controller-derived signals, not proof of authorisation or '
+            'of the absence of compromise) and every check that could not run, as "not '
+            'assessed"'
+        ),
+    )
+
 
 async def security_audit() -> SecurityAuditReport:
     """Perform comprehensive network security audit to detect threats and anomalies.
@@ -117,7 +164,7 @@ async def security_audit() -> SecurityAuditReport:
     2. Focus on critical_risks and immediate_actions first
     3. Use find_device() to investigate suspicious devices in detail
     4. Use connectivity_analysis() to understand how threats accessed network
-    5. Use network_topology() to assess potential impact scope
+    5. Use discover_stp_topology() to assess potential impact scope
 
     What to do next:
     - If critical_risks found: Isolate or remove devices immediately
@@ -130,7 +177,9 @@ async def security_audit() -> SecurityAuditReport:
     - Document findings and update security policies
 
     Returns:
-        SecurityAuditReport with detailed security analysis and immediate actions
+        SecurityAuditReport with detailed security analysis and immediate actions. A read the
+        audit could do without (the passive scan, the WLAN list, the network list) that fails
+        is reported in ``limitations`` as not assessed; the audit still runs on the rest.
 
     Raises:
         ToolError: CONTROLLER_UNREACHABLE if cannot connect to UniFi controller
@@ -141,23 +190,36 @@ async def security_audit() -> SecurityAuditReport:
             # Get comprehensive network data
             devices_data = await client.get(client.build_path('stat/device'))
             clients_data = await client.get(client.build_path('stat/sta'))
+            read_errors: Dict[str, str] = {}
+
             # The passive neighbour list is stat/rogueap; rest/rogueap is not an object the
             # controller serves (HTTP 400 api.err.InvalidObject), which failed every audit.
-            rogue_aps = await client.get_rogue_aps()
+            rogue_aps: Optional[List[Dict[str, Any]]]
+            try:
+                rogue_aps = await client.get_rogue_aps()
+            except Exception as e:
+                rogue_aps, read_errors['stat/rogueap'] = None, str(e)
 
             # The site's WLAN names (to spot an impersonated SSID) and VLANs, when readable.
+            wlans_data: Optional[List[Dict[str, Any]]]
             try:
                 wlans_data = await client.get(client.build_path('rest/wlanconf'))
-            except Exception:
-                wlans_data = []
+            except Exception as e:
+                wlans_data, read_errors['rest/wlanconf'] = None, str(e)
+            networks_data: Optional[List[Dict[str, Any]]]
             try:
                 networks_data = await client.get(client.build_path('rest/networkconf'))
-            except Exception:
-                networks_data = []
+            except Exception as e:
+                networks_data, read_errors['rest/networkconf'] = None, str(e)
 
             # Perform security analysis
             return _perform_security_analysis(
-                devices_data, clients_data, rogue_aps, networks_data, wlans_data=wlans_data
+                devices_data,
+                clients_data,
+                rogue_aps,
+                networks_data,
+                wlans_data=wlans_data,
+                read_errors=read_errors,
             )
 
         except Exception as e:
@@ -166,7 +228,6 @@ async def security_audit() -> SecurityAuditReport:
                     message='Cannot connect to UniFi controller for security audit',
                     error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
                     suggestion='Verify controller IP, credentials, and network connectivity',
-                    related_tools=['network_health_check', 'find_device'],
                 )
             raise ToolError(
                 message=f'Error performing security audit: {str(e)}',
@@ -179,26 +240,36 @@ async def security_audit() -> SecurityAuditReport:
 def _perform_security_analysis(
     devices_data: List[Dict[str, Any]],
     clients_data: List[Dict[str, Any]],
-    rogue_aps: List[Dict[str, Any]],
-    networks_data: List[Dict[str, Any]],
+    rogue_aps: Optional[List[Dict[str, Any]]],
+    networks_data: Optional[List[Dict[str, Any]]],
     wlans_data: Optional[List[Dict[str, Any]]] = None,
+    *,
+    read_errors: Optional[Dict[str, str]] = None,
 ) -> SecurityAuditReport:
-    """Perform comprehensive security analysis on network data.
+    """Perform the security analysis on the controller's data.
 
     Args:
-        devices_data: ``stat/device`` records.
+        devices_data: ``stat/device`` records; membership is adoption (pending when
+            ``adopted`` is false), never inferred from a missing ``oui``.
         clients_data: ``stat/sta`` records.
-        rogue_aps: ``stat/rogueap`` records, the passive neighbour scan.
-        networks_data: ``rest/networkconf`` records (VLANs), or empty.
-        wlans_data: ``rest/wlanconf`` records (this site's SSIDs), or None.
+        rogue_aps: ``stat/rogueap`` records, the passive neighbour scan; None when it could
+            not be read (rogue APs and neighbours are then not assessed).
+        networks_data: ``rest/networkconf`` records (VLANs); None when not read.
+        wlans_data: ``rest/wlanconf`` records (this site's SSIDs); None when not read.
+        read_errors: The error text per endpoint that could not be read, for the
+            ``limitations`` lines.
 
     Returns:
         The report.
     """
     security_devices = []
-    mac_anomalies = []
     new_devices = []
     guest_violations = []
+    limitations: List[str] = list(STANDING_LIMITATIONS)
+    errors = read_errors or {}
+
+    def reason(endpoint: str) -> str:
+        return errors.get(endpoint) or 'could not be read'
 
     # Current time for "new device" detection (last 24 hours)
     current_time = datetime.now()
@@ -226,35 +297,52 @@ def _perform_security_analysis(
             if first_seen > day_ago:
                 new_devices.append(security_device)
 
-        # Check for guest network violations
+        # Guest-network overstay is one of the risks _analyze_device_security sets.
         if _is_guest_violation(client_data):
             guest_violations.append(security_device)
 
     # Rogue APs versus neighbours: only a rogue is a security device.
-    own_bssids = own_bssids_from_devices(devices_data)
-    own_ssids = _own_ssids(devices_data, wlans_data or [])
-    rogue_ap_devices, neighbours = classify_rogue_aps(
-        rogue_aps, own_bssids=own_bssids, own_ssids=own_ssids
-    )
-    security_devices.extend(rogue_ap_devices)
+    rogue_ap_devices: List[SecurityDevice] = []
+    neighbours: List[NeighbourAP] = []
+    if rogue_aps is None:
+        limitations.append(
+            f'Rogue APs and neighbours: not assessed (stat/rogueap {reason("stat/rogueap")})'
+        )
+    else:
+        own_bssids = own_bssids_from_devices(devices_data)
+        own_ssids = _own_ssids(devices_data, wlans_data or [])
+        rogue_ap_devices, neighbours = classify_rogue_aps(
+            rogue_aps, own_bssids=own_bssids, own_ssids=own_ssids
+        )
+        security_devices.extend(rogue_ap_devices)
+    if wlans_data is None:
+        limitations.append(
+            'SSID impersonation against the WLAN list: not assessed (rest/wlanconf '
+            f'{reason("rest/wlanconf")}); only the SSIDs the radios broadcast now were checked'
+        )
+    if networks_data is None:
+        limitations.append(
+            'VLAN names: not assessed (rest/networkconf '
+            f'{reason("rest/networkconf")}); VLANs are listed by number'
+        )
     strongest = sorted(neighbours, key=lambda n: n.signal, reverse=True)[:STRONGEST_NEIGHBOURS]
 
-    # Check for MAC address anomalies
-    mac_anomalies = _detect_mac_anomalies([d.mac for d in security_devices])
+    # MAC anomalies within the client population only: adopted devices come from the same
+    # production batch and have sequential MACs; neighbour BSSIDs are a few digits apart.
+    mac_anomalies = _detect_mac_anomalies([str(c.get('mac') or '') for c in clients_data])
 
     # Analyze VLAN security
-    vlan_analysis = _analyze_vlan_security(clients_data, networks_data)
+    vlan_analysis = _analyze_vlan_security(clients_data, networks_data or [])
 
     # Categorize devices by risk level
     critical_risks = [d for d in security_devices if d.risk_level == 'critical']
     high_risks = [d for d in security_devices if d.risk_level == 'high']
     medium_risks = [d for d in security_devices if d.risk_level == 'medium']
 
-    # Count authorized vs unauthorized
-    authorized_count = len([d for d in security_devices if d.is_authorized])
+    # The controller's verdicts only; a device it has no verdict on is not counted either way.
+    authorized_count = len([d for d in security_devices if d.is_authorized is True])
     unauthorized_count = len([d for d in security_devices if d.is_authorized is False])
     anomalous_count = len([d for d in security_devices if d.is_anomalous])
-    unknown_count = len([d for d in security_devices if d.is_authorized is None])
 
     # Generate immediate actions and recommendations
     immediate_actions, recommendations = _generate_security_recommendations(
@@ -272,7 +360,6 @@ def _perform_security_analysis(
         authorized_devices=authorized_count,
         unauthorized_devices=unauthorized_count,
         anomalous_devices=anomalous_count,
-        unknown_devices=unknown_count,
         critical_risks=critical_risks,
         high_risks=high_risks,
         medium_risks=medium_risks,
@@ -285,6 +372,7 @@ def _perform_security_analysis(
         vlan_analysis=vlan_analysis,
         immediate_actions=immediate_actions,
         security_recommendations=recommendations,
+        limitations=limitations,
     )
 
 
@@ -383,7 +471,14 @@ def classify_rogue_aps(
 
 
 def _analyze_device_security(device_data: Dict[str, Any], device_type: str) -> SecurityDevice:
-    """Analyze security characteristics of a single device."""
+    """Read one ``stat/device`` or ``stat/sta`` record for what the controller can show.
+
+    Risks: an infrastructure device pending adoption (high) and a client overstaying the guest
+    network (medium). Verdicts: adopted (authorised), pending (unauthorised), a client the
+    controller has ``blocked`` (unauthorised) or ``noted`` (authorised); any other client is
+    not assessed. Information, never a risk: a randomised MAC (the platform default on phones)
+    and a day without activity. Vendor, name, traffic volume and MAC pattern are not read.
+    """
     mac = device_data.get('mac', '')
     name = (
         device_data.get('name')
@@ -392,77 +487,52 @@ def _analyze_device_security(device_data: Dict[str, Any], device_type: str) -> S
         or 'Unknown'
     )
     ip = device_data.get('ip')
-    vendor = device_data.get('oui', 'Unknown')
+    # Adopted devices carry no oui; their model is the vendor information worth showing.
+    vendor = device_data.get('oui') or device_data.get('model') or None
 
-    security_flags = []
+    security_flags: List[str] = []
     risk_level = 'low'
     is_anomalous = False
-    is_authorized = None  # None = unknown, True = authorized, False = unauthorized
+    is_authorized: Optional[bool] = None  # None: the controller has no verdict
 
-    # Check for suspicious characteristics
-
-    # Suspicious naming patterns
-    suspicious_names = ['unknown', 'android', 'iphone', 'samsung', 'lg', 'sony']
-    if any(sus in name.lower() for sus in suspicious_names) and device_type == 'infrastructure':
-        security_flags.append('Infrastructure device with suspicious generic name')
-        risk_level = 'medium'
-        is_anomalous = True
-
-    # MAC address analysis
-    if _is_suspicious_mac(mac):
-        security_flags.append('Suspicious MAC address pattern')
-        risk_level = 'high'
-        is_anomalous = True
-
-    # Check for randomized MAC (common privacy feature, but worth noting)
-    if _is_randomized_mac(mac):
-        security_flags.append('Possible randomized MAC address')
-        # Not necessarily high risk, many legitimate devices do this
-
-    # Device type inconsistencies
-    if device_type == 'client':
-        # Check if client is behaving like infrastructure
-        if device_data.get('tx_bytes', 0) > 1000000000:  # 1GB+ transmitted
-            security_flags.append('Client device with unusually high traffic volume')
+    if device_type == 'infrastructure':
+        # Membership of stat/device is adoption; 'adopted' false is a device waiting for it.
+        if device_data.get('adopted', False):
+            is_authorized = True
+        else:
+            security_flags.append('Infrastructure device not adopted (pending adoption)')
+            risk_level = 'high'
+            is_authorized = False
+    else:
+        if device_data.get('blocked'):
+            security_flags.append('Blocked by the controller')
+            is_authorized = False
+        elif device_data.get('noted'):
+            is_authorized = True
+        if _is_guest_violation(device_data):
+            hours = int(device_data.get('uptime', 0)) // 3600
+            security_flags.append(f'On the guest network for {hours} hours (more than a day)')
             risk_level = 'medium'
             is_anomalous = True
 
-    # Check adoption status for infrastructure
-    if device_type == 'infrastructure':
-        if not device_data.get('adopted', False):
-            security_flags.append('Infrastructure device not adopted')
-            risk_level = 'high'
-            is_authorized = False
-        else:
-            is_authorized = True
+    # Information only (issue 080): the platform default on every current phone.
+    if _is_randomized_mac(mac):
+        security_flags.append('Randomised (locally administered) MAC address: information only')
 
-    # Check for devices with no recent activity
+    # Information only: a day without activity.
     last_seen_timestamp = device_data.get('last_seen', 0)
     if last_seen_timestamp:
         last_seen = datetime.fromtimestamp(last_seen_timestamp)
         if datetime.now() - last_seen > timedelta(hours=24):
             security_flags.append('Device has been inactive for >24 hours')
 
-    # Check for unusual vendor patterns
-    if vendor and _is_suspicious_vendor(vendor):
-        security_flags.append(f'Device from security-sensitive vendor: {vendor}')
-        risk_level = 'medium'
-
     # Convert timestamps
     first_seen = None
-    last_seen = None
+    last_seen_iso = None
     if device_data.get('first_seen'):
         first_seen = datetime.fromtimestamp(device_data['first_seen']).isoformat()
     if device_data.get('last_seen'):
-        last_seen = datetime.fromtimestamp(device_data['last_seen']).isoformat()
-
-    # Final risk assessment
-    if len(security_flags) >= 3:
-        risk_level = 'critical'
-    elif len(security_flags) >= 2:
-        risk_level = 'high'
-    elif len(security_flags) >= 1:
-        risk_level = 'medium'
+        last_seen_iso = datetime.fromtimestamp(device_data['last_seen']).isoformat()
 
     return SecurityDevice(
         mac=mac,
@@ -471,28 +541,12 @@ def _analyze_device_security(device_data: Dict[str, Any], device_type: str) -> S
         type=device_type,
         vendor=vendor,
         first_seen=first_seen,
-        last_seen=last_seen,
+        last_seen=last_seen_iso,
         is_authorized=is_authorized,
         is_anomalous=is_anomalous,
         security_flags=security_flags,
         risk_level=risk_level,
     )
-
-
-def _is_suspicious_mac(mac: str) -> bool:
-    """Check if MAC address has suspicious patterns."""
-    if not mac:
-        return True
-
-    # Check for obviously fake MACs
-    suspicious_patterns = [
-        '00:00:00:00:00:00',  # All zeros
-        'ff:ff:ff:ff:ff:ff',  # All ones
-        '11:11:11:11:11:11',  # Repeating pattern
-        '12:34:56:78:9a:bc',  # Sequential pattern
-    ]
-
-    return mac.lower() in suspicious_patterns
 
 
 def _is_randomized_mac(mac: str) -> bool:
@@ -509,38 +563,20 @@ def _is_randomized_mac(mac: str) -> bool:
         return False
 
 
-def _is_suspicious_vendor(vendor: str) -> bool:
-    """Check if vendor is associated with security tools or unknown origins."""
-    if not vendor:
-        return True
-
-    suspicious_vendors = [
-        'Unknown',
-        'Private',
-        'Espressif',  # Common in IoT/hacking devices
-        'Realtek',
-        'Ralink',  # Sometimes used in cheap penetration testing tools
-    ]
-
-    return any(sus.lower() in vendor.lower() for sus in suspicious_vendors)
-
-
 def _is_guest_violation(client_data: Dict[str, Any]) -> bool:
-    """Check if client is violating guest network policies."""
-    # This is a simplified check - in practice would check against
-    # guest network VLAN/SSID configurations
+    """A guest-network overstay.
 
-    # Check if device is on guest network but has been connected too long
-    if client_data.get('network', '').lower() == 'guest':
-        uptime = client_data.get('uptime', 0)
-        if uptime > 86400:  # More than 24 hours
-            return True
-
-    return False
+    The client is on the guest network (the controller's ``is_guest``, or a network named
+    guest) and has been connected longer than :data:`GUEST_OVERSTAY_SECONDS`.
+    """
+    on_guest = bool(client_data.get('is_guest')) or (
+        str(client_data.get('network') or '').lower() == 'guest'
+    )
+    return on_guest and int(client_data.get('uptime') or 0) > GUEST_OVERSTAY_SECONDS
 
 
 def _detect_mac_anomalies(mac_addresses: List[str]) -> List[str]:
-    """Detect MAC address anomalies across all devices."""
+    """MAC anomalies within one population (the clients): duplicates and near-duplicates."""
     anomalies = []
 
     # Check for duplicate MACs (should never happen with valid devices)

@@ -125,6 +125,26 @@ def test_record_to_an_explicit_history_path(controller, tmp_path):
     assert target.exists() and _state_files() == set()
 
 
+def test_record_fails_with_a_clear_message_when_the_lock_is_held(controller, monkeypatch):
+    """Issue 076 item 32: a lock another account held stalled the scheduled run for good."""
+    from tests.lock_helpers import held_read_only, run_bounded
+    from unifi_mapper.analysis import counter_history
+
+    monkeypatch.setattr(counter_history, 'HISTORY_LOCK_TIMEOUT_S', 0.2)
+    lock = state_dir() / f'{HISTORY_FILENAME}.lock'
+    lock.parent.mkdir(parents=True)
+    with held_read_only(lock):
+        run = run_bounded(lambda: runner.invoke(app, ['analyze', 'link-errors', '--record']), 5)
+    assert run.done, 'the command waited on the held lock past its limit'
+    result = run.result
+    assert result is not None and result.exit_code == 1, getattr(result, 'output', None)
+    flat = _plain(result)
+    assert 'Not recorded' in flat and f'the lock {lock} was held for more than 0.2 s' in flat
+    assert 'any account that can open that file' in flat  # who may hold it
+    assert 'Traceback' not in result.output
+    assert not (state_dir() / HISTORY_FILENAME).exists()
+
+
 def test_plain_run_without_a_baseline_creates_no_file(controller):
     result = runner.invoke(app, ['analyze', 'link-errors'])
 

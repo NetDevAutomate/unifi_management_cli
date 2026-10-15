@@ -15,7 +15,7 @@ import pytest
 import shlex
 import typer
 from tests.fake_controller import API, FakeController, legacy, route_cli, serving
-from tests.fake_ssh import FakeSSH
+from tests.fake_ssh import PING_OK, FakeConnection, FakeSSH
 from tests.fixtures_unifi import FAKE_TOKEN
 from typer.testing import CliRunner
 from typing import Any
@@ -33,6 +33,7 @@ from unifi_mapper.connectivity.gateway_probe import (
     parse_curl_writeout,
     parse_nslookup_output,
     parse_traceroute_output,
+    ping_over,
 )
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.typer_cli import app
@@ -112,6 +113,7 @@ CLIENTS = [
     {'name': 'Phone A', 'hostname': 'phone-a', 'mac': '02:00:00:00:02:01', 'ip': '192.0.2.50'},
 ]
 REPLIES: dict[str, Any] = {
+    'ping': PING_OK,  # scripted: the fake no longer answers an unnamed program (issue 076/16)
     'traceroute': TRACEROUTE_OUTPUT,
     'conntrack': CONNTRACK_OUTPUT,
     'nslookup': NSLOOKUP_OK,
@@ -465,6 +467,79 @@ async def test_ping_runs_one_argv_with_a_bound_from_its_own_arguments(
     assert bounds == [4 * 0.5 + 12]
     assert result['reachable'] is True and result['probe_ip'] == '192.0.2.50'
     assert len(ssh.connects) == 1
+
+
+# --- ping_over: the one ping step both gateway ping and AP-health share (issue 073) --------
+
+
+async def test_ping_over_builds_the_argv_and_bound_and_parses_the_reply(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bounds: list[float] = []
+    real = gateway_probe.run_gateway_command
+
+    async def _spy(conn: Any, argv: Any, *, timeout: float) -> Any:
+        bounds.append(timeout)
+        return await real(conn, argv, timeout=timeout)
+
+    monkeypatch.setattr(gateway_probe, 'run_gateway_command', _spy)
+    conn = FakeConnection()
+    stats = await ping_over(conn, '192.0.2.50', 4, 0.5)
+    assert [shlex.split(c) for c in conn.commands] == [
+        ['ping', '-c', '4', '-i', '0.5', '-W', '2', '192.0.2.50']
+    ]
+    assert bounds == [4 * 0.5 + 12]
+    assert (stats.transmitted, stats.received, stats.loss_pct) == (3, 3, 0.0)
+    assert stats.rtt_avg == 0.2 and stats.reachable is True
+
+
+async def test_ping_over_takes_no_reply_as_a_result_and_a_failure_as_an_error() -> None:
+    no_reply = FakeConnection(
+        {'ping': ('3 packets transmitted, 0 received, 100% packet loss\n', '', 1)}
+    )
+    stats = await ping_over(no_reply, '192.0.2.50', 3, 0.3)
+    assert (stats.received, stats.loss_pct, stats.reachable) == (0, 100.0, False)
+
+    not_run = FakeConnection({'ping': ('', 'ping: socket: Operation not permitted', 2)})
+    with pytest.raises(ToolError) as caught:
+        await ping_over(not_run, '192.0.2.50', 3, 0.3)
+    assert caught.value.error_code == ErrorCodes.API_ERROR
+    assert 'ping could not run on the gateway (exit status 2)' in caught.value.message
+
+
+@pytest.mark.parametrize(
+    ('call', 'code'),
+    [
+        (lambda conn: ping_over(conn, 'not-an-ip', 3, 0.3), ErrorCodes.INVALID_IP),
+        (lambda conn: ping_over(conn, '192.0.2.50', 0, 0.3), ErrorCodes.CONFIG_INVALID),
+        (lambda conn: ping_over(conn, '192.0.2.50', 101, 0.3), ErrorCodes.CONFIG_INVALID),
+        (lambda conn: ping_over(conn, '192.0.2.50', 3, 0.1), ErrorCodes.CONFIG_INVALID),
+    ],
+    ids=['address', 'count 0', 'count 101', 'interval 0.1'],
+)
+async def test_ping_over_refuses_a_bad_address_or_bound_before_running(
+    call: Any, code: str
+) -> None:
+    conn = FakeConnection()
+    with pytest.raises(ToolError) as caught:
+        await call(conn)
+    assert caught.value.error_code == code
+    assert conn.commands == []
+
+
+async def test_gateway_ping_pings_through_the_shared_helper(
+    ssh: FakeSSH, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[str, int, float]] = []
+    real = gateway_probe.ping_over
+
+    async def _spy(conn: Any, address: str, count: int, interval: float) -> Any:
+        calls.append((address, count, interval))
+        return await real(conn, address, count, interval)
+
+    monkeypatch.setattr(gateway_probe, 'ping_over', _spy)
+    await gateway_ping('192.0.2.50', count=2, interval=0.4)
+    assert calls == [('192.0.2.50', 2, 0.4)]
 
 
 async def test_a_name_resolves_through_the_guarded_controller(
@@ -885,7 +960,7 @@ def test_every_command_prints_json_and_the_notice_once(cli: FakeSSH, args: list[
     result = runner.invoke(app, args)
     assert result.exit_code == 0, result.output
     json.loads(result.stdout)
-    assert result.stderr.count('host key is not verified') == 1
+    assert result.stderr.count('runs on the gateway over SSH') == 1
     assert len(cli.connects) == 1
 
 
@@ -987,7 +1062,7 @@ def test_every_command_has_help(command: str) -> None:
     result = runner.invoke(app, ['gateway', command, '--help'])
     assert result.exit_code == 0
     flat = ' '.join(result.output.split())
-    assert 'SSH' in flat and 'host key is not verified' in flat
+    assert 'SSH' in flat and 'host key is verified' in flat
     if command == 'traceroute':  # review finding: the JSON hop fields are described
         assert '"unreachable"' in flat and '!H (host)' in flat and '"timeout" (no reply)' in flat
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field
-from typing import Annotated
+from typing import Annotated, Any
 
 
 # =============================================================================
@@ -18,8 +18,19 @@ from typing import Annotated
 
 
 class DeviceState(str, Enum):
-    """Device operational state."""
+    """Device operational state.
 
+    Ubiquiti's Network API reference (v10.6.102) sends ``ONLINE``, ``OFFLINE``,
+    ``PENDING_ADOPTION`` and ``UPDATING`` among others; ``DeviceInfo.state`` keeps a value this
+    enum doesn't know as its string, so a new state can't fail the whole device list (issue
+    036). The older members below predate the reference check and are kept for callers that
+    compare against them; Network 10.6 is not known to send them.
+    """
+
+    ONLINE = 'ONLINE'
+    OFFLINE = 'OFFLINE'
+    PENDING_ADOPTION = 'PENDING_ADOPTION'
+    UPDATING = 'UPDATING'
     CONNECTED = 'CONNECTED'
     DISCONNECTED = 'DISCONNECTED'
     PENDING = 'PENDING'
@@ -243,38 +254,80 @@ class UplinkInfo(BaseModel):
     model_config = {'populate_by_name': True}
 
 
+class DevicePortInterface(BaseModel):
+    """One entry of a device detail's ``interfaces.ports``.
+
+    The fields are the ones the port diagnostics read from the live Integration API
+    (``idx``, ``state``, ``connector``, ``maxSpeedMbps``, ``speedMbps``); any other key the
+    console sends is kept in ``model_extra`` rather than dropped (issue 036).
+    """
+
+    idx: int | None = None
+    state: str | None = None
+    connector: str | None = None
+    max_speed_mbps: Annotated[int | None, Field(alias='maxSpeedMbps')] = None
+    speed_mbps: Annotated[int | None, Field(alias='speedMbps')] = None
+
+    model_config = {'populate_by_name': True, 'extra': 'allow'}
+
+
+class DeviceInterfaces(BaseModel):
+    """A device detail's ``interfaces`` object: ``ports``, plus whatever else the console sends."""
+
+    ports: list[DevicePortInterface] = Field(default_factory=list)
+
+    model_config = {'populate_by_name': True, 'extra': 'allow'}
+
+
 class DeviceInfo(BaseModel):
-    """Information about an adopted UniFi device."""
+    """Information about an adopted UniFi device.
+
+    ``features`` and ``interfaces`` take both shapes the reference sends (issue 036): the
+    device list sends lists of names (``features: ["accessPoint"]``), the device detail sends
+    objects (``features: {"switching": {...}}``, ``interfaces: {"ports": [...]}``).
+    """
 
     id: str = ''
     mac_address: Annotated[str, Field(alias='macAddress')] = ''
     ip_address: Annotated[str | None, Field(alias='ipAddress')] = None
     name: str = ''
     model: str = ''
-    state: DeviceState = DeviceState.UNKNOWN
+    # left_to_right, as for ClientAccess.type: known states are members, unknown ones a str.
+    state: Annotated[DeviceState | str, Field(union_mode='left_to_right')] = DeviceState.UNKNOWN
     firmware_version: Annotated[str | None, Field(alias='firmwareVersion')] = None
     firmware_updatable: Annotated[bool, Field(alias='firmwareUpdatable')] = False
-    features: list[str] = Field(default_factory=list)
-    interfaces: list[str] = Field(default_factory=list)
+    features: list[str] | dict[str, Any] = Field(default_factory=list)
+    interfaces: list[str] | DeviceInterfaces = Field(default_factory=list)
     uplink: UplinkInfo | None = None
     supported: bool = True
 
     model_config = {'populate_by_name': True}
 
     @property
+    def feature_names(self) -> list[str]:
+        """The device's features by the reference's names, from either shape.
+
+        A list is returned as sent; for an object, the keys whose value is not null (a key
+        with a null value is a feature the device does not have).
+        """
+        if isinstance(self.features, dict):
+            return [name for name, value in self.features.items() if value is not None]
+        return list(self.features)
+
+    @property
     def is_switch(self) -> bool:
-        """Check if device is a switch."""
-        return 'SWITCH' in self.features
+        """Check if device is a switch (the reference's ``switching`` feature)."""
+        return 'switching' in self.feature_names
 
     @property
     def is_router(self) -> bool:
-        """Check if device is a router/gateway."""
-        return 'ROUTER' in self.features or 'GATEWAY' in self.features
+        """Check if device is a gateway (the reference's ``gateway`` feature)."""
+        return 'gateway' in self.feature_names
 
     @property
     def is_access_point(self) -> bool:
-        """Check if device is an access point."""
-        return 'ACCESS_POINT' in self.features
+        """Check if device is an access point (the reference's ``accessPoint`` feature)."""
+        return 'accessPoint' in self.feature_names
 
 
 # =============================================================================
@@ -628,10 +681,27 @@ class ACLTrafficFilter(BaseModel):
     ip_addresses_or_subnets: Annotated[
         list[str], Field(alias='ipAddressesOrSubnets', default_factory=list)
     ]
-    ports_filter: Annotated[list[int], Field(alias='portsFilter', default_factory=list)]
+    # The reference's key is ``portFilter`` (singular); ``portsFilter`` was never sent (issue 036).
+    port_filter: Annotated[list[int], Field(alias='portFilter', default_factory=list)]
     network_ids: Annotated[list[str], Field(alias='networkIds', default_factory=list)]
     mac_addresses: Annotated[list[str], Field(alias='macAddresses', default_factory=list)]
     prefix_length: Annotated[int | None, Field(alias='prefixLength')] = None
+
+    model_config = {'populate_by_name': True}
+
+
+class ACLRuleOrigin(str, Enum):
+    """Where an ACL rule came from, as the reference's ``metadata.origin`` names it."""
+
+    USER_DEFINED = 'USER_DEFINED'
+    DERIVED = 'DERIVED'
+
+
+class ACLRuleMetadata(BaseModel):
+    """The reference's ``metadata`` object on an ACL rule."""
+
+    # left_to_right, as for ClientAccess.type: known origins are members, unknown ones a str.
+    origin: Annotated[ACLRuleOrigin | str | None, Field(union_mode='left_to_right')] = None
 
     model_config = {'populate_by_name': True}
 
@@ -653,9 +723,19 @@ class ACLRule(BaseModel):
     destination_filter: Annotated[ACLTrafficFilter | None, Field(alias='destinationFilter')] = None
     protocol_filter: Annotated[list[ACLProtocol] | None, Field(alias='protocolFilter')] = None
     network_id: Annotated[str | None, Field(alias='networkId')] = None
-    origin: str = ''  # 'SYSTEM', 'USER'
+    # The reference nests the origin as ``metadata.origin``; a top-level ``origin`` is never
+    # sent (issue 036). ``origin`` below reads through to it.
+    metadata: ACLRuleMetadata | None = None
 
     model_config = {'populate_by_name': True}
+
+    @property
+    def origin(self) -> str:
+        """``metadata.origin`` as a string (``USER_DEFINED``, ``DERIVED``), or ``''`` if unset."""
+        if self.metadata is None or self.metadata.origin is None:
+            return ''
+        origin = self.metadata.origin
+        return origin.value if isinstance(origin, ACLRuleOrigin) else origin
 
 
 # =============================================================================
@@ -664,14 +744,19 @@ class ACLRule(BaseModel):
 
 
 class DNSRecordType(str, Enum):
-    """DNS record type."""
+    """DNS policy type, as the reference names it (issue 036).
 
-    A = 'A'
-    AAAA = 'AAAA'
-    CNAME = 'CNAME'
-    MX = 'MX'
-    TXT = 'TXT'
-    SRV = 'SRV'
+    The console sends and expects ``A_RECORD``, not ``A``; ``FORWARD_DOMAIN`` forwards a
+    domain to a DNS server rather than answering a record.
+    """
+
+    A_RECORD = 'A_RECORD'
+    AAAA_RECORD = 'AAAA_RECORD'
+    CNAME_RECORD = 'CNAME_RECORD'
+    MX_RECORD = 'MX_RECORD'
+    TXT_RECORD = 'TXT_RECORD'
+    SRV_RECORD = 'SRV_RECORD'
+    FORWARD_DOMAIN = 'FORWARD_DOMAIN'
 
 
 class DNSPolicy(BaseModel):

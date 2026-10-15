@@ -90,15 +90,20 @@ unifi-mapper --help
 
 The CLI reads the first of these (`cli.get_default_config_path`):
 
-1. `--config PATH`, or `UNIFI_CONFIG=PATH` (the `inventory` commands take their own
+1. `--config PATH`, or `UNIFI_CONFIG=PATH` (the inventory commands take their own
    `--config` instead, [issue 043](../issues/043-inventory-ignores-the-root-config.md))
-2. `prod.env` in `$XDG_CONFIG_HOME/unifi_management_cli/`, or in
-   `~/.config/unifi_management_cli/` when `XDG_CONFIG_HOME` is unset
-3. `default.env` in that same directory
-4. `.env` in the current directory (legacy fallback)
+2. `prod.env`, then `default.env`, in `$XDG_CONFIG_HOME/unifi_management_cli/` when
+   `XDG_CONFIG_HOME` is set to an absolute path (a relative one is ignored, as the XDG spec
+   says)
+3. `prod.env`, then `default.env`, in `~/.config/unifi_management_cli/`
+4. the legacy `~/.config/unifi_network_mapper/prod.env` (loaded with a deprecation warning)
+5. `.env` in the current directory (deprecated: loaded with a warning on stderr before any
+   controller connection; removed in 0.4.0. Name it with `--config ./.env` or
+   `UNIFI_CONFIG=./.env` instead)
 
-A set `XDG_CONFIG_HOME` replaces `~/.config` here, while the MCP server tries both
-([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
+This is the MCP server's search too (one shared function,
+`core/utils/config_search.py`), minus step 5: the server never reads a `.env` in its
+working directory ([issue 048](../issues/048-cli-and-mcp-config-searches-differ.md)).
 
 **Resolution**:
 
@@ -114,7 +119,7 @@ uv run unifi-mapper --config /path/to/my.env discover
 
 #### Prevention
 
-Keep a `prod.env` at the XDG standard path. Never use `.env` in the working directory for production; it is a legacy fallback only.
+Keep a `prod.env` at the XDG standard path. Never rely on a `.env` in the working directory: the fallback is deprecated, warns on every run and is removed in 0.4.0; name such a file with `--config ./.env` or `UNIFI_CONFIG=./.env`.
 
 #### A Root Flag Exits 2
 
@@ -137,26 +142,26 @@ before any subcommand, `discover` included, so a write is never requested by acc
 **Resolution**: put a subcommand's own flags after it: `unifi-mapper discover --apply`,
 `unifi-mapper ports refresh --apply`, `unifi-mapper discover --connected-devices`.
 
-#### `discover` or `diagram` Exits 1: Graphviz's `dot` Not Found
+#### `discover` or `diagram` Writes a Placeholder: Graphviz's `dot` Not Found
 
-**Symptom**: `discover` (or `diagram`) reads the controller, then stops with exit status 1
-and:
+**Symptom**: `discover` (or `diagram`) reads the controller and exits 0, but the PNG or SVG
+file holds one line of text, and the log carries:
 
 ```text
-❌ Error: failed to execute PosixPath('dot'), make sure the Graphviz executables are on your systems' PATH
+WARNING PNG diagram not drawn: Graphviz's dot program is not on PATH. Install it with: brew install graphviz (macOS) or sudo apt install graphviz (Debian/Ubuntu); or use --format html, which needs no Graphviz.
 ```
 
 **Cause**: PNG (the default) and SVG diagrams are drawn by Graphviz's `dot` program. The
-`graphviz` Python package that `uv sync` installs only drives it, so without Graphviz the
-render fails. `discover` draws the diagram before it writes the `-o` report, so the report
-is not written either, and the diagram's DOT source, which names the site's devices, is left
-at the diagram path minus its extension: `./diagrams/network_diagram` by default, which
-`.gitignore` covers when you run from the repository root, where its rules are anchored ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md)).
+`graphviz` Python package that `uv sync` installs only drives it. Without Graphviz the render
+is a warning and a placeholder, as it is when the package itself is missing, so `discover`
+still writes its `-o` report and the dry run still exits 0. The DOT source graphviz saves
+beside the diagram is removed ([issue 075](../issues/075-discover-needs-graphviz-dot-undocumented.md);
+before 0.3.0 the command exited 1 with no report, leaving that source behind).
 
 **Resolution**: install Graphviz, `brew install graphviz` (macOS) or `sudo apt install
 graphviz` (Debian or Ubuntu), and run the command again, or draw an interactive diagram with
-`--format html`, which needs no Graphviz. Delete the leftover DOT source once you no longer
-need it.
+`--format html`, which needs no Graphviz. `--format dot` writes the DOT source itself, for
+`dot` on another machine.
 
 ---
 
@@ -253,7 +258,7 @@ line, once per command, comes before every SSH command runs; see
 [issue 038](../issues/038-ssh-host-key-verification-disabled.md)):
 
 ```text
-⚠ This command runs on the gateway over SSH as the SSH user, and the gateway's host key is not verified (issue 038).
+⚠ This command runs on the gateway over SSH as the SSH user; the gateway's host key is verified against ~/.ssh/known_hosts.
 ❌ [CONFIG_MISSING] UNIFI_SSH_PASSWORD is not set. The gateway SSH login has its own password; UNIFI_PASSWORD (the UniFi OS login) is never sent over SSH
 💡 Suggestion: Enable SSH in UniFi OS (Settings > Control Plane > Console) and set UNIFI_SSH_PASSWORD to the SSH password set there; set UNIFI_SSH_USERNAME as well if the SSH user is not root
 ```
@@ -282,9 +287,20 @@ the target was not reached; that is "Not reached").
    and IPv6 zone ids (`%eth0`) are refused before anything connects. The latency matrix
    skips such targets and lists them as skipped.
 
-The SSH session doesn't verify the gateway's host key yet (`known_hosts=None`,
-[issue 038](../issues/038-ssh-host-key-verification-disabled.md)), so run these only on a
-network you trust.
+The SSH session verifies the gateway's host key against `~/.ssh/known_hosts` and refuses a
+missing or changed key before the password is sent:
+
+```text
+❌ [CONTROLLER_UNREACHABLE] SSH connection to root@192.0.2.1 refused: the gateway host key is not in ~/.ssh/known_hosts, or differs from the key recorded there, so the password was not sent
+💡 Suggestion: Connect once with `ssh root@192.0.2.1` to record the key, after comparing the fingerprint it shows with the one in UniFi OS (Settings > Control Plane > Console) or over another trusted channel. ...
+```
+
+Run that `ssh` command once from the same user account and the SSH commands work from then
+on. A key that was recorded before and has changed means the gateway was reinstalled or
+replaced, or something on the path is answering in its place: confirm which before trusting
+the new key. `UNIFI_SSH_KNOWN_HOSTS=off` disables the check with a warning on every run; any
+other value is rejected as `CONFIG_INVALID`
+([issue 038](../issues/038-ssh-host-key-verification-disabled.md)).
 
 #### VLAN Traffic Store Errors
 
@@ -810,7 +826,7 @@ The client implements exponential backoff for retryable errors (`UniFiRetryableE
 - Before attempt 2: `retry_delay * 2^0` (1.0s with the default delay)
 - Before attempt 3: `retry_delay * 2^1` (2.0s)
 
-There is no wait after the last attempt, so with the defaults (`max_retries=3`, `retry_delay=1.0`) a failing request spends 3 seconds backing off, plus up to three request timeouts of `UNIFI_TIMEOUT` each. The CLI always uses those defaults: `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` are read but not applied yet ([issue 042](../issues/042-settings-with-no-effect.md)).
+There is no wait after the last attempt, so with the defaults (`max_retries=3`, `retry_delay=1.0`) a failing request spends 3 seconds backing off, plus up to three request timeouts of `UNIFI_TIMEOUT` each. `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` in the config file set the two values for every CLI client ([issue 042](../issues/042-settings-with-no-effect.md)).
 
 `UniFiAuthenticationError` and `UniFiPermissionError` (4xx errors) are NOT retried and raise immediately.
 
@@ -843,8 +859,8 @@ Adjust this in `~/.config/unifi_management_cli/prod.env`:
 UNIFI_TIMEOUT=30
 ```
 
-`UNIFI_MAX_RETRIES` (1-10) and `UNIFI_RETRY_DELAY` (0.1-10.0 seconds) are parsed and
-clamped, but no client uses them yet, so changing them has no effect on `unifi-mapper`
+`UNIFI_MAX_RETRIES` (1-10) and `UNIFI_RETRY_DELAY` (0.1-10.0 seconds) set the attempts per
+request and the first back-off for every client the CLIs build
 ([issue 042](../issues/042-settings-with-no-effect.md)).
 
 #### Prevention
@@ -1438,11 +1454,11 @@ echo "=== Health check complete ===" | tee -a "$LOGFILE"
 | `UNIFI_PASSWORD` | One of these two methods | None | String | Admin password. |
 | `UNIFI_VERIFY_SSL` | No | `false` | `true` / `false` | Enable SSL certificate verification. Set `false` for self-signed certs. |
 | `UNIFI_TIMEOUT` | No | `10` | `1`-`300` (seconds) | Per-request connection timeout. Clamped to 1-300. |
-| `UNIFI_MAX_RETRIES` | No | `3` | `1`-`10` | Parsed and clamped, but no effect on `unifi-mapper` yet ([issue 042](../issues/042-settings-with-no-effect.md)); requests keep 3 attempts. |
-| `UNIFI_RETRY_DELAY` | No | `1.0` | `0.1`-`10.0` (seconds) | Parsed and clamped, but no effect on `unifi-mapper` yet (issue 042); the back-off starts at 1.0 s. |
-| `UNIFI_DEFAULT_FORMAT` | No | `png` | `png`, `svg`, `html`, `mermaid`, `dot` | No effect on `unifi-mapper` (issue 042): only the legacy `python -m unifi_mapper.cli` reads it. `mermaid` and `dot` write a placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)). |
-| `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
-| `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path | No effect on `unifi-mapper` (issue 042): only the legacy CLI reads it. |
+| `UNIFI_MAX_RETRIES` | No | `3` | `1`-`10` | Attempts per request, for every client the CLIs build ([issue 042](../issues/042-settings-with-no-effect.md)). |
+| `UNIFI_RETRY_DELAY` | No | `1.0` | `0.1`-`10.0` (seconds) | First back-off; each later retry doubles it (issue 042). |
+| `UNIFI_DEFAULT_FORMAT` | No | `png` | `png`, `svg`, `html`, `mermaid`, `dot` | `discover`'s diagram format when `--format` is not given (issue 042). |
+| `UNIFI_OUTPUT_DIR` | No | `./reports` | Directory path (`~` expanded) | Where `discover` writes `port_mapping_report.md` when `--output` is not given (issue 042). |
+| `UNIFI_DIAGRAM_DIR` | No | `./diagrams` | Directory path (`~` expanded) | Where `discover` writes `network_diagram.<format>` when `--diagram` is not given (issue 042). |
 | `UNIFI_CONFIG` | No | XDG search | File path | The env file to read, like `--config` (see section 1). |
 | `UNIFI_SSH_PASSWORD` | For SSH commands | None | String | Gateway SSH password for `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose ap-health --ping-clients`, `vlan-traffic sample` and the `gateway` probes (see section 2). |
 | `UNIFI_SSH_USERNAME` | No | `root` | String | Gateway SSH user. |
@@ -1490,7 +1506,7 @@ Root options (before any subcommand):
 | `--apply` / `--dry-run` | Write port names to the controller; `--dry-run` previews | Preview |
 | `--connected-devices` | Include non-UniFi connected devices | Off |
 | `--verify-updates` | Verify that port name updates persist | Off |
-| `--format FORMAT` | Diagram format: `png`, `svg`, `html`, `mermaid`, `dot`. `png` and `svg` need Graphviz's `dot` program (`brew install graphviz`); `html` needs none. `mermaid` and `dot` currently write a one-line placeholder ([issue 044](../issues/044-discover-mermaid-and-dot-write-a-placeholder.md)) | `png` |
+| `--format FORMAT` | Diagram format: `png`, `svg`, `html`, `mermaid`, `dot`. `png` and `svg` need Graphviz's `dot` program (`brew install graphviz`); `html`, `mermaid` (bare Mermaid source) and `dot` (the Graphviz source) need none | `png` |
 | `--output PATH`, `-o` | Markdown report path | `./reports/port_mapping_report.md` |
 | `--diagram PATH`, `-d` | Diagram path | `./diagrams/network_diagram.<format>` |
 
@@ -1505,7 +1521,7 @@ Root options (before any subcommand):
 | `unifi-mapper ports refresh` | Preview port labels from LLDP and wired clients (`--apply` writes) |
 | `unifi-mapper inventory list` | List devices with optional filters |
 | `unifi-mapper inventory check-updates` | Check for available firmware updates |
-| `unifi-mapper install-completions SHELL` | Install shell completions (`bash` or `zsh`) |
+| `unifi-mapper install-completions SHELL` | Install the manual completion scripts (`bash`, `zsh` or `all`; fish: `--install-completion`) |
 
 #### `unifi-network-toolkit`
 

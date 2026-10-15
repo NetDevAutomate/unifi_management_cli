@@ -8,22 +8,32 @@ Every request goes through :class:`ReadOnlyAsyncTransport` with the GET-only pol
 raises :class:`ReadOnlyViolation` before any I/O, which the runner reports as
 ``READ_ONLY_VIOLATION``, and every GET goes to the opt-in request audit
 (``UNIFI_MCP_REQUEST_AUDIT``). Each call opens its own guarded client.
+
+A failure is an error result, never a success value (issue 011): a client error the wrapper
+can name is a :class:`ToolError` with its domain code (``CONTROLLER_UNREACHABLE``,
+``AUTHENTICATION_FAILED``, ``API_ERROR``); anything else propagates to the runner, which
+reports it as ``TOOL_FAILED``.
 """
 
 from __future__ import annotations
 
 import httpx
-from loguru import logger
 from pydantic import Field
 from typing import Annotated, Any
+from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.readonly import (
     ReadOnlyAsyncTransport,
-    ReadOnlyViolation,
     get_only_request_allowed,
 )
-from unifi_mapper.core.utils.redact import redact_text
+from unifi_mapper.mcp.failure_text import tool_failure
 from unifi_mapper.network.acl import ACLManager
-from unifi_mapper.network.client import UniFiNetworkClient
+from unifi_mapper.network.client import (
+    NetworkAuthenticationError,
+    NetworkClientError,
+    NetworkConnectionError,
+    NetworkSiteResolutionError,
+    UniFiNetworkClient,
+)
 from unifi_mapper.network.clients import ClientManager
 from unifi_mapper.network.config import NetworkConfig
 from unifi_mapper.network.dns import DNSPolicyManager
@@ -31,24 +41,57 @@ from unifi_mapper.network.firewall import FirewallManager
 from unifi_mapper.network.networks import NetworkManager
 
 
-# Long enough that a real message is never cut (the runner caps errors at 2,000).
-FAILURE_TEXT_LIMIT = 2000
+CONNECTION_SUGGESTION = 'Check UNIFI_NETWORK_HOST and that the controller is reachable.'
+AUTHENTICATION_SUGGESTION = 'Check UNIFI_NETWORK_API_KEY and its permissions.'
+API_SUGGESTION = 'Check the controller status and try again.'
+SITE_SUGGESTION = (
+    'Set UNIFI_NETWORK_SITE_ID to the id of the site whose internalReference is UNIFI_SITE '
+    '(from GET /proxy/network/integration/v1/sites), or set UNIFI_SITE to one of the names found.'
+)
 
 
-def _failure(action: str, error: Exception) -> str:
-    """Log a tool's failure and return its error text, both redacted.
+def _tool_error(action: str, error: NetworkClientError) -> ToolError:
+    """Map a Network API client failure to a ``ToolError`` with its domain code.
 
-    A lower layer's message can carry a credential, and the server's stderr ends up in the
-    MCP client's own logs, so neither the log line nor the returned ``error`` shows it raw.
+    Args:
+        action: What the tool was doing, for the log line.
+        error: The client's typed exception.
+
+    Returns:
+        The error to raise; its message is the client's text, redacted.
     """
-    text = redact_text(error, limit=FAILURE_TEXT_LIMIT)
-    logger.error('Failed to {}: {}', action, text)
-    return text
+    if isinstance(error, NetworkAuthenticationError):
+        code, suggestion = ErrorCodes.AUTHENTICATION_FAILED, AUTHENTICATION_SUGGESTION
+    elif isinstance(error, NetworkSiteResolutionError):
+        code, suggestion = ErrorCodes.CONFIG_INVALID, SITE_SUGGESTION
+    elif isinstance(error, NetworkConnectionError):
+        code, suggestion = ErrorCodes.CONTROLLER_UNREACHABLE, CONNECTION_SUGGESTION
+    else:
+        code, suggestion = ErrorCodes.API_ERROR, API_SUGGESTION
+    return ToolError(message=tool_failure(action, error), error_code=code, suggestion=suggestion)
 
 
 def _network_config() -> NetworkConfig:
-    """Load Network API configuration from environment."""
-    return NetworkConfig.from_env()
+    """Load Network API configuration from environment.
+
+    The runner's family gate has already checked readiness, so a ``ValueError`` here (a key
+    that vanished between the two reads) is reported as ``CONFIG_MISSING`` with the loader's
+    own wording, never the token.
+
+    Raises:
+        ToolError: ``CONFIG_MISSING`` when the family cannot be resolved.
+    """
+    try:
+        return NetworkConfig.from_env()
+    except ValueError as e:
+        raise ToolError(
+            message=f'network_api family not configured: {e}',
+            error_code=ErrorCodes.CONFIG_MISSING,
+            suggestion=(
+                'set UNIFI_NETWORK_API_KEY (UNIFI_NETWORK_HOST and UNIFI_NETWORK_SITE_ID are '
+                'derived from UNIFI_URL and UNIFI_SITE when unset)'
+            ),
+        ) from e
 
 
 def _inner_transport(config: NetworkConfig) -> httpx.AsyncBaseTransport:
@@ -83,17 +126,15 @@ async def get_firewall_zones(refresh: bool = False) -> list[dict[str, Any]]:
         refresh: Force cache refresh.
 
     Returns:
-        List of firewall zone data as dictionaries, or error dict on failure.
+        List of firewall zone data as dictionaries.
     """
     try:
         async with _read_only_client() as client:
             manager = FirewallManager(client)
             zones = await manager.get_zones(refresh=refresh)
             return [z.model_dump() for z in zones]
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return [{'error': _failure('get firewall zones', e)}]
+    except NetworkClientError as e:
+        raise _tool_error('get firewall zones', e) from e
 
 
 async def get_firewall_policies(refresh: bool = False) -> list[dict[str, Any]]:
@@ -103,17 +144,15 @@ async def get_firewall_policies(refresh: bool = False) -> list[dict[str, Any]]:
         refresh: Force cache refresh.
 
     Returns:
-        List of firewall policy data as dictionaries, or error dict on failure.
+        List of firewall policy data as dictionaries.
     """
     try:
         async with _read_only_client() as client:
             manager = FirewallManager(client)
             policies = await manager.get_policies(refresh=refresh)
             return [p.model_dump() for p in policies]
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return [{'error': _failure('get firewall policies', e)}]
+    except NetworkClientError as e:
+        raise _tool_error('get firewall policies', e) from e
 
 
 async def get_acl_rules(refresh: bool = False) -> list[dict[str, Any]]:
@@ -123,34 +162,30 @@ async def get_acl_rules(refresh: bool = False) -> list[dict[str, Any]]:
         refresh: Force cache refresh.
 
     Returns:
-        List of ACL rule data as dictionaries, or error dict on failure.
+        List of ACL rule data as dictionaries.
     """
     try:
         async with _read_only_client() as client:
             manager = ACLManager(client)
             rules = await manager.get_all_rules(refresh=refresh)
             return [r.model_dump() for r in rules]
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return [{'error': _failure('get ACL rules', e)}]
+    except NetworkClientError as e:
+        raise _tool_error('get ACL rules', e) from e
 
 
 async def get_dns_policies() -> list[dict[str, Any]]:
     """Get DNS policies and configurations.
 
     Returns:
-        List of DNS policy data as dictionaries, or error dict on failure.
+        List of DNS policy data as dictionaries.
     """
     try:
         async with _read_only_client() as client:
             manager = DNSPolicyManager(client)
             policies = await manager.get_all_policies()
             return [p.model_dump() for p in policies]
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return [{'error': _failure('get DNS policies', e)}]
+    except NetworkClientError as e:
+        raise _tool_error('get DNS policies', e) from e
 
 
 async def get_clients(
@@ -183,10 +218,8 @@ async def get_clients(
         async with _read_only_client() as client:
             manager = ClientManager(client)
             clients = await manager.get_all_clients()
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return {'error': _failure('get clients', e)}
+    except NetworkClientError as e:
+        raise _tool_error('get clients', e) from e
     if active_only:
         clients = [c for c in clients if c.connected_at is not None]
     ordered = sorted(clients, key=lambda c: str(c.id))
@@ -208,14 +241,12 @@ async def get_networks() -> list[dict[str, Any]]:
     """Get networks/VLANs and their configurations.
 
     Returns:
-        List of network data as dictionaries, or error dict on failure.
+        List of network data as dictionaries.
     """
     try:
         async with _read_only_client() as client:
             manager = NetworkManager(client)
             networks = await manager.get_all_networks()
             return [n.model_dump() for n in networks]
-    except ReadOnlyViolation:
-        raise
-    except Exception as e:
-        return [{'error': _failure('get networks', e)}]
+    except NetworkClientError as e:
+        raise _tool_error('get networks', e) from e

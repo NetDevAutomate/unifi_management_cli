@@ -9,10 +9,12 @@ from ``docs/artefacts/``, and ``scripts/*.sh``), offline and without a controlle
   and no root shortcut flag sits before a subcommand that refuses it (exit 2);
 - MCP tool names, ``unifi://`` resources and prompts exist. The category table rows, the
   tool index, the surface sums, the "Of the N" split sentence and the ``--check`` output equal
-  what ``ToolRegistry()`` holds; any other tool count in an MCP line only has to equal one of
-  the registry's counts (``McpFacts.valid``), so a stale total that matches a category's count
-  can pass;
+  what ``ToolRegistry()`` holds; any other tool count in an MCP line is the registry's total
+  unless its sentence names a category, a surface or a kind of tool (``McpFacts.qualified``),
+  whose own count it may then be;
 - the ``diagnose all`` check count and list match ``typer_cli.diagnose_all``;
+- every backticked CamelCase name, and every class a Mermaid ``classDiagram`` declares or
+  relates, is a class or type alias under ``src/`` or one of ``KNOWN_EXTERNAL_TYPES``;
 - relative links and ``#anchors`` resolve, and no doc names a machine-local path;
 - no Mermaid sequence-diagram line holds a ``;``, which ends the statement there, so GitHub
   can't render the diagram;
@@ -21,10 +23,11 @@ from ``docs/artefacts/``, and ``scripts/*.sh``), offline and without a controlle
   IPv4 address appears in a doc, and no device or client name from the local captures
   (``reports/*.json``, when they exist) appears in a doc, under ``src/unifi_mapper/``, or in a
   tracked file under ``tests/`` or ``scripts/``. Tests and scripts also hold no MAC address,
-  serial number, 24-hex or UUID device or site ID, address in a captured /24 or IPv6 address
-  in a captured /48 from those captures (decision 11: the repository is public). The docs'
-  MAC rule can't apply there, since a fixture may keep a public vendor OUI; a name equal to a
-  model string the code classifies (``analysis/model_capabilities``) is generic.
+  serial number, 24-hex or UUID device or site ID, address in a captured /24, IPv6 address
+  in a captured /48, public IPv4 address from an address field (the WAN address) or
+  link-local IPv6 address from those captures (decision 11: the repository is public). The
+  docs' MAC rule can't apply there, since a fixture may keep a public vendor OUI; a name
+  equal to a model string the code classifies (``analysis/model_capabilities``) is generic.
 
 Each detector is a pure function over ``(path, text)`` and has a negative self-test on a
 synthetic snippet, so no guard can pass because it matched nothing. Failures name
@@ -364,7 +367,13 @@ TOOLISH = re.compile(
     r'calculate|generate|identify|plan|preflight|track|scan|diff|export|run)_[a-z0-9_]+$'
 )
 URI = re.compile(r'unifi://[a-z/_-]+')
-COUNT = re.compile(r'\b(\d+)\s+(?:[a-z-]+\s+){0,3}?(tools?|meta-tools|categories|schemas)\b', re.I)
+# ``96 tools``, ``57 registered MCP tools``, ``82 non-mutating, non-pipeline catalog tools``;
+# not the ``3`` of a ``13.3`` section number.
+COUNT = re.compile(
+    r'(?<![\d.])\b(\d+)\s+(?:[a-z-]+,?\s+){0,3}?(tools?|meta-tools|categories|schemas)\b', re.I
+)
+# ``Total registered tools: **87**``: a total written after the noun.
+TOTAL_AFTER_NOUN = re.compile(r'\btools:\s*\**(\d+)\b', re.I)
 CATEGORY_ROW = re.compile(r'^\|\s*`?([a-z]+)`?\s*\|\s*(\d+)\s*\|')
 INDEX_HEADING = re.compile(r'^### ([a-z]+) \((\d+)\)$')
 INDEX_ROW = re.compile(
@@ -400,9 +409,10 @@ def _registry() -> ToolRegistry:
 class McpFacts:
     """The MCP numbers the docs may state, computed from the registry by ``_facts()``.
 
-    ``valid`` holds every count a free-text claim may equal: the total, a category, a surface,
-    the meta-tools, the mutating and pipeline tools, the category count and the open-world and
-    non-idempotent tools. The exact checks use the named fields.
+    A free-text tool count must equal ``total`` unless its sentence names a category, a
+    surface or a kind of tool; ``qualified`` maps each such word (a regex, matched
+    case-insensitively on a word boundary) to the counts it allows as well. The exact checks
+    use the named fields.
     """
 
     total: int
@@ -412,7 +422,7 @@ class McpFacts:
     direct_catalog: int
     meta_tools: int
     direct_listed: int
-    valid: frozenset[int]
+    qualified: dict[str, frozenset[int]]
 
 
 @functools.cache
@@ -427,18 +437,19 @@ def _facts() -> McpFacts:
     meta_tools = len(mcp_server.META_TOOLS)
     mutating = sum(1 for m in metas.values() if m.mutates)
     pipeline = sum(1 for m in metas.values() if m.pipeline)
-    valid = {
-        len(metas),
-        direct,
-        direct + meta_tools,
-        meta_tools,
-        mutating,
-        pipeline,
-        len(categories),
-        *categories.values(),
-        sum(1 for m in metas.values() if not m.open_world),
-        sum(1 for m in metas.values() if not m.idempotent),
-    }
+    qualified = {category: frozenset({count}) for category, count in categories.items()}
+    qualified['discovery'] = qualified.get('discovery', frozenset()) | {meta_tools}  # a surface
+    qualified.update(
+        {
+            'direct': frozenset({direct, direct + meta_tools}),
+            'listed': frozenset({direct + meta_tools}),
+            'read-only': frozenset({direct}),  # the catalog a client may call
+            'meta[- ]tools?': frozenset({meta_tools}),
+            'mutating': frozenset({mutating}),
+            'pipeline': frozenset({pipeline}),
+            'schemas?': frozenset({direct + meta_tools}),
+        }
+    )
     return McpFacts(
         total=len(metas),
         categories=categories,
@@ -447,7 +458,23 @@ def _facts() -> McpFacts:
         direct_catalog=direct,
         meta_tools=meta_tools,
         direct_listed=direct + meta_tools,
-        valid=frozenset(valid),
+        qualified=qualified,
+    )
+
+
+def src_known_names(bindings: SrcBindings) -> frozenset[str]:
+    """Return the names a Python source binds that a doc may use as a tool-like name.
+
+    Functions, classes, module-level names, class attributes (model and result fields) and
+    parameters: the bindings a doc can legitimately describe. A local variable or a keyword
+    argument is not one, so a stale tool name that happens to match one is still reported.
+    """
+    return (
+        bindings.defs
+        | bindings.classes
+        | bindings.module_names
+        | bindings.class_attributes
+        | bindings.parameters
     )
 
 
@@ -458,10 +485,8 @@ def _known_names() -> frozenset[str]:
     names = {n for v in registry.get_categories().values() for n in v}
     names |= set(mcp_server.META_TOOLS) | set(CREDENTIAL_FAMILIES)
     names |= {p.name for p in anyio.run(mcp_server.create_server('discovery').list_prompts)}
+    names |= src_known_names(_src_bindings())
     for path in sorted(p for p in _tracked() if p.startswith('src/') and p.endswith('.py')):
-        source = (REPO / path).read_text(encoding='utf-8')
-        names |= set(re.findall(r'\b(?:def|class)\s+([A-Za-z_]\w*)', source))
-        names |= set(re.findall(r'^\s*([a-z_][a-z0-9_]*)\s*[:=]', source, re.M))
         names.add(Path(path).stem)
     for path in sorted(_tracked()):
         if path.startswith('src/unifi_mapper/mcp/manifests/') and path.endswith('.yaml'):
@@ -507,11 +532,80 @@ def _line_of(text: str, offset: int) -> int:
     return text.count('\n', 0, offset) + 1
 
 
+SENTENCE_END = re.compile(r'[.!?;](?=\s|$)')
+BLOCK_START = re.compile(r'^\s*(?:#|[-*] |\d+\. |\||```|~~~|$)')
+
+
+def _continues(line: str) -> bool:
+    """True when a prose line runs on into the next one (no sentence end, not a block)."""
+    stripped = line.strip()
+    return bool(stripped) and not BLOCK_START.match(line) and stripped[-1] not in '.!?:'
+
+
+def _sentence(lines: list[str], index: int, start: int, code: set[int]) -> str:
+    """Return the sentence holding offset ``start`` of ``lines[index]``.
+
+    Wrapped prose is joined with the lines before and after it; a table row or a line in a
+    fenced code block (a Mermaid label, a tree) stands alone, since neither wraps.
+
+    Args:
+        lines: The file's lines.
+        index: The 0-based index of the line holding the match.
+        start: The match's offset in that line.
+        code: The 1-based line numbers inside fenced code blocks.
+
+    Returns:
+        The sentence, whitespace collapsed to single spaces.
+    """
+    line = lines[index]
+    if index + 1 in code or line.lstrip().startswith('|'):
+        return line
+    first = index
+    while first > 0 and _continues(lines[first - 1]) and not BLOCK_START.match(lines[first]):
+        first -= 1
+    last = index
+    while (
+        last + 1 < len(lines)
+        and _continues(lines[last])
+        and not BLOCK_START.match(lines[last + 1])
+    ):
+        last += 1
+    text = ' '.join(ln.strip() for ln in lines[first : last + 1])
+    offset = sum(len(ln.strip()) + 1 for ln in lines[first:index])
+    offset += start - (len(line) - len(line.lstrip()))
+    begin = max((m.end() for m in SENTENCE_END.finditer(text, 0, offset)), default=0)
+    end = SENTENCE_END.search(text, offset)
+    return text[begin : end.end() if end else len(text)]
+
+
+def _allowed_counts(sentence: str, noun: str, facts: McpFacts) -> frozenset[int]:
+    """Return the counts a ``<number> <noun>`` claim in ``sentence`` may equal.
+
+    ``categories``, ``meta-tools`` and ``schemas`` name their own count. A tool count is the
+    total, or the count of each category, surface or kind the sentence names.
+    """
+    noun = noun.lower()
+    if noun == 'categories':
+        return frozenset({len(facts.categories)})
+    if noun == 'meta-tools':
+        return frozenset({facts.meta_tools})
+    if noun == 'schemas':
+        return facts.qualified['schemas?']
+    allowed = {facts.total}
+    for word, counts in facts.qualified.items():
+        if re.search(rf'\b{word}\b', sentence, re.I):
+            allowed |= counts
+    return frozenset(allowed)
+
+
 def mcp_count_problems(path: str, text: str, facts: McpFacts) -> list[str]:
     """Return ``path:line: problem`` for each MCP count that the registry doesn't support.
 
-    Checks tool and category counts in MCP lines, category table rows, the tool index's
-    headings, the direct-surface sums and the "Of the N" sentence.
+    A free-text tool count in an MCP line must be the registry's total, unless its sentence
+    names a category, a surface (``direct``, ``discovery``, ``listed``) or a kind
+    (``meta-tools``, ``mutating``, ``pipeline``, ``read-only``), whose own counts it may then
+    equal. Category table rows, the tool index's headings, the direct-surface sums and the
+    "Of the N" sentence are checked exactly.
 
     Args:
         path: The repo-relative file name.
@@ -521,14 +615,24 @@ def mcp_count_problems(path: str, text: str, facts: McpFacts) -> list[str]:
     Returns:
         The problems in file order.
     """
-    valid, categories = facts.valid, facts.categories
+    categories = facts.categories
+    lines, code = text.splitlines(), _code_lines(text)
     problems = []
-    for n, line in enumerate(text.splitlines(), 1):
+    for index, line in enumerate(lines):
+        n = index + 1
         if 'mcp' in path.lower() or 'MCP' in line or 'tool' in line.lower():
             for m in COUNT.finditer(line):
                 number = int(m.group(1))
-                if 2 < number <= 500 and number not in valid:
-                    problems.append(f'{path}:{n}: {number} {m.group(2)} matches no registry count')
+                if not 2 < number <= 500:
+                    continue
+                sentence = _sentence(lines, index, m.start(), code)
+                allowed = _allowed_counts(sentence, m.group(2), facts)
+                if number not in allowed:
+                    expected = ', '.join(str(c) for c in sorted(allowed))
+                    problems.append(f'{path}:{n}: {number} {m.group(2)}: expected {expected}')
+            for m in TOTAL_AFTER_NOUN.finditer(line):
+                if int(m.group(1)) != facts.total:
+                    problems.append(f'{path}:{n}: "{m.group(0)}", not the total {facts.total}')
             for m in WORD_CATEGORIES.finditer(line):
                 if NUMBER_WORDS[m.group(1).lower()] != len(categories):
                     problems.append(f'{path}:{n}: "{m.group(0)}", not {len(categories)}')
@@ -660,6 +764,60 @@ def test_mcp_detectors_report_unknown_names_resources_and_counts() -> None:
     ]
 
 
+def test_mcp_count_detector_requires_the_total_unless_the_sentence_qualifies_it() -> None:
+    """A bare tool count must be the total; a category, surface or kind names its own count."""
+    facts = _facts()
+    analysis, direct = facts.categories['analysis'], facts.direct_catalog
+    meta, listed, total = facts.meta_tools, facts.direct_listed, facts.total
+    text = (
+        f'The server registers {analysis} tools.\n'  # a stale total that equals a category
+        f'The analysis category holds {analysis} tools; `analysis.yaml` lists {analysis} tools.\n'
+        f'| `direct` | the meta-tools plus the catalog | {listed} tools, {direct} + {meta} |\n'
+        f'With `--surface direct` a client sees the\n'
+        f'{direct} tools, {listed} in all.\n'
+        f'The {meta} discovery meta-tools; {direct} read-only tools; {facts.pipeline} pipeline tools;\n'
+        f'the {facts.mutating} mutating tools; the {listed} schemas; {total} tools.\n'
+        f'Analysis Tools ({analysis} tools) and Diagnostics ({facts.pipeline} tools).\n'
+        '### 13.3 MCP Tool Discovery\n'
+        f'Total registered tools: **{facts.pipeline}** (the total, written after the noun).\n'
+        f'Also the {total + 1} non-mutating, non-pipeline catalog tools (the comma hid it).\n'
+    )
+    problems = mcp_count_problems('docs/mcp-demo.md', text, facts)
+    assert [p.split(': ', 1)[0] for p in problems] == [
+        'docs/mcp-demo.md:1',
+        'docs/mcp-demo.md:8',  # Diagnostics names a category; the pipeline count is not its count
+        'docs/mcp-demo.md:10',
+        'docs/mcp-demo.md:11',
+    ]
+
+
+def test_mcp_name_detector_reports_a_name_bound_only_as_a_local_variable() -> None:
+    """A tool-like name that src/ binds only as a local or keyword argument is unknown."""
+    source = (
+        'check_module_level = 1\n'
+        'check_annotated: int = 2\n'
+        '\n'
+        '\n'
+        'class Result:\n'
+        '    check_field: int = 0\n'
+        '\n'
+        '    def run(self, check_parameter):\n'
+        '        check_local_only = call(\n'
+        '            check_keyword=2,\n'
+        '        )\n'
+        '        return check_local_only\n'
+    )
+    known = src_known_names(src_bindings(source))
+    text = (
+        '`check_local_only`, `check_keyword`, `check_module_level`, `check_annotated`,\n'
+        '`check_field`, `check_parameter`, `run`, `Result`.\n'
+    )
+    assert mcp_name_problems('demo.md', text, known, frozenset()) == [
+        'demo.md:1: unknown tool-like name check_local_only',
+        'demo.md:1: unknown tool-like name check_keyword',
+    ]
+
+
 def test_tool_index_detector_reports_a_missing_tool_and_a_wrong_column() -> None:
     """The index check must notice a missing tool and a family that differs."""
     expected = {'demo': {'find_a': ('controller', '', 'Finds A'), 'find_b': ('none', '', 'B')}}
@@ -692,6 +850,244 @@ def test_documented_mcp_names_resources_and_counts_match_the_server() -> None:
 def test_mcp_guide_tool_index_matches_the_registry() -> None:
     """The guide's tool index lists every registered tool with its manifest columns."""
     assert tool_index_problems(MCP_GUIDE, _docs()[MCP_GUIDE], _index_rows()) == []
+
+
+# ---------------------------------------------------------------------------
+# Class names
+# ---------------------------------------------------------------------------
+
+# A backticked CamelCase name, alone, called or with a member: `UniFiClient`, `ToolRegistry()`,
+# `UniFiClient.get_devices()`. Two or more capitals and a lower-case letter, so a product name
+# (`UNIFI`) or a one-word type (`Path`) is not a class reference.
+CLASS_REF = re.compile(r'`([A-Z][A-Za-z0-9]*)(?:\(\)|\.[A-Za-z_][\w.]*(?:\(\))?)?`')
+# In a Mermaid classDiagram: a ``class Name`` statement, and the two ends of a relation
+# (``A <|-- B``, ``A "1" *-- "*" B : label`` and the other arrows).
+MERMAID_CLASS = re.compile(r'^\s*class\s+([A-Za-z_]\w*)')
+MERMAID_RELATION = re.compile(
+    r'^\s*([A-Za-z_]\w*)\s*(?:"[^"]*"\s*)?'
+    r'(?:<\|--|<\|\.\.|--\|>|\.\.\|>|\*--|--\*|o--|--o|<--|-->|<\.\.|\.\.>|--|\.\.)'
+    r'\s*(?:"[^"]*"\s*)?([A-Za-z_]\w*)'
+)
+# Built-in and third-party types the current docs name. A name joins only after a check that
+# the library really defines it (``python -c 'import mcp.types; mcp.types.ToolAnnotations'``,
+# the ONVIF Media and Device specifications); a name defined under ``src/`` never does, since
+# the detector reads those from the source and a stale one must fail.
+KNOWN_EXTERNAL_TYPES = frozenset(
+    {
+        'Exception',  # Python
+        'ImportError',
+        'PermissionError',
+        'ValueError',
+        'BaseModel',  # pydantic
+        'SecretStr',
+        'CallToolResult',  # mcp.types
+        'ToolAnnotations',
+        'ProtectApiClient',  # uiprotect
+        'GetStreamUri',  # ONVIF: the Media service operation
+        'XAddr',  # ONVIF: the service-address element of GetCapabilities and GetServices
+    }
+)
+
+
+@dataclass(frozen=True)
+class SrcBindings:
+    """The names one Python source (or every tracked one under ``src/``) binds.
+
+    Attributes:
+        defs: Function and method names.
+        classes: Class names.
+        module_names: Module-level assignment targets (constants, type aliases, Typer apps).
+        class_attributes: Names assigned in a class body (model and result fields).
+        parameters: Function parameter names.
+    """
+
+    defs: frozenset[str]
+    classes: frozenset[str]
+    module_names: frozenset[str]
+    class_attributes: frozenset[str]
+    parameters: frozenset[str]
+
+    def __or__(self, other: SrcBindings) -> SrcBindings:
+        """Merge two sources' bindings."""
+        return SrcBindings(
+            self.defs | other.defs,
+            self.classes | other.classes,
+            self.module_names | other.module_names,
+            self.class_attributes | other.class_attributes,
+            self.parameters | other.parameters,
+        )
+
+
+EMPTY_BINDINGS = SrcBindings(frozenset(), frozenset(), frozenset(), frozenset(), frozenset())
+
+
+def _assigned(statement: ast.stmt) -> set[str]:
+    """Return the names an ``Assign`` or ``AnnAssign`` statement binds (tuples unpacked)."""
+    if isinstance(statement, ast.Assign):
+        return {n.id for t in statement.targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+    if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
+        return {statement.target.id}
+    return set()
+
+
+def src_bindings(text: str) -> SrcBindings:
+    """Return the names one Python source binds, by kind, read from its AST.
+
+    Args:
+        text: The source.
+
+    Returns:
+        The bindings. A local variable or a keyword argument on its own line is no binding
+        a doc may name, so neither is collected.
+    """
+    tree = ast.parse(text)
+    defs: set[str] = set()
+    classes: set[str] = set()
+    class_attributes: set[str] = set()
+    parameters: set[str] = set()
+    module_names = {name for statement in tree.body for name in _assigned(statement)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            classes.add(node.name)
+            class_attributes |= {n for statement in node.body for n in _assigned(statement)}
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            defs.add(node.name)
+            args = node.args
+            parameters |= {a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)}
+            parameters |= {a.arg for a in (args.vararg, args.kwarg) if a is not None}
+    return SrcBindings(
+        frozenset(defs),
+        frozenset(classes),
+        frozenset(module_names),
+        frozenset(class_attributes),
+        frozenset(parameters),
+    )
+
+
+@functools.cache
+def _src_bindings() -> SrcBindings:
+    """Return the bindings of every tracked Python file under ``src/``."""
+    bindings = EMPTY_BINDINGS
+    for path in sorted(p for p in _tracked() if p.startswith('src/') and p.endswith('.py')):
+        bindings |= src_bindings((REPO / path).read_text(encoding='utf-8'))
+    return bindings
+
+
+def _is_class_reference(name: str) -> bool:
+    """True for a CamelCase name: two or more capitals and at least one lower-case letter."""
+    return sum(c.isupper() for c in name) >= 2 and any(c.islower() for c in name)
+
+
+@functools.cache
+def _known_classes() -> frozenset[str]:
+    """Return the class names a doc may use: ``src/`` classes, type aliases, external types.
+
+    A module-level CamelCase assignment is a type alias (``UnsubscribeFunc = Callable[[],
+    None]``), which a doc names like a class.
+    """
+    bindings = _src_bindings()
+    aliases = {n for n in bindings.module_names if _is_class_reference(n)}
+    return bindings.classes | aliases | KNOWN_EXTERNAL_TYPES
+
+
+def class_name_problems(path: str, text: str, known: frozenset[str]) -> list[str]:
+    """Return ``path:line: problem`` for each class name that no code defines.
+
+    A backticked CamelCase name in prose, and each class a Mermaid ``classDiagram`` declares or
+    relates, must be a class or type alias under ``src/`` or one of ``KNOWN_EXTERNAL_TYPES``.
+
+    Args:
+        path: The repo-relative file name.
+        text: The file's text.
+        known: Every class name a doc may use (``_known_classes()``).
+
+    Returns:
+        The problems in file order.
+    """
+    problems = []
+    for n, line in enumerate(text.splitlines(), 1):
+        for name in CLASS_REF.findall(line):
+            if _is_class_reference(name) and name not in known:
+                problems.append(f'{path}:{n}: unknown class {name}')
+    if not path.endswith('.md'):
+        return problems
+    for start, info, body in code_blocks(text):
+        if not info.startswith('mermaid') or _diagram_type(body) != 'classDiagram':
+            continue
+        for offset, line in enumerate(body):
+            names = MERMAID_CLASS.findall(line)
+            names += [end for ends in MERMAID_RELATION.findall(line) for end in ends]
+            for name in names:
+                if name not in known:
+                    problems.append(
+                        f'{path}:{start + offset}: unknown class {name} in a classDiagram'
+                    )
+    return sorted(problems, key=lambda p: int(p.split(':')[1]))
+
+
+def test_class_name_detector_reports_an_unknown_class() -> None:
+    """A made-up class in prose or a classDiagram is reported; real and external ones are not."""
+    known = _known_classes()
+    text = (
+        'A `NoSuchManager` wraps `UniFiClient`; `ToolRegistry()` and `UniFiClient.get_devices()`\n'
+        'are fine, as are `BaseModel` (pydantic), `Path`, `UNIFI_URL` and `README.md`.\n'
+        '\n'
+        '```mermaid\n'
+        'classDiagram\n'
+        '    class NoSuchThing {\n'
+        '        +run() None\n'
+        '    }\n'
+        '    class UniFiClient\n'
+        '    Exception <|-- UniFiApiError\n'
+        '    NoSuchBase <|-- NoSuchThing\n'
+        '    ToolRegistry "1" *-- "*" ToolMetadata : holds\n'
+        '```\n'
+    )
+    assert class_name_problems('demo.md', text, known) == [
+        'demo.md:1: unknown class NoSuchManager',
+        'demo.md:6: unknown class NoSuchThing in a classDiagram',
+        'demo.md:11: unknown class NoSuchBase in a classDiagram',
+        'demo.md:11: unknown class NoSuchThing in a classDiagram',
+    ]
+    assert class_name_problems('demo.py', '`NoSuchManager`\n', known) == [
+        'demo.py:1: unknown class NoSuchManager'
+    ]
+
+
+def test_src_bindings_sorts_names_by_kind() -> None:
+    """Module names, class attributes and parameters are collected; locals and kwargs are not."""
+    source = (
+        'MODULE_NAME = 1\n'
+        'Alias = dict[str, int]\n'
+        'a, b = 1, 2\n'
+        '\n'
+        '\n'
+        'class Model:\n'
+        '    field: int = 0\n'
+        '    other = 1\n'
+        '\n'
+        '    def method(self, param, *rest, key=None, **extra):\n'
+        '        local = call(keyword=1)\n'
+        '        return local\n'
+    )
+    bindings = src_bindings(source)
+    assert bindings.module_names == {'MODULE_NAME', 'Alias', 'a', 'b'}
+    assert bindings.classes == {'Model'}
+    assert bindings.defs == {'method'}
+    assert bindings.class_attributes == {'field', 'other'}
+    assert bindings.parameters == {'self', 'param', 'rest', 'key', 'extra'}
+    assert 'local' not in bindings.module_names and 'keyword' not in bindings.module_names
+
+
+def test_documented_class_names_exist_in_the_code() -> None:
+    """Every CamelCase name and classDiagram class in the current docs is defined somewhere."""
+    docs, known = _current_docs(), _known_classes()
+    references = sum(
+        1 for t in docs.values() for m in CLASS_REF.findall(t) if _is_class_reference(m)
+    )
+    assert references > 100, f'found only {references} class references: has the pattern moved?'
+    assert 'UniFiClient' in known and 'UnsubscribeFunc' in known
+    assert _all_problems(docs, lambda p, t: class_name_problems(p, t, known)) == []
 
 
 # ---------------------------------------------------------------------------
@@ -906,6 +1302,47 @@ def test_no_doc_names_a_machine_local_path() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The codemap's command total (issue 076 item 31)
+# ---------------------------------------------------------------------------
+
+# "98 commands in all" after the typer_cli.py groups; the figure went stale once (it said 68)
+# because a script outside the repository derived it.
+COMMAND_TOTAL = re.compile(r'\b(\d+) commands in all\b')
+
+
+def _leaf_commands(command: click.Command) -> int:
+    """Return how many runnable commands a Click (Typer) tree holds, groups excluded."""
+    if isinstance(command, click.Group):
+        return sum(_leaf_commands(sub) for sub in command.commands.values())
+    return 1
+
+
+def command_total_problems(path: str, text: str, total: int) -> list[str]:
+    """Return ``path:line: problem`` for every "N commands in all" that is not ``total``."""
+    return [
+        f'{path}:{_line_of(text, m.start())}: {m.group(0)}, not {total}'
+        for m in COMMAND_TOTAL.finditer(text)
+        if int(m.group(1)) != total
+    ]
+
+
+def test_command_total_detector_reports_a_stale_figure() -> None:
+    text = 'the `stp` and `radio` groups, 68 commands in all.\nand 98 commands in all.\n'
+    assert command_total_problems('demo.md', text, 98) == ['demo.md:1: 68 commands in all, not 98']
+    assert command_total_problems('demo.md', 'no total here\n', 98) == []
+
+
+def test_the_codemaps_command_total_matches_the_typer_tree() -> None:
+    """The codemap's "N commands in all" for ``typer_cli.py`` is a walk of the real tree."""
+    total = _leaf_commands(typer.main.get_command(app))
+    assert total > 60, f'the walk found only {total} commands: has the CLI moved?'
+    docs = _current_docs()
+    stated = sum(len(COMMAND_TOTAL.findall(t)) for t in docs.values())
+    assert stated >= 1, 'no doc states "N commands in all": has the codemap wording moved?'
+    assert _all_problems(docs, lambda p, t: command_total_problems(p, t, total)) == []
+
+
+# ---------------------------------------------------------------------------
 # Mermaid
 # ---------------------------------------------------------------------------
 
@@ -1031,14 +1468,101 @@ PREFIXED_READERS = (
 )
 # Python constants that only look like environment variables.
 NOT_ENV_VARS = frozenset({'UNIFI_AES_KEY', 'UNIFI_AES_IV', 'UNIFI_LTE'})
+# An expression that is the environment: ``os.environ``, ``environ``, an ``env`` parameter
+# (``load_server_settings(env=None)``) or ``(os.environ if env is None else env)``.
+ENVIRONMENT = re.compile(r'\benviron\b|^env$')
+MAPPING_READS = frozenset({'get', 'pop', 'setdefault'})
+
+
+def _is_environment(node: ast.expr) -> bool:
+    """True when ``node`` evaluates to the process environment or an injected env mapping."""
+    return bool(ENVIRONMENT.search(ast.unparse(node)))
+
+
+def _env_key_nodes(tree: ast.Module) -> list[ast.expr]:
+    """Return the expressions the source reads from the environment by key.
+
+    A read is the subscript of ``os.environ[...]``, the first argument of ``.get``, ``.pop``
+    or ``.setdefault`` on the environment, of ``os.getenv`` / ``getenv`` and of a same-file
+    helper whose parameter is itself read that way (``_bounded_number(env, key, ...)``), the
+    left side of ``in`` / ``not in`` against the environment, and an option's ``envvar=``.
+    """
+    keys: list[ast.expr] = []
+    helpers: dict[str, int] = {}  # helper name -> the index of its key parameter
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            names = [a.arg for a in (*node.args.posonlyargs, *node.args.args)]
+            for inner in ast.walk(node):
+                for key in _direct_env_keys(inner):
+                    if isinstance(key, ast.Name) and key.id in names:
+                        helpers[node.name] = names.index(key.id)
+    for node in ast.walk(tree):
+        keys += _direct_env_keys(node)
+        if isinstance(node, ast.Call):
+            name = getattr(node.func, 'id', None) or getattr(node.func, 'attr', None)
+            index = helpers.get(name or '')
+            if index is not None and len(node.args) > index:
+                keys.append(node.args[index])
+        elif isinstance(node, ast.keyword) and node.arg == 'envvar':
+            keys.append(node.value)
+    return keys
+
+
+def _direct_env_keys(node: ast.AST) -> list[ast.expr]:
+    """Return the key expressions of one environment access node (none for other nodes)."""
+    if isinstance(node, ast.Subscript) and _is_environment(node.value):
+        return [node.slice]
+    if isinstance(node, ast.Compare) and len(node.comparators) == 1:
+        if isinstance(node.ops[0], (ast.In, ast.NotIn)) and _is_environment(node.comparators[0]):
+            return [node.left]
+    if isinstance(node, ast.Call) and node.args:
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            if func.attr in MAPPING_READS and _is_environment(func.value):
+                return [node.args[0]]
+            if func.attr == 'getenv':
+                return [node.args[0]]
+        elif isinstance(func, ast.Name) and func.id == 'getenv':
+            return [node.args[0]]
+    return []
+
+
+def _module_constants(tree: ast.Module) -> dict[str, list[str]]:
+    """Return ``{name: variable names}`` for each module-level assignment of exact names.
+
+    ``CALL_AUDIT_ENV = 'UNIFI_MCP_CALL_AUDIT'`` and a table such as ``CREDENTIAL_KEYS``
+    bind the keys the code reads later, by the constant's name or by iterating the table; a
+    message constant (``'set UNIFI_URL first'``) is not an exact name and does not count.
+    """
+    constants: dict[str, list[str]] = {}
+    for statement in tree.body:
+        names = _assigned(statement)
+        value = getattr(statement, 'value', None)
+        if not names or value is None:
+            continue
+        exact = [
+            n.value
+            for n in ast.walk(value)
+            if isinstance(n, ast.Constant)
+            and isinstance(n.value, str)
+            and ENV_VAR.fullmatch(n.value)
+        ]
+        for name in names:
+            constants[name] = exact
+    return constants
 
 
 def env_vars_read(path: str, text: str) -> frozenset[str]:
     """Return the ``UNIFI_*``, ``PROTECT_*`` and ``XDG_*`` names one source file reads.
 
-    In Python only string constants count, never a docstring or a comment, so a variable the
-    code stopped reading fails the docs guard even while a docstring still names it. In a
-    shell script or YAML file every line but a comment counts.
+    In Python a variable counts as read when its name is the key of an environment read
+    (``os.environ[...]``, ``os.environ.get``, ``os.getenv``, an injected ``env`` mapping,
+    ``in os.environ``, a same-file helper's key parameter, an option's ``envvar=``), given as
+    a string or as a module-level constant, or when it is one of the exact names a
+    module-level constant or table binds. A name that appears only in a message, hint, help
+    text, docstring or comment is not read, so a variable the code stopped reading fails the
+    docs guard even while a message still names it. In a shell script or YAML file every
+    line but a comment counts.
 
     Args:
         path: The repo-relative file name.
@@ -1051,20 +1575,13 @@ def env_vars_read(path: str, text: str) -> frozenset[str]:
         code = '\n'.join(ln for ln in text.splitlines() if not ln.lstrip().startswith('#'))
         return frozenset(ENV_VAR.findall(code))
     tree = ast.parse(text)
-    docstrings: set[int] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            first = node.body[0] if node.body else None
-            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
-                docstrings.add(id(first.value))
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-            and id(node) not in docstrings
-        ):
-            names.update(ENV_VAR.findall(node.value))
+    constants = _module_constants(tree)
+    names: set[str] = {n for exact in constants.values() for n in exact}
+    for key in _env_key_nodes(tree):
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            names.update(ENV_VAR.findall(key.value))
+        elif isinstance(key, ast.Name):
+            names.update(constants.get(key.id, ()))
     return frozenset(names)
 
 
@@ -1123,6 +1640,59 @@ def test_env_reader_ignores_docstrings_and_comments() -> None:
     shell = '# UNIFI_SHELL_COMMENT\nexport UNIFI_SHELL_READ="${UNIFI_SHELL_READ:-x}"\n'
     assert env_vars_read('src/demo.py', source) == {'UNIFI_READ_HERE'}
     assert env_vars_read('scripts/demo.sh', shell) == {'UNIFI_SHELL_READ'}
+
+
+def test_env_reader_counts_reads_but_not_messages() -> None:
+    """A variable named only in a message, hint or help text is not read (issue 055)."""
+    source = (
+        'import os\n'
+        'from os import environ, getenv\n'
+        '\n'
+        "KEY = 'UNIFI_VIA_CONSTANT'\n"
+        "TABLE = {'controller': (('UNIFI_IN_A_TABLE',),)}\n"
+        "HINT = 'set UNIFI_IN_A_HINT in the config file'\n"
+        '\n'
+        '\n'
+        'def _number(env, key, low):\n'
+        '    return env.get(key)\n'
+        '\n'
+        '\n'
+        'def read(env=None):\n'
+        '    env = os.environ if env is None else env\n'
+        "    a = os.environ['UNIFI_SUBSCRIPT']\n"
+        "    b = os.environ.get('UNIFI_GET', '')\n"
+        "    c = os.getenv('UNIFI_GETENV')\n"
+        "    d = getenv('UNIFI_BARE_GETENV')\n"
+        "    e = environ.get('UNIFI_BARE_ENVIRON')\n"
+        "    f = env.get('UNIFI_INJECTED_ENV')\n"
+        "    g = (os.environ if env is None else env).get('UNIFI_EITHER_ENV')\n"
+        "    h = _number(env, 'UNIFI_VIA_HELPER', 1)\n"
+        "    if 'UNIFI_MEMBERSHIP' not in os.environ:\n"
+        '        raise ValueError(\n'
+        "            f'{KEY} and UNIFI_IN_A_MESSAGE are unset; see UNIFI_IN_AN_FSTRING'\n"
+        '        )\n'
+        "    option(envvar='UNIFI_VIA_OPTION', help='or set UNIFI_IN_HELP_TEXT')\n"
+        "    warn('UNIFI_IN_A_WARNING is deprecated', suggestion='use UNIFI_IN_A_SUGGESTION')\n"
+        '    return a, b, c, d, e, f, g, h\n'
+    )
+    read = env_vars_read('src/demo.py', source)
+    assert read == {
+        'UNIFI_VIA_CONSTANT',
+        'UNIFI_IN_A_TABLE',
+        'UNIFI_SUBSCRIPT',
+        'UNIFI_GET',
+        'UNIFI_GETENV',
+        'UNIFI_BARE_GETENV',
+        'UNIFI_BARE_ENVIRON',
+        'UNIFI_INJECTED_ENV',
+        'UNIFI_EITHER_ENV',
+        'UNIFI_VIA_HELPER',
+        'UNIFI_MEMBERSHIP',
+        'UNIFI_VIA_OPTION',
+    }
+    for message_only in ('UNIFI_IN_A_HINT', 'UNIFI_IN_A_MESSAGE', 'UNIFI_IN_AN_FSTRING'):
+        assert message_only not in read
+    assert not {'UNIFI_IN_HELP_TEXT', 'UNIFI_IN_A_WARNING', 'UNIFI_IN_A_SUGGESTION'} & read
 
 
 def test_documented_env_vars_are_read_by_the_code() -> None:
@@ -1386,6 +1956,40 @@ NOT_AN_ADDRESS = re.compile(r'version|firmware|build', re.I)
 # Global unicast and unique-local IPv6, minus the documentation prefix.
 SITE_V6 = tuple(ipaddress.IPv6Network(n) for n in ('2000::/3', 'fc00::/7'))
 DOC_V6 = ipaddress.IPv6Network('2001:db8::/32')
+LINK_LOCAL_V6 = ipaddress.IPv6Network('fe80::/10')
+# A public IPv4 address identifies the site by value, but only when it sits in a field that
+# holds an address of the site (the WAN and gateway fields of stat/device and stat/health,
+# a VPN peer); a vendor's cloud or update host, or a resolver, is in some other field.
+ADDRESS_KEY = re.compile(r'^(?:ip|ip6|ipv6|gateway|gw)$|_(?:ip|ip6|ipv6|gateway|gw)$|^wan\d?$')
+NOT_A_SITE_ADDRESS_KEY = re.compile(r'dns|ntp|server|host|resolver|speedtest', re.I)
+# Public resolvers a capture holds in its DNS fields: Cloudflare, Google, Quad9, OpenDNS.
+PUBLIC_RESOLVERS = frozenset(
+    ipaddress.IPv4Address(a)
+    for a in (
+        '1.1.1.1',
+        '1.0.0.1',
+        '8.8.8.8',
+        '8.8.4.4',
+        '9.9.9.9',
+        '149.112.112.112',
+        '208.67.222.222',
+        '208.67.220.220',
+    )
+)
+# Space no site's WAN address lies in: the documentation ranges, loopback, multicast,
+# reserved, "this network" and the broadcast address (PRIVATE_NETWORKS covers the rest).
+NOT_PUBLIC_V4 = tuple(
+    ipaddress.IPv4Network(n)
+    for n in (
+        '192.0.2.0/24',
+        '198.51.100.0/24',
+        '203.0.113.0/24',
+        '0.0.0.0/8',
+        '127.0.0.0/8',
+        '224.0.0.0/4',
+        '240.0.0.0/4',
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -1398,6 +2002,8 @@ class CapturedIdentifiers:
         ids: 24-hex object IDs and UUIDs (device and site IDs), lower case.
         subnets: The /24 of every private, link-local or CGNAT address.
         prefixes: The /48 of every global or unique-local IPv6 address.
+        addresses: Every public IPv4 address in an address field, by value (the WAN address).
+        link_local: Every link-local IPv6 address, by value (it can embed a MAC address).
     """
 
     macs: frozenset[str]
@@ -1405,10 +2011,20 @@ class CapturedIdentifiers:
     ids: frozenset[str]
     subnets: frozenset[ipaddress.IPv4Network]
     prefixes: frozenset[ipaddress.IPv6Network]
+    addresses: frozenset[ipaddress.IPv4Address] = frozenset()
+    link_local: frozenset[ipaddress.IPv6Address] = frozenset()
 
     def __bool__(self) -> bool:
         """True when the captures held any identifier."""
-        return bool(self.macs or self.serials or self.ids or self.subnets or self.prefixes)
+        return bool(
+            self.macs
+            or self.serials
+            or self.ids
+            or self.subnets
+            or self.prefixes
+            or self.addresses
+            or self.link_local
+        )
 
 
 def _mac_digits(token: str) -> str | None:
@@ -1428,8 +2044,17 @@ def _json_strings(node: object, key: str = '') -> list[tuple[str, str]]:
     return [(key, node.strip())] if isinstance(node, str) else []
 
 
+def _is_site_public_v4(key: str, address: ipaddress.IPv4Address) -> bool:
+    """True for a public address in a field that holds an address of the site (the WAN)."""
+    if not ADDRESS_KEY.search(key.lower()) or NOT_A_SITE_ADDRESS_KEY.search(key):
+        return False
+    if address in PUBLIC_RESOLVERS or any(address in n for n in NOT_PUBLIC_V4):
+        return False
+    return not any(address in network for network in PRIVATE_NETWORKS)
+
+
 def captured_identifiers(reports: Path) -> CapturedIdentifiers:
-    """Collect the MACs, serials, IDs, subnets and IPv6 prefixes in ``reports/*.json``.
+    """Collect the identifiers in ``reports/*.json``: MACs, serials, IDs, networks, addresses.
 
     Args:
         reports: The directory holding the captures.
@@ -1442,6 +2067,8 @@ def captured_identifiers(reports: Path) -> CapturedIdentifiers:
     ids: set[str] = set()
     subnets: set[ipaddress.IPv4Network] = set()
     prefixes: set[ipaddress.IPv6Network] = set()
+    addresses: set[ipaddress.IPv4Address] = set()
+    link_local: set[ipaddress.IPv6Address] = set()
     for capture in sorted(reports.glob('*.json')):
         try:
             document = json.loads(capture.read_text(encoding='utf-8'))
@@ -1470,6 +2097,10 @@ def captured_identifiers(reports: Path) -> CapturedIdentifiers:
             if isinstance(address, ipaddress.IPv4Address):
                 if any(address in network for network in PRIVATE_NETWORKS):
                     subnets.add(ipaddress.IPv4Network(f'{address}/24', strict=False))
+                elif _is_site_public_v4(key, address):
+                    addresses.add(address)
+            elif address in LINK_LOCAL_V6:
+                link_local.add(address)
             elif any(address in network for network in SITE_V6) and address not in DOC_V6:
                 prefixes.add(ipaddress.IPv6Network(f'{address}/48', strict=False))
     return CapturedIdentifiers(
@@ -1478,18 +2109,24 @@ def captured_identifiers(reports: Path) -> CapturedIdentifiers:
         frozenset(ids),
         frozenset(subnets),
         frozenset(prefixes),
+        frozenset(addresses),
+        frozenset(link_local),
     )
 
 
 def _address_kind(token: str, captured: CapturedIdentifiers) -> str | None:
-    """Return the problem kind when an IPv4 or IPv6 token lies in a captured network."""
+    """Return the problem kind when an IPv4 or IPv6 token is, or lies in, a captured one."""
     try:
         address = ipaddress.ip_address(token)
     except ValueError:
         return None
     if isinstance(address, ipaddress.IPv4Address):
+        if address in captured.addresses:
+            return 'public IPv4 address'
         if any(address in subnet for subnet in captured.subnets):
             return 'address in a captured subnet'
+    elif address in captured.link_local:
+        return 'link-local IPv6 address'
     elif any(address in prefix for prefix in captured.prefixes):
         return 'IPv6 address in a captured prefix'
     return None
@@ -1535,7 +2172,7 @@ def captured_identifier_problems(path: str, text: str, captured: CapturedIdentif
 
 
 def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: Path) -> None:
-    """Captured MACs, serials, IDs, subnets and prefixes are reported; look-alikes are not."""
+    """Captured MACs, serials, IDs, subnets, prefixes and addresses are reported; look-alikes not."""
     # Built at run time, so this file holds no literal a privacy scan could take for real.
     mac = ':'.join(['3c', '22', 'fb', '12', '34', '56'])  # universally administered
     host = '.'.join(['10', '20', '30', '40'])
@@ -1547,6 +2184,13 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
     version_neighbour = '.'.join(['10', '99', '0', '7'])
     prefix_host = ':'.join(['3fff', '1', '2', '0', '0', '0', '0', '10'])
     neighbour_v6 = ':'.join(['3fff', '1', '2', 'ab', '0', '0', '0', '1'])
+    # The WAN address is public and identifies the site by value; its /24 neighbour does not.
+    wan = '.'.join(['11', '22', '33', '44'])
+    wan_neighbour = '.'.join(['11', '22', '33', '45'])
+    resolver = '.'.join(['1', '1', '1', '1'])  # a public resolver: never an identifier
+    # A public address outside an address field (a vendor's update host, say) is not collected.
+    update_host = '.'.join(['11', '22', '34', '1'])
+    link_local = ':'.join(['fe80', '', '1a2b', '3c4d', '5e6f', '7a8b'])
     serial = 'SYN' + '0123456789'
     object_id = '5f0e1d2c' + '3b4a5968' + '77665544'
     site_id = '-'.join(['12345678', '90ab', '4cde', '8f01', '23456789abcd'])
@@ -1554,6 +2198,7 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
         'devices': [
             {'mac': mac, 'ip': host, 'serial': serial, '_id': object_id, 'ip6': prefix_host},
             {'version': version, 'site_id': site_id},
+            {'wan_ip': wan, 'dns1': resolver, 'update_host': update_host, 'ipv6': link_local},
         ]
     }
     (tmp_path / 'capture.json').write_text(json.dumps(capture), encoding='utf-8')
@@ -1565,6 +2210,8 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
         f'Serial {serial.lower()}, object {object_id.upper()}, site {site_id}.\n'
         f'IPv6 {neighbour_v6}; documentation 2001:db8::1.\n'
         f'Next to the version string: {version_neighbour}.\n'
+        f'WAN {wan}; next door {wan_neighbour}; resolver {resolver}; update host {update_host}.\n'
+        f'Link-local {link_local.upper()}; another fe80::1.\n'
     )
     assert captured_identifier_problems('demo.py', text, captured) == [
         'demo.py:1: MAC address from the local captures',
@@ -1572,6 +2219,8 @@ def test_captured_identifier_detector_reports_what_the_captures_hold(tmp_path: P
         'demo.py:4: device or site ID from the local captures',
         'demo.py:4: serial number from the local captures',
         'demo.py:5: IPv6 address in a captured prefix from the local captures',
+        'demo.py:7: public IPv4 address from the local captures',
+        'demo.py:8: link-local IPv6 address from the local captures',
     ]
 
 

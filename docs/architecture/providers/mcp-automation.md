@@ -143,7 +143,7 @@ ToolProxy ..> "importlib" : imports handler module
 | `network.yaml` | network | 6 | `get_firewall_zones`, `get_firewall_policies`, `get_acl_rules`, `get_dns_policies`, `get_clients`, `get_networks` |
 | `protect.yaml` | protect | 5 | `get_cameras`, `get_nvr_info`, `get_sensors`, `get_lights`, `get_doorbells` |
 
-Total registered tools: **87** (3 mutating, never run over MCP; 11 pipeline tools, reachable only through `execute_tool`).
+Total registered tools: **96** (3 mutating, never run over MCP; 11 pipeline tools, reachable only through `execute_tool`).
 
 ## Discovery Flow
 

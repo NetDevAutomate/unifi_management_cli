@@ -138,3 +138,9 @@ The lines above that name a rebuilt command, tool or fixture, with the commit th
 
 Keep this list as the record. Revisit an item only through issue 060's decisions or a new
 issue.
+
+## Decision (2026-10-13)
+
+Record only. Nothing listed here was ported in 0.3.0; the 0.3.0 release council treated this
+issue as the record of what the prototype had and the port chose not to carry, to be consulted
+when a 0.4.0 feature is planned.

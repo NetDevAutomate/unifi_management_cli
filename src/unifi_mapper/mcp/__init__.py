@@ -32,10 +32,19 @@ Surfaces:
     - discovery (default): search_tools, list_categories, get_tool_info, execute_tool
     - direct (``--surface direct`` / ``UNIFI_MCP_TOOL_SURFACE=direct``): those plus every
       read-only, non-pipeline catalog tool
+
+The ``server`` names (``mcp``, ``get_registry``, ``search_tools``, ``list_categories``) are
+resolved lazily (PEP 562) so that ``python -m unifi_mapper.mcp.server`` does not import
+``server`` through this package first, which made runpy warn that the module was already in
+``sys.modules`` (issue 020). ``from unifi_mapper.mcp import mcp`` works as before.
 """
 
+from typing import TYPE_CHECKING, Any
 from .registry import ToolMetadata, ToolProxy, ToolRegistry
-from .server import get_registry, list_categories, mcp, search_tools
+
+
+if TYPE_CHECKING:  # the type checker sees the real objects; at runtime __getattr__ loads them
+    from .server import get_registry, list_categories, mcp, search_tools
 
 __all__ = [
     'mcp',
@@ -46,3 +55,19 @@ __all__ = [
     'ToolMetadata',
     'ToolProxy',
 ]
+
+_SERVER_NAMES = frozenset({'mcp', 'get_registry', 'search_tools', 'list_categories'})
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve a ``server`` name on first use (PEP 562)."""
+    if name in _SERVER_NAMES:
+        from . import server
+
+        return getattr(server, name)
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
+
+
+def __dir__() -> list[str]:
+    """List the public names, the lazy ones included."""
+    return sorted(set(globals()) | _SERVER_NAMES)
