@@ -79,6 +79,12 @@ The current release is 0.3.0; only the latest release is supported.
 
 ### Fixed
 
+- Diagrams and the smart port mapper get their LLDP links back on a current controller.
+  `get_lldp_info` read each switch's neighbours through a per-device request keyed by a device
+  id the client had stripped of its hyphens (a current controller's ids are UUIDs), so the
+  controller answered 400 and every switch reported no neighbours; the neighbours now come from
+  the site-wide device records that are already fetched. On the maintainer's site that is 40
+  LLDP ports found across 12 switches where none were. (Issue 096.)
 - A 401 or 403 part-way through a session now logs in again for real before the retry.
   `get_devices`, `get_clients` and `get_device_details` called a login that returned without a
   request while the client believed itself authenticated, so they reported "re-authentication

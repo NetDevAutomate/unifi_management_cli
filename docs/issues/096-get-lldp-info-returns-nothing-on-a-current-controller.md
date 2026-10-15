@@ -1,7 +1,8 @@
 ---
 title: "`get_lldp_info` returns no LLDP neighbours on a current controller, so diagrams draw no LLDP links"
 date: 2026-10-15
-status: open
+status: resolved
+resolved_by: 50a7877
 severity: medium
 components: [api_client, run_methods, enhanced_network_topology]
 found_by: 0.4.0 lane 2b (issue 085 live check)
@@ -53,3 +54,26 @@ The `UACCMPOEAF` doorbell (type `uacc`) is outside `diagram`'s device-type filte
 lists 11 access points and the diagram draws 10. `device_inventory.py:72` already classes
 `uacc` as an access point; whether `diagram` should draw it is a small follow-on decision for the
 same fix.
+
+## Resolution (2026-10-15)
+
+Decided by the 0.4.0 validation council (pass B, D-096, unanimous) and verified live by the
+agent. The mechanism was not quite the one guessed above: a current controller's device `_id`
+is a 36-character hyphenated UUID, and `_validate_device_id` strips every non-hex character
+before the request, so the per-device path was asked for a mangled id. The controller answered
+400 (`stat/device/<id>`) and 404 (`rest/device/<id>`), `get_device_details` fabricated a
+"minimal" record with no `lldp_table`, and every switch reported no LLDP ports.
+
+The MAC-to-name cache already fetches the site-wide `stat/device` records; it now keeps each
+record by `_id`, by the sanitised id and by MAC, and `get_lldp_info` reads `lldp_table` from
+that record first, falling back to the per-device fetch only when the site-wide record lacks
+the table. No per-device request is made in the common case.
+
+Pinned by `tests/test_api_client_lldp_source.py`: the site-wide record serves the rows when
+the per-device path answers a record without them; the per-device path is still the fallback
+when the site-wide record has no table; a hyphenated UUID id finds its record while the
+per-device routes answer 400 and 404.
+
+What a user sees: on the maintainer's site, read-only, 12 switches, 40 LLDP rows, 40 LLDP
+ports found where 0 were, with 0 per-device requests; diagrams and the smart port mapper get
+their LLDP links back. The `UACC` doorbell note stays a follow-on (issue 085's filter work).
