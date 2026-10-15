@@ -31,15 +31,20 @@ Record the controller version the field disappeared in if a capture shows it.
 
 A read-only capture of the maintainer's controller (UniFi Network 11.0.83) confirmed the
 record: no `stat/device` record carries `mac_table`; each switch port has only
-`mac_table_count`. Every wired `stat/sta` client carries `sw_mac` and `sw_port` (31 of 31).
+`mac_table_count`. Every wired `stat/sta` client carries `sw_mac` and `sw_port` (31 of 31),
+with `sw_depth` beside them; `vlan` is present on 58 of 107 clients. One wired client, keys
+only: `{is_wired: bool, last_connection_network_id: str, last_seen: int, last_uplink_mac:
+str, mac: str, network_id: str, sw_depth: int, sw_mac: str, sw_port: int, uptime: int}`.
 No earlier capture exists, so the version the field disappeared in is not known.
 
 `analyze_mac_table` now takes a switch's entries from the wired clients learned on it
 (`sw_mac`, `sw_port`, and `vlan` where the client has one) when the switch record has no
 `mac_table`; a switch that sends `mac_table` is still read from it, since that is the
-switch's own table. When any switch was read from the client list, the first
-recommendation says so, and that a MAC which is not a listed wired client is not counted
-and flapping cannot be seen from that source. The report's fields are unchanged.
+switch's own table. When any switch was read from the client list, the report's first
+recommendation says which source it used, verbatim: `MAC entries for N switch(es) come from
+the client list (stat/sta sw_mac and sw_port): the controller sends no mac_table for them,
+so a MAC that is not a listed wired client is not counted, and a MAC moving between ports
+(flapping) cannot be seen`. The report's fields are unchanged.
 
 Pinned by `tests/analysis/test_mac_analyzer_client_source.py`, over a fixture in the live
 record shape with documentation MACs: wired clients fill their ports and an access port
