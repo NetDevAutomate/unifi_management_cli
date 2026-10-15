@@ -750,7 +750,7 @@ neither mutating nor a pipeline tool is listed on the direct surface,
 | Tool | Family | Marks | Description |
 | --- | --- | --- | --- |
 | `check_inter_vlan_routing` | `controller` |  | Check endpoint VLANs and firewall verdict for inter-VLAN routing |
-| `firewall_check` | `controller` |  | Verify firewall rules and policies affecting traffic flow |
+| `firewall_check` | `controller` |  | List the enabled firewall rules whose protocol and port match a source-to-destination flow, in evaluation order. The verdict is 'not assessed' (the rules' networks are not evaluated against the pair and the default policy is not read); 'basis' says what was checked. |
 | `path_analysis` | `controller` |  | Network path analysis between two endpoints |
 | `traceroute` | `controller` |  | Layer 3 path tracing to destination |
 

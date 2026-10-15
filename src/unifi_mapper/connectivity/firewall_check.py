@@ -1,9 +1,26 @@
-"""Firewall check tool for analyzing firewall rules."""
+"""Firewall check tool: which rules match a pair's protocol and port, honestly labelled.
+
+The verdict is ``not assessed`` (issue 093). The check lists the enabled rules whose protocol
+and destination port match the traffic, in evaluation order, but it does not resolve each
+rule's source and destination networks (or zones, on a zone-based firewall) against the pair,
+and it does not read the site's default inter-network policy, so it cannot say whether the
+traffic is allowed or denied. Until that evaluation exists (planned for 0.5.0 after a live
+capture of classic and zone-based rule shapes), every verdict says so and ``basis`` names
+exactly what was checked.
+"""
 
 from pydantic import Field
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 from unifi_mapper.core.models import FirewallRule
 from unifi_mapper.core.utils.client import UniFiClient
+
+
+NOT_ASSESSED = 'not assessed'
+BASIS = (
+    'Rules were matched on protocol and destination port only; their source and destination '
+    'networks were not evaluated against this pair and the default policy was not read, so '
+    'whether the traffic is allowed or denied is not assessed.'
+)
 
 
 async def firewall_check(
@@ -44,7 +61,7 @@ async def firewall_check(
 
     Returns:
         Dictionary containing:
-        - verdict: 'allow' or 'deny' based on first matching rule
+        - verdict: always ``'not assessed'`` (issue 093); ``basis`` says what was checked
         - matching_rules: All firewall rules that apply to this traffic
         - rule_order: Order in which rules are evaluated
         - recommendations: Suggestions for rule improvements
@@ -71,13 +88,12 @@ async def firewall_check(
             source_spec, dest_spec, protocol, port, firewall_data
         )
 
-        # Determine verdict based on rule order
-        verdict = _determine_verdict(matching_rules)
+        verdict = NOT_ASSESSED  # issue 093: no rule engine evaluates the pair yet
 
         # Build VLAN connectivity matrix if both endpoints are VLANs
         vlan_matrix = None
         if source_spec.get('type') == 'vlan' and dest_spec.get('type') == 'vlan':
-            vlan_matrix = await _build_vlan_matrix(vlans_data, firewall_data)
+            vlan_matrix = await _build_vlan_matrix(vlans_data)
 
         # Generate recommendations
         recommendations = _generate_firewall_recommendations(
@@ -86,6 +102,7 @@ async def firewall_check(
 
         return {
             'verdict': verdict,
+            'basis': BASIS,
             'source_resolved': source_spec,
             'destination_resolved': dest_spec,
             'matching_rules': [rule.model_dump() for rule in matching_rules],
@@ -196,8 +213,8 @@ def _rule_matches_traffic(
     port: str | None,
 ) -> bool:
     """Check if firewall rule matches the traffic."""
-    # Simplified matching logic
-    # Real implementation would need sophisticated network matching
+    # Protocol and destination port only (issue 093): the rule's source and destination
+    # networks are NOT evaluated against the pair, which is why the verdict is 'not assessed'.
 
     # Protocol check
     if rule.protocol not in ('all', protocol):
@@ -207,27 +224,13 @@ def _rule_matches_traffic(
     if port and rule.dest_port and rule.dest_port != port:
         return False
 
-    # Source/destination check - very simplified
-    # Real implementation would resolve network IDs to actual networks
-    if rule.source == 'any' or rule.destination == 'any':
-        return True
-
-    # If we get here, assume it might match for demo purposes
+    # Every rule that matches on protocol and port is listed; which of them applies to this
+    # pair's networks is the per-pair evaluation that does not exist yet (0.5.0).
     return True
 
 
-def _determine_verdict(matching_rules: list[FirewallRule]) -> Literal['allow', 'deny']:
-    """Determine firewall verdict based on matching rules."""
-    if not matching_rules:
-        return 'allow'  # Default policy
-
-    # First matching rule determines the verdict
-    first_rule = matching_rules[0]
-    return 'deny' if first_rule.is_blocking else 'allow'
-
-
 async def _build_vlan_matrix(
-    vlans_data: list[dict[str, Any]], firewall_data: list[dict[str, Any]]
+    vlans_data: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Build the VLAN-to-VLAN connectivity matrix as one record per (source, destination).
 
@@ -245,19 +248,13 @@ async def _build_vlan_matrix(
 
     for source_vlan in vlans:
         for dest_vlan in vlans:
-            if source_vlan['id'] == dest_vlan['id']:
-                # Same VLAN - always allowed
-                verdict = 'allow'
-            else:
-                # Check inter-VLAN rules (simplified)
-                verdict = _check_inter_vlan_rules(
-                    source_vlan['id'], dest_vlan['id'], firewall_data
-                )
+            # Issue 093: no cell is judged until the rules are evaluated per pair; even the
+            # same-VLAN cell depends on the switch's isolation settings this check does not read.
             matrix.append(
                 {
                     'source': source_vlan['name'],
                     'destination': dest_vlan['name'],
-                    'verdict': verdict,
+                    'verdict': NOT_ASSESSED,
                 }
             )
 
@@ -267,50 +264,30 @@ async def _build_vlan_matrix(
     }
 
 
-def _check_inter_vlan_rules(
-    source_vlan_id: int, dest_vlan_id: int, firewall_data: list[dict[str, Any]]
-) -> str:
-    """Check firewall rules between two VLANs."""
-    # Simplified VLAN rule checking
-    for rule in firewall_data:
-        if not rule.get('enabled', True):
-            continue
-
-        # Very basic heuristic for inter-VLAN rules
-        rule_name = rule.get('name', '').lower()
-        if 'block' in rule_name or 'deny' in rule_name:
-            return 'deny'
-
-    return 'allow'  # Default allow for demo
-
-
 def _generate_firewall_recommendations(
     matching_rules: list[FirewallRule],
     verdict: str,
     source_spec: dict[str, Any],
     dest_spec: dict[str, Any],
 ) -> list[str]:
-    """Generate firewall configuration recommendations."""
-    recommendations = []
-
+    """Say what the listed rules are and are not evidence of (issue 093)."""
+    recommendations = [
+        "The verdict is not assessed: this check does not evaluate each rule's source and "
+        'destination against the pair or read the default policy. Confirm reachability in the '
+        "controller's firewall view or with a live probe from the gateway."
+    ]
     if not matching_rules:
         recommendations.append(
-            'No specific firewall rules found for this traffic. '
-            'Consider adding explicit rules for better security.'
+            "No enabled rule matches this protocol and port, so the site's default policy "
+            'decides; this check does not read it.'
         )
-
-    if verdict == 'deny':
-        blocking_rule = next((r for r in matching_rules if r.is_blocking), None)
-        if blocking_rule:
+    else:
+        blocking = [r.name for r in matching_rules if r.is_blocking]
+        if blocking:
             recommendations.append(
-                f'Traffic blocked by rule "{blocking_rule.name}". '
-                f'If this traffic should be allowed, modify or reorder this rule.'
+                f'{len(blocking)} of the {len(matching_rules)} matching rules block: '
+                + ', '.join(f'"{name}"' for name in blocking)
+                + '. Whether one applies to this pair depends on its source and destination '
+                'networks, which were not evaluated.'
             )
-
-    if len(matching_rules) > 1:
-        recommendations.append(
-            f'{len(matching_rules)} rules apply to this traffic. '
-            'Consider consolidating similar rules for better performance.'
-        )
-
     return recommendations

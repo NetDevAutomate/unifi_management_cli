@@ -2573,12 +2573,14 @@ def diagnose_firewall(
     port: Optional[str] = typer.Option(None, '--port', help='Destination port or range'),
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
 ):
-    """🧱 Which firewall rules match traffic from a source to a destination, and the verdict.
+    """🧱 Which firewall rules match traffic from a source to a destination, by protocol and port.
 
-    Resolves each endpoint to an address, network or VLAN, lists the rules that match in
-    evaluation order and gives the allow/deny verdict with recommendations. The same result
-    as the MCP tool `firewall_check`; `diagnose inter-vlan` answers for two endpoints with
-    routing included. Read-only.
+    Resolves each endpoint to an address, network or VLAN and lists the enabled rules whose
+    protocol and destination port match, in evaluation order. The verdict is `not assessed`:
+    the rules' source and destination networks are not evaluated against the pair and the
+    default policy is not read, so this does not say whether the traffic passes.
+    The same result as the MCP tool `firewall_check`; `diagnose inter-vlan` answers for two
+    endpoints with routing included. Read-only.
     """
     from .connectivity.firewall_check import firewall_check
 
@@ -2594,8 +2596,10 @@ def diagnose_firewall(
     console.print(
         f'{escape(source)} → {escape(destination)} ({escape(protocol.lower())}'
         f'{", port " + escape(port) if port else ""})  '
-        f'Verdict: {_severity_cell(result.get("verdict", "unknown"))}'
+        f'Verdict: [bold]{escape(str(result.get("verdict", "not assessed")))}[/bold]'
     )
+    if result.get('basis'):
+        console.print(f'  [dim]{escape(str(result["basis"]))}[/dim]')
     for label, spec in (
         ('Source', result.get('source_resolved') or {}),
         ('Destination', result.get('destination_resolved') or {}),
@@ -2626,7 +2630,7 @@ def diagnose_firewall(
             )
         console.print(table)
     else:
-        console.print('[dim]No rule matches; the default policy applies.[/dim]')
+        console.print('[dim]No enabled rule matches this protocol and port.[/dim]')
     _print_list('Recommendations', [str(r) for r in result.get('recommendations') or []])
 
 

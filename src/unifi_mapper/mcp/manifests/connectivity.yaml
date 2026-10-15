@@ -7,7 +7,7 @@ tools:
     handler: firewall_check
     title: Firewall Check
     cli: diagnose firewall
-    description: Verify firewall rules and policies affecting traffic flow
+    description: List the enabled firewall rules whose protocol and port match a source-to-destination flow, in evaluation order. The verdict is 'not assessed' (the rules' networks are not evaluated against the pair and the default policy is not read); 'basis' says what was checked.
     priority: P1
     tags: [firewall, rules, policy, security]
     parameters:

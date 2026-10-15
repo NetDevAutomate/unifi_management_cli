@@ -8,16 +8,30 @@ NETWORKS = [
     {'_id': 'n1', 'name': 'IoT-PSK', 'vlan': 30},
     {'_id': 'n2', 'name': 'Office', 'vlan': 10},
 ]
-RULES = [{'_id': 'r1', 'name': 'Block IoT to Office', 'action': 'deny', 'enabled': True}]
 
 
-async def test_firewall_matrix_draws_one_edge_per_cross_network_record() -> None:
-    matrix = await _build_vlan_matrix(NETWORKS, RULES)
+async def test_firewall_matrix_from_the_builder_draws_the_vlans_and_no_verdict_edges() -> None:
+    """The builder's cells are 'not assessed' (issue 093): nodes are drawn, edges are not."""
+    matrix = await _build_vlan_matrix(NETWORKS)
+    assert len(matrix['connectivity_matrix']) == 4  # one record per ordered pair, self included
     text = await render_mermaid('firewall_matrix', {'vlan_matrix': matrix})
     assert '        V30["IoT-PSK\\n(VLAN 30)"]' in text
     assert '        V10["Office\\n(VLAN 10)"]' in text
+    assert [line for line in text.splitlines() if '->' in line] == []
+    assert 'not assessed' in text
+
+
+async def test_firewall_matrix_draws_an_edge_only_for_a_real_verdict() -> None:
+    matrix = {
+        'vlans': [{'id': 30, 'name': 'IoT-PSK'}, {'id': 10, 'name': 'Office'}],
+        'connectivity_matrix': [
+            {'source': 'IoT-PSK', 'destination': 'Office', 'verdict': 'deny'},
+            {'source': 'Office', 'destination': 'IoT-PSK', 'verdict': 'not assessed'},
+        ],
+    }
+    text = await render_mermaid('firewall_matrix', {'vlan_matrix': matrix})
     edges = [line.strip() for line in text.splitlines() if '->' in line]
-    assert edges == ['V30 -.->|❌ DENY| V10', 'V10 -.->|❌ DENY| V30']  # no self edges
+    assert edges == ['V30 -.->|❌ DENY| V10']  # the not-assessed cell draws nothing
 
 
 async def test_firewall_matrix_draws_allow_edges() -> None:

@@ -152,11 +152,11 @@ RULES = [
      'rule_index': 2000, 'ruleset': 'LAN_IN'},
 ]  # fmt: skip
 MATRIX = [
-    {'source': LOOKALIKE_NETWORK, 'destination': LOOKALIKE_NETWORK, 'verdict': 'allow'},
-    {'source': LOOKALIKE_NETWORK, 'destination': 'Office', 'verdict': 'deny'},
-    {'source': 'Office', 'destination': LOOKALIKE_NETWORK, 'verdict': 'deny'},
-    {'source': 'Office', 'destination': 'Office', 'verdict': 'allow'},
-]
+    {'source': LOOKALIKE_NETWORK, 'destination': LOOKALIKE_NETWORK, 'verdict': 'not assessed'},
+    {'source': LOOKALIKE_NETWORK, 'destination': 'Office', 'verdict': 'not assessed'},
+    {'source': 'Office', 'destination': LOOKALIKE_NETWORK, 'verdict': 'not assessed'},
+    {'source': 'Office', 'destination': 'Office', 'verdict': 'not assessed'},
+]  # issue 093: every cell is 'not assessed' until the rules are evaluated per pair
 
 
 def _firewall_controller() -> FakeController:
@@ -221,7 +221,7 @@ async def test_the_matrix_records_are_out_of_the_pair_rules_reach() -> None:
     """
     from unifi_mapper.connectivity.firewall_check import _build_vlan_matrix
 
-    matrix = await _build_vlan_matrix(NETWORKS, RULES)
+    matrix = await _build_vlan_matrix(NETWORKS)
     assert matrix['connectivity_matrix'] == MATRIX
     _untouched_by_both_redactors({'vlan_matrix': matrix})
 
