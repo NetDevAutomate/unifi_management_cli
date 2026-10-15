@@ -32,7 +32,10 @@ from unifi_mapper.network.client import (
 from unifi_mapper.network.models import (
     # Device Statistics
     DeviceStatistics,
+    DeviceStatisticsInterfaces,
+    DeviceUplinkRates,
     PortStatistics,
+    RadioStatistics,
     InterfaceStatistics,
     CPUMemoryStats,
     # DPI
@@ -142,7 +145,10 @@ __all__ = [
     'NetworkConnectionError',
     # Device Statistics Models
     'DeviceStatistics',
+    'DeviceStatisticsInterfaces',
+    'DeviceUplinkRates',
     'PortStatistics',
+    'RadioStatistics',
     'InterfaceStatistics',
     'CPUMemoryStats',
     # DPI Models
