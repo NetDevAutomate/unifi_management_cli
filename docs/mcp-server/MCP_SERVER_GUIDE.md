@@ -10,7 +10,8 @@ are refused over MCP (see [Control boundary](#mcp-control-boundary)); those chan
 the `unifi-mapper` `stp` and `radio` commands, which preview by default and write only when
 told (`stp apply --plan … --no-dry-run`, `stp optimize --apply`, `radio optimize --apply`,
 `radio restore --apply`, `inventory update-firmware --apply`, and every `discover` entry point
-with `--apply`).
+with `--apply`). Four more, which run `ping`, `traceroute` or `nslookup` on the gateway over
+SSH, are held back unless the operator opts in (see [Active probes](#active-probes-opt-in)).
 The [MCP standards review](MCP_STANDARDS_REVIEW.md) audits the server against the MCP
 specification and SDK guidance, and lists the decisions still open.
 
@@ -84,7 +85,7 @@ with `--run-slow`, proves that an edit reaches the next launch.
 | `-h`, `--help` | Print usage and exit 0 |
 | `--surface discovery\|direct` | Choose the [tool surface](#tool-surfaces) (case-insensitive). An invalid value exits 2 |
 | `--config PATH` | Use this env file. Missing or unreadable exits 2 |
-| `--check` | Print, as JSON, where config comes from, which credential families are ready (key names only, never values), the surface, how many tools each surface lists and where the MCP call log goes (`call_audit`: its path, or `off`), then exit 0 if the controller family is ready, else 1. Never contacts the controller, Keychain or 1Password |
+| `--check` | Print, as JSON, where config comes from, which credential families are ready (key names only, never values), the surface, how many tools each surface lists, whether the active probes are listed (`active_probes`: `enabled` and the `held` names) and where the MCP call log goes (`call_audit`: its path, or `off`), then exit 0 if the controller family is ready, else 1. Never contacts the controller, Keychain or 1Password |
 
 Unknown arguments are reported on stderr and ignored. Neither `--version` nor `--help` reads
 any config.
@@ -123,8 +124,9 @@ controllers:
 | `protect` | `PROTECT_*` | `PROTECT_HOST`, `PROTECT_USERNAME` and `PROTECT_PASSWORD` |
 
 - `UNIFI_SSH_USERNAME` and `UNIFI_SSH_PASSWORD` travel with the controller family so a file
-  stays one site, but no MCP tool uses them: only the CLI's `diagnose latency-matrix` and
-  `diagnose bandwidth` SSH to the gateway.
+  stays one site. Over MCP only the [active probes](#active-probes-opt-in) use them, and only
+  when the server starts with `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1`; the CLI's `gateway` and SSH
+  `diagnose` commands use them always.
 - The `network_api` family no longer needs its own three keys when the controller family is
   configured ([issue 037](../issues/037-launch-config-network-family-incomplete.md)). With
   `UNIFI_NETWORK_HOST` unset the host, port and scheme come from `UNIFI_URL`; with
@@ -208,6 +210,7 @@ Call it again with `offset: 200` for the last 30 clients (`next_offset` is then 
 | --- | --- | --- | --- |
 | `UNIFI_CONFIG` | unset | path to a readable env file | stderr warning; no file loaded; server starts |
 | `UNIFI_MCP_TOOL_SURFACE` | `discovery` | `discovery`, `direct` (case-insensitive) | stderr warning; `discovery` |
+| `UNIFI_MCP_ALLOW_ACTIVE_PROBES` | unset (off) | exactly `1` lists the [active probes](#active-probes-opt-in); unset or empty holds them back | the server does not start: stderr names the variable and the value, exit 2 (`--check` too). Deliberately not the warn-and-fall-back of the rows above: see [Active probes](#active-probes-opt-in) |
 | `UNIFI_MCP_TOOL_TIMEOUT` | 270 | seconds, 5–3600 | stderr warning; 270 |
 | `UNIFI_MCP_CREDENTIAL_TIMEOUT` | 15 | seconds, 1–120 | stderr warning; 15 |
 | `UNIFI_MCP_MAX_CONCURRENCY` | 4 | integer, 1–32 | stderr warning; 4 |
@@ -233,7 +236,7 @@ surface) to `$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl`, on by default
   other key is counted in `unknown_keys`, never named. Argument values, results and error
   messages are never written.
 - `outcome` is `ok`, the error code (`INVALID_PARAMETERS`, `MUTATION_REFUSED`,
-  `TOOL_NOT_FOUND`, `CONFIG_MISSING`, `TIMEOUT`, …), or `CANCELLED` for a call the client
+  `ACTIVE_PROBES_DISABLED`, `TOOL_NOT_FOUND`, `CONFIG_MISSING`, `TIMEOUT`, …), or `CANCELLED` for a call the client
   cancelled (still logged, still cancelled).
 - The meta-tools (`search_tools`, `get_tool_info`, `list_categories`) aren't logged.
 
@@ -337,7 +340,8 @@ tools that compute from their input, and for `get_wan_speedtest_history` and
 `verify_config_backup`, which read a local file; none of them contacts a controller), and
 `idempotentHint: false` for the sampling tools (`get_port_counter_rates`,
 `get_ap_retry_rates`, `diagnose_switch_port`, `check_device_freshness`). `execute_tool` is annotated non-read-only because it can reach
-`snapshot_radio_config`.
+`snapshot_radio_config`. The [active probes](#active-probes-opt-in), when listed, carry
+`readOnlyHint: false`, `idempotentHint: false` and `openWorldHint: true`.
 
 ## Tool Categories
 
@@ -392,6 +396,7 @@ failed call. On the direct surface a failure is a single text block,
 | --- | --- |
 | `TOOL_NOT_FOUND` | No tool by that name |
 | `MUTATION_REFUSED` | The tool changes the controller; use the CLI |
+| `ACTIVE_PROBES_DISABLED` | The tool runs a command on the gateway over SSH and the server was not started with `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1`; the message names the command, the suggestion the variable and the `unifi-mapper` command to run instead |
 | `INVALID_PARAMETERS` | Unknown key or a type/range error; the envelope adds `parameters` and `input_schema` |
 | `CONFIG_MISSING` | The tool's credential family isn't ready, or the Keychain/1Password lookup didn't finish in time; names the files tried |
 | `TIMEOUT` | The call exceeded `UNIFI_MCP_TOOL_TIMEOUT` (270 s by default) |
@@ -524,6 +529,68 @@ For configuration changes: generate a plan with the read-only tools, review it, 
 the CLI, then verify with read-only tools. Don't ask the assistant to invent live STP
 priorities, VLAN changes or rollback steps.
 
+## Active probes (opt-in)
+
+Some questions only the gateway can answer: can it reach this address, by which path, and
+what does it resolve this name to. Four tools ask it by running a command on the gateway over
+SSH ([issue 092](../issues/092-gateway-probes-over-mcp-behind-an-opt-in.md)). They change no
+controller setting, but an agent that calls one opens an SSH session to the gateway as
+`UNIFI_SSH_USERNAME` (normally `root`) and sends traffic from it, which is a different trust
+class from a controller read. The flag is a **process-wide permission**: once the server is
+started with it, any caller of that server may choose probe destinations, within the bounds the
+validators in `analysis/gateway_ssh.py` enforce (an address or a controller-known name, an RFC
+1123 hostname, counts and hops in fixed ranges). So they are **off by default**:
+
+| Tool | Runs on the gateway | CLI counterpart |
+| --- | --- | --- |
+| `gateway_ping` | `ping` to one address, device or client | `unifi-mapper gateway ping` |
+| `gateway_traceroute` | `traceroute` to one address, device or client | `unifi-mapper gateway traceroute` |
+| `gateway_dns_check` | `nslookup` for one hostname, optionally against one server | `unifi-mapper gateway dns` |
+| `run_latency_matrix` | `ping` to every device (and client) the controller lists | `unifi-mapper diagnose latency-matrix` |
+
+**Off (`UNIFI_MCP_ALLOW_ACTIVE_PROBES` unset).** Neither surface lists them; `search_tools`,
+`get_tool_info`, `list_categories` and `unifi://catalog` do not show them, and every count in
+this guide leaves them out. `execute_tool` (or a direct-surface call by name) returns
+`ACTIVE_PROBES_DISABLED` before it reads an argument, a credential or the gateway, and the
+call log records the refusal. At start the server logs at INFO how many probes it holds back.
+
+**On (`UNIFI_MCP_ALLOW_ACTIVE_PROBES=1`, exactly).** Set it in the MCP client's `env` block,
+not in the config file (the server reads `UNIFI_MCP_*` only from its own environment). The
+probes are listed like any catalog tool, with annotations `readOnlyHint: false`,
+`idempotentHint: false` and `openWorldHint: true`, and a description that begins
+`Runs <command> on the gateway over SSH:`, so a host that shows annotations shows the trust
+class. At start the server logs a WARNING naming them.
+
+**The value table.** Unset or empty: off. Exactly `1`: on. Any other present value (`0`,
+`true`, `yes`, `TRUE`, a whitespace-padded `" 1 "`): the server does not start, `unifi-mcp`
+and `unifi-mcp --check` exit 2 and stderr names the variable and the value. This deliberately
+differs from `UNIFI_MCP_TOOL_SURFACE` and the other `UNIFI_MCP_*` settings, which warn and use
+a default on an invalid value: those choose a listing or a limit, while this one permits
+agent-triggered SSH sessions to the gateway, so a typo must neither leave the probes off while
+the operator believes them on, nor on because the value looked truthy. The error text says so.
+
+**Deadline.** The probes run under the ordinary per-call deadline, `UNIFI_MCP_TOOL_TIMEOUT`
+(270 s by default), and a probe over a reachable gateway takes seconds (ping: `count` times
+`interval`, under 500 s at the CLI's own maximum, so `count` 100 at `interval` 5.0 does not
+fit the default deadline). A `[TIMEOUT]` on a probe is therefore indistinguishable from an
+outage: a gateway that does not answer SSH, a target that swallows every packet until the
+probe's own bound, or a stalled session all end the same way. Read it as "no answer within the
+deadline", not as a result, and prefer a smaller `count` or `max_hops` over a longer deadline.
+
+They run through the same `ToolRunner` as every tool: each input is checked by the bounds in
+`analysis/gateway_ssh.py` before it goes on a command line (an address, an RFC 1123 hostname,
+counts and hops within fixed ranges), the call is bounded by `UNIFI_MCP_TOOL_TIMEOUT`, it is in
+the call log, and results and errors are masked, `UNIFI_SSH_PASSWORD` included. The SSH
+password comes only from `UNIFI_SSH_PASSWORD` (missing: `CONFIG_MISSING`, before anything
+connects). The gateway's host key is verified against `~/.ssh/known_hosts` first, so a missing
+or changed key is `CONTROLLER_UNREACHABLE` naming `user@host` and the `ssh user@host` command
+that records it, and the password is never sent; the server never records a key itself.
+
+Not over MCP, opt-in or not: `gateway http` (the gateway fetches a URL the agent picks),
+`gateway flows` (the site's whole connection table) and `diagnose client-connectivity` wait for
+a second decision after these have run for a while; `diagnose bandwidth` saturates a link and
+stays on the CLI.
+
 ## Development
 
 ```bash
@@ -570,6 +637,7 @@ uv run unifi-mcp --check
    | `aliases` | none | Deprecated parameter name → handler parameter name |
    | `cli` | none | The `unifi-mapper` command this tool is the counterpart of (`cli: analyze poe-budget`). Every entry carries `cli` or `cli_gap`, exactly one |
    | `cli_gap` | none | Why no command exists: `raw read: ...` (an agent-facing read of objects the UI shows) or `not yet built: ...` (a gap issue 078 tracks) |
+   | `active_probe` | `false` | `true` for a tool that runs a command on the gateway over SSH: held back unless the server starts with `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1` ([Active probes](#active-probes-opt-in)). Never beside `mutates`; `tests/mcp/test_active_probes.py` requires a probe module, no local write, no writer name and a `Runs <command> on the gateway over SSH:` description |
 
 3. **Run** `uv run pytest tests/mcp tests/test_surface_parity.py -q`.
    `tests/mcp/test_manifest_parity.py` checks every entry against its handler (import,

@@ -14,6 +14,10 @@ Two tool surfaces: ``discovery`` (the default) lists the four meta-tools
 ``direct`` (``--surface direct`` or ``UNIFI_MCP_TOOL_SURFACE=direct``) also lists every
 non-mutating, non-pipeline catalog tool. Both run catalog tools through one ToolRunner.
 
+The gateway SSH probes (``active_probe: true`` in the manifests, issue 092) are held back
+from both surfaces and refused with ``ACTIVE_PROBES_DISABLED`` unless the server starts with
+``UNIFI_MCP_ALLOW_ACTIVE_PROBES=1``, read once at start like ``UNIFI_MCP_TOOL_SURFACE``.
+
 Launch it with the ``unifi-mcp`` console script, for example
 ``uvx --from <path-or-git-url> unifi-mcp`` or after ``uv tool install <path>``.
 
@@ -25,28 +29,35 @@ one shared, read-only-guarded controller client that every tool borrows, and poi
 from __future__ import annotations
 
 import anyio
+import anyio.to_thread
 import argparse
+import functools
 import importlib.metadata
 import json
 import os
+import re
 import sys
+import time
 from .call_audit import CallAuditLog, env_switch
 from .catalog import ToolCatalog, annotations_for
 from .config import (
+    ACTIVE_PROBES_ENV,
+    ActiveProbesSettingError,
     ConfigFileError,
     ResolvedConfig,
     ServerSettings,
+    active_probes_allowed,
     load_server_settings,
     resolve_mcp_config,
 )
-from .registry import ToolRegistry
-from .runner import ExecuteResult, ToolRunner
+from .registry import ToolMetadata, ToolRegistry
+from .runner import ERRORS_SET_IS_ERROR, ExecuteResult, ToolRunner, envelope_text, error_envelope
 from collections.abc import AsyncIterator
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from loguru import logger
 from mcp.server.fastmcp import FastMCP
-from mcp.types import CallToolResult, ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
@@ -59,6 +70,10 @@ SERVER_NAME = 'unifi-management'
 REQUEST_AUDIT_ENV = 'UNIFI_MCP_REQUEST_AUDIT'
 SURFACE_ENV = 'UNIFI_MCP_TOOL_SURFACE'
 SHUTDOWN_TIMEOUT_S = 3.0
+# execute_tool's refusal of an active probe while UNIFI_MCP_ALLOW_ACTIVE_PROBES is not 1.
+ACTIVE_PROBES_DISABLED = 'ACTIVE_PROBES_DISABLED'
+# An active probe's description begins "Runs <command> on the gateway over SSH: " (issue 092).
+PROBE_DESCRIPTION = re.compile(r'Runs (?P<command>\S+) on the gateway over SSH: ')
 
 Surface = Literal['discovery', 'direct']
 SURFACES: tuple[Surface, ...] = ('discovery', 'direct')
@@ -136,6 +151,7 @@ async def lifespan(server: FastMCP[Any]) -> AsyncIterator[AppState]:
     global _active_config
     config = resolve_mcp_config(_config_path)
     settings = current_settings()
+    log_active_probes(get_registry())
     shared = SharedControllerClient()
     original_stdout = sys.stdout
     _active_config = config
@@ -192,11 +208,136 @@ _registry: ToolRegistry | None = None
 
 
 def get_registry() -> ToolRegistry:
-    """Get or create the tool registry singleton."""
+    """Get or create the tool registry singleton.
+
+    It registers the active probes only when ``UNIFI_MCP_ALLOW_ACTIVE_PROBES`` is ``1``
+    (issue 092): from the loaded settings when ``main()`` has set them, else from the
+    environment, where an invalid value counts as off (``main()`` refuses to start on one).
+    """
     global _registry
     if _registry is None:
-        _registry = ToolRegistry()
+        allowed = _settings.active_probes if _settings is not None else active_probes_allowed()
+        _registry = ToolRegistry(active_probes=allowed)
     return _registry
+
+
+def probe_command(meta: ToolMetadata) -> str:
+    """Return the program an active probe runs on the gateway, from its description.
+
+    Args:
+        meta: An ``active_probe`` tool's metadata.
+
+    Returns:
+        E.g. ``'ping'``; ``'a command'`` for a description not in the shape issue 092 sets.
+    """
+    match = PROBE_DESCRIPTION.match(meta.description)
+    return match['command'] if match else 'a command'
+
+
+def log_active_probes(registry: ToolRegistry) -> None:
+    """Log, once at start, what the active-probe gate holds back or lets through.
+
+    Held back (the default): one INFO line with the count and the variable that lists them.
+    Listed: one WARNING, since each listed probe runs a command on the gateway over SSH.
+
+    Args:
+        registry: The server's registry.
+    """
+    held = registry.held_active_probes()
+    if held:
+        logger.info(
+            '{} active-probe tools held back ({}); set {}=1 to list them',
+            len(held),
+            ', '.join(sorted(held)),
+            ACTIVE_PROBES_ENV,
+        )
+        return
+    listed = sorted(
+        name
+        for names in registry.get_categories().values()
+        for name in names
+        if (meta := registry.get_metadata(name)) is not None and meta.active_probe
+    )
+    if listed:
+        logger.warning(
+            '{}=1: {} active-probe tools listed ({}); each runs a command on the gateway '
+            'over SSH as UNIFI_SSH_USERNAME',
+            ACTIVE_PROBES_ENV,
+            len(listed),
+            ', '.join(listed),
+        )
+
+
+def active_probes_disabled(meta: ToolMetadata) -> tuple[str, str]:
+    """Return the ``ACTIVE_PROBES_DISABLED`` message and suggestion for a held probe.
+
+    Args:
+        meta: The held tool's metadata.
+
+    Returns:
+        ``(message, suggestion)``: the variable and the command the tool would run, then how
+        to turn it on or run the probe at a terminal instead.
+    """
+    message = (
+        f'{meta.name} runs {probe_command(meta)} on the gateway over SSH; active probes are '
+        f'off ({ACTIVE_PROBES_ENV} is not 1)'
+    )
+    instead = f', or run `unifi-mapper {meta.cli}` at a terminal' if meta.cli else ''
+    suggestion = (
+        f'Start the MCP server with {ACTIVE_PROBES_ENV}=1 to allow gateway probes{instead}.'
+    )
+    return message, suggestion
+
+
+async def refuse_held_probe(
+    name: str, params: dict[str, Any] | None, surface: Literal['execute_tool', 'direct']
+) -> CallToolResult | None:
+    """Refuse a call to an active probe the registry holds back; None for any other tool.
+
+    The refusal is written to the call log like any other outcome, before anything is
+    validated, gated or run: nothing reads the arguments, the credentials or the gateway.
+
+    Args:
+        name: The tool the call named.
+        params: The call's arguments (only their keys are logged).
+        surface: ``execute_tool`` (the JSON envelope) or ``direct`` (one error text).
+
+    Returns:
+        The refusal, or None when ``name`` is not a held probe.
+    """
+    meta = get_registry().held_active_probes().get(name)
+    if meta is None:
+        return None
+    started = time.monotonic()
+    message, suggestion = active_probes_disabled(meta)
+    if surface == 'execute_tool':
+        envelope = error_envelope(ACTIVE_PROBES_DISABLED, message, suggestion)
+        result = CallToolResult(
+            content=[TextContent(type='text', text=envelope_text(envelope))],
+            structuredContent=envelope,
+            isError=ERRORS_SET_IS_ERROR,
+        )
+    else:
+        text = f'[{ACTIVE_PROBES_DISABLED}] {message} — {suggestion}'
+        result = CallToolResult(content=[TextContent(type='text', text=text)], isError=True)
+    audit = get_runner().call_audit
+    if audit is not None and audit.enabled:
+        record = functools.partial(
+            audit.record,
+            tool=name,
+            registered=True,  # a manifest name, not client text
+            surface=surface,
+            arg_keys=list(params or {}),
+            known_keys=frozenset(meta.parameters),
+            duration_ms=(time.monotonic() - started) * 1000,
+            outcome=ACTIVE_PROBES_DISABLED,
+        )
+        try:
+            with anyio.CancelScope(shield=True):
+                await anyio.to_thread.run_sync(record)
+        except Exception:  # noqa: BLE001 - logging a call never changes its result
+            logger.warning('MCP call log: the line for {} was not written', name)
+    return result
 
 
 # One runner per registry object, so monkeypatching get_registry() redirects it.
@@ -332,8 +473,10 @@ async def execute_tool(
 
     Tools whose manifest declares ``mutates: true`` (STP and radio apply/restore) are
     refused: changes go through the CLI's plan -> review -> apply flow, never directly
-    from an AI assistant. Arguments are validated against the tool's input_schema
-    (see get_tool_info); results and error text are masked for secrets.
+    from an AI assistant. The gateway SSH probes are refused with ACTIVE_PROBES_DISABLED
+    unless the server was started with UNIFI_MCP_ALLOW_ACTIVE_PROBES=1. Arguments are
+    validated against the tool's input_schema (see get_tool_info); results and error text
+    are masked for secrets.
 
     Args:
         tool_name: Name of the tool (e.g. "inspect_switch_port").
@@ -345,6 +488,9 @@ async def execute_tool(
         {"ok": False, "error_code": ..., "message": ..., "suggestion": ...} on failure
         (with isError set).
     """
+    refused = await refuse_held_probe(tool_name, params, 'execute_tool')
+    if refused is not None:
+        return refused
     return await get_runner().run(tool_name, params, surface='execute_tool')
 
 
@@ -448,8 +594,12 @@ class UnifiFastMCP(FastMCP[Any]):
             A ``CallToolResult`` for direct catalog tools (passed through unchanged by the
             low-level server), otherwise whatever ``FastMCP.call_tool`` returns.
         """
-        if self.runner is not None and self.runner.is_direct(name):
-            return await self.runner.run(name, arguments, surface='direct')
+        if self.runner is not None:
+            refused = await refuse_held_probe(name, arguments, 'direct')
+            if refused is not None:
+                return refused
+            if self.runner.is_direct(name):
+                return await self.runner.run(name, arguments, surface='direct')
         return await super().call_tool(name, arguments)
 
     async def list_tools(self) -> list[MCPTool]:
@@ -723,23 +873,29 @@ def check_report(
         settings: The server settings (``None``: :func:`current_settings`).
 
     Returns:
-        A JSON-safe dict naming keys only, plus the tool counts each surface lists and
-        ``call_audit``, the MCP call log's path or ``'off'``.
+        A JSON-safe dict naming keys only, plus the tool counts each surface lists,
+        ``active_probes`` (whether the gateway SSH probes are listed, and which are held
+        back) and ``call_audit``, the MCP call log's path or ``'off'``.
     """
     report = config.to_json_dict()
     controller = report['families'].get('controller')
     if controller is not None and not controller['ready']:
         # --check never runs the Keychain/1Password chain.
         controller['fallback_chain'] = 'not probed'
-    registry = ToolRegistry()
+    settings = settings or current_settings()
+    registry = ToolRegistry(active_probes=settings.active_probes)
     report['tool_count'] = len(registry)
+    report['active_probes'] = {
+        'enabled': registry.active_probes,
+        'held': sorted(registry.held_active_probes()),
+    }
     report['surface'] = surface
     report['listed_tools'] = {
         'discovery': len(META_TOOLS),
         'direct': len(META_TOOLS) + len(ToolCatalog(registry).direct_tools()),
     }
     try:
-        report['call_audit'] = (settings or current_settings()).call_audit.describe()
+        report['call_audit'] = settings.call_audit.describe()
     except RuntimeError:  # the default path with no home directory: no line can be written
         report['call_audit'] = 'off'
     return report
@@ -752,7 +908,8 @@ def main(argv: list[str] | None = None) -> None:
     ``--surface discovery|direct`` (or ``UNIFI_MCP_TOOL_SURFACE``) picks the tools listed;
     an invalid flag value exits 2, an invalid environment value warns and uses discovery.
     ``--check`` prints the resolved config (key names only) and exits 0 if the controller
-    is configured, else 1. ``--config PATH`` must name a readable file (else exit 2).
+    is configured, else 1. ``--config PATH`` must name a readable file (else exit 2), and
+    ``UNIFI_MCP_ALLOW_ACTIVE_PROBES`` must be unset, empty or ``1`` (else exit 2).
     Unknown arguments are reported on stderr and ignored. Otherwise the stdio server runs.
     Every mode but ``--version`` and ``--help`` logs to stderr at ``UNIFI_MCP_LOG_LEVEL``
     (default ``WARNING``), set before anything that can log runs.
@@ -764,7 +921,11 @@ def main(argv: list[str] | None = None) -> None:
     args, unknown = _arg_parser().parse_known_args(argv)
     if unknown:
         print(f'unifi-mcp: ignoring unknown arguments: {" ".join(unknown)}', file=sys.stderr)
-    settings = load_server_settings()
+    try:
+        settings = load_server_settings()
+    except ActiveProbesSettingError as e:
+        print(f'unifi-mcp: {e}', file=sys.stderr)
+        sys.exit(2)
     # Before --check or the direct surface builds the catalog: building it logs DEBUG notes.
     _configure_logging(settings.log_level)
     surface = resolve_surface(args.surface)

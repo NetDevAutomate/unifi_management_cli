@@ -15,63 +15,18 @@ import asyncio
 import asyncssh
 import pytest
 import socket
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from pathlib import Path
+from tests.fake_gateway import HOST, PASSWORD, USER, write_known_hosts
+from tests.fake_gateway import serve as _server
 from typing import Any
 from unifi_mapper.analysis.gateway_ssh import gateway_connect_options
 
 
 REAL_CONNECT = asyncssh.connect  # bound before the autouse fixture replaces the module attribute
-HOST = 'gateway.test'
-USER = 'root'
-PASSWORD = 'fixture-ssh-password-not-real'  # pragma: allowlist secret
-
-
-class _CountingServer(asyncssh.SSHServer):
-    """Accepts ``USER`` with ``PASSWORD``; counts every password it is offered."""
-
-    attempts: list[str]
-
-    def begin_auth(self, username: str) -> bool:
-        return True
-
-    def password_auth_supported(self) -> bool:
-        return True
-
-    def validate_password(self, username: str, password: str) -> bool:
-        type(self).attempts.append(password)
-        return username == USER and password == PASSWORD
-
-
-@asynccontextmanager
-async def _server(host_key: asyncssh.SSHKey) -> AsyncIterator[tuple[socket.socket, list[str]]]:
-    """A real asyncssh server on one end of a socket pair; yields the client end."""
-    attempts: list[str] = []
-    _CountingServer.attempts = attempts
-    server_sock, client_sock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
-    conn_task = asyncio.ensure_future(
-        asyncssh.run_server(
-            server_sock, server_factory=_CountingServer, server_host_keys=[host_key]
-        )
-    )
-    try:
-        yield client_sock, attempts
-    finally:
-        conn_task.cancel()
-        try:
-            conn = await conn_task
-            conn.close()
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001 - the handshake may have failed
-            pass
-        server_sock.close()
-        client_sock.close()
 
 
 def _known_hosts(tmp_path: Path, key: asyncssh.SSHKey | None) -> Path:
-    path = tmp_path / 'known_hosts'
-    path.write_text(f'{HOST} {key.export_public_key().decode().strip()}\n' if key else '')
-    return path
+    return write_known_hosts(tmp_path / 'known_hosts', key)
 
 
 async def _connect(sock: socket.socket, known_hosts: Path) -> Any:

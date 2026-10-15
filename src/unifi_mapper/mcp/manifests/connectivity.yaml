@@ -97,3 +97,72 @@ tools:
         type: string
         default: guided
         description: guided (plain English) or expert (technical detail)
+
+  # Active probes (issue 092): each runs one command on the gateway over SSH, as
+  # UNIFI_SSH_USERNAME, after the gateway's host key is verified (issue 038). Held back from
+  # every surface unless the server starts with UNIFI_MCP_ALLOW_ACTIVE_PROBES=1.
+  gateway_ping:
+    module: unifi_mapper.connectivity.gateway_probe
+    handler: gateway_ping
+    title: Gateway Ping
+    cli: gateway ping
+    active_probe: true
+    description: >-
+      Runs ping on the gateway over SSH: loss and round trips from the gateway to one
+      target, through the real forwarding path. A name resolves through the controller.
+    priority: P1
+    tags: [ping, latency, loss, reachability, gateway, ssh, probe]
+    parameters:
+      target:
+        type: string
+        required: true
+        description: An IP, or a device or client name, hostname or MAC (or a unique part of a name)
+      count:
+        type: integer
+        default: 10
+        description: Echo requests (1-100)
+      interval:
+        type: number
+        default: 0.3
+        description: Seconds between requests (0.2-5.0)
+
+  gateway_traceroute:
+    module: unifi_mapper.connectivity.gateway_probe
+    handler: gateway_traceroute
+    title: Gateway Traceroute
+    cli: gateway traceroute
+    active_probe: true
+    description: >-
+      Runs traceroute on the gateway over SSH: the gateway's real forwarding path to one
+      target, hop by hop; reached only when the last hop is the target and answered.
+    priority: P1
+    tags: [traceroute, path, hops, routing, gateway, ssh, probe]
+    parameters:
+      target:
+        type: string
+        required: true
+        description: An IP, or a device or client name, hostname or MAC (or a unique part of a name)
+      max_hops:
+        type: integer
+        default: 20
+        description: Hops to probe (1-30)
+
+  gateway_dns_check:
+    module: unifi_mapper.connectivity.gateway_probe
+    handler: gateway_dns_check
+    title: Gateway DNS Check
+    cli: gateway dns
+    active_probe: true
+    description: >-
+      Runs nslookup on the gateway over SSH: resolves one hostname as the gateway does,
+      or against one DNS server.
+    priority: P1
+    tags: [dns, nslookup, resolve, gateway, ssh, probe]
+    parameters:
+      hostname:
+        type: string
+        required: true
+        description: The hostname to resolve (letters, digits, hyphens and dots)
+      server:
+        type: string
+        description: A DNS server's IP address to ask instead of the gateway's own

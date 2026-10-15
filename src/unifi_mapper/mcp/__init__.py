@@ -33,6 +33,11 @@ Surfaces:
     - direct (``--surface direct`` / ``UNIFI_MCP_TOOL_SURFACE=direct``): those plus every
       read-only, non-pipeline catalog tool
 
+Active probes (issue 092): the tools that run a command on the gateway over SSH (ping,
+traceroute, nslookup, the latency matrix) are held back from both surfaces unless the
+server starts with ``UNIFI_MCP_ALLOW_ACTIVE_PROBES=1``; ``execute_tool`` refuses them with
+``ACTIVE_PROBES_DISABLED`` until then.
+
 The ``server`` names (``mcp``, ``get_registry``, ``search_tools``, ``list_categories``) are
 resolved lazily (PEP 562) so that ``python -m unifi_mapper.mcp.server`` does not import
 ``server`` through this package first, which made runpy warn that the module was already in

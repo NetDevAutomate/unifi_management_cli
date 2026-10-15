@@ -68,7 +68,7 @@ def test_shipped_manifests_flag_exactly_the_controller_writers() -> None:
 
 # A tool whose name says it changes the controller must declare ``mutates: true`` (issue 019's
 # rule: CLI only, dry run first, never over MCP). ``trigger_*`` is left out: an on-demand
-# probe is decision D1 in issue 060 (an active_probe flag), not a write.
+# probe is an ``active_probe`` (issue 092, after issue 060 decision D1), not a write.
 WRITER_PREFIXES = ('apply_', 'restore_', 'set_', 'power_cycle_', 'delete_')
 
 
@@ -110,10 +110,11 @@ def test_the_writer_naming_rule_catches_set_power_cycle_and_speedtest_names(
 
 
 # The prototype's MCP tools that the port did not put on MCP (issue 059 says why; issue 060
-# holds the open choices). None may be registered without that decision.
+# holds the open choices). None may be registered without that decision. Issue 092 took
+# gateway_ping, gateway_traceroute, gateway_dns_check and run_latency_matrix off this list:
+# they are registered as active probes, held back unless the operator opts in (pinned below).
 PROTOTYPE_TOOLS_NOT_ON_MCP = (
     'decode_object_timestamps',
-    'run_latency_matrix',
     'run_port_mapping',
     'run_spectrum_scan',
     'power_cycle_poe_port',
@@ -125,9 +126,6 @@ PROTOTYPE_TOOLS_NOT_ON_MCP = (
     'cancel_job',
     'run_ap_health_test',
     'diagnose_client_connectivity',
-    'gateway_ping',
-    'gateway_traceroute',
-    'gateway_dns_check',
     'gateway_http_check',
     'get_active_flows',
     'get_backup_status',
@@ -138,8 +136,8 @@ PROTOTYPE_TOOLS_NOT_ON_MCP = (
 
 
 def test_no_prototype_tool_left_off_mcp_is_registered() -> None:
-    assert len(set(PROTOTYPE_TOOLS_NOT_ON_MCP)) == 22
-    shipped = ToolRegistry()
+    assert len(set(PROTOTYPE_TOOLS_NOT_ON_MCP)) == 18
+    shipped = ToolRegistry(active_probes=True)  # the opt-in probes count as registered
     names = {n for tools in shipped.get_categories().values() for n in tools}
     registered = sorted(names & set(PROTOTYPE_TOOLS_NOT_ON_MCP))
     assert not registered, (
@@ -147,6 +145,17 @@ def test_no_prototype_tool_left_off_mcp_is_registered() -> None:
         'docs/issues/059-prototype-work-not-ported.md and docs/issues/060-decisions-from-the-'
         '0.2.0-port.md (decisions D1-D4, W6-W10) before registering them'
     )
+
+
+def test_the_prototype_probes_issue_092_registered_are_opt_in_active_probes() -> None:
+    held = ToolRegistry().held_active_probes()
+    assert set(held) == {
+        'gateway_ping',
+        'gateway_traceroute',
+        'gateway_dns_check',
+        'run_latency_matrix',
+    }
+    assert all(meta.active_probe and not meta.mutates for meta in held.values())
 
 
 # ---------------------------------------------------------------------------

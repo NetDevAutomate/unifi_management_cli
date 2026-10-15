@@ -39,7 +39,10 @@ def annotations_for(meta: ToolMetadata) -> ToolAnnotations:
     """Derive MCP annotations from one manifest entry (never called for mutates tools).
 
     ``idempotentHint`` is set on read-only tools too, because some hosts read it as a
-    retry signal, which the sampling tools (``idempotent: false``) must not invite.
+    retry signal, which the sampling tools (``idempotent: false``) must not invite. An
+    ``active_probe`` (issue 092) sends traffic from the gateway: not read-only, not
+    idempotent, open world, whatever else the entry says, so a host that shows annotations
+    shows the trust class.
 
     Args:
         meta: The tool's manifest metadata.
@@ -47,6 +50,14 @@ def annotations_for(meta: ToolMetadata) -> ToolAnnotations:
     Returns:
         The tool's annotations.
     """
+    if meta.active_probe:
+        return ToolAnnotations(
+            title=meta.title,
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        )
     read_only = not meta.writes_local
     return ToolAnnotations(
         title=meta.title,
