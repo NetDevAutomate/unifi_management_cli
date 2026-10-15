@@ -1,7 +1,8 @@
 ---
 title: "The output redactor drops entries of any map keyed by a name that looks like a secret"
 date: 2026-10-15
-status: open
+status: resolved
+resolved_by: cafbb13
 severity: low
 components: [core/utils/redact, typer_cli._emit_json, mcp results]
 found_by: issue 066 fix (a real backup's report lost 27 documents)
@@ -114,3 +115,48 @@ regression tests, inverted; the two fragile maps get their note. The change is r
 Breaking in the CHANGELOG, because `--json` and MCP consumers of `diagnose firewall` /
 `firewall_check` and `get_firmware_drift` see a new shape. The issue stays open until that
 lands and is resolved with the fix hash. The alternative (document the limitation) is closed.
+
+## Resolution (2026-10-15)
+
+Both outputs are reshaped, as decided; the redactor's behaviour is unchanged. Two commits:
+`089db7f` (the firewall matrix) and `cafbb13` (the firmware drift report).
+
+1. `firewall_check` -> `vlan_matrix.connectivity_matrix` is a list of
+   `{'source': ..., 'destination': ..., 'verdict': ...}` records, one per ordered pair of
+   networks, in the order the controller lists them. It was a map keyed by source network
+   name of maps keyed by destination name. Affects the MCP tool `firewall_check` and
+   `diagnose firewall --json`; the Mermaid firewall-matrix renderer reads the records.
+2. `FirmwareDriftReport.upgradable` is a list of `{'device': ..., 'offered': ...}` records
+   (`FirmwareUpgradeOffer`), one per kept device the controller offers an upgrade, in
+   inventory order (by type, then name). It was a map of device name -> offered firmware.
+   Affects the MCP tool `get_firmware_drift` and `inventory firmware-skew --json` (the CLI
+   path has no redactor and lost nothing, but prints the same model). The per-device boolean
+   `upgradable` on inventory rows is unchanged.
+
+No record has a `key`, `name` or `value` field, so neither the key rule nor the pair rule can
+reach a name. `FirmwareDriftModel.versions` stays a map, with a comment that its keys are
+firmware versions (controller vocabulary), and `core/utils/redact.py` gains a module note: a
+report must not key a mapping by a name the operator or the controller chose.
+
+The audit's six probe cases are regression tests in `tests/test_issue_091_regressions.py`,
+inverted and over the fake controller: `inventory firmware-skew --json`; `get_firmware_drift`
+through the real MCP runner on both surfaces (`Guest-Token-AP` keeps `6.6.77`, where it read
+`***redacted***` before); `diagnose firewall Office IoT-PSK --json` (the `IoT-PSK` row and
+cells are present, where the CLI printed only `Office` before); `firewall_check` through the
+runner on both surfaces (no verdict reads `***redacted***`); the STP snapshot (keyed by device
+id, already safe, kept as a guard); and the pair rule, now asserted against both record shapes
+(both redactors leave them untouched) while a controller `{name: <secret>, value: ...}` pair
+still loses its value. `tests/utility/test_render_mermaid_firewall.py` pins the renderer on
+the records.
+
+What a user sees differently: `--json` and MCP consumers of `diagnose firewall` /
+`firewall_check` and `get_firmware_drift` / `inventory firmware-skew` get lists of records in
+place of the two maps, and a network or device whose name looks like a secret keeps its
+verdict or its offered version. On the live site, read-only: `diagnose firewall 1 1 --json`
+returns 256 records for 16 networks (16 x 16, nothing dropped); `inventory firmware-skew
+--json` analyses 24 devices and returns an empty `upgradable` list (no upgrade offered today).
+
+Still fragile, outside this fix: `STPPreflightReport.required_priorities` (switch name ->
+priority) is keyed by operator-chosen names and passes no redactor today (`stp preflight
+--output` writes `model_dump_json`; there is no MCP tool). It needs the same reshape before
+either path gains `_emit_json` or a tool.

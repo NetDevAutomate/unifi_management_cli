@@ -148,7 +148,9 @@ def test_firmware_drift_names_the_fleet_newest_and_the_devices_behind() -> None:
     assert model.fleet_newest == '7.2.2'
     assert model.devices_behind == ['Garage Switch', 'Rack Switch']
     assert model.versions == {'7.1.26': ['Garage Switch', 'Rack Switch'], '7.2.2': ['Desk Switch']}
-    assert report.upgradable == {'Rack Switch': '7.2.2'}
+    assert report.model_dump(mode='json')['upgradable'] == [
+        {'device': 'Rack Switch', 'offered': '7.2.2'}
+    ]
     assert report.offline == ['Garage Switch', 'Unnamed']  # no state field counts as offline
     assert any('Garage Switch' in r for r in report.recommendations)
 
@@ -190,6 +192,12 @@ async def test_get_firmware_drift_runs_on_the_client(fake_client: None) -> None:
     assert report.device_type == 'switch'
     assert report.models_with_skew == 1
     assert report.models[0].fleet_newest == '7.2.2'
+
+
+def test_an_upgrade_with_no_named_version_is_offered_as_available() -> None:
+    devices = [{**DEVICES[0], 'upgrade_to_firmware': ''}]
+    report = firmware_drift(categorize_devices(devices), {'all'}, timestamp='t')
+    assert [(o.device, o.offered) for o in report.upgradable] == [('Rack Switch', 'available')]
 
 
 async def test_the_handlers_build_output_schemas() -> None:
