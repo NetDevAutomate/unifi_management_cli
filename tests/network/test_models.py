@@ -42,7 +42,7 @@ class TestDeviceStatistics:
         """Test basic model creation."""
         stats = DeviceStatistics(
             deviceId='test-device',
-            uptimeSeconds=3600,
+            uptimeSec=3600,
         )
         assert stats.device_id == 'test-device'
         assert stats.uptime_seconds == 3600
@@ -50,19 +50,19 @@ class TestDeviceStatistics:
     def test_uptime_human_property(self) -> None:
         """Test human-readable uptime."""
         # Less than a minute
-        stats = DeviceStatistics(uptimeSeconds=45)
+        stats = DeviceStatistics(uptimeSec=45)
         assert stats.uptime_human == '45s'
 
         # Minutes
-        stats = DeviceStatistics(uptimeSeconds=125)
+        stats = DeviceStatistics(uptimeSec=125)
         assert stats.uptime_human == '2m 5s'
 
         # Hours
-        stats = DeviceStatistics(uptimeSeconds=3661)
+        stats = DeviceStatistics(uptimeSec=3661)
         assert stats.uptime_human == '1h 1m 1s'
 
         # Days
-        stats = DeviceStatistics(uptimeSeconds=90061)
+        stats = DeviceStatistics(uptimeSec=90061)
         assert stats.uptime_human == '1d 1h 1m 1s'
 
     def test_total_bytes_properties(self) -> None:
@@ -76,18 +76,12 @@ class TestDeviceStatistics:
         assert stats.total_rx_bytes == 600
 
     def test_cpu_memory_stats(self) -> None:
-        """Test CPU/memory stats parsing."""
-        stats = DeviceStatistics(
-            cpuMemory={
-                'cpuUtilizationPercent': 45.5,
-                'memoryUtilizationPercent': 62.3,
-                'memoryUsedBytes': 1024000,
-                'memoryTotalBytes': 2048000,
-            }
+        """CPU and memory are flat percentages on the endpoint (issue 081)."""
+        stats = DeviceStatistics.model_validate(
+            {'cpuUtilizationPct': 45.5, 'memoryUtilizationPct': 62.3}
         )
-        assert stats.cpu_memory is not None
-        assert stats.cpu_memory.cpu_utilization_percent == 45.5
-        assert stats.cpu_memory.memory_utilization_percent == 62.3
+        assert stats.cpu_utilization_pct == 45.5
+        assert stats.memory_utilization_pct == 62.3
 
 
 class TestPortStatistics:

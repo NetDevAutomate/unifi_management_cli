@@ -240,7 +240,7 @@ class ACLManager:
     async def create_block_rule(
         self,
         name: str,
-        rule_type: str = 'USER',
+        rule_type: str = 'IPV4',
         source_ips: list[str] | None = None,
         source_ports: list[int] | None = None,
         source_macs: list[str] | None = None,
@@ -254,7 +254,8 @@ class ACLManager:
 
         Args:
             name: Rule name.
-            rule_type: Rule type.
+            rule_type: The rule's ``type``: ``IPV4`` (the default) or ``MAC``, the two
+                values the reference accepts (``USER`` is a ``metadata.origin``; issue 083).
             source_ips: Source IP addresses/subnets.
             source_ports: Source ports.
             source_macs: Source MAC addresses.
@@ -305,7 +306,7 @@ class ACLManager:
     async def create_allow_rule(
         self,
         name: str,
-        rule_type: str = 'USER',
+        rule_type: str = 'IPV4',
         source_ips: list[str] | None = None,
         source_ports: list[int] | None = None,
         destination_ips: list[str] | None = None,
@@ -318,7 +319,8 @@ class ACLManager:
 
         Args:
             name: Rule name.
-            rule_type: Rule type.
+            rule_type: The rule's ``type``: ``IPV4`` (the default) or ``MAC``, the two
+                values the reference accepts (``USER`` is a ``metadata.origin``; issue 083).
             source_ips: Source IP addresses/subnets.
             source_ports: Source ports.
             destination_ips: Destination IP addresses/subnets.

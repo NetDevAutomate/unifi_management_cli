@@ -11,6 +11,7 @@ import time
 import typer
 from .api_client import UnifiApiClient
 from .cli import get_default_config_path, load_env_from_config
+from .config import UnifiConfig
 from .core.utils.redact import redact_text
 from collections import defaultdict
 from datetime import datetime
@@ -87,24 +88,30 @@ def get_api_client(config_path: Optional[str] = None) -> tuple[UnifiApiClient, s
 
     load_env_from_config(config_path)
 
-    base_url = os.environ.get('UNIFI_URL')
-    site = os.environ.get('UNIFI_SITE', 'default')
-    api_token = os.environ.get('UNIFI_CONSOLE_API_TOKEN')
-    username = os.environ.get('UNIFI_USERNAME')
-    password = os.environ.get('UNIFI_PASSWORD')
-    verify_ssl = os.environ.get('UNIFI_VERIFY_SSL', 'false').lower() == 'true'
-
-    if not base_url:
+    if not os.environ.get('UNIFI_URL'):
         console.print('[red]Error: UNIFI_URL not configured[/red]')
         raise typer.Exit(1)
 
+    # The same construction as typer_cli._readonly_client: UnifiConfig owns the timeout and
+    # retry settings, so UNIFI_TIMEOUT / UNIFI_MAX_RETRIES / UNIFI_RETRY_DELAY reach this
+    # client exactly as they reach every other command's (issue 087).
+    try:
+        unifi_config = UnifiConfig.from_env(config_path)
+    except ValueError as e:
+        console.print(f'[red]Error: {escape(redact_text(e))}[/red]')
+        raise typer.Exit(1) from e
+    site = unifi_config.site
+
     client = UnifiApiClient(
-        base_url=base_url,
+        base_url=unifi_config.base_url,
         site=site,
-        api_token=api_token,
-        username=username,
-        password=password,
-        verify_ssl=verify_ssl,
+        verify_ssl=unifi_config.verify_ssl,
+        username=unifi_config.username,
+        password=unifi_config.password,
+        api_token=unifi_config.api_token,
+        timeout=unifi_config.timeout,
+        max_retries=unifi_config.max_retries,
+        retry_delay=unifi_config.retry_delay,
     )
 
     if not client.login():
