@@ -1082,6 +1082,32 @@ uv run unifi-mapper --dry-run
 uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --check
 ```
 
+#### Read-Only Live Check Before a Release (maintainers)
+
+`scripts/live_check.py` exercises both surfaces against the live controller without writing
+anything to it: the CLI in process behind the read-only guard with the request audit on, and
+the MCP server as a fresh `uvx --no-cache --from <checkout>` child with its call log and request
+audit on and the active probes forced off. One `mutates: true` tool is called only to confirm
+`MUTATION_REFUSED` with no controller request. Results go under
+`$XDG_STATE_HOME/unifi_mapper/live-check/<stamp>/`, and every file written is scanned for the
+secret values in the environment before the report prints (issue 039).
+
+```bash
+# 1. Name the switch and port the port-level checks read, and what to leave alone
+cat > ~/.config/unifi_mapper/live-check.toml <<'EOF'
+switch = "core-switch"
+port = 5
+exclude_switches = []
+exclude_ports = []
+required_vlans = [10, 20]
+EOF
+
+# 2. Run it from the checkout (exit 0: all checks passed; 1: a check failed; 2: config problem)
+uv run python scripts/live_check.py
+```
+
+The Protect surface is reported `unverified` until Protect credentials are in the environment.
+
 ---
 
 ### 12. Incident Response Procedures

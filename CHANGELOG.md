@@ -77,6 +77,12 @@ The current release is 0.3.0; only the latest release is supported.
   live gateway has not been run yet (no SSH password in the maintainer's environment), so the
   issue stays open until it has. `gateway http`, `gateway flows`, `diagnose bandwidth` and
   `diagnose client-connectivity` stay CLI-only. (Issue 092; tier 2 is a pending decision.)
+- For maintainers: `scripts/live_check.py`, a read-only live check of both surfaces before a
+  release: the CLI in process behind the read-only guard, the MCP server as a fresh
+  `uvx --no-cache --from <checkout>` child with its call log and request audit on and the probes
+  forced off, one mutating tool called only to confirm it is refused with no controller request,
+  targets from a TOML file under XDG config, results under the XDG state root, every file
+  scanned for secret values. (Issue 039.)
 
 ### Deprecated
 
