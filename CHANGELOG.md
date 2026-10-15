@@ -17,8 +17,33 @@ The current release is 0.3.0; only the latest release is supported.
   named like a secret (for example `Guest-Token-AP`) no longer reads `***redacted***` over MCP;
   the CLI path lost nothing before but prints the same model, so its shape changes too.
   (Issue 091.)
+- Python callers of `unifi_mapper.network` only (no `--json` or MCP output serialises these
+  models): `DeviceStatistics.last_seen` is now `last_heartbeat_at`; `cpu_memory` is replaced by
+  `cpu_utilization_pct` and `memory_utilization_pct`; the input aliases follow the endpoint
+  (`uptimeSec`, `loadAverage1Min`/`5Min`/`15Min`). `DeviceFeature` members are now `SWITCHING`,
+  `ACCESS_POINT` and `GATEWAY` with the Integration API's values (`switching`, `accessPoint`,
+  `gateway`); `SWITCH` and `ROUTER` remain as aliases; `PROTECT` and `TALK` are removed (the
+  reference has no such features). (Issues 081, 082.)
+
+### Changed
+
+- `DeviceFeature` uses the Integration API's feature names, so its members match what live
+  devices report. (Issue 082.)
 
 ### Fixed
+
+- `DeviceStatistics` parses the Integration API `statistics/latest` answer. It raised a
+  validation error on every live device (the endpoint sends `interfaces` as an object, the model
+  declared a list), so `get_device_statistics` and the metrics collector failed instead of
+  reporting uptime, CPU and memory. A figure the device did not send is `None`, not 0.
+  (Issue 081.)
+- `inventory` commands and the MCP port-diagnostics tools honour `UNIFI_TIMEOUT`,
+  `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY`, like every other command; a value that is not a
+  number is reported as `CONFIG_INVALID` over MCP. (Issue 087.)
+- `get_dns_policies` records carry `metadata.origin`, so user-defined and derived DNS policies
+  can be told apart (new key, additive). (Issue 084.)
+- ACL `create_block_rule` and `create_allow_rule` default to rule type `IPV4`; the old default
+  `USER` is a `metadata.origin` value the API refuses as a rule type. (Issue 083.)
 
 - `backup verify` (and the `verify_config_backup` tool) now reads a Network 10.x backup
   correctly. Those backups open each collection with a marker document and their documents

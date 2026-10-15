@@ -96,16 +96,18 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [078](078-cli-and-mcp-feature-parity-is-not-enforced.md) | The CLI and the MCP server do not have feature parity, and nothing checks that they do | resolved (`4d55fa0`) |
 | [079](079-security-audit-counts-every-neighbour-ap-as-a-critical-rogue.md) | `security_audit` counts every neighbouring AP as a critical rogue | resolved (`2f8d2a8`) |
 | [080](080-security-audit-rates-own-devices-and-iot-vendors-as-medium.md) | `security_audit` rates its own adopted devices and every IoT vendor as medium risk | resolved (`6cf067e`) |
-| [081](081-device-statistics-model-keys-do-not-match-the-endpoint.md) | `DeviceStatistics` reads keys the live `statistics/latest` endpoint does not send | open |
-| [082](082-device-feature-enum-names-differ-from-the-reference.md) | `DeviceFeature` uses `SWITCH`/`ROUTER` names the Integration API does not send | open |
-| [083](083-acl-create-helpers-default-to-a-rule-type-the-api-rejects.md) | `create_block_rule` / `create_allow_rule` default `rule_type='USER'`, a value the ACL API rejects | open |
-| [084](084-dns-policy-model-has-no-metadata-field.md) | `DNSPolicy` has no `metadata` field although the API sends `metadata.origin` | open |
+| [081](081-device-statistics-model-keys-do-not-match-the-endpoint.md) | `DeviceStatistics` reads keys the live `statistics/latest` endpoint does not send | resolved |
+| [082](082-device-feature-enum-names-differ-from-the-reference.md) | `DeviceFeature` uses `SWITCH`/`ROUTER` names the Integration API does not send | resolved |
+| [083](083-acl-create-helpers-default-to-a-rule-type-the-api-rejects.md) | `create_block_rule` / `create_allow_rule` default `rule_type='USER'`, a value the ACL API rejects | resolved |
+| [084](084-dns-policy-model-has-no-metadata-field.md) | `DNSPolicy` has no `metadata` field although the API sends `metadata.origin` | resolved |
 | [085](085-uxg-gateways-are-drawn-as-access-points.md) | A UXG gateway is classified as an access point in every diagram format | open |
 | [086](086-diagram-reports-success-after-writing-a-placeholder.md) | `diagram` prints `✅ Diagram generated` after a placeholder render | open |
-| [087](087-retry-settings-skip-the-credentials-built-clients.md) | `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` do not reach clients built from `Credentials` | open |
+| [087](087-retry-settings-skip-the-credentials-built-clients.md) | `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` do not reach clients built from `Credentials` | resolved |
 | [088](088-analyze-mac-table-reads-a-field-current-controllers-do-not-send.md) | `analyze mac-table` reads `device['mac_table']`, which current controllers do not send, so it reports nothing | open |
 | [089](089-trunk-detection-rule-exists-in-three-places.md) | The trunk-port rule is written three times and can disagree | open |
 | [090](090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md) | The MCP deadline cannot stop a synchronous handler or a worker thread it started | open |
 | [091](091-output-redactor-drops-entries-keyed-by-secret-looking-names.md) | The output redactor drops entries of any map keyed by a name that looks like a secret | resolved |
 | [092](092-gateway-probes-over-mcp-behind-an-opt-in.md) | Expose the gateway SSH probes over MCP behind an explicit opt-in (0.4.0 design) | open, decision needed |
 | [093](093-diagnose-firewall-verdicts-are-placeholder-heuristics.md) | `diagnose firewall` verdicts are placeholder heuristics, not derived from the rules | open, decision needed |
+| [094](094-acl-create-helpers-send-filters-the-api-refuses.md) | ACL create helpers send filters without a `type` and with empty lists the API refuses | open, decision needed |
+| [095](095-metrics-collector-per-port-metrics-are-always-empty.md) | `DeviceMetricsCollector` per-port metrics are always empty: `statistics/latest` sends no ports | open, decision needed |
