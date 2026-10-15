@@ -16,6 +16,9 @@ class STPPreflightReport(BaseModel):
 
     simulated_switches_added: int
     expected_root: str
+    # Keyed by switch NAME (operator-chosen). Safe only because no output redactor is on its
+    # path today (`stp preflight --output` writes model_dump_json; there is no MCP tool).
+    # Reshape to records before routing it through _emit_json or MCP (issue 091).
     required_priorities: dict[str, int] = Field(default_factory=dict)
     before_diagram: str = ''
     after_diagram: str = ''

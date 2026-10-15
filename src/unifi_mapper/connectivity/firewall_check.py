@@ -88,7 +88,7 @@ async def firewall_check(
             'verdict': verdict,
             'source_resolved': source_spec,
             'destination_resolved': dest_spec,
-            'matching_rules': [rule.dict() for rule in matching_rules],
+            'matching_rules': [rule.model_dump() for rule in matching_rules],
             'rule_evaluation_order': [rule.order for rule in matching_rules],
             'recommendations': recommendations,
             'vlan_matrix': vlan_matrix,
