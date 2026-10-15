@@ -60,3 +60,55 @@ async def test_an_explicit_rule_type_is_sent_as_given() -> None:
         await ACLManager(client).create_block_rule('Block lab', rule_type='MAC')
 
     assert [b['type'] for b in recorder.bodies] == ['MAC']
+
+
+# --- issue 094: the per-side filters are typed, never empty, and MACs never ride an IPV4 rule
+
+
+async def _create(create: str, **kwargs: Any) -> dict[str, Any]:
+    recorder = CreateRecorder()
+    config = NetworkConfig(host='192.0.2.1', api_key=SecretStr(FAKE_TOKEN), site_id=SITE_ID)
+    async with UniFiNetworkClient(config, transport=recorder) as client:
+        await getattr(ACLManager(client), create)('Block lab', **kwargs)
+    [body] = recorder.bodies
+    return body
+
+
+@pytest.mark.parametrize('create', ['create_block_rule', 'create_allow_rule'])
+async def test_an_ip_filter_is_typed_and_carries_only_the_lists_it_has(create: str) -> None:
+    body = await _create(create, source_ips=['192.0.2.0/24'], destination_ports=[443])
+    assert body['sourceFilter'] == {
+        'type': 'IP_ADDRESSES_OR_SUBNETS',
+        'ipAddressesOrSubnets': ['192.0.2.0/24'],
+    }
+    assert body['destinationFilter'] == {'type': 'PORTS', 'portFilter': [443]}
+
+
+@pytest.mark.parametrize('create', ['create_block_rule', 'create_allow_rule'])
+async def test_ips_with_ports_keep_the_address_type_and_both_lists(create: str) -> None:
+    body = await _create(create, source_ips=['192.0.2.5'], source_ports=[22])
+    assert body['sourceFilter'] == {
+        'type': 'IP_ADDRESSES_OR_SUBNETS',
+        'ipAddressesOrSubnets': ['192.0.2.5'],
+        'portFilter': [22],
+    }
+    assert 'destinationFilter' not in body or body['destinationFilter'] is None
+
+
+@pytest.mark.parametrize('create', ['create_block_rule', 'create_allow_rule'])
+async def test_no_filter_inputs_means_no_filter_at_all(create: str) -> None:
+    body = await _create(create, protocols=[ACLProtocol.TCP])
+    assert body.get('sourceFilter') is None and body.get('destinationFilter') is None
+    for side in ('sourceFilter', 'destinationFilter'):
+        assert body.get(side) != {}, 'an empty filter object is refused by the reference'
+
+
+async def test_macs_are_refused_on_an_ipv4_rule_before_any_request() -> None:
+    recorder = CreateRecorder()
+    config = NetworkConfig(host='192.0.2.1', api_key=SecretStr(FAKE_TOKEN), site_id=SITE_ID)
+    async with UniFiNetworkClient(config, transport=recorder) as client:
+        with pytest.raises(ValueError, match='MAC'):
+            await ACLManager(client).create_block_rule(
+                'Block lab', source_macs=['02:00:00:00:00:01']
+            )
+    assert recorder.bodies == []

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unifi_mapper.network.models import (
     ACLActionType,
     ACLProtocol,
@@ -237,6 +237,24 @@ class ACLManager:
                 matching.append(rule)
         return matching
 
+    @staticmethod
+    def _typed_filter(ips: list[str] | None, ports: list[int] | None) -> dict[str, Any] | None:
+        """One side's filter in the reference shape, or ``None`` when nothing was given.
+
+        The reference (Network v10.6.102 OpenAPI) makes each filter a tagged union: an
+        ``IP_ADDRESSES_OR_SUBNETS`` filter carries ``ipAddressesOrSubnets`` and an optional
+        ``portFilter``; a ``PORTS`` filter carries ``portFilter`` only; every list has
+        ``minItems: 1``, so an empty list is never sent (issue 094).
+        """
+        if ips:
+            out: dict[str, Any] = {'type': 'IP_ADDRESSES_OR_SUBNETS', 'ipAddressesOrSubnets': ips}
+            if ports:
+                out['portFilter'] = ports
+            return out
+        if ports:
+            return {'type': 'PORTS', 'portFilter': ports}
+        return None
+
     async def create_block_rule(
         self,
         name: str,
@@ -258,7 +276,8 @@ class ACLManager:
                 values the reference accepts (``USER`` is a ``metadata.origin``; issue 083).
             source_ips: Source IP addresses/subnets.
             source_ports: Source ports.
-            source_macs: Source MAC addresses.
+            source_macs: Refused: MAC addresses belong to a ``MAC`` rule, which this
+                helper does not build (issue 094). A MAC-rule helper is 0.5.0 work.
             destination_ips: Destination IP addresses/subnets.
             destination_ports: Destination ports.
             protocols: Protocol filter (TCP/UDP).
@@ -268,20 +287,14 @@ class ACLManager:
         Returns:
             Created ACL rule.
         """
-        source_filter = None
-        if source_ips or source_ports or source_macs:
-            source_filter = {
-                'ipAddressesOrSubnets': source_ips or [],
-                'portFilter': source_ports or [],
-                'macAddresses': source_macs or [],
-            }
-
-        destination_filter = None
-        if destination_ips or destination_ports:
-            destination_filter = {
-                'ipAddressesOrSubnets': destination_ips or [],
-                'portFilter': destination_ports or [],
-            }
+        if source_macs:
+            raise ValueError(
+                'MAC addresses belong to a MAC rule (type MAC, a networkIdFilter and a '
+                'MAC_ADDRESSES filter), not to an IPV4 rule; create_block_rule builds IPV4 '
+                'rules only (issue 094).'
+            )
+        source_filter = self._typed_filter(source_ips, source_ports)
+        destination_filter = self._typed_filter(destination_ips, destination_ports)
 
         protocol_filter = None
         if protocols:
@@ -332,19 +345,8 @@ class ACLManager:
         Returns:
             Created ACL rule.
         """
-        source_filter = None
-        if source_ips or source_ports:
-            source_filter = {
-                'ipAddressesOrSubnets': source_ips or [],
-                'portFilter': source_ports or [],
-            }
-
-        destination_filter = None
-        if destination_ips or destination_ports:
-            destination_filter = {
-                'ipAddressesOrSubnets': destination_ips or [],
-                'portFilter': destination_ports or [],
-            }
+        source_filter = self._typed_filter(source_ips, source_ports)
+        destination_filter = self._typed_filter(destination_ips, destination_ports)
 
         protocol_filter = None
         if protocols:
