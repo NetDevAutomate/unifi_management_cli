@@ -2,6 +2,7 @@
 title: "`backup verify` names collections by `_type`, unverified on a real backup"
 date: 2026-10-05
 status: resolved
+resolved_by: 68ea0ba
 severity: low
 components: [backup/poc_decrypt, backup/verify]
 found_by: 0.2.0 port review
