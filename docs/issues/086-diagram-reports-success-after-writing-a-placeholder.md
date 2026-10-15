@@ -2,7 +2,7 @@
 title: "`diagram` prints `✅ Diagram generated` after a placeholder render"
 date: 2026-10-13
 status: resolved
-resolved_by: 6a1406f
+resolved_by: 98dc733
 severity: low
 components: [typer_cli, enhanced_network_topology]
 found_by: the 0.3.0 CLI lane (issue 075)
@@ -34,19 +34,15 @@ and the placeholder's text, the reason, when they did not (no `dot` on `PATH`, o
 `graphviz` package). `discover` ignores the value, so issue 075's behaviour there (report
 written, exit 0) is unchanged.
 
-`diagram` no longer prints the success line after a placeholder. It prints
-`No diagram drawn: <path> holds a placeholder.` and the reason on stderr, still prints the
-device summary, and exits 1. Its `--help` says so. This reverses the "exit 0 either way"
-in the recommended fix above: a single-purpose command that drew nothing has failed, and a
-script checking only the exit code would otherwise take the placeholder for a diagram.
-Exit 1 is the reference's "an error ... a check could not run"; exit 2, the
-validation-failed code, would also need `diagram` named in the exit-code table of the CLI
-reference.
+`diagram` no longer prints the success line after a placeholder. It prints a yellow
+`No diagram drawn: <path> holds a placeholder.` line with the reason in its place, then the
+device summary, and exits 0, as issue 075 decided: a placeholder is a warning, not a
+failure, and the exit code is unchanged from 0.3.0. Its `--help` says so.
 
-Pinned by `tests/cli/test_diagram_command.py` (PNG and SVG without `dot`: exit 1, the
-not-drawn line on stderr, no success line, the placeholder written; with a fake `dot`:
-exit 0 and the success line) and `tests/test_enhanced_network_topology_render_result.py`
-(the return value without `dot`, without the package, and after a drawing).
+Pinned by `tests/cli/test_diagram_command.py` (PNG and SVG without `dot`: the warning, no
+success line, the placeholder written, exit 0; with a fake `dot`: the success line and exit
+0) and `tests/test_enhanced_network_topology_render_result.py` (the renderers' return value
+without `dot`, without the package, and after a drawing).
 
-A user without Graphviz sees a yellow not-drawn line naming the install instead of a green
-success line, and `diagram` exits 1 instead of 0.
+A user without Graphviz sees a yellow warning naming the install instead of a green success
+line; a script sees the same exit 0 it did before.
