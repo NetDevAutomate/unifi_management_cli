@@ -25,12 +25,41 @@ The current release is 0.3.0; only the latest release is supported.
   `gateway`); `SWITCH` and `ROUTER` remain as aliases; `PROTECT` and `TALK` are removed (the
   reference has no such features). (Issues 081, 082.)
 
+### Added
+
+- `unifi-mcp` can run the gateway probes `gateway_ping`, `gateway_traceroute`,
+  `gateway_dns_check` and `run_latency_matrix` when started with
+  `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1` (exactly that value). Off by default: the four tools are
+  hidden from every listing, and `execute_tool` refuses them with `ACTIVE_PROBES_DISABLED`
+  without touching SSH or the controller. When on, they are annotated not read-only, open-world
+  and not idempotent, run as the SSH user only after the gateway's host key is verified, and are
+  bounded by the ordinary per-call deadline. Any other value of the variable (`true`, `yes`,
+  `0`, a padded `1`) stops the server with exit 2 rather than falling back, because it gates
+  agent-triggered SSH to the gateway. `gateway http`, `gateway flows`, `diagnose bandwidth` and
+  `diagnose client-connectivity` stay CLI-only. (Issue 092; tier 2 is a pending decision.)
+
 ### Changed
 
 - `DeviceFeature` uses the Integration API's feature names, so its members match what live
   devices report. (Issue 082.)
 
 ### Fixed
+
+- Topology diagrams draw a UXG gateway as the gateway in every format (it was drawn as an
+  access point), `discover` and the smart port mapper no longer drop `uxg` devices, and
+  `analyze mac-table` reads a UXG's ports; a USW Flex XG is drawn as a switch. (Issue 085.)
+- `analyze mac-table` reads the switch and port each wired client is learned on when a switch
+  sends no `mac_table`, as current controllers do, and says which source it used; it reported
+  nothing on those controllers. (Issue 088.)
+- `diagnose vlans`, `analyze vlan-coverage` and `analyze foreign-bridges` use one trunk-port
+  rule, so they no longer disagree about a port; `vlan-coverage` audits every trunk
+  `diagnose vlans` names and treats a forward-all trunk as carrying every VLAN. `vlan-traffic
+  coverage` counts a raw gap by the same measured bound `vlan-traffic report` rates by, so at a
+  60 s cadence the raw cutoff moves from 360 s to 600 s and a missed sample or two is no longer
+  a gap. (Issue 089.)
+- `diagram` prints a yellow `No diagram drawn` warning instead of `Diagram generated` when
+  Graphviz is missing and the PNG or SVG file is a placeholder; the exit code stays 0, as issue
+  075 decided. (Issue 086.)
 
 - `DeviceStatistics` parses the Integration API `statistics/latest` answer. It raised a
   validation error on every live device (the endpoint sends `interfaces` as an object, the model

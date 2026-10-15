@@ -145,7 +145,9 @@ before any subcommand, `discover` included, so a write is never requested by acc
 #### `discover` or `diagram` Writes a Placeholder: Graphviz's `dot` Not Found
 
 **Symptom**: `discover` (or `diagram`) reads the controller and exits 0, but the PNG or SVG
-file holds one line of text, and the log carries:
+file holds one line of text, and the log carries the warning below. `diagram` also prints a
+yellow `No diagram drawn: <path> holds a placeholder.` line on stdout in place of its
+`Diagram generated` line (issue 086):
 
 ```text
 WARNING PNG diagram not drawn: Graphviz's dot program is not on PATH. Install it with: brew install graphviz (macOS) or sudo apt install graphviz (Debian/Ubuntu); or use --format html, which needs no Graphviz.
