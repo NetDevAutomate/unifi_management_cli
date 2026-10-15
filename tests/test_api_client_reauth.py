@@ -34,6 +34,7 @@ def _client(answers: list[Mock]) -> tuple[UnifiApiClient, list[str]]:
     client.is_authenticated = True
     client.is_unifi_os = True
     client.session = Mock()
+    client.session.handles_reauth = False  # a plain session: the client owns re-authentication
     client.session.headers = {}
     client.session.get = Mock(side_effect=answers)
     client.session.post = Mock(side_effect=answers)

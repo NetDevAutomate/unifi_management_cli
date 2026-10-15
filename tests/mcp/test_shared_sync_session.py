@@ -298,6 +298,26 @@ def test_a_second_401_is_returned_as_is_never_a_loop(controller: Controller) -> 
     assert sum(1 for c in controller.calls if c['path'] == DEVICES) == 2  # one replay
 
 
+def test_a_permanent_401_through_a_high_level_getter_costs_one_login_and_one_replay(
+    controller: Controller,
+) -> None:
+    """One re-authentication owner on the shared path (0.4.0 council pass B, F-04).
+
+    The guard refreshes and replays once at the session level. ``get_devices`` has its own
+    401 branch that re-logs in and retries; stacked on the shared session that made a
+    permanent 401 cost three logins and four requests. On the shared session the client's
+    branch must stand down, so the advertised bound holds through the real getter.
+    """
+    controller.routes.update(
+        default_routes(devices=(401, {'meta': {'rc': 'error', 'msg': 'api.err.LoginRequired'}}))
+    )
+    with tools._readonly_sync_client() as (api, site):
+        result = api.get_devices(site)
+    assert result == {}  # the getter's failure value, not a late success
+    assert controller.logins == 2, 'the first login and ONE refresh'
+    assert sum(1 for c in controller.calls if c['path'] == DEVICES) == 2, 'one request, one replay'
+
+
 async def test_a_refresh_on_one_call_leaves_a_concurrent_call_unaffected(
     controller: Controller,
 ) -> None:

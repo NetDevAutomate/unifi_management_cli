@@ -315,7 +315,14 @@ class UnifiApiClient:
         :meth:`login` returns ``True`` without a request while ``is_authenticated`` is set, so
         the session that just failed has to be marked stale first; otherwise the "retry" replays
         the request on the same dead session (found with issue 021's shared sync session).
+
+        A session that re-authenticates itself (``handles_reauth`` is true: the MCP server's
+        shared guarded session refreshes once and replays once at the session level) is the
+        single owner of that bound. When such a session still answers 401, this client does
+        not log in again on top of it: it returns ``False`` so the caller reports the failure.
         """
+        if getattr(self.session, 'handles_reauth', False):
+            return False
         self.is_authenticated = False
         return self.login()
 

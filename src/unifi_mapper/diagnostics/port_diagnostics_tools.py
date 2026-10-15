@@ -197,6 +197,8 @@ class _SharedSession(ReadOnlySession):
     never reach a response: the guard refuses them first.
     """
 
+    handles_reauth = True  # the client's own 401 branches stand down (one owner of the bound)
+
     def __init__(self, record: _Record, site: str, audit: list[dict[str, str]]) -> None:
         super().__init__(_RawSession(record), site, audit)
         self._record = record
