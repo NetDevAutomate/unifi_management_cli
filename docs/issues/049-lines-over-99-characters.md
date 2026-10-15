@@ -57,3 +57,13 @@ behaviour changes. `E501` stays in the ignore list for 0.3.0. `tests/test_line_l
 pins the count at 240 so it can only fall; the sweep lands after the release, lowers the ceiling
 to 0 and removes `E501` from the ignore list, which retires the ratchet. Markdown lines are left
 as they are (tables and links wrap badly) and `CONTRIBUTING.md` says so.
+
+## Decision (2026-10-15)
+
+Deferred again, to its own pull request after 0.4.0. The count is still 240 (196 in `src/`,
+none added by the 0.4.0 wave; the ratchet held throughout) and the sweep is 196 mechanical
+source edits: landing them as the last commit before the release's final validation pass
+would bury the release diff in noise and add regression risk for no behaviour change. The
+0.4.0 planning council (pass A) allowed the sweep only if every gate stayed green at the end
+of the finishing lane; the gates are green, but the review-ability argument wins. 0.5.0, as
+the first commit of the cycle, lowering the ceiling with it.

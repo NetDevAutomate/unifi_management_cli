@@ -51,3 +51,8 @@ Which of W1–W5, if any, to build. Whatever is built must follow the rules the 
 None of W1 to W5 is built in 0.3.0. The issue stays open as the backlog for write-capable CLI
 commands; whatever is built later must follow the rules above (CLI only, preview by default,
 `--apply`, never registered over MCP). Decided by the 0.3.0 release council (D-019).
+
+## Decision (2026-10-15)
+
+None of W1 to W5 is built in 0.4.0 either; the rules above are unchanged. Decided by the 0.4.0
+planning council (pass A, D-019, adopted unanimously). The issue stays open as the backlog.

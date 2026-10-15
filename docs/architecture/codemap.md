@@ -1006,7 +1006,8 @@ Four modules for locating specific assets, all on `UniFiClient`. The `discovery`
 
 ## 14. `connectivity/` Package
 
-Four connectivity tools, all on `UniFiClient`, and the CLI-only gateway probes over SSH.
+Four connectivity tools, all on `UniFiClient`, and the gateway probes over SSH (ping, traceroute
+and dns are MCP tools behind `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1`, issue 092; http and flows CLI only).
 
 | Module | Purpose |
 |---|---|
@@ -1014,7 +1015,7 @@ Four connectivity tools, all on `UniFiClient`, and the CLI-only gateway probes o
 | `inter_vlan.py` | `check_inter_vlan_routing`: resolves two endpoints, their VLANs and gateway, and the firewall verdict between them (`diagnose inter-vlan`) |
 | `path_analysis.py` | Calculates layer-2 and layer-3 path between two endpoints |
 | `traceroute.py` | Logical traceroute through UniFi topology (does not send ICMP) |
-| `gateway_probe.py` | `gateway ping`, `traceroute`, `dns`, `http` and `flows` (CLI only, no MCP tool): one SSH session per probe through `analysis/gateway_ssh.py`, an argv with its own bound, the prototype's conntrack, nslookup and curl parsers, and a traceroute parser that reads each hop line by token, so a host name never adds a time (a time is `0.5 ms` or, as GNU inetutils prints it, `0.5ms`; a hop is `timeout` with no reply, `unreachable` on an ICMP unreachable annotation, and `reached` needs the target as an answering last hop); names resolve through the read-only `UniFiClient()` by `match_identities` (exact identities across devices and clients first, then a unique partial name; shared with `client_connectivity.find_client`) |
+| `gateway_probe.py` | `gateway ping`, `traceroute`, `dns`, `http` and `flows` (the first three also MCP tools behind `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1`, issue 092; `http` and `flows` CLI only): one SSH session per probe through `analysis/gateway_ssh.py`, an argv with its own bound, the prototype's conntrack, nslookup and curl parsers, and a traceroute parser that reads each hop line by token, so a host name never adds a time (a time is `0.5 ms` or, as GNU inetutils prints it, `0.5ms`; a hop is `timeout` with no reply, `unreachable` on an ICMP unreachable annotation, and `reached` needs the target as an answering last hop); names resolve through the read-only `UniFiClient()` by `match_identities` (exact identities across devices and clients first, then a unique partial name; shared with `client_connectivity.find_client`) |
 
 The package `__init__.py` exports `firewall_check`, `path_analysis`, `traceroute`, `check_inter_vlan_routing` and its models directly.
 

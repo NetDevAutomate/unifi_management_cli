@@ -44,7 +44,7 @@ C4Component
         Component(analysis, "analysis/*.py", "Python", "STP, VLAN, MTU, SFP, LAG, QoS, capacity, firmware, radio, MAC, and traffic matrix analysis; AP health sampling and the per-VLAN traffic sampler and store (CLI)")
         Component(diagnostics, "diagnostics/*.py", "Python", "Network health, performance, security, connectivity analysis and the port-diagnostics tools")
         Component(discovery, "discovery/*.py", "Python", "Find device, IP, MAC, and client trace")
-        Component(connectivity, "connectivity/*.py", "Python", "Firewall checks, path analysis, traceroute, inter-VLAN routing checks, and the gateway probes over SSH (CLI only)")
+        Component(connectivity, "connectivity/*.py", "Python", "Firewall checks, path analysis, traceroute, inter-VLAN routing checks, and the gateway probes over SSH (ping, traceroute and dns over MCP behind UNIFI_MCP_ALLOW_ACTIVE_PROBES=1, issue 092; http and flows CLI only)")
     }
 
     Container_Boundary(modern, "Async Integration API Path") {

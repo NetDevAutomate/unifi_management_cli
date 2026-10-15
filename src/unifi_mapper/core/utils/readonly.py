@@ -387,6 +387,7 @@ def install_read_only_guard(client: Any, site: str | None = None) -> list[dict[s
     guarded_site = site or getattr(client, 'site', 'default')
     client.session = ReadOnlySession(session, guarded_site, audit)
     _keep_guard_across_login(client, guarded_site, audit)
+    _publish_guarded(client, guarded_site, audit)
     return audit
 
 
@@ -410,6 +411,22 @@ def _keep_guard_across_login(client: Any, site: str, audit: list[dict[str, str]]
         if callable(method):
             original = getattr(method, '__dict__', {}).get(_ORIGINAL_LOGIN_ATTR, method)
             setattr(client, name, _login_then_guard(original, client, site, audit))
+
+
+def _publish_guarded(client: Any, site: str, audit: list[dict[str, str]]) -> None:
+    """Make the client hand a freshly authenticated session over already guarded.
+
+    ``UnifiApiClient._perform_login`` publishes its new session through
+    ``_publish_session``; replacing that method on the instance means ``client.session``
+    goes from one :class:`ReadOnlySession` to the next in a single store, so a worker on
+    another thread can never read the raw session during a login. The login wrappers stay as
+    the fallback for a client that assigns ``session`` some other way.
+    """
+
+    def publish_guarded(session: Any) -> None:
+        client.session = ReadOnlySession(session, site, audit)
+
+    client._publish_session = publish_guarded
 
 
 def _login_then_guard(

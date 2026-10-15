@@ -1,13 +1,15 @@
 """Live probes run on the gateway over SSH: ping, traceroute, DNS, HTTP and conntrack flows.
 
-Class B (CLI only, ``unifi-mapper gateway ...``; no MCP tool, decision D1 in issue 060): each
+Class B (``unifi-mapper gateway ...``; ``gateway_ping``, ``gateway_traceroute`` and
+``gateway_dns_check`` are also MCP tools, held back unless the server starts with
+``UNIFI_MCP_ALLOW_ACTIVE_PROBES=1``, issue 092; ``http`` and ``flows`` stay CLI only): each
 probe opens one session through ``analysis/gateway_ssh.py`` and runs one argv with its own
 bound (``gateway http --vlan`` runs two: ``ip -j addr show`` to find the VLAN's interface,
 then ``curl``), every value checked by that module's validators first, so nothing a user
-types or the controller reports can add a command or an option. The gateway's host key is
-not verified (issue 038). A device or client name is resolved to its address through
-``UniFiClient()``, which borrows the read-only holder the CLI installs, so those reads can't
-write.
+or an agent types, or the controller reports, can add a command or an option. The gateway's
+host key is verified before the password is sent (issue 038). A device or client name is
+resolved to its address through ``UniFiClient()``, which borrows the read-only holder the CLI
+(or the MCP server) installs, so those reads can't write.
 
 Ported from the prototype (a local archive, not in the repo): the conntrack, nslookup and
 curl parsers are the prototype's, logic unchanged; the traceroute parser reads each hop line token by

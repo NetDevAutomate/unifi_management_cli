@@ -14,6 +14,7 @@ from unifi_mapper.network.dns import DNSPolicyManager
 from unifi_mapper.network.models import (
     ACLRule,
     ACLTrafficFilter,
+    DeviceFeature,
     DeviceInfo,
     DeviceState,
     DNSPolicy,
@@ -107,6 +108,36 @@ class TestDeviceFeatures:
         port = device.interfaces.ports[0]
         assert (port.idx, port.state, port.connector) == (5, 'UP', 'RJ45')
         assert (port.max_speed_mbps, port.speed_mbps) == (10000, 5000)
+
+
+class TestDeviceFeatureEnum:
+    """``DeviceFeature`` carries the reference's feature names (issue 082)."""
+
+    def test_the_members_are_the_reference_names(self) -> None:
+        # The reference's ``features`` item enum: switching, accessPoint, gateway.
+        assert {f.name: f.value for f in DeviceFeature} == {
+            'SWITCHING': 'switching',
+            'ACCESS_POINT': 'accessPoint',
+            'GATEWAY': 'gateway',
+        }
+
+    def test_a_member_matches_a_live_device_in_either_shape(self) -> None:
+        listed = DeviceInfo.model_validate(AP_LISTED)
+        detail = DeviceInfo.model_validate(SWITCH_DETAIL)
+        assert DeviceFeature.ACCESS_POINT in listed.feature_names
+        assert DeviceFeature.SWITCHING in detail.feature_names
+        assert DeviceFeature.ACCESS_POINT not in detail.feature_names
+        assert [DeviceFeature(name) for name in listed.feature_names] == [
+            DeviceFeature.ACCESS_POINT
+        ]
+
+    def test_the_pre_reference_member_names_still_resolve(self) -> None:
+        """``SWITCH`` and ``ROUTER`` are aliases, so a caller using them keeps working."""
+        assert DeviceFeature.SWITCH is DeviceFeature.SWITCHING
+        assert DeviceFeature.ROUTER is DeviceFeature.GATEWAY
+        assert DeviceFeature['SWITCH'] is DeviceFeature.SWITCHING
+        assert DeviceInfo(features=['gateway']).is_router
+        assert DeviceFeature.ROUTER in DeviceInfo(features=['gateway']).feature_names
 
     def test_detail_keys_the_model_does_not_name_are_kept(self) -> None:
         detail = {**SWITCH_DETAIL, 'interfaces': {'ports': [{'idx': 1, 'somethingNew': 7}]}}
@@ -274,3 +305,34 @@ class TestDNSReferenceTypes:
         client = _dns_client([])
         await getattr(DNSPolicyManager(client), create)('nas.lab.example', **kwargs)
         assert client.create_dns_policy.call_args.kwargs['policy_type'] == sent
+
+
+class TestDNSPolicyOrigin:
+    """``metadata.origin`` on a DNS policy, as on an ACL rule (issue 084)."""
+
+    def test_origin_is_read_from_metadata(self) -> None:
+        user = DNSPolicy.model_validate(
+            _policy('u1', 'A_RECORD', ipv4Address='192.0.2.5', metadata={'origin': 'USER_DEFINED'})
+        )
+        derived = DNSPolicy.model_validate(
+            _policy('d1', 'A_RECORD', ipv4Address='192.0.2.6', metadata={'origin': 'DERIVED'})
+        )
+        assert user.metadata is not None and user.metadata.origin == 'USER_DEFINED'
+        assert (user.origin, derived.origin) == ('USER_DEFINED', 'DERIVED')
+
+    def test_a_policy_without_metadata_has_no_origin(self) -> None:
+        policy = DNSPolicy.model_validate(_policy('n1', 'A_RECORD', ipv4Address='192.0.2.7'))
+        assert policy.metadata is None and policy.origin == ''
+
+    def test_an_unknown_origin_is_kept_as_sent(self) -> None:
+        policy = DNSPolicy.model_validate(
+            _policy('x1', 'A_RECORD', metadata={'origin': 'SOMETHING_NEW'})
+        )
+        assert policy.origin == 'SOMETHING_NEW'
+
+    def test_the_policy_round_trips_with_the_reference_keys(self) -> None:
+        sent = _policy(
+            'u1', 'A_RECORD', ipv4Address='192.0.2.5', metadata={'origin': 'USER_DEFINED'}
+        )
+        dumped = DNSPolicy.model_validate(sent).model_dump(by_alias=True, exclude_defaults=True)
+        assert dumped['metadata'] == {'origin': 'USER_DEFINED'}

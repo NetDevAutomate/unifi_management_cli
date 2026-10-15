@@ -535,12 +535,24 @@ def integration_routes(base: str = '/proxy/network/integrations') -> dict:
         (
             'GET',
             rf'^{base}/v1/sites/{INTEGRATION_SITE_ID}/devices/{INTEGRATION_DEVICE_ID}/statistics/latest$',
-        ): {
-            'uptimeSec': 86400,
-            'lastHeartbeatAt': '2026-09-21T14:13:00Z',
-            'cpuUtilizationPct': 7.1,
-            'memoryUtilizationPct': 41.2,
-        },
+        ): fake_statistics_latest(),
+    }
+
+
+def fake_statistics_latest() -> dict[str, Any]:
+    """``.../devices/{id}/statistics/latest`` for a switch, in the shape the live endpoint sends.
+
+    The keys are those a USW Flex answered with on 2026-10-15 (issue 081); a switch has no
+    radios, so ``interfaces`` is an empty object.
+    """
+    return {
+        'uptimeSec': 86400,
+        'lastHeartbeatAt': '2026-09-21T14:13:00Z',
+        'nextHeartbeatAt': '2026-09-21T14:14:17Z',
+        'cpuUtilizationPct': 7.1,
+        'memoryUtilizationPct': 41.2,
+        'uplink': {'txRateBps': 0, 'rxRateBps': 0},
+        'interfaces': {},
     }
 
 

@@ -2573,12 +2573,14 @@ def diagnose_firewall(
     port: Optional[str] = typer.Option(None, '--port', help='Destination port or range'),
     as_json: bool = typer.Option(False, '--json', help='Print JSON instead of tables'),
 ):
-    """🧱 Which firewall rules match traffic from a source to a destination, and the verdict.
+    """🧱 Which firewall rules match traffic from a source to a destination, by protocol and port.
 
-    Resolves each endpoint to an address, network or VLAN, lists the rules that match in
-    evaluation order and gives the allow/deny verdict with recommendations. The same result
-    as the MCP tool `firewall_check`; `diagnose inter-vlan` answers for two endpoints with
-    routing included. Read-only.
+    Resolves each endpoint to an address, network or VLAN and lists the enabled rules whose
+    protocol and destination port match, in evaluation order. The verdict is `not assessed`:
+    the rules' source and destination networks are not evaluated against the pair and the
+    default policy is not read, so this does not say whether the traffic passes.
+    The same result as the MCP tool `firewall_check`; `diagnose inter-vlan` answers for two
+    endpoints with routing included. Read-only.
     """
     from .connectivity.firewall_check import firewall_check
 
@@ -2594,8 +2596,10 @@ def diagnose_firewall(
     console.print(
         f'{escape(source)} → {escape(destination)} ({escape(protocol.lower())}'
         f'{", port " + escape(port) if port else ""})  '
-        f'Verdict: {_severity_cell(result.get("verdict", "unknown"))}'
+        f'Verdict: [bold]{escape(str(result.get("verdict", "not assessed")))}[/bold]'
     )
+    if result.get('basis'):
+        console.print(f'  [dim]{escape(str(result["basis"]))}[/dim]')
     for label, spec in (
         ('Source', result.get('source_resolved') or {}),
         ('Destination', result.get('destination_resolved') or {}),
@@ -2626,7 +2630,7 @@ def diagnose_firewall(
             )
         console.print(table)
     else:
-        console.print('[dim]No rule matches; the default policy applies.[/dim]')
+        console.print('[dim]No enabled rule matches this protocol and port.[/dim]')
     _print_list('Recommendations', [str(r) for r in result.get('recommendations') or []])
 
 
@@ -3096,9 +3100,15 @@ def diagram(
 
     Generates a visual diagram of your UniFi infrastructure without
     performing any LLDP analysis or port name updates.
+
+    PNG and SVG need Graphviz. Without it the file is a placeholder that says why, and the
+    command prints a warning instead of reporting a diagram (exit 0, as discover does).
+    --format html needs no Graphviz.
     """
     config = state.config_path
     debug = state.debug
+    # Why the PNG or SVG renderer wrote a placeholder instead of an image (issue 086)
+    not_drawn: Optional[str] = None
 
     if not state.debug:
         setup_logging(debug=False)
@@ -3148,8 +3158,10 @@ def diagram(
         else:
             all_devices_list = cast(list[JsonDict], all_devices_response)
 
-        # Filter to UniFi infrastructure devices (gateway, switches, APs)
-        unifi_types = ['ugw', 'usg', 'udm', 'usw', 'uap']
+        # Filter to UniFi infrastructure devices (gateway, switches, APs); a UXG gateway's
+        # stat/device type is 'uxg' (issue 085)
+        gateway_types = ['ugw', 'usg', 'udm', 'uxg']
+        unifi_types = [*gateway_types, 'usw', 'uap']
         infrastructure_devices = [d for d in all_devices_list if d.get('type') in unifi_types]
 
         # Get LLDP data for devices that support it
@@ -3159,7 +3171,7 @@ def diagram(
             device_id = str(device.get('_id') or '')
             device_type = str(device.get('type') or '')
             # Only switches and gateways have LLDP data
-            if device_type in ['ugw', 'usg', 'udm', 'usw'] and device_id:
+            if device_type in [*gateway_types, 'usw'] and device_id:
                 device_lldp = port_mapper.api_client.get_lldp_info(unifi_config.site, device_id)
                 if device_lldp:
                     lldp_data[device_id] = device_lldp
@@ -3178,7 +3190,7 @@ def diagram(
             device_type = str(device_data.get('type') or '')
 
             # Count device types for debug
-            if device_type in ['ugw', 'usg', 'udm']:
+            if device_type in gateway_types:
                 routers_found += 1
             elif device_type == 'usw':
                 switches_found += 1
@@ -3260,16 +3272,23 @@ def diagram(
 
         # Generate diagram
         if format.lower() == 'png':
-            topology.generate_png_diagram(str(diagram_path))
+            not_drawn = topology.generate_png_diagram(str(diagram_path))
         elif format.lower() == 'svg':
-            topology.generate_svg_diagram(str(diagram_path))
+            not_drawn = topology.generate_svg_diagram(str(diagram_path))
         elif format.lower() == 'html':
             topology.generate_html_diagram(str(diagram_path), all_devices)
         else:
             console.print(f'❌ [bold red]Unsupported format: {format}[/bold red]')
             raise typer.Exit(1)
 
-        console.print(f'✅ [bold green]Diagram generated: {diagram_path}[/bold green]')
+        if not_drawn:
+            # Issue 075's decision: a placeholder is a warning, not a failure; the run exits 0
+            console.print(
+                f'⚠️ [bold yellow]No diagram drawn: {escape(str(diagram_path))} holds a '
+                f'placeholder. {escape(not_drawn)}[/bold yellow]'
+            )
+        else:
+            console.print(f'✅ [bold green]Diagram generated: {diagram_path}[/bold green]')
         console.print(
             f'📊 Devices: [cyan]{len(devices)}[/cyan], '
             f'Connections: [cyan]{len(topology_connections)}[/cyan]'
@@ -6260,7 +6279,7 @@ def controller_config_changes(
     _print_dim_notes(result['notes'])
 
 
-# ─── Gateway probes (class B: SSH, CLI only) ─────────────────────────────────
+# ─── Gateway probes (class B: SSH; ping, traceroute, dns, latency-matrix also on MCP, 092) ─
 
 
 class _FlowState(StrEnum):
@@ -6473,7 +6492,7 @@ def gateway_flows_command(
         console.print(f'[dim]Showing the first {limit}.[/dim]')
 
 
-# ─── Composites (CLI only: lookup, AP counters and gateway probes) ──────────
+# ─── Composites (CLI only, 092 tier 2: lookup, AP counters and gateway probes) ────────
 
 
 def _duration_text(seconds: float) -> str:

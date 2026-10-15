@@ -23,9 +23,12 @@ from unifi_mapper.mcp.registry import MANIFEST_KEYS, ToolRegistry, default_manif
 REGISTRY = ToolRegistry(default_manifests_dir(), strict=True)
 REPORT: ParityReport = parity_report(REGISTRY)
 ENTRIES = sorted(
-    (name, REGISTRY.get_metadata(name))
-    for tools in REGISTRY.get_categories().values()
-    for name in tools
+    [
+        (name, REGISTRY.get_metadata(name))
+        for tools in REGISTRY.get_categories().values()
+        for name in tools
+    ]
+    + list(REGISTRY.held_active_probes().items())
 )
 
 # Gaps declared "not yet built" on each side. Closing one lowers the number here; adding one
@@ -92,23 +95,30 @@ def test_the_writers_are_declared_on_both_sides() -> None:
         assert category_of(CLI_ONLY[command]) == 'writer'
 
 
-def test_the_ssh_probes_are_exempt_by_decision_d1() -> None:
+def test_the_tier1_probes_are_opt_in_tools_and_the_rest_wait_on_issue_092() -> None:
+    # Tier 1 is mapped both ways, although a default registry holds the tools back.
+    for tool, command in (
+        ('gateway_ping', 'gateway ping'),
+        ('gateway_traceroute', 'gateway traceroute'),
+        ('gateway_dns_check', 'gateway dns'),
+        ('run_latency_matrix', 'diagnose latency-matrix'),
+    ):
+        assert REPORT.matched[tool] == command
+        assert command not in CLI_ONLY
+        assert tool in REGISTRY.held_active_probes()
     for command in (
-        'gateway ping',
-        'gateway traceroute',
-        'gateway dns',
         'gateway http',
         'gateway flows',
-        'diagnose latency-matrix',
         'diagnose bandwidth',
         'diagnose client-connectivity',
     ):
         assert category_of(CLI_ONLY[command]) == 'active probe', command
-        assert '060' in CLI_ONLY[command], command
+        assert '092' in CLI_ONLY[command], command
 
 
 def test_the_report_counts_add_up() -> None:
-    assert len(REPORT.matched) + len(REPORT.mcp_only) == len(REGISTRY)
+    entries = len(REGISTRY) + len(REGISTRY.held_active_probes())
+    assert len(REPORT.matched) + len(REPORT.mcp_only) == entries
     assert len(set(REPORT.matched.values())) + len(CLI_ONLY) == len(cli_commands())
 
 

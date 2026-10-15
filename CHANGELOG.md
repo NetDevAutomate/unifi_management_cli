@@ -1,11 +1,166 @@
 # Changelog
 
 All notable changes to this project. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-The current release is 0.3.0; only the latest release is supported.
+The current release is 0.4.0; only the latest release is supported.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-15
+
+### Breaking
+
+- `diagnose firewall --json` and the MCP tool `firewall_check`: `vlan_matrix.connectivity_matrix`
+  was a map of source network name to `{destination name: verdict}`; it is now a list of
+  `{source, destination, verdict}` records, one per ordered pair of networks. A network whose
+  name looks like a secret (for example `IoT-PSK`) no longer loses its row and cells from the
+  CLI JSON or reads `***redacted***` over MCP. (Issue 091.)
+- The MCP tool `get_firmware_drift` and `inventory firmware-skew --json`: `upgradable` was a map
+  of device name to offered firmware; it is now a list of `{device, offered}` records. A device
+  named like a secret (for example `Guest-Token-AP`) no longer reads `***redacted***` over MCP;
+  the CLI path lost nothing before but prints the same model, so its shape changes too.
+  (Issue 091.)
+- Python callers of `unifi_mapper.network` only (no `--json` or MCP output serialises these
+  models): `DeviceStatistics.last_seen` is now `last_heartbeat_at`; `cpu_memory` is replaced by
+  `cpu_utilization_pct` and `memory_utilization_pct`; the input aliases follow the endpoint
+  (`uptimeSec`, `loadAverage1Min`/`5Min`/`15Min`). `DeviceFeature` members are now `SWITCHING`,
+  `ACCESS_POINT` and `GATEWAY` with the Integration API's values (`switching`, `accessPoint`,
+  `gateway`); `SWITCH` and `ROUTER` remain as aliases; `PROTECT` and `TALK` are removed (the
+  reference has no such features). (Issues 081, 082.)
+- MCP: the per-call deadline (`UNIFI_MCP_TOOL_TIMEOUT`, 270 s by default) is now measured from
+  the call, before a concurrency slot is taken, so a call queued behind busy slots can return
+  `[TIMEOUT]` with its handler never run. Synchronous tools run in a worker thread from the
+  runner's own pool (sized to `UNIFI_MCP_MAX_CONCURRENCY`), so they no longer block other
+  calls, and one that overruns the deadline returns `[TIMEOUT]` at the deadline instead of a
+  late success. The abandoned handler is not interrupted: it runs on in its thread, through
+  any further controller requests it makes, until it returns, and its result is dropped; it
+  keeps its worker-budget permit until then, so repeated timeouts can hold slots. At shutdown
+  the server waits up to 3 s for such workers and otherwise leaves the controller session open
+  rather than closing it under them. The MCP call log gains `slot_wait_ms`. (Issue 090.)
+- `diagnose firewall` and the MCP tool `firewall_check` no longer report an `allow` or `deny`
+  verdict. The verdict and every `connectivity_matrix` cell are `not assessed`, and a new
+  `basis` field says what was checked: the enabled rules whose protocol and destination port
+  match, in evaluation order. The previous verdicts were placeholder heuristics (every rule
+  matched any pair after a protocol/port check; one rule named "block" made every cell `deny`;
+  the default policy was never read), so a `deny` or `allow` from an earlier release was not
+  evidence of anything. The Mermaid firewall matrix draws the networks and no verdict edge.
+  On a controller running the zone-based firewall (Network 9 and later) the classic rule
+  endpoint this reads is empty, so `basis` lists nothing there until the tool reads the
+  zone-based policies (issue 099, 0.5.0).
+  Evaluating each rule's networks against the pair is planned for 0.5.0. (Issue 093.)
+- `analyze vlan-coverage`, `diagnose vlans` and `analyze foreign-bridges` can report different
+  counts and findings for an unchanged site: a port with no profile and no override now runs
+  the VLAN settings its own port-table row reports (a `forward: all` row is a trunk carrying
+  every VLAN), where it was treated as carrying nothing; a port under a profile is unchanged.
+  On the maintainer's site `diagnose vlans` names 64 trunks where it named 43, and
+  `vlan-coverage` audits 47 ports where it audited 39 and clears three findings on
+  profile-less uplinks. The `vlan-traffic coverage` raw-tier gap cutoff also moved from a
+  fixed 360 s to the measured bound `report` uses (600 s at a 60 s cadence), so an existing
+  store can report fewer raw gaps. (Issues 089, 097.)
+- Python callers of `unifi_mapper.network`: `DeviceStatistics.interfaces` is now a
+  `DeviceStatisticsInterfaces` object (`radios`), not a `list[InterfaceStatistics]`; the
+  endpoint sends an object. (Issue 081.)
+- Python callers of `unifi_mapper.network.acl`: `create_block_rule` refuses `source_macs` with a
+  `ValueError` (MAC addresses belong to a `MAC` rule, which these helpers do not build), and both
+  create helpers now send each side's filter in the API's shape, a `type` of
+  `IP_ADDRESSES_OR_SUBNETS` or `PORTS` with only the lists that were given; the untyped,
+  empty-list filters they sent before were refused by the API. (Issue 094.)
+
+### Added
+
+- `unifi-mcp` can run the gateway probes `gateway_ping`, `gateway_traceroute`,
+  `gateway_dns_check` and `run_latency_matrix` when started with
+  `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1` (exactly that value). Off by default: the four tools are
+  hidden from every listing, and `execute_tool` refuses them with `ACTIVE_PROBES_DISABLED`
+  without touching SSH or the controller. When on, they are annotated not read-only, open-world
+  and not idempotent, run as the SSH user only after the gateway's host key is verified, and are
+  bounded by the ordinary per-call deadline. Any other value of the variable (`true`, `yes`,
+  `0`, a padded `1`) stops the server with exit 2 rather than falling back, because it gates
+  agent-triggered SSH to the gateway. The opt-in is a switch, not an allow-list: once on, the
+  agent chooses the probe targets at call time (any host or name the gateway can reach), so turn
+  it on only for an agent you would let run `ping` and `traceroute` from the gateway yourself.
+  The tools are pinned against a fake gateway; the comparison against the CLI's SSH path on a
+  live gateway has not been run yet (no SSH password in the maintainer's environment), so the
+  issue stays open until it has. `gateway http`, `gateway flows`, `diagnose bandwidth` and
+  `diagnose client-connectivity` stay CLI-only. (Issue 092; tier 2 is a pending decision.)
+- For maintainers: `scripts/live_check.py`, a read-only live check of both surfaces before a
+  release: the CLI in process behind the read-only guard, the MCP server as a fresh
+  `uvx --no-cache --from <checkout>` child with its call log and request audit on and the probes
+  forced off, one mutating tool called only to confirm it is refused with no controller request,
+  targets from a TOML file under XDG config, results under the XDG state root, every file
+  scanned for secret values. (Issue 039.)
+
+### Deprecated
+
+- Python callers of `unifi_mapper.network`: `DeviceStatistics.ports`, `DeviceStatistics.temperature_celsius`,
+  the `PortStatistics` model, and on the metrics collector `PortMetrics` and the snapshots'
+  `port_metrics`, `temperature_celsius`, `total_throughput_bps`, `active_port_count`,
+  `get_top_ports_by_throughput` and `get_error_ports`. The Integration API's `statistics/latest` sends neither per-port counters
+  nor a temperature, so for a live device these have always been empty or `None`; they are
+  removed in 0.5.0. Per-port counters come from the classic `stat/device` path, which the
+  port-diagnostics tools already use. (Issue 095.)
+
+### Changed
+
+- `DeviceFeature` uses the Integration API's feature names, so its members match what live
+  devices report. (Issue 082.)
+- MCP: the sync port-diagnostics tools (`diagnose_switch_port`, `get_switch_ports`,
+  `diff_port_profiles`, `get_client_history`, `get_device_events`, `get_recent_events`,
+  `get_port_counter_rates`, `audit_link_speeds`, `audit_port_profile_usage`,
+  `inspect_switch_port`) share one read-only-guarded controller session for the server
+  process: one login on the first call, one logout at shutdown after a bounded wait for running
+  calls, one re-login and one replay on a 401, instead of a login and logout per call. Each
+  call's `request_audit` still lists only its own requests. (Issue 021.)
+
 ### Fixed
+
+- MCP: a controller session that expires mid-run is renewed by exactly one login, and no tool
+  request can slip past the read-only guard while that login is in flight. The client used to
+  swap in its new, still-unauthenticated session before logging in on it, with the guard put
+  back only afterwards, so a concurrent tool call in that window ran on an unguarded, unaudited
+  session; and a call that started during the renewal logged in again on its own. The new
+  session is now handed over only once authenticated, already behind the guard, and a tool's
+  own login waits for the renewal instead of adding another.
+- Diagrams and the smart port mapper get their LLDP links back on a current controller.
+  `get_lldp_info` read each switch's neighbours through a per-device request keyed by a device
+  id the client had stripped of its hyphens (a current controller's ids are UUIDs), so the
+  controller answered 400 and every switch reported no neighbours; the neighbours now come from
+  the site-wide device records that are already fetched. On the maintainer's site that is 40
+  LLDP ports found across 12 switches where none were. (Issue 096.)
+- A 401 or 403 part-way through a session now logs in again for real before the retry.
+  `get_devices`, `get_clients` and `get_device_details` called a login that returned without a
+  request while the client believed itself authenticated, so they reported "re-authentication
+  successful" and replayed the request on the same expired session. The device-name cache
+  `get_lldp_info` uses is rebuilt once it is older than 60 s, so a client that lives for a
+  server process sees devices adopted or renamed after its first call. (Found with issue 021.)
+
+- Topology diagrams draw a UXG gateway as the gateway in every format (it was drawn as an
+  access point), `discover` and the smart port mapper no longer drop `uxg` devices, and
+  `analyze mac-table` reads a UXG's ports; a USW Flex XG is drawn as a switch. (Issue 085.)
+- `analyze mac-table` reads the switch and port each wired client is learned on when a switch
+  sends no `mac_table`, as current controllers do, and says which source it used; it reported
+  nothing on those controllers. (Issue 088.)
+- `diagnose vlans`, `analyze vlan-coverage` and `analyze foreign-bridges` use one trunk-port
+  rule, so they no longer disagree about a port; `vlan-coverage` audits every trunk
+  `diagnose vlans` names and treats a forward-all trunk as carrying every VLAN. `vlan-traffic
+  coverage` counts a raw gap by the same measured bound `vlan-traffic report` rates by, so at a
+  60 s cadence the raw cutoff moves from 360 s to 600 s and a missed sample or two is no longer
+  a gap. (Issue 089.)
+- `diagram` prints a yellow `No diagram drawn` warning instead of `Diagram generated` when
+  Graphviz is missing and the PNG or SVG file is a placeholder; the exit code stays 0, as issue
+  075 decided. (Issue 086.)
+
+- `DeviceStatistics` parses the Integration API `statistics/latest` answer. It raised a
+  validation error on every live device (the endpoint sends `interfaces` as an object, the model
+  declared a list), so `get_device_statistics` and the metrics collector failed instead of
+  reporting uptime, CPU and memory. A figure the device did not send is `None`, not 0.
+  (Issue 081.)
+- `inventory` commands and the MCP port-diagnostics tools honour `UNIFI_TIMEOUT`,
+  `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY`, like every other command; a value that is not a
+  number is reported as `CONFIG_INVALID` over MCP. (Issue 087.)
+- `get_dns_policies` records carry `metadata.origin`, so user-defined and derived DNS policies
+  can be told apart (new key, additive). (Issue 084.)
+- ACL `create_block_rule` and `create_allow_rule` default to rule type `IPV4`; the old default
+  `USER` is a `metadata.origin` value the API refuses as a rule type. (Issue 083.)
 
 - `backup verify` (and the `verify_config_backup` tool) now reads a Network 10.x backup
   correctly. Those backups open each collection with a marker document and their documents

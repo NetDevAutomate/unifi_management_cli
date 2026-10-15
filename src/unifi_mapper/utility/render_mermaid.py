@@ -43,7 +43,8 @@ async def render_mermaid(
         diagram_type: Type of diagram to generate:
                      - 'path': Network path from traceroute
                      - 'topology': Network topology overview
-                     - 'firewall_matrix': Firewall rules matrix
+                     - 'firewall_matrix': Firewall rules matrix, from a firewall_check
+                       result whose vlan_matrix lists {source, destination, verdict} records
                      - 'stp': STP topology with hierarchy tiers
         data: Data to render (NetworkPath, topology dict, firewall data, or STPTopology)
 
@@ -330,7 +331,7 @@ def _render_firewall_matrix(firewall_data: dict[str, Any]) -> str:
         return '```mermaid\ngraph LR\n    A[No firewall matrix data]\n```'
 
     vlans = vlan_matrix.get('vlans', [])
-    connectivity = vlan_matrix.get('connectivity_matrix', {})
+    connectivity = vlan_matrix.get('connectivity_matrix', [])
 
     lines.append('    subgraph "Inter-VLAN Firewall Rules"')
 
@@ -340,20 +341,26 @@ def _render_firewall_matrix(firewall_data: dict[str, Any]) -> str:
         vlan_label = f'"{vlan["name"]}\\n(VLAN {vlan["id"]})"'
         lines.append(f'        {node_id}[{vlan_label}]')
 
-    # Add connections based on firewall rules
-    for source_vlan, destinations in connectivity.items():
+    # One {source, destination, verdict} record per ordered pair (issue 091: names are values,
+    # never keys). A verdict is drawn as an edge only when it IS a verdict; 'not assessed'
+    # cells (issue 093: the rules are not evaluated per pair yet) draw no edge, and the
+    # diagram says so instead of drawing a reachability it cannot support.
+    assessed = 0
+    for record in connectivity:
+        source_vlan, dest_vlan = record['source'], record['destination']
+        if source_vlan == dest_vlan or record['verdict'] not in ('allow', 'deny'):
+            continue
+        assessed += 1
         source_id = f'V{_get_vlan_id_from_name(source_vlan, vlans)}'
-
-        for dest_vlan, verdict in destinations.items():
-            if source_vlan == dest_vlan:
-                continue  # Skip self-connections
-
-            dest_id = f'V{_get_vlan_id_from_name(dest_vlan, vlans)}'
-
-            if verdict == 'allow':
-                lines.append(f'        {source_id} -->|✅ ALLOW| {dest_id}')
-            else:
-                lines.append(f'        {source_id} -.->|❌ DENY| {dest_id}')
+        dest_id = f'V{_get_vlan_id_from_name(dest_vlan, vlans)}'
+        if record['verdict'] == 'allow':
+            lines.append(f'        {source_id} -->|✅ ALLOW| {dest_id}')
+        else:
+            lines.append(f'        {source_id} -.->|❌ DENY| {dest_id}')
+    if connectivity and not assessed:
+        lines.append(
+            '        N["Inter-VLAN reachability: not assessed (rules are not evaluated per pair)"]'
+        )
 
     lines.append('    end')
 

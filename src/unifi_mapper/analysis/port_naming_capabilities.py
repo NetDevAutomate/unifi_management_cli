@@ -10,13 +10,15 @@ from __future__ import annotations
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any
+from unifi_mapper.core.device_types import SWITCHING_TYPES
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.device_capabilities import DeviceCapabilityDetector, PortNamingSupport
 
 
-# The controller type codes the port-naming workflow targets (no APs: it names switch ports).
-NETWORK_DEVICE_TYPES: frozenset[str] = frozenset({'ugw', 'usg', 'udm', 'usw'})
+# The controller type codes the port-naming workflow targets (no APs: it names switch and
+# gateway ports); the shared set, so a UXG or UDM Pro is not skipped as it was by a private copy.
+NETWORK_DEVICE_TYPES: frozenset[str] = SWITCHING_TYPES
 
 _VERDICT_LINE: dict[PortNamingSupport, str] = {
     PortNamingSupport.FULL_SUPPORT: '  ✅ FULL SUPPORT - Reliable API port naming',

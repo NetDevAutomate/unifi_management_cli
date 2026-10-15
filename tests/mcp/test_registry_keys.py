@@ -64,6 +64,7 @@ def test_new_keys_have_the_design_defaults(tmp_path: Path) -> None:
     assert meta.aliases == {}
     assert meta.credentials == 'controller'
     assert meta.idempotent is True
+    assert meta.active_probe is False
 
 
 def test_default_title_is_the_name_title_cased() -> None:
@@ -92,6 +93,53 @@ def test_every_new_key_is_parsed(tmp_path: Path) -> None:
     assert meta.idempotent is False
 
 
+def test_active_probe_is_parsed(tmp_path: Path) -> None:
+    manifests = _write(tmp_path, c=_entry('    active_probe: true\n'))
+    meta = ToolRegistry(manifests, strict=True, active_probes=True).get_metadata('t')
+    assert meta is not None
+    assert meta.active_probe is True
+    assert meta.mutates is False
+
+
+def test_an_active_probe_is_held_back_by_default(tmp_path: Path) -> None:
+    # Issue 092: loaded and checked, but no lookup, search, category or count sees it.
+    manifests = _write(tmp_path, c=_entry('    active_probe: true\n'), good=GOOD)
+    registry = ToolRegistry(manifests, strict=True)
+    assert registry.active_probes is False
+    assert 't' not in registry and registry.get_metadata('t') is None
+    assert registry.get_tool('t') is None
+    assert 'c' not in registry.get_categories()
+    assert [hit['name'] for hit in registry.search()] == ['alpha_tool', 'zeta_tool']
+    assert len(registry) == 2
+    held = registry.held_active_probes()
+    assert list(held) == ['t'] and held['t'].active_probe is True
+    on = ToolRegistry(manifests, strict=True, active_probes=True)
+    assert 't' in on and len(on) == 3 and on.held_active_probes() == {}
+
+
+async def test_a_held_probe_cannot_be_executed(tmp_path: Path) -> None:
+    registry = ToolRegistry(_write(tmp_path, c=_entry('    active_probe: true\n')))
+    with pytest.raises(UnknownToolError):
+        await registry.execute('t')
+
+
+def test_a_held_probe_still_claims_its_name(tmp_path: Path) -> None:
+    later = 'category: later\ntools:\n  t:\n    module: other.module\n'
+    manifests = _write(tmp_path, a=_entry('    active_probe: true\n'), b=later)
+    with pytest.raises(ManifestError, match='already defined'):
+        len(ToolRegistry(manifests, strict=True))
+
+
+def test_active_probe_beside_mutates_is_a_load_error(tmp_path: Path, errors: list[str]) -> None:
+    # Issue 092: a probe sends traffic, a writer changes the controller; one entry is never both.
+    manifests = _write(tmp_path, c=_entry('    active_probe: true\n    mutates: true\n'))
+    with pytest.raises(ManifestError, match='active_probe and mutates'):
+        len(ToolRegistry(manifests, strict=True))
+    registry = ToolRegistry(manifests)
+    assert 't' not in registry
+    assert len([e for e in errors if e.startswith('ERROR')]) == 1
+
+
 @pytest.mark.parametrize(
     'extra',
     [
@@ -106,6 +154,7 @@ def test_every_new_key_is_parsed(tmp_path: Path) -> None:
         '    credentials: keychain\n',
         '    credentials: 1\n',
         '    idempotent: "no"\n',
+        '    active_probe: "yes"\n',
         '    tags: [ok, 3]\n',
         '    tags: one\n',
         '    parameters: [x]\n',
@@ -151,6 +200,7 @@ def test_allow_list_covers_exactly_the_documented_keys() -> None:
         'idempotent',
         'cli',
         'cli_gap',
+        'active_probe',
     }
 
 

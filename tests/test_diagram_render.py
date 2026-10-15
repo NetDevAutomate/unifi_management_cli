@@ -12,7 +12,7 @@ import logging
 import pytest
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from unifi_mapper.enhanced_network_topology import NetworkTopology
 from unifi_mapper.run_methods import run_port_mapper
 
@@ -38,7 +38,7 @@ def _topology() -> NetworkTopology:
     return topology
 
 
-def _render(topology: NetworkTopology, fmt: str) -> Callable[[str], None]:
+def _render(topology: NetworkTopology, fmt: str) -> Callable[[str], Optional[str]]:
     """The method that draws ``fmt`` (``png`` or ``svg``)."""
     return topology.generate_png_diagram if fmt == 'png' else topology.generate_svg_diagram
 

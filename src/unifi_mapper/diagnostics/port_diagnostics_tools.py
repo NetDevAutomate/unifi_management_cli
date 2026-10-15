@@ -7,6 +7,38 @@ ports`` commands. Each tool runs its blocking collector in a worker thread (as
 the report's sanitised JSON. None of these tools can write to the controller:
 the guard refuses any write before it leaves the machine.
 
+The controller session (issue 021). Every sync tool borrows one process-wide
+``UnifiApiClient`` through :func:`_readonly_sync_client`: built lazily under a lock from
+``Credentials.from_env()`` and the ``UNIFI_TIMEOUT`` / ``UNIFI_MAX_RETRIES`` /
+``UNIFI_RETRY_DELAY`` settings (issue 087), logged in once, guarded straight after the login
+(:class:`_SharedSession`, a ``ReadOnlySession``), and kept until the server's shutdown drain
+(:func:`shutdown_shared_sync_session`) logs it out. A client is bound to the credentials and
+settings it was built from: when the environment changes, the next call retires it (logged
+out once it is idle) and builds a new one. A build that fails leaves nothing behind, so the
+next call retries.
+
+Per-call ``request_audit``. The guard appends ``{method, path}`` to the list it was built
+with, and ``build_port_diagnostic_bundle`` ships that list as the bundle's ``request_audit``.
+With one session for every call, that list is :class:`_CallAudit`: it forwards each append,
+and every read, to the collector in :data:`_request_audit`, a ``contextvars.ContextVar`` the
+async handler sets just before the thread hop (:func:`_run`; the context is copied into the
+worker) and resets with its token when the call ends. A worker the runner's deadline
+abandoned keeps its own copy of the context, so its late requests land in its own
+collector, never in another call's, and a record already published is a list snapshot.
+
+Re-authentication. When the controller answers a borrowed request with 401, the session
+logs in again once (under the client's refresh lock; a concurrent 401 that finds the login
+already done does not log in again) and replays the failed request once; the replay's
+answer is returned as it is, so there is never a loop. The guard is put back on the client
+after any login, the refresh or one the client runs itself.
+
+Concurrency. Worker threads share the one ``requests.Session`` for their GET and POST
+reads without a lock. The paths used are safe for that: urllib3's connection pool is
+thread-safe; the cookie jar takes its own lock to read and to store cookies; the client's
+per-request ``session.headers.update(...)`` writes the same constant values from every
+thread (a dict update under the GIL). Only login and refresh, which replace the session,
+run under a lock. The read code does not touch anything else on the session.
+
 Errors are raised as :class:`ToolError` with a specific code, so a failure is
 never mislabelled by a generic exception handler:
 
@@ -18,34 +50,220 @@ never mislabelled by a generic exception handler:
 * ``READ_ONLY_VIOLATION``: a collector attempted a write (a bug)
 """
 
-import asyncio
+import contextvars
+import os
+import threading
+import time
 from contextlib import contextmanager
+from dataclasses import dataclass, field
+from loguru import logger
 from pydantic import Field
-from typing import Annotated, Any, Callable, Iterator, Optional, TypeVar
+from typing import Annotated, Any, Callable, Iterator, Optional, SupportsIndex, TypeVar
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
+from unifi_mapper.core.utils.readonly import ReadOnlySession, assert_guarded
+from unifi_mapper.core.utils.workers import run_blocking
 
 
 T = TypeVar('T')
 
+# How long the shutdown drain waits for active workers before leaving the session open.
+DRAIN_TIMEOUT_S = 2.0
+# The login methods that replace ``client.session`` (the same two the read-only guard
+# re-wraps after); each is wrapped on the shared client so the guard comes back on top.
+_LOGIN_METHODS = ('login', '_perform_login')
 
-@contextmanager
-def _readonly_sync_client() -> Iterator[tuple[Any, str]]:
-    """Yield an authenticated ``UnifiApiClient`` behind the read-only guard, and its site."""
-    from unifi_mapper.api_client import UnifiApiClient
-    from unifi_mapper.core.utils.readonly import install_read_only_guard
+# The current call's request collector. Set by :func:`_run` before the thread hop, reset
+# with its token when the call ends; None outside any call.
+_request_audit: contextvars.ContextVar[list[dict[str, str]] | None] = contextvars.ContextVar(
+    'port_diagnostics_request_audit', default=None
+)
+
+_NO_COLLECTOR: list[dict[str, str]] = []
+
+
+class _CallAudit(list[dict[str, str]]):
+    """The shared session's audit list: every operation goes to the calling call's collector.
+
+    ``ReadOnlySession`` takes a plain list and appends to it; ``build_port_diagnostic_bundle``
+    reads it back as ``list(install_read_only_guard(client, site))``. This list holds nothing
+    itself: ``append`` and every read forward to the collector :data:`_request_audit` names in
+    the current context, so one guard serves every call and each call sees only its own
+    requests. With no collector (a request outside any call, such as the drain's logout) an
+    append is dropped; the opt-in ``UNIFI_MCP_REQUEST_AUDIT`` sink still sees the request.
+    """
+
+    @staticmethod
+    def _current() -> list[dict[str, str]]:
+        collector = _request_audit.get()
+        return collector if collector is not None else _NO_COLLECTOR
+
+    def append(self, item: dict[str, str]) -> None:
+        """Record one request in the current call's collector (none: dropped)."""
+        collector = _request_audit.get()
+        if collector is not None:
+            collector.append(item)
+
+    def __iter__(self) -> Iterator[dict[str, str]]:
+        return iter(list(self._current()))
+
+    def __len__(self) -> int:
+        return len(self._current())
+
+    def __bool__(self) -> bool:
+        return bool(self._current())
+
+    def __getitem__(self, index: SupportsIndex | slice) -> Any:
+        return self._current()[index]
+
+    def __eq__(self, other: object) -> bool:
+        return list(self._current()) == other
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    __hash__ = None  # type: ignore[assignment] - a list is unhashable; so is this
+
+    def __repr__(self) -> str:
+        return repr(list(self._current()))
+
+
+@dataclass(eq=False)
+class _Record:
+    """One shared client: what it was built from, its raw session, its guard, its workers."""
+
+    api: Any
+    site: str
+    key: tuple[Any, ...]
+    raw: Any  # the requests.Session behind the guard; replaced by every login
+    guarded: '_SharedSession | None' = None
+    generation: int = 0  # bumped by each refresh; a 401 seen before a refresh does not repeat it
+    active: int = 0
+    retired: bool = False
+    closing: bool = False
+    # Re-entrant: refresh() holds it across api.login(), whose wrapper takes it again.
+    refresh_lock: threading.RLock = field(default_factory=threading.RLock)
+
+
+class _RawSession:
+    """The guard's inner session: whatever ``requests.Session`` the record holds right now.
+
+    Each login (:meth:`UnifiApiClient._perform_login`) builds a new ``requests.Session``. The
+    guard object stays the same, so a worker in the middle of a request keeps a valid
+    session and the client's ``session`` identity never changes; this indirection points
+    the guard at the current one.
+    """
+
+    def __init__(self, record: _Record) -> None:
+        self._record = record
+
+    @property
+    def headers(self) -> Any:
+        return self._record.raw.headers
+
+    @property
+    def cookies(self) -> Any:
+        return self._record.raw.cookies
+
+    @property
+    def verify(self) -> Any:
+        return self._record.raw.verify
+
+    @verify.setter
+    def verify(self, value: Any) -> None:
+        self._record.raw.verify = value
+
+    def close(self) -> None:
+        self._record.raw.close()
+
+    def get(self, url: Any, **kwargs: Any) -> Any:
+        return self._record.raw.get(url, **kwargs)
+
+    def head(self, url: Any, **kwargs: Any) -> Any:
+        return self._record.raw.head(url, **kwargs)
+
+    def post(self, url: Any, **kwargs: Any) -> Any:
+        return self._record.raw.post(url, **kwargs)
+
+    def request(self, method: str, url: Any, **kwargs: Any) -> Any:
+        return self._record.raw.request(method, url, **kwargs)
+
+
+class _SharedSession(ReadOnlySession):
+    """The read-only guard over the shared session, with one refresh and one replay on a 401.
+
+    A read answered 401 (an expired controller session) logs in again once
+    (:meth:`_SharedSyncSession.refresh`) and is sent once more through the guard, so the
+    replay is checked and audited like any request; its answer is returned as it is. Writes
+    never reach a response: the guard refuses them first.
+    """
+
+    handles_reauth = True  # the client's own 401 branches stand down (one owner of the bound)
+
+    def __init__(self, record: _Record, site: str, audit: list[dict[str, str]]) -> None:
+        super().__init__(_RawSession(record), site, audit)
+        self._record = record
+
+    def _send(self, send: Callable[[], Any]) -> Any:
+        record = self._record
+        generation = record.generation
+        response = send()
+        if getattr(response, 'status_code', None) != 401 or record.closing:
+            return response
+        _SHARED.refresh(record, generation)
+        return send()
+
+    def get(self, url: Any, **kwargs: Any) -> Any:
+        """Send a GET after the policy check; one refresh and one replay on a 401."""
+        parent = super()
+        return self._send(lambda: parent.get(url, **kwargs))
+
+    def head(self, url: Any, **kwargs: Any) -> Any:
+        """Send a HEAD after the policy check; one refresh and one replay on a 401."""
+        parent = super()
+        return self._send(lambda: parent.head(url, **kwargs))
+
+    def post(self, url: Any, data: Any = None, json: Any = None, **kwargs: Any) -> Any:
+        """Send an allowlisted POST after the policy check; one refresh and one replay on a 401."""
+        parent = super()
+        return self._send(lambda: parent.post(url, data=data, json=json, **kwargs))
+
+    def request(self, method: str, url: Any, **kwargs: Any) -> Any:
+        """Send an allowed request after the policy check; one refresh and one replay on a 401."""
+        parent = super()
+        return self._send(lambda: parent.request(method, url, **kwargs))
+
+
+def _client_settings() -> tuple[Credentials, int, int, float]:
+    """The credentials and client settings the environment holds now.
+
+    Raises:
+        ToolError: ``AUTHENTICATION_FAILED`` (no controller address) from ``Credentials``;
+            ``CONFIG_INVALID`` when a setting is not a number.
+    """
     from unifi_mapper.core.utils.redact import redact_text
 
     creds = Credentials.from_env()
-    scheme = 'https' if creds.port != 80 else 'http'
-    api = UnifiApiClient(
-        base_url=f'{scheme}://{creds.host}:{creds.port}',
-        site=creds.site,
-        verify_ssl=creds.verify_ssl,
-        username=creds.username,
-        password=creds.password,
-        api_token=creds.api_token,
-    )
+    # The settings UnifiConfig.from_env reads for every config-built client, under the same
+    # names and defaults; UnifiApiClient clamps them to the same ranges (issue 087).
+    try:
+        timeout = int(os.environ.get('UNIFI_TIMEOUT', '10'))
+        max_retries = int(os.environ.get('UNIFI_MAX_RETRIES', '3'))
+        retry_delay = float(os.environ.get('UNIFI_RETRY_DELAY', '1.0'))
+    except ValueError as e:
+        raise ToolError(
+            message=f'A client setting is not a number: {redact_text(e)}',
+            error_code=ErrorCodes.CONFIG_INVALID,
+            suggestion='Set UNIFI_TIMEOUT and UNIFI_MAX_RETRIES to whole numbers and '
+            'UNIFI_RETRY_DELAY to a number of seconds, or remove them for the defaults.',
+        ) from e
+    return creds, timeout, max_retries, retry_delay
+
+
+def _login(api: Any, host: str) -> None:
+    """Log the client in, mapping any failure to ``CONTROLLER_UNREACHABLE``."""
+    from unifi_mapper.core.utils.redact import redact_text
+
     suggestion = (
         'Check UNIFI_URL and UNIFI_CONSOLE_API_TOKEN (or UNIFI_USERNAME/UNIFI_PASSWORD). '
         'The account must be local to the controller, not a UniFi Cloud account.'
@@ -54,22 +272,259 @@ def _readonly_sync_client() -> Iterator[tuple[Any, str]]:
         authenticated = api.login()
     except Exception as e:  # noqa: BLE001 - any login failure is an unreachable controller
         raise ToolError(
-            message=f'Could not authenticate to the UniFi controller at {creds.host}: '
-            f'{redact_text(e)}',
+            message=f'Could not authenticate to the UniFi controller at {host}: {redact_text(e)}',
             error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
             suggestion=suggestion,
         ) from e
     if not authenticated:
         raise ToolError(
-            message=f'Could not authenticate to the UniFi controller at {creds.host}',
+            message=f'Could not authenticate to the UniFi controller at {host}',
             error_code=ErrorCodes.CONTROLLER_UNREACHABLE,
             suggestion=suggestion,
         )
-    install_read_only_guard(api, creds.site)
+
+
+def _adopt_session(record: _Record) -> None:
+    """Put the shared guard back on the client after a login replaced its session."""
+    session = record.api.session
+    if session is record.guarded:
+        return
+    record.raw = session
+    record.api.session = record.guarded
+
+
+def _publish_session(record: _Record, session: Any) -> None:
+    """Receive a freshly authenticated session from the client: swap the raw one, keep the guard.
+
+    ``api.session`` stays ``record.guarded`` throughout; only ``record.raw`` changes, in one
+    store, so a worker mid-request finishes on the session it started on and the next request
+    from any worker uses the new one. No thread ever sees a raw ``requests.Session``.
+    """
+    record.raw = session
+    if record.api.session is not record.guarded:
+        record.api.session = record.guarded
+
+
+def _guard_after_login(record: _Record, original: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a login method: one login at a time, and the guard back however the login ends.
+
+    The lock is the record's ``refresh_lock``, so a worker whose getter found
+    ``is_authenticated`` False while :meth:`_SharedSyncSession.refresh` is logging in waits
+    for that login and then takes ``login()``'s already-authenticated short-cut, instead of
+    logging in beside it (a second session per concurrent worker, and a controller that
+    rate-limits logins).
+    """
+
+    def login_then_guard(*args: Any, **kwargs: Any) -> Any:
+        with record.refresh_lock:
+            try:
+                return original(*args, **kwargs)
+            finally:
+                _adopt_session(record)
+
+    return login_then_guard
+
+
+class _SharedSyncSession:
+    """The process's one shared sync client: lazy, locked, guarded, drained at shutdown."""
+
+    def __init__(self) -> None:
+        self._cond = threading.Condition()
+        self._record: _Record | None = None
+
+    def acquire(self) -> _Record:
+        """Return the shared client for one call, building it first if there is none.
+
+        The build (one login) runs under the lock, so concurrent first calls wait for it
+        rather than each logging in. A client built from other credentials or settings than
+        the environment holds now is retired first.
+
+        Raises:
+            ToolError: ``CONTROLLER_UNREACHABLE`` when the login fails or raises;
+                ``CONFIG_INVALID`` or ``AUTHENTICATION_FAILED`` for the settings.
+        """
+        creds, timeout, max_retries, retry_delay = _client_settings()
+        key = (creds, timeout, max_retries, retry_delay)
+        to_close: _Record | None = None
+        with self._cond:
+            record = self._record
+            if record is not None and record.key != key:
+                # Built from other credentials or settings: retire it. An idle one is closed
+                # below, after the lock; one with workers is closed by its last release.
+                record.retired = True
+                if record.active == 0:
+                    record.closing = True
+                    to_close = record
+                record = self._record = None
+            if record is None:
+                record = self._record = self._build(key, creds, timeout, max_retries, retry_delay)
+            record.active += 1
+        if to_close is not None:
+            self._close(to_close)
+        return record
+
+    def release(self, record: _Record) -> None:
+        """Mark one call's use of ``record`` over; close a retired client once it is idle."""
+        to_close: _Record | None = None
+        with self._cond:
+            record.active -= 1
+            if record.retired and record.active == 0 and not record.closing:
+                record.closing = True
+                to_close = record
+            self._cond.notify_all()
+        if to_close is not None:
+            self._close(to_close)
+
+    def refresh(self, record: _Record, generation: int) -> None:
+        """Log ``record``'s client in again, once per ``generation``, and verify the guard.
+
+        Args:
+            record: The shared client that answered 401.
+            generation: The record's generation when the refused request was sent; a refresh
+                that already happened since then is not repeated.
+
+        Raises:
+            ReadOnlyViolation: The guard is no longer on the client after the login.
+        """
+        with record.refresh_lock:
+            if record.generation != generation:
+                return
+            api = record.api
+            api.is_authenticated = False
+            try:
+                ok = api.login()  # wrapped: the guard comes back whatever happens
+            except Exception as e:  # noqa: BLE001 - the replay reports the failure
+                logger.warning(
+                    'shared controller session: re-login after 401 raised {}', type(e).__name__
+                )
+                ok = False
+            record.generation += 1
+            if not ok:
+                logger.warning('shared controller session: re-login after 401 failed')
+            assert_guarded(api)
+
+    def drain(self, timeout: float = DRAIN_TIMEOUT_S) -> bool:
+        """Wait up to ``timeout`` for active workers, then log out and close. Never under one.
+
+        Returns:
+            True when the client was closed (or there was none); False when a worker was
+            still active at the bound, in which case the session is left open.
+        """
+        with self._cond:
+            record = self._record
+            self._record = None
+            if record is None:
+                return True
+            # Retired and closing from here: no new worker takes it, no refresh is tried, and
+            # a release during the wait does not close it under the drain.
+            record.retired = True
+            record.closing = True
+            deadline = time.monotonic() + timeout
+            while record.active:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._cond.wait(remaining)
+            if record.active:
+                logger.warning(
+                    'shared controller session: {} worker(s) still active after {:g} s; '
+                    'the session is left open',
+                    record.active,
+                    timeout,
+                )
+                record.closing = False  # the last worker's release closes it instead
+                return False
+        self._close(record)
+        return True
+
+    def reset(self) -> None:
+        """Forget the shared client without logging out (tests)."""
+        with self._cond:
+            self._record = None
+
+    @staticmethod
+    def _build(
+        key: tuple[Any, ...],
+        creds: Credentials,
+        timeout: int,
+        max_retries: int,
+        retry_delay: float,
+    ) -> _Record:
+        from unifi_mapper.api_client import UnifiApiClient
+
+        scheme = 'https' if creds.port != 80 else 'http'
+        # Any: the guard replaces ``session`` (typed requests.Session), as the read-only guard
+        # installer does.
+        api: Any = UnifiApiClient(
+            base_url=f'{scheme}://{creds.host}:{creds.port}',
+            site=creds.site,
+            verify_ssl=creds.verify_ssl,
+            username=creds.username,
+            password=creds.password,
+            api_token=creds.api_token,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+        )
+        _login(api, creds.host)
+        record = _Record(api=api, site=creds.site, key=key, raw=api.session)
+        record.guarded = _SharedSession(record, creds.site, _CallAudit())
+        api.session = record.guarded
+        api._publish_session = lambda session: _publish_session(record, session)
+        for name in _LOGIN_METHODS:
+            method = getattr(api, name, None)
+            if callable(method):
+                setattr(api, name, _guard_after_login(record, method))
+        return record
+
+    @staticmethod
+    def _close(record: _Record) -> None:
+        """Log the retired client out (``closing`` was set by the caller, under the lock)."""
+        try:
+            record.api.logout()
+        except Exception as e:  # noqa: BLE001 - a failed logout is logged, never raised
+            logger.debug('shared controller session: logout raised {}', type(e).__name__)
+
+
+_SHARED = _SharedSyncSession()
+
+
+def shutdown_shared_sync_session(timeout: float = DRAIN_TIMEOUT_S) -> bool:
+    """The server's shutdown hook: drain the shared client's workers, then log out.
+
+    Args:
+        timeout: How long to wait for active workers before leaving the session open.
+
+    Returns:
+        True when the session was closed or there was none; False when it was left open.
+    """
+    return _SHARED.drain(timeout)
+
+
+@contextmanager
+def _readonly_sync_client() -> Iterator[tuple[Any, str]]:
+    """Yield the shared, read-only-guarded ``UnifiApiClient`` and its site for one call."""
+    record = _SHARED.acquire()
     try:
-        yield api, creds.site
+        yield record.api, record.site
     finally:
-        api.logout()
+        _SHARED.release(record)
+
+
+async def _run(fn: Callable[..., T], *args: Any) -> T:
+    """Run ``fn`` under :func:`_mapped` in a worker thread with its own request collector.
+
+    The collector is set here, before the thread hop, so the copied context carries it into
+    the worker; it is reset with its token when the call ends, however it ends. A worker the
+    runner's deadline abandoned keeps its copy of the context and its own collector. The hop
+    takes a permit from the MCP server's worker budget (issue 090), so abandoned collectors
+    are bounded with the sync handlers, not stacked on anyio's default pool.
+    """
+    token = _request_audit.set([])
+    try:
+        return await run_blocking(_mapped, fn, *args)
+    finally:
+        _request_audit.reset(token)
 
 
 def _mapped(fn: Callable[..., T], *args: Any) -> T:
@@ -279,7 +734,7 @@ async def get_switch_ports(
     Raises:
         ToolError: DEVICE_NOT_FOUND, CONTROLLER_UNREACHABLE or READ_ONLY_VIOLATION.
     """
-    return await asyncio.to_thread(_mapped, _switch_ports_sync, switch, include_raw)
+    return await _run(_switch_ports_sync, switch, include_raw)
 
 
 async def diff_port_profiles(
@@ -310,7 +765,7 @@ async def diff_port_profiles(
     Raises:
         ToolError: PROFILE_NOT_FOUND (the message lists every profile name).
     """
-    return await asyncio.to_thread(_mapped, _profile_diff_sync, profile_a, profile_b)
+    return await _run(_profile_diff_sync, profile_a, profile_b)
 
 
 async def get_client_history(
@@ -350,7 +805,7 @@ async def get_client_history(
         ToolError: DEVICE_NOT_FOUND for an unknown switch; CONFIG_INVALID when
             port is given without switch.
     """
-    return await asyncio.to_thread(_mapped, _client_history_sync, client, switch, port)
+    return await _run(_client_history_sync, client, switch, port)
 
 
 async def get_device_events(
@@ -391,9 +846,7 @@ async def get_device_events(
     Raises:
         ToolError: DEVICE_NOT_FOUND or CONFIG_INVALID.
     """
-    return await asyncio.to_thread(
-        _mapped, _device_events_sync, device, port, clients, since_days, max_events
-    )
+    return await _run(_device_events_sync, device, port, clients, since_days, max_events)
 
 
 async def get_recent_events(
@@ -449,9 +902,7 @@ async def get_recent_events(
     Raises:
         ToolError: CONTROLLER_UNREACHABLE or CONFIG_INVALID.
     """
-    return await asyncio.to_thread(
-        _mapped, _recent_events_sync, since_hours, category, severity, contains, max_events
-    )
+    return await _run(_recent_events_sync, since_hours, category, severity, contains, max_events)
 
 
 async def get_port_counter_rates(
@@ -491,9 +942,7 @@ async def get_port_counter_rates(
     Raises:
         ToolError: DEVICE_NOT_FOUND, INVALID_PORT or CONFIG_INVALID.
     """
-    return await asyncio.to_thread(
-        _mapped, _counter_rates_sync, switch, port, samples, interval_seconds
-    )
+    return await _run(_counter_rates_sync, switch, port, samples, interval_seconds)
 
 
 async def diagnose_switch_port(
@@ -552,8 +1001,7 @@ async def diagnose_switch_port(
         ToolError: DEVICE_NOT_FOUND, INVALID_PORT, CONFIG_INVALID,
             CONTROLLER_UNREACHABLE or READ_ONLY_VIOLATION.
     """
-    return await asyncio.to_thread(
-        _mapped,
+    return await _run(
         _diagnose_sync,
         switch,
         port,

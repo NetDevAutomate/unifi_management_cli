@@ -36,7 +36,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [018](018-read-only-tool-proposals.md) | Read-only tool proposals for the CLI and MCP | open |
 | [019](019-write-capable-cli-ideas.md) | Write-capable CLI ideas (plan, review, apply; never over MCP) | open, decision needed |
 | [020](020-mcp-protocol-follow-ups.md) | MCP protocol and runtime follow-ups | open |
-| [021](021-sync-diagnostic-path-logs-in-per-call.md) | The sync port-diagnostics MCP tools log in to the controller on every call | open, decision needed |
+| [021](021-sync-diagnostic-path-logs-in-per-call.md) | The sync port-diagnostics MCP tools log in to the controller on every call | resolved |
 | [022](022-search-tools-quality.md) | `search_tools` misses multi-word queries, tags and differently-cased categories | resolved (`0c98496`) |
 | [023](023-related-tools-hints-name-missing-tools.md) | Error hints send the model to `get_network_topology` and `vlan_info`, which don't exist | resolved (`a3efa2f`) |
 | [024](024-network-protect-tools-unguarded.md) | Network Integration API and Protect MCP tools run without a read-only guard or request audit | resolved (`e8050fe`) |
@@ -54,7 +54,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [036](036-integration-api-models-drift-from-the-reference.md) | Integration API models disagree with the v10.6 reference, so some fields are lost | resolved (`befe82a`) |
 | [037](037-launch-config-network-family-incomplete.md) | With the legacy config file, the six network_api tools return CONFIG_MISSING | resolved (`05c9416`) |
 | [038](038-ssh-host-key-verification-disabled.md) | The gateway SSH commands don't verify the gateway's host key (`known_hosts=None`) | resolved (`7124755`) |
-| [039](039-promote-the-live-check-harness.md) | Promote the read-only live-check harness into the repo as a config-driven tool | open, decision needed |
+| [039](039-promote-the-live-check-harness.md) | Promote the read-only live-check harness into the repo as a config-driven tool | resolved |
 | [040](040-real-identifiers-in-tests.md) | Test fixtures carried MAC addresses and addresses from the live network | resolved (`2650809`) |
 | [041](041-onvif-scripts-hard-code-cameras.md) | The ONVIF scripts hard-coded the site's cameras, and `onvif_stream.py` a camera password that is in pushed history | resolved (`2650809`) |
 | [042](042-settings-with-no-effect.md) | Five documented settings have no effect on `unifi-mapper` | resolved (`38594dd`) |
@@ -96,14 +96,24 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [078](078-cli-and-mcp-feature-parity-is-not-enforced.md) | The CLI and the MCP server do not have feature parity, and nothing checks that they do | resolved (`4d55fa0`) |
 | [079](079-security-audit-counts-every-neighbour-ap-as-a-critical-rogue.md) | `security_audit` counts every neighbouring AP as a critical rogue | resolved (`2f8d2a8`) |
 | [080](080-security-audit-rates-own-devices-and-iot-vendors-as-medium.md) | `security_audit` rates its own adopted devices and every IoT vendor as medium risk | resolved (`6cf067e`) |
-| [081](081-device-statistics-model-keys-do-not-match-the-endpoint.md) | `DeviceStatistics` reads keys the live `statistics/latest` endpoint does not send | open |
-| [082](082-device-feature-enum-names-differ-from-the-reference.md) | `DeviceFeature` uses `SWITCH`/`ROUTER` names the Integration API does not send | open |
-| [083](083-acl-create-helpers-default-to-a-rule-type-the-api-rejects.md) | `create_block_rule` / `create_allow_rule` default `rule_type='USER'`, a value the ACL API rejects | open |
-| [084](084-dns-policy-model-has-no-metadata-field.md) | `DNSPolicy` has no `metadata` field although the API sends `metadata.origin` | open |
-| [085](085-uxg-gateways-are-drawn-as-access-points.md) | A UXG gateway is classified as an access point in every diagram format | open |
-| [086](086-diagram-reports-success-after-writing-a-placeholder.md) | `diagram` prints `✅ Diagram generated` after a placeholder render | open |
-| [087](087-retry-settings-skip-the-credentials-built-clients.md) | `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` do not reach clients built from `Credentials` | open |
-| [088](088-analyze-mac-table-reads-a-field-current-controllers-do-not-send.md) | `analyze mac-table` reads `device['mac_table']`, which current controllers do not send, so it reports nothing | open |
-| [089](089-trunk-detection-rule-exists-in-three-places.md) | The trunk-port rule is written three times and can disagree | open |
-| [090](090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md) | The MCP deadline cannot stop a synchronous handler or a worker thread it started | open |
-| [091](091-output-redactor-drops-entries-keyed-by-secret-looking-names.md) | The output redactor drops entries of any map keyed by a name that looks like a secret | open, decision needed |
+| [081](081-device-statistics-model-keys-do-not-match-the-endpoint.md) | `DeviceStatistics` reads keys the live `statistics/latest` endpoint does not send | resolved |
+| [082](082-device-feature-enum-names-differ-from-the-reference.md) | `DeviceFeature` uses `SWITCH`/`ROUTER` names the Integration API does not send | resolved |
+| [083](083-acl-create-helpers-default-to-a-rule-type-the-api-rejects.md) | `create_block_rule` / `create_allow_rule` default `rule_type='USER'`, a value the ACL API rejects | resolved |
+| [084](084-dns-policy-model-has-no-metadata-field.md) | `DNSPolicy` has no `metadata` field although the API sends `metadata.origin` | resolved |
+| [085](085-uxg-gateways-are-drawn-as-access-points.md) | A UXG gateway is classified as an access point in every diagram format | resolved |
+| [086](086-diagram-reports-success-after-writing-a-placeholder.md) | `diagram` prints `✅ Diagram generated` after a placeholder render | resolved |
+| [087](087-retry-settings-skip-the-credentials-built-clients.md) | `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` do not reach clients built from `Credentials` | resolved |
+| [088](088-analyze-mac-table-reads-a-field-current-controllers-do-not-send.md) | `analyze mac-table` reads `device['mac_table']`, which current controllers do not send, so it reports nothing | resolved |
+| [089](089-trunk-detection-rule-exists-in-three-places.md) | The trunk-port rule is written three times and can disagree | resolved |
+| [090](090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md) | The MCP deadline cannot stop a synchronous handler or a worker thread it started | resolved |
+| [091](091-output-redactor-drops-entries-keyed-by-secret-looking-names.md) | The output redactor drops entries of any map keyed by a name that looks like a secret | resolved |
+| [092](092-gateway-probes-over-mcp-behind-an-opt-in.md) | Expose the gateway SSH probes over MCP behind an explicit opt-in (tier 1 built in 0.4.0; live check and tier 2 pending) | open, decision needed |
+| [093](093-diagnose-firewall-verdicts-are-placeholder-heuristics.md) | `diagnose firewall` verdicts are placeholder heuristics, not derived from the rules | resolved |
+| [094](094-acl-create-helpers-send-filters-the-api-refuses.md) | ACL create helpers send filters without a `type` and with empty lists the API refuses | resolved |
+| [095](095-metrics-collector-per-port-metrics-are-always-empty.md) | `DeviceMetricsCollector` per-port metrics are always empty: `statistics/latest` sends no ports | open, decided (deprecated; removed in 0.5.0) |
+| [096](096-get-lldp-info-returns-nothing-on-a-current-controller.md) | `get_lldp_info` returns no LLDP neighbours on a current controller, so diagrams draw no LLDP links | resolved |
+| [097](097-profile-less-port-forward-all-read-two-ways.md) | A profile-less port's own `forward: all` is honoured by one analysis and ignored by another | resolved |
+| [098](098-vlan-coverage-and-diagnose-vlans-audit-different-devices.md) | `vlan-coverage` audits any device with a port table while `diagnose vlans` reads switches only, so an in-wall AP's port is a coverage finding `diagnose vlans` never sees | open |
+| [099](099-firewall-check-reads-classic-rules-and-rejects-real-action-values.md) | `firewall_check` reads `rest/firewallrule`, empty on a zone-based controller (live: 0 rules there, 288 policies at `firewall-policies`), and `FirewallRule.action` rejects every real action value | open |
+| [100](100-diagram-skips-an-adopted-uacc-doorbell-the-inventory-counts.md) | `diagram` skips an adopted `uacc` doorbell that `inventory` counts as an access point (11 vs 10) | open, decision needed |
+| [101](101-get-recent-events-reads-every-page-before-keeping-the-newest.md) | `get_recent_events` reads every page before keeping the newest; an early stop changes what `matched_total` and `truncated` report (carried out of 021) | open, decision needed |

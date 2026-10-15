@@ -164,8 +164,7 @@ def diagnose_vlans_from_data(
                 continue
             profile_id, _source = effective_profile_id(device, port_entry, port_idx)
             profile = profiles_by_id.get(profile_id or '')
-            settings = dict(profile or {})
-            settings.update(port_override(device, port_idx) or {})
+            settings = running_vlan_settings(port_entry, profile, port_override(device, port_idx))
 
             native_vlan = _network_id_to_vlan(settings.get('native_networkconf_id'), networks)
             tagged_vlans = _tagged_vlans(settings, networks, all_vlan_ids)
@@ -183,7 +182,9 @@ def diagnose_vlans_from_data(
                     native_vlan=native_vlan if isinstance(native_vlan, int) else 1,
                     tagged_vlans=sorted(tagged_vlans),
                     profile_name=profile_name,
-                    is_trunk=bool(tagged_vlans) or is_trunk_profile(settings),
+                    # One rule for every analysis (issue 089); it reads every field that
+                    # puts a VLAN in tagged_vlans, so a port tagging one is a trunk
+                    is_trunk=is_trunk_profile(settings),
                 )
             )
 
@@ -231,21 +232,111 @@ def diagnose_vlans_from_data(
     )
 
 
-def is_trunk_profile(settings: dict[str, Any]) -> bool:
-    """Whether a port profile (or a profile merged with its override) makes a trunk.
+#: VLAN-list keys a hand-built port record (a planned uplink, a test fixture) can carry in
+#: place of the controller's ``forward`` / ``tagged_vlan_mgmt``. ``vlan_coverage`` reads the
+#: VLANs from them; :func:`is_trunk_profile` reads their presence.
+VLAN_LIST_KEYS = (
+    'allowed_vlans',
+    'allowed_vlan_ids',
+    'tagged_vlans',
+    'tagged_vlan_ids',
+    'trunk_vlans',
+    'vlan_ids',
+    'native_vlan',
+    'native_vlan_id',
+    'untagged_vlan',
+    'vlan',
+)
 
-    ``forward: 'all'`` carries every VLAN unless ``tagged_vlan_mgmt`` is ``block_all`` (the
-    rule ``foreign_bridges`` applies); ``forward: 'customize'`` is a trunk when it tags at
-    least one network; a profile whose name says ``trunk`` is taken at its word. A raw
-    profile id can say none of this, which is what issue 030 was about.
+#: The port settings a profile (and an override on top of it) decides, so the switch runs
+#: them from there, not from the port table's copies (issue 089: on a live controller 100 port
+#: table entries said ``forward: 'all'`` under access profiles).
+PROFILE_VLAN_FIELDS = (
+    'forward',
+    'tagged_vlan_mgmt',
+    'native_networkconf_id',
+    'tagged_networkconf_ids',
+    'excluded_networkconf_ids',
+    'voice_networkconf_id',
+)
+
+
+def running_vlan_settings(
+    port_entry: dict[str, Any],
+    profile: dict[str, Any] | None,
+    override: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The VLAN settings a port runs: profile, then override; the row only when no profile applies.
+
+    A port with a profile runs the profile's VLAN fields with the override's on top, and the
+    port table row's own copies are ignored: a live controller reports ``forward: 'all'`` on
+    rows under access profiles. A port with NO profile has no other source of its running mode,
+    so its row's :data:`PROFILE_VLAN_FIELDS` are the base and the override, if any, sits on top
+    (issue 097). Every analysis that judges a port's VLANs reads this one function, so they
+    agree (issue 089).
     """
+    settings: dict[str, Any] = {}
+    if profile is None:
+        settings.update({k: port_entry[k] for k in PROFILE_VLAN_FIELDS if k in port_entry})
+    else:
+        settings.update(profile)
+    settings.update(override or {})
+    return settings
+
+
+def is_trunk_profile(settings: dict[str, Any]) -> bool:
+    """Whether a port's settings make it a trunk: the one rule every analysis uses (issue 089).
+
+    ``settings`` is the port's profile with its override on top (``link_settings``), and, for
+    a hand-built port record, the record itself. In order:
+
+    1. An explicit flag: ``is_trunk`` / ``trunk`` true is a trunk; ``is_access`` / ``access``
+       true is not.
+    2. The controller's fields, as :func:`_tagged_vlans` reads them: ``forward: 'all'``
+       carries every VLAN unless ``tagged_vlan_mgmt`` is ``block_all``; a port that lists
+       ``tagged_networkconf_ids`` tags them unless ``block_all``; a ``voice_networkconf_id``
+       is always tagged.
+    3. A profile name (``portconf_name``, ``profile_name`` or ``name``) that says ``trunk``
+       is taken at its word.
+    4. With a ``forward``, nothing else makes a trunk. Without one (a record with none of the
+       controller's fields): a name that says ``access`` or ``client`` is not a trunk, and
+       one that lists VLANs (:data:`VLAN_LIST_KEYS`) is.
+
+    A raw profile id can say none of this, which is what issue 030 was about.
+    """
+    if _first_flag(settings, ('is_trunk', 'trunk')) is True:
+        return True
+    if _first_flag(settings, ('is_access', 'access')) is True:
+        return False
     forward = str(settings.get('forward') or '').lower()
     mgmt = str(settings.get('tagged_vlan_mgmt') or '').lower()
     if forward == 'all' and mgmt != 'block_all':
         return True
-    if forward == 'customize' and _str_list(settings.get('tagged_networkconf_ids')):
+    if _str_list(settings.get('tagged_networkconf_ids')) and mgmt != 'block_all':
         return True
-    return 'trunk' in str(settings.get('name') or '').lower()
+    if settings.get('voice_networkconf_id'):
+        return True
+    name = str(
+        settings.get('portconf_name') or settings.get('profile_name') or settings.get('name') or ''
+    ).lower()
+    if 'trunk' in name:
+        return True
+    if forward:
+        return False
+    if 'access' in name or 'client' in name:
+        return False
+    return any(settings.get(key) is not None for key in VLAN_LIST_KEYS)
+
+
+def _first_flag(settings: dict[str, Any], keys: tuple[str, ...]) -> bool | None:
+    """The first of ``keys`` present in ``settings``, read as a boolean (``'false'`` is false)."""
+    for key in keys:
+        if key in settings:
+            value = settings[key]
+            if isinstance(value, str):
+                return value.strip().lower() not in ('', '0', 'false', 'no', 'off')
+            return bool(value)
+    return None
 
 
 def _tagged_vlans(

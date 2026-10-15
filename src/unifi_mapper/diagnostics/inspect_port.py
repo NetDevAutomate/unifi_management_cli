@@ -5,18 +5,19 @@ same logic backs both the CLI (``unifi-mapper ports inspect``) and the MCP
 server. The sync work is offloaded to a worker thread so it never blocks the
 event loop.
 
-The controller session is the one every sync port-diagnostics tool uses (issue 021):
-:func:`port_diagnostics_tools._readonly_sync_client` logs in once per call, installs the
-read-only guard (which refuses a write before it is sent and records each request in the
-opt-in ``UNIFI_MCP_REQUEST_AUDIT`` file) and logs out; :func:`port_diagnostics_tools._mapped`
-turns a refused write into ``READ_ONLY_VIOLATION``. Both are looked up on the module at
-call time, as the sibling tools do, so one test seam (patching
-``port_diagnostics_tools._readonly_sync_client``) covers every sync tool.
+The controller session is the one every sync port-diagnostics tool shares (issue 021):
+:func:`port_diagnostics_tools._readonly_sync_client` lends the process's one guarded client
+(logged in once, the read-only guard refusing a write before it is sent and recording each
+request in the call's own ``request_audit`` collector and the opt-in
+``UNIFI_MCP_REQUEST_AUDIT`` sink); :func:`port_diagnostics_tools._run` sets that collector
+before the thread hop and :func:`port_diagnostics_tools._mapped` turns a refused write into
+``READ_ONLY_VIOLATION``. All are looked up on the module at call time, as the sibling tools
+do, so one test seam (patching ``port_diagnostics_tools._readonly_sync_client``) covers every
+sync tool.
 """
 
 from __future__ import annotations
 
-import asyncio
 from pydantic import Field
 from typing import Annotated, Any
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
@@ -125,4 +126,4 @@ async def inspect_switch_port(
         ToolError: READ_ONLY_VIOLATION if the inspection attempted a controller
             write (a bug; the read-only guard refuses it before it is sent).
     """
-    return await asyncio.to_thread(_sync_tools._mapped, _inspect_sync, switch, port)
+    return await _sync_tools._run(_inspect_sync, switch, port)

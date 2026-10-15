@@ -151,6 +151,26 @@ async def test_acl_and_dns_tools_read_the_served_paths(
     assert transport.calls == [PROBE, ('GET', path)]
 
 
+@pytest.mark.usefixtures('network_env')
+@pytest.mark.parametrize(
+    ('tool', 'path', 'record'),
+    [
+        ('get_acl_rules', f'{INTEGRATION}/acl-rules', ACL_RULE),
+        ('get_dns_policies', f'{INTEGRATION}/dns/policies', DNS_POLICY),
+    ],
+    ids=['get_acl_rules', 'get_dns_policies'],
+)
+async def test_acl_and_dns_tools_keep_the_records_origin(
+    tool: str, path: str, record: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``metadata.origin`` tells a user-defined record from a derived one (issues 036, 084)."""
+    _serve(monkeypatch, {path: [record]})
+
+    [served] = await getattr(network_tools, tool)()
+
+    assert served['metadata'] == {'origin': 'USER_DEFINED'}, served
+
+
 # --- get_clients paging (design 4.11) -------------------------------------------------------
 
 

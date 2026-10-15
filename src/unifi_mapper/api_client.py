@@ -6,6 +6,7 @@ Contains the UnifiApiClient class for interacting with the UniFi Controller API.
 import datetime
 import hashlib
 import logging
+import re
 import requests
 import time
 from .exceptions import (
@@ -21,6 +22,9 @@ from typing import Any, Dict, List, Optional
 
 
 log = logging.getLogger(__name__)
+
+# How long get_lldp_info's MAC-to-device-name cache is trusted before it is rebuilt.
+MAC_CACHE_TTL_SECONDS = 60.0
 
 
 def _sanitize_for_logging(value: str, max_chars: int = 4) -> str:
@@ -306,6 +310,23 @@ class UnifiApiClient:
         else:
             raise UniFiApiError(f'Request failed after {self.max_retries} attempts')
 
+    def _reauthenticate(self) -> bool:
+        """Log in again after the controller answered 401/403 on an established session.
+
+        :meth:`login` returns ``True`` without a request while ``is_authenticated`` is set, so
+        the session that just failed has to be marked stale first; otherwise the "retry" replays
+        the request on the same dead session (found with issue 021's shared sync session).
+
+        A session that re-authenticates itself (``handles_reauth`` is true: the MCP server's
+        shared guarded session refreshes once and replays once at the session level) is the
+        single owner of that bound. When such a session still answers 401, this client does
+        not log in again on top of it: it returns ``False`` so the caller reports the failure.
+        """
+        if getattr(self.session, 'handles_reauth', False):
+            return False
+        self.is_authenticated = False
+        return self.login()
+
     def login(self) -> bool:
         """Login to the UniFi Controller.
 
@@ -344,6 +365,17 @@ class UnifiApiClient:
             log.error(f'Unexpected error during login: {e}')
             raise UniFiApiError(f'Login failed: {e}')
 
+    def _publish_session(self, session: requests.Session) -> None:
+        """Make ``session`` the client's session, in one store.
+
+        ``_perform_login`` builds its session locally and hands it over here once it is
+        authenticated. A guard (the read-only guard, the MCP tools' shared session) replaces
+        this method on the instance so that its wrapper stays in front: ``session`` then goes
+        from one guarded object to the next without a concurrent worker ever picking up the
+        raw ``requests.Session`` in between.
+        """
+        self.session = session
+
     def _perform_login(self) -> bool:
         """Internal method to perform the actual login process.
 
@@ -371,9 +403,11 @@ class UnifiApiClient:
             log.debug(f'UniFi OS detection failed: {e}')
             self.is_unifi_os = False
 
-        # Set up the session with proper SSL handling for self-signed certificates
-        self.session = requests.Session()
-        self.session.verify = self.verify_ssl
+        # Build the new session locally and publish it only once it is authenticated: the
+        # client's ``session`` never points at a half-configured or unguarded object, so a
+        # concurrent worker keeps using the previous session until the hand-over.
+        session = requests.Session()
+        session.verify = self.verify_ssl
 
         # For self-signed certificates, we need to disable SSL warnings if verify_ssl is False
         if not self.verify_ssl:
@@ -383,7 +417,7 @@ class UnifiApiClient:
             log.debug('SSL verification disabled - suitable for self-signed certificates')
 
         # Set up headers
-        self.session.headers.update(self.legacy_headers)
+        session.headers.update(self.legacy_headers)
 
         # Try to authenticate
         if self.auth_method == 'token':
@@ -395,26 +429,27 @@ class UnifiApiClient:
                 raise UniFiValidationError(
                     'API token authentication selected but no token provided'
                 )
-            self.session.headers.update({'X-API-KEY': self._api_token})
+            session.headers.update({'X-API-KEY': self._api_token})
 
             try:
 
                 def _try_api_key_auth():
                     if self.is_unifi_os:
                         # For UniFi OS devices, try the /proxy/network/api/s/{site}/self endpoint
-                        return self.session.get(
+                        return session.get(
                             f'{self.base_url}/proxy/network/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
                     else:
                         # For legacy controllers, try the /api/s/{site}/self endpoint
-                        return self.session.get(
+                        return session.get(
                             f'{self.base_url}/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
 
                 response = self._retry_request(_try_api_key_auth)
                 if response.status_code == 200:
+                    self._publish_session(session)
                     self.is_authenticated = True
                     self.successful_endpoint = 'api_token'
                     log.info(
@@ -432,26 +467,27 @@ class UnifiApiClient:
                 raise UniFiConnectionError(f'SSL error: {e}')
 
             # If X-API-KEY header didn't work, try Authorization header
-            self.session.headers.update({'Authorization': f'Bearer {self._api_token}'})
+            session.headers.update({'Authorization': f'Bearer {self._api_token}'})
 
             try:
 
                 def _try_bearer_auth():
                     if self.is_unifi_os:
                         # For UniFi OS devices, try the /proxy/network/api/s/{site}/self endpoint
-                        return self.session.get(
+                        return session.get(
                             f'{self.base_url}/proxy/network/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
                     else:
                         # For legacy controllers, try the /api/s/{site}/self endpoint
-                        return self.session.get(
+                        return session.get(
                             f'{self.base_url}/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
 
                 response = self._retry_request(_try_bearer_auth)
                 if response.status_code == 200:
+                    self._publish_session(session)
                     self.is_authenticated = True
                     self.successful_endpoint = 'bearer_token'
                     log.info(
@@ -478,10 +514,11 @@ class UnifiApiClient:
                             'username': self._username,
                             'password': self._password,
                         }
-                        return self.session.post(login_url, json=login_data, timeout=self.timeout)
+                        return session.post(login_url, json=login_data, timeout=self.timeout)
 
                     response = self._retry_request(_try_unifi_os_login)
                     if response.status_code == 200:
+                        self._publish_session(session)
                         self.is_authenticated = True
                         self.successful_endpoint = 'unifi_os_login'
                         log.info(
@@ -496,10 +533,11 @@ class UnifiApiClient:
                             'username': self._username,
                             'password': self._password,
                         }
-                        return self.session.post(login_url, json=login_data, timeout=self.timeout)
+                        return session.post(login_url, json=login_data, timeout=self.timeout)
 
                     response = self._retry_request(_try_legacy_login)
                     if response.status_code == 200:
+                        self._publish_session(session)
                         self.is_authenticated = True
                         self.successful_endpoint = 'legacy_login'
                         log.info(
@@ -518,7 +556,8 @@ class UnifiApiClient:
             except Exception as e:
                 log.debug(f'Username/password authentication failed: {e}')
 
-        # If we got here, authentication failed
+        # If we got here, authentication failed; the client keeps its previous session.
+        session.close()
         log.error('Authentication failed - all methods exhausted')
         return False
 
@@ -747,7 +786,7 @@ class UnifiApiClient:
                 log.warning(
                     'Authentication issue with devices endpoint. Attempting to re-authenticate...'
                 )
-                if self.login():
+                if self._reauthenticate():
                     log.info('Re-authentication successful, retrying devices retrieval')
                     response = self._retry_request(_try_get_devices)
                     if response.status_code == 200:
@@ -809,7 +848,7 @@ class UnifiApiClient:
                 log.warning(
                     'Authentication issue with clients endpoint. Attempting to re-authenticate...'
                 )
-                if self.login():
+                if self._reauthenticate():
                     log.info('Re-authentication successful, retrying clients retrieval')
                     response = self._retry_request(_try_get_clients)
                     if response.status_code == 200:
@@ -894,7 +933,7 @@ class UnifiApiClient:
                         log.warning(
                             'Authentication issue with device endpoint. Attempting to re-authenticate...'
                         )
-                        if self.login():
+                        if self._reauthenticate():
                             log.info(
                                 'Re-authentication successful, retrying device details retrieval'
                             )
@@ -1162,13 +1201,23 @@ class UnifiApiClient:
         port_lldp_info = {}
 
         try:
-            # Build MAC to device name cache if needed
-            if not hasattr(self, '_mac_to_device_cache'):
+            # Build the MAC-to-name cache when missing or older than MAC_CACHE_TTL_SECONDS.
+            # The client can now live for a whole MCP server process (issue 021), so a cache
+            # built once would miss a device adopted or renamed after the first call.
+            built_at = getattr(self, '_mac_cache_built_at', None)
+            if built_at is None or time.monotonic() - built_at > MAC_CACHE_TTL_SECONDS:
                 self._mac_to_device_cache = {}
                 self._build_mac_to_device_cache(site_id)
+                self._mac_cache_built_at = time.monotonic()
 
-            # FIX: LLDP data is already available in device details under 'lldp_table'
-            device_details = self.get_device_details(site_id, device_id)
+            # The site-wide stat/device record (fetched for the cache above) carries
+            # lldp_table on a current controller; the per-device path keyed by an _id does not
+            # (issue 096: live, 0 of 13 switches by _id, 43 rows site-wide). Read the site-wide
+            # record first; fetch per device only when it lacks the table.
+            records = getattr(self, '_device_records_by_key', {})
+            device_details = records.get(device_id) or records.get(device_id.lower())
+            if not device_details or 'lldp_table' not in device_details:
+                device_details = self.get_device_details(site_id, device_id)
 
             if device_details and 'lldp_table' in device_details:
                 lldp_table = device_details['lldp_table']
@@ -1255,9 +1304,21 @@ class UnifiApiClient:
                 return
 
             device_count = 0
+            # The site-wide records themselves, by _id and by MAC: get_lldp_info reads
+            # lldp_table from here (issue 096), so no per-device request is needed.
+            self._device_records_by_key: dict[str, dict[str, Any]] = {}
             for device in devices_response['data']:
                 mac = device.get('mac', '')
                 name = device.get('name', '')
+                if device.get('_id'):
+                    raw_id = str(device['_id'])
+                    self._device_records_by_key[raw_id] = device
+                    # A current controller's _id is a hyphenated UUID; callers pass it through
+                    # _validate_device_id, which strips every non-hex character, so the record
+                    # must also be reachable by that sanitised form.
+                    self._device_records_by_key[re.sub(r'[^a-fA-F0-9]', '', raw_id)] = device
+                if mac:
+                    self._device_records_by_key[mac.lower()] = device
 
                 # Skip if no MAC or no useful name
                 if not mac:

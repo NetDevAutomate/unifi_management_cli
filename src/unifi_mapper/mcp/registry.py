@@ -57,6 +57,7 @@ MANIFEST_KEYS: dict[str, type | tuple[type, ...]] = {
     'idempotent': bool,
     'cli': str,
     'cli_gap': str,
+    'active_probe': bool,
 }
 
 
@@ -160,6 +161,9 @@ class ToolMetadata:
     cli: str = ''
     # ...or why there is none ("category: detail", see unifi_mapper.mcp.parity).
     cli_gap: str = ''
+    # Runs a command on the gateway over SSH (issue 092): held back from every MCP surface
+    # unless the server starts with UNIFI_MCP_ALLOW_ACTIVE_PROBES=1. Never beside mutates.
+    active_probe: bool = False
 
     def __post_init__(self) -> None:
         """Fill the default title."""
@@ -178,8 +182,8 @@ def _check_entry(tool_name: str, tool_data: Any) -> tuple[dict[str, Any], list[s
         ``(entry, unknown_keys)``.
 
     Raises:
-        ManifestError: The entry is not a mapping, lacks ``module``, or a value has the
-            wrong type.
+        ManifestError: The entry is not a mapping, lacks ``module``, a value has the
+            wrong type, or it sets both ``active_probe`` and ``mutates``.
     """
     if not isinstance(tool_name, str) or not tool_name:
         raise ManifestError(f'tool name {tool_name!r} is not a non-empty string')
@@ -203,6 +207,8 @@ def _check_entry(tool_name: str, tool_data: Any) -> tuple[dict[str, Any], list[s
         raise ManifestError(
             f'{tool_name}: credentials must be one of {", ".join(CREDENTIAL_FAMILIES)}'
         )
+    if tool_data.get('active_probe') and tool_data.get('mutates'):
+        raise ManifestError(f'{tool_name}: active_probe and mutates cannot both be true')
     return tool_data, unknown
 
 
@@ -308,16 +314,28 @@ class ToolRegistry:
     - Category-based organization
     """
 
-    def __init__(self, manifests_dir: Path | None = None, *, strict: bool = False) -> None:
+    def __init__(
+        self,
+        manifests_dir: Path | None = None,
+        *,
+        strict: bool = False,
+        active_probes: bool = False,
+    ) -> None:
         """Initialize the tool registry.
 
         Args:
             manifests_dir: Directory of ``*.yaml`` manifests; defaults to the shipped one.
             strict: Raise :class:`ManifestError` on any manifest problem (unknown key,
                 bad type, YAML error, duplicate name) instead of logging and skipping.
+            active_probes: Register the ``active_probe: true`` entries (issue 092). When
+                False, the default, they are loaded and checked like any entry but held
+                back: no lookup, search, category or count sees them, so nothing can run
+                them; :meth:`held_active_probes` names them.
         """
         self._manifests_dir = manifests_dir or default_manifests_dir()
         self._strict = strict
+        self._active_probes = active_probes
+        self._held: dict[str, ToolMetadata] = {}
         self._metadata: dict[str, ToolMetadata] = {}
         self._categories: dict[str, list[str]] = {}
         self._proxies: dict[str, ToolProxy] = {}
@@ -384,10 +402,11 @@ class ToolRegistry:
                 if self._strict:
                     raise ManifestError(message)
                 logger.warning('MCP manifest: {}; ignored', message)
-            if tool_name in self._metadata:
+            earlier = self._metadata.get(tool_name) or self._held.get(tool_name)
+            if earlier is not None:
                 self._reject(
                     f'{manifest_file.name}: {tool_name} is already defined in category '
-                    f'{self._metadata[tool_name].category!r}'
+                    f'{earlier.category!r}'
                 )
                 continue
             metadata = ToolMetadata(
@@ -410,7 +429,11 @@ class ToolRegistry:
                 idempotent=entry.get('idempotent', True),
                 cli=entry.get('cli', ''),
                 cli_gap=entry.get('cli_gap', ''),
+                active_probe=entry.get('active_probe', False),
             )
+            if metadata.active_probe and not self._active_probes:
+                self._held[tool_name] = metadata
+                continue
             self._metadata[tool_name] = metadata
             self._categories.setdefault(category, []).append(tool_name)
 
@@ -476,6 +499,20 @@ class ToolRegistry:
                 )
 
         return results
+
+    @property
+    def active_probes(self) -> bool:
+        """Whether the ``active_probe`` entries are registered (``active_probes=True``)."""
+        return self._active_probes
+
+    def held_active_probes(self) -> dict[str, ToolMetadata]:
+        """Return the ``active_probe`` entries held back, by name (empty when registered).
+
+        Returns:
+            Name -> metadata, for the refusal that names the command and the start-up log.
+        """
+        self._load_manifests()
+        return dict(self._held)
 
     def get_categories(self) -> dict[str, list[str]]:
         """Get all tool categories and their tools."""

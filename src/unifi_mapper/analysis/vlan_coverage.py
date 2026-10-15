@@ -6,7 +6,13 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, cast
-from unifi_mapper.analysis.link_settings import effective_profile_id
+from unifi_mapper.analysis.link_settings import effective_profile_id, port_override
+from unifi_mapper.analysis.vlan_diagnostics import (
+    PROFILE_VLAN_FIELDS,
+    VLAN_LIST_KEYS,
+    is_trunk_profile,
+    running_vlan_settings,
+)
 from unifi_mapper.core.utils.client import UniFiClient
 
 
@@ -82,11 +88,13 @@ def audit_vlan_coverage_from_data(
             port_idx = _as_int(port.get('port_idx'))
             profile_id, _source = effective_profile_id(device, port, port_idx)
             profile = profiles_by_id.get(profile_id or '')
-            effective_port = _merge_profile_port(port, profile)
+            override = port_override(device, port_idx)
+            effective_port = _running_port(port, profile, override)
             lldp_entry = lldp_by_port.get(port_idx)
             matched_target = _matching_planned_target(effective_port, lldp_entry, planned_targets)
+            trunk = _is_trunk(port, profile, override)
 
-            if not _should_audit_port(effective_port, port_idx, lldp_entry, matched_target):
+            if not _should_audit_port(effective_port, port_idx, lldp_entry, matched_target, trunk):
                 continue
 
             ports_analyzed += 1
@@ -199,25 +207,29 @@ def _should_audit_port(
     port_idx: int,
     lldp_entry: dict[str, Any] | None,
     matched_target: dict[str, str] | None,
+    is_trunk: bool,
 ) -> bool:
     if _as_bool(port.get('up'), default=True) is False and matched_target is None:
         return False
     if matched_target is not None:
         return True
-    return _is_trunk(port) or _is_inter_switch_port(port, port_idx, lldp_entry)
+    return is_trunk or _is_inter_switch_port(port, port_idx, lldp_entry)
 
 
-def _is_trunk(port: dict[str, Any]) -> bool:
-    if _profile_bool(port, ('is_trunk', 'trunk')) is True:
-        return True
-    if _profile_bool(port, ('is_access', 'access')) is True:
-        return False
-    profile_text = _normalize_text(
-        port.get('portconf_name') or port.get('profile_name') or port.get('name')
-    )
-    if 'access' in profile_text or 'client' in profile_text:
-        return False
-    return any(port.get(key) is not None for key in _VLAN_KEYS)
+def _is_trunk(
+    port: dict[str, Any],
+    profile: dict[str, Any] | None,
+    override: dict[str, Any] | None,
+) -> bool:
+    """``vlan_diagnostics.is_trunk_profile`` over the settings the port runs (issues 089, 097).
+
+    :func:`running_vlan_settings` decides the VLAN fields (profile, then override; the row's
+    own only when no profile applies). The port table entry's other keys come first, so a
+    hand-built record's ``is_trunk``, ``is_access`` or VLAN lists still count.
+    """
+    settings = {key: value for key, value in port.items() if key not in PROFILE_VLAN_FIELDS}
+    settings.update(running_vlan_settings(port, profile, override))
+    return is_trunk_profile(settings)
 
 
 def _is_inter_switch_port(
@@ -239,18 +251,7 @@ def _is_inter_switch_port(
     return port_idx > 0 and any(token in remote_text for token in ('usw', 'switch', 'flex'))
 
 
-_VLAN_KEYS = (
-    'allowed_vlans',
-    'allowed_vlan_ids',
-    'tagged_vlans',
-    'tagged_vlan_ids',
-    'trunk_vlans',
-    'vlan_ids',
-    'native_vlan',
-    'native_vlan_id',
-    'untagged_vlan',
-    'vlan',
-)
+_VLAN_KEYS = VLAN_LIST_KEYS
 
 
 def _carried_vlans(
@@ -265,7 +266,10 @@ def _carried_vlans(
         network_id = port.get(key)
         if network_id and network_vlan_by_id and str(network_id) in network_vlan_by_id:
             vlans.add(network_vlan_by_id[str(network_id)])
-    if str(port.get('tagged_vlan_mgmt') or '').lower() == 'auto':
+    mgmt = str(port.get('tagged_vlan_mgmt') or '').lower()
+    forward_all = str(port.get('forward') or '').lower() == 'all' and mgmt != 'block_all'
+    if mgmt == 'auto' or forward_all:
+        # Every VLAN, as diagnose vlans reads a forward 'all' trunk (issue 089)
         vlans.update(all_network_vlans or set())
         for network_id in _parse_string_list(port.get('excluded_networkconf_ids')):
             if network_vlan_by_id and network_id in network_vlan_by_id:
@@ -378,6 +382,26 @@ def _merge_profile_port(
     merged.update(port)
     if not merged.get('portconf_name'):
         merged['portconf_name'] = profile.get('name')
+    return merged
+
+
+def _running_port(
+    port: dict[str, Any],
+    profile: dict[str, Any] | None,
+    override: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The port table entry with the VLAN settings the port runs (issues 089, 097).
+
+    :func:`_merge_profile_port`, then :func:`running_vlan_settings` over the port table's
+    copies of the VLAN fields, as ``diagnose vlans`` reads them. Under a profile the row's own
+    ``forward`` is dropped (a live controller reports ``forward: 'all'`` there under access
+    profiles); with no profile the row is the running config and is kept.
+    """
+    merged = dict(_merge_profile_port(port, profile))
+    if profile is not None:
+        for key in PROFILE_VLAN_FIELDS:
+            merged.pop(key, None)
+    merged.update(running_vlan_settings(port, profile, override))
     return merged
 
 

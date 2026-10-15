@@ -26,6 +26,12 @@ Rules:
     * Values are not otherwise scanned. Free text that may quote a secret (exception
       messages, HTTP response bodies) goes through :func:`redact_text` instead.
 
+Because the rules act on mapping keys, a report must never key a mapping by a name the
+operator or the controller chose (a network, SSID, device or switch name): emit a list of
+records with the name as a value instead, as ``firewall_check``'s ``connectivity_matrix`` and
+the firmware drift report's ``upgradable`` do (issue 091). Keys that are ids, MACs, field
+names or controller vocabulary (device types, model codes, firmware versions) are safe.
+
 Example:
     clean, removed = strip_secrets({'name': 'sw', 'x_authkey': 'v'}, 'device')
     # clean == {'name': 'sw'}; removed == ['device.x_authkey']

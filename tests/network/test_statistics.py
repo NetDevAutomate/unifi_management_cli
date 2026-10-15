@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 from datetime import datetime, timezone
 from unifi_mapper.network.models import (
-    CPUMemoryStats,
     DeviceStatistics,
     PortStatistics,
 )
@@ -191,11 +190,9 @@ class TestDeviceMetricsCollector:
         # Setup mock response
         mock_client.get_device_statistics.return_value = DeviceStatistics(
             deviceId='device-1',
-            uptimeSeconds=3600,
-            cpuMemory=CPUMemoryStats(
-                cpuUtilizationPercent=25.0,
-                memoryUtilizationPercent=50.0,
-            ),
+            uptimeSec=3600,
+            cpuUtilizationPct=25.0,
+            memoryUtilizationPct=50.0,
             ports=[
                 PortStatistics(
                     portIdx=1,

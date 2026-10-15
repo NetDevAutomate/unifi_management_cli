@@ -237,6 +237,36 @@ async def test_a_cancelled_call_is_logged_and_still_cancelled(
     assert (line['tool'], line['outcome']) == ('sleeper', 'CANCELLED')
 
 
+# --- issue 090: the slot wait ---------------------------------------------------------------
+
+
+async def test_the_slot_wait_is_in_the_call_line(make_runner: Callable[..., ToolRunner]) -> None:
+    """Every call that reached the execution step records how long it queued for a slot."""
+    runner = make_runner()
+    await runner.run('no_params', {})
+    await runner.run('nope', None)  # refused before the slot: no wait to record
+    ran, refused = _lines()
+    assert isinstance(ran['slot_wait_ms'], float) and 0 <= ran['slot_wait_ms'] < 100
+    assert ran['slot_wait_ms'] <= ran['duration_ms']
+    assert 'slot_wait_ms' not in refused
+
+
+async def test_a_call_that_never_got_its_slot_records_the_wait(tmp_path: Path) -> None:
+    """The deadline now covers the slot wait; a call it ends while queued still logs it."""
+    runner = ToolRunner(
+        fakes.fake_registry(tmp_path),
+        settings=ServerSettings(max_concurrency=1, tool_timeout=0.1),
+        call_audit=CallAuditLog(CallAuditSetting('default')),
+    )
+    with anyio.fail_after(2):
+        async with runner._limit():  # the one slot is held
+            out = await runner.run('no_params', {})
+    assert out.structuredContent['error_code'] == 'TIMEOUT'
+    (line,) = _lines()
+    assert line['outcome'] == 'TIMEOUT'
+    assert 100 <= line['slot_wait_ms'] <= line['duration_ms']
+
+
 async def test_the_file_is_compacted_at_its_cap(
     make_runner: Callable[..., ToolRunner], tmp_path: Path
 ) -> None:
@@ -721,7 +751,8 @@ async def test_logging_runs_in_a_worker_thread(
         return await real(fn, *args, **kwargs)
 
     monkeypatch.setattr(runner_module.anyio.to_thread, 'run_sync', _spy)
-    await make_runner().run('no_params', {})
+    # returns_none is async: a sync handler would hop to a thread too (issue 090).
+    await make_runner().run('returns_none', {})
     assert seen == [True] and len(_lines()) == 1
 
 
@@ -740,8 +771,8 @@ async def test_the_writes_run_under_the_logs_own_bounded_limiter(
 
     monkeypatch.setattr(runner_module.anyio.to_thread, 'run_sync', _spy)
     runner = make_runner()
-    await runner.run('no_params', {})
-    await runner.run('no_params', {})
+    await runner.run('returns_none', {})  # async: only the log's thread hop is seen
+    await runner.run('returns_none', {})
     assert len(limiters) == 2 and limiters[0] is limiters[1]
     limiter = limiters[0]
     assert isinstance(limiter, anyio.CapacityLimiter)

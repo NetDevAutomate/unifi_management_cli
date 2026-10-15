@@ -145,7 +145,9 @@ before any subcommand, `discover` included, so a write is never requested by acc
 #### `discover` or `diagram` Writes a Placeholder: Graphviz's `dot` Not Found
 
 **Symptom**: `discover` (or `diagram`) reads the controller and exits 0, but the PNG or SVG
-file holds one line of text, and the log carries:
+file holds one line of text, and the log carries the warning below. `diagram` also prints a
+yellow `No diagram drawn: <path> holds a placeholder.` line on stdout in place of its
+`Diagram generated` line (issue 086):
 
 ```text
 WARNING PNG diagram not drawn: Graphviz's dot program is not on PATH. Install it with: brew install graphviz (macOS) or sudo apt install graphviz (Debian/Ubuntu); or use --format html, which needs no Graphviz.
@@ -251,7 +253,9 @@ Authentication issue with devices endpoint. Attempting to re-authenticate...
 `diagnose latency-matrix`, `diagnose bandwidth`, `diagnose client-connectivity`, `diagnose
 ap-health --ping-clients`, `vlan-traffic sample` and the `gateway` probes (`ping`,
 `traceroute`, `dns`, `http`, `flows`) run commands on the gateway over SSH. They are the only
-commands that use SSH, and no MCP tool does.
+commands that use SSH. Over MCP, only `gateway_ping`, `gateway_traceroute`, `gateway_dns_check`
+and `run_latency_matrix` do, and only when the server was started with
+`UNIFI_MCP_ALLOW_ACTIVE_PROBES=1` (issue 092); otherwise no MCP tool opens an SSH session.
 
 **Symptom**: each exits 1 before connecting to anything, and prints this on stderr (the first
 line, once per command, comes before every SSH command runs; see
@@ -1077,6 +1081,32 @@ uv run unifi-mapper --dry-run
 #    until it restarts (issue 020)
 uvx --python 3.12 --from /ABS/PATH/TO/unifi_management_cli unifi-mcp --check
 ```
+
+#### Read-Only Live Check Before a Release (maintainers)
+
+`scripts/live_check.py` exercises both surfaces against the live controller without writing
+anything to it: the CLI in process behind the read-only guard with the request audit on, and
+the MCP server as a fresh `uvx --no-cache --from <checkout>` child with its call log and request
+audit on and the active probes forced off. One `mutates: true` tool is called only to confirm
+`MUTATION_REFUSED` with no controller request. Results go under
+`$XDG_STATE_HOME/unifi_mapper/live-check/<stamp>/`, and every file written is scanned for the
+secret values in the environment before the report prints (issue 039).
+
+```bash
+# 1. Name the switch and port the port-level checks read, and what to leave alone
+cat > ~/.config/unifi_mapper/live-check.toml <<'EOF'
+switch = "core-switch"
+port = 5
+exclude_switches = []
+exclude_ports = []
+required_vlans = [10, 20]
+EOF
+
+# 2. Run it from the checkout (exit 0: all checks passed; 1: a check failed; 2: config problem)
+uv run python scripts/live_check.py
+```
+
+The Protect surface is reported `unverified` until Protect credentials are in the environment.
 
 ---
 

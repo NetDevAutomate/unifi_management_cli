@@ -831,3 +831,30 @@ tools:
     description: Restore radio configuration from a previously saved snapshot file.
     priority: P2
     tags: [wifi, radio, restore, rollback, configuration]
+
+  # Active probe (issue 092): held back unless UNIFI_MCP_ALLOW_ACTIVE_PROBES=1.
+  run_latency_matrix:
+    module: unifi_mapper.analysis.latency_matrix
+    handler: run_latency_matrix
+    title: Run Latency Matrix
+    cli: diagnose latency-matrix
+    active_probe: true
+    description: >-
+      Runs ping on the gateway over SSH: every adopted device's address, and every client's
+      unless include_clients is false, from one session, ten at a time; loss and round trips
+      per target.
+    priority: P2
+    tags: [latency, ping, loss, reachability, matrix, gateway, ssh, probe]
+    parameters:
+      ping_count:
+        type: integer
+        default: 3
+        description: Pings per target (1-100)
+      timeout:
+        type: integer
+        default: 2
+        description: Ping timeout per target, in seconds (1-60)
+      include_clients:
+        type: boolean
+        default: true
+        description: Also ping the clients, not only the adopted devices
