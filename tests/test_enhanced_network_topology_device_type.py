@@ -23,7 +23,7 @@ def _device(model: str, name: str = 'Device') -> DeviceInfo:
 
 
 UXG_MODELS = ['UXG', 'UXGPRO', 'UXG-Pro', 'UXG-Lite', 'UXG-Max', 'UXGB']
-# The live site's gateway (UCG Fiber) and older gateway codes keep classifying as routers.
+# The live site's gateway model and older gateway codes keep classifying as routers.
 OTHER_GATEWAY_MODELS = ['UDMA6A8', 'UDMPRO', 'UGW3', 'USG-PRO-4']
 # Live switches (USWED35/36/37 Flex 2.5G, USL8LP/USL16LP Lite, USM8P210 Ultra, USFXG Flex
 # XG) and switches whose model holds ``xg``.
