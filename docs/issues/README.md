@@ -114,3 +114,5 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [096](096-get-lldp-info-returns-nothing-on-a-current-controller.md) | `get_lldp_info` returns no LLDP neighbours on a current controller, so diagrams draw no LLDP links | resolved |
 | [097](097-profile-less-port-forward-all-read-two-ways.md) | A profile-less port's own `forward: all` is honoured by one analysis and ignored by another | resolved |
 | [098](098-vlan-coverage-and-diagnose-vlans-audit-different-devices.md) | `vlan-coverage` audits any device with a port table while `diagnose vlans` reads switches only, so an in-wall AP's port is a coverage finding `diagnose vlans` never sees | open |
+| [099](099-firewall-check-reads-classic-rules-and-rejects-real-action-values.md) | `firewall_check` reads `rest/firewallrule`, empty on a zone-based controller (live: 0 rules there, 288 policies at `firewall-policies`), and `FirewallRule.action` rejects every real action value | open |
+| [100](100-diagram-skips-an-adopted-uacc-doorbell-the-inventory-counts.md) | `diagram` skips an adopted `uacc` doorbell that `inventory` counts as an access point (11 vs 10) | open, decision needed |
