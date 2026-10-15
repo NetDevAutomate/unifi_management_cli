@@ -1,7 +1,8 @@
 ---
 title: "The trunk-port rule is written three times and can disagree"
 date: 2026-10-13
-status: open
+status: resolved
+resolved_by: e5d4f23
 severity: low
 components: [analysis/vlan_diagnostics, analysis/foreign_bridges, analysis/vlan_coverage]
 found_by: the 0.3.0 analysis lane (issue 030)
@@ -30,17 +31,18 @@ One `is_trunk_profile` in a shared module (`analysis/link_settings` already hold
 settings helpers) used by all three, with the existing tests of each caller kept; `coverage` to
 use `_measured_grace` like `report`.
 
-## Progress (2026-10-15)
+## Resolution (2026-10-15)
 
-The trunk rule is one function (fix commit bf46966). `vlan_diagnostics.is_trunk_profile` is
-the rule, documented step by step; `foreign_bridges` and `vlan_coverage` call it over the
-same settings `diagnose vlans` reads (the profile with its override on top), and the
-`diagnose vlans` caller's extra "tags a VLAN" test is folded into it. It keeps every answer
-the old function's tests pinned and takes `vlan_coverage`'s hand-built shapes (`is_trunk` /
-`is_access` flags, VLAN lists, access or client names) when a record has no `forward`.
-Where the old rules disagreed, `forward: 'all'` wins over a name that says access, a
-`forward` decides over a bare VLAN key, and `block_all` tags nothing even when
-`tagged_networkconf_ids` linger.
+Two fix commits: `bf46966` (the trunk rule) and `e5d4f23` (the coverage grace).
+
+**One trunk rule.** `vlan_diagnostics.is_trunk_profile` is the rule, documented step by
+step; `foreign_bridges` and `vlan_coverage` call it over the same settings `diagnose vlans`
+reads (the profile with its override on top), and the `diagnose vlans` caller's extra
+"tags a VLAN" test is folded into it. It keeps every answer the old function's tests pinned
+and takes `vlan_coverage`'s hand-built shapes (`is_trunk` / `is_access` flags, VLAN lists,
+access or client names) when a record has no `forward`. Where the old rules disagreed,
+`forward: 'all'` wins over a name that says access, a `forward` decides over a bare VLAN
+key, and `block_all` tags nothing even when `tagged_networkconf_ids` linger.
 
 `vlan_coverage` also reads the VLANs a trunk carries from the settings the port runs: the
 port table's own `forward` is not used (a live controller reports `forward: 'all'` on 100
@@ -56,8 +58,15 @@ On the live site `diagnose vlans` is unchanged (8 VLANs, 97 ports, the same 43 t
 issues, 1 warning); `analyze vlan-coverage` now audits 39 ports instead of 13 (every trunk
 that is up) with the same 3 findings; `analyze foreign-bridges` is unchanged.
 
-Remaining: the second paragraph of this record. `read_vlan_traffic_periods` in
-`analysis/vlan_traffic_store.py` still sizes the raw tier's gap count with the fixed
-`DEFAULT_SAMPLE_INTERVAL_SECONDS`, while the rate bound uses `_measured_grace`, so the two
-can disagree about one interval. It was outside this change, so the record stays open
-for it.
+**One gap bound.** `read_vlan_traffic_periods` now sizes the raw tier's gap check with the
+measured grace (`_measured_grace`), so its cutoff is `max_measured_interval`, the bound
+`read_vlan_traffic_report` rates a pair of samples by. Before, it used the fixed default
+interval (a 360 s cutoff), so at a 5-minute cadence an 800 s interval was rated by `report`
+and counted as a gap by `coverage`. The hourly and daily tiers are unchanged.
+
+Pinned by `tests/analysis/test_vlan_traffic_coverage_grace.py`: a store at a 5-minute
+cadence with one 800 s interval (rated, no gap) and one with a 1000 s interval (not rated,
+one gap); `report` and `coverage` agree in both.
+
+A user sees `vlan-traffic coverage` count only the gaps `vlan-traffic report` also refuses to
+rate, and the three VLAN analyses call the same port the same thing.
