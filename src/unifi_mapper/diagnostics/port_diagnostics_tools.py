@@ -19,6 +19,7 @@ never mislabelled by a generic exception handler:
 """
 
 import asyncio
+import os
 from contextlib import contextmanager
 from pydantic import Field
 from typing import Annotated, Any, Callable, Iterator, Optional, TypeVar
@@ -38,6 +39,19 @@ def _readonly_sync_client() -> Iterator[tuple[Any, str]]:
 
     creds = Credentials.from_env()
     scheme = 'https' if creds.port != 80 else 'http'
+    # The settings UnifiConfig.from_env reads for every config-built client, under the same
+    # names and defaults; UnifiApiClient clamps them to the same ranges (issue 087).
+    try:
+        timeout = int(os.environ.get('UNIFI_TIMEOUT', '10'))
+        max_retries = int(os.environ.get('UNIFI_MAX_RETRIES', '3'))
+        retry_delay = float(os.environ.get('UNIFI_RETRY_DELAY', '1.0'))
+    except ValueError as e:
+        raise ToolError(
+            message=f'A client setting is not a number: {redact_text(e)}',
+            error_code=ErrorCodes.CONFIG_INVALID,
+            suggestion='Set UNIFI_TIMEOUT and UNIFI_MAX_RETRIES to whole numbers and '
+            'UNIFI_RETRY_DELAY to a number of seconds, or remove them for the defaults.',
+        ) from e
     api = UnifiApiClient(
         base_url=f'{scheme}://{creds.host}:{creds.port}',
         site=creds.site,
@@ -45,6 +59,9 @@ def _readonly_sync_client() -> Iterator[tuple[Any, str]]:
         username=creds.username,
         password=creds.password,
         api_token=creds.api_token,
+        timeout=timeout,
+        max_retries=max_retries,
+        retry_delay=retry_delay,
     )
     suggestion = (
         'Check UNIFI_URL and UNIFI_CONSOLE_API_TOKEN (or UNIFI_USERNAME/UNIFI_PASSWORD). '
