@@ -425,8 +425,14 @@ The default is above the longest read-only tools (counter sampling blocks for ab
 and 30 s below the 300 s per-call limit the snippets below give the client: if the client's
 limit were the lower one, it would give up first and the server's `[TIMEOUT]` would never
 reach the model. If you raise one, keep the client's limit above the server's. The deadline
-interrupts an async handler; a handler that blocks the event loop runs to its end first
-(the issue records which tools and why).
+is measured from the call, so it includes any wait for one of the `UNIFI_MCP_MAX_CONCURRENCY`
+slots: a call still queued when it fires is `[TIMEOUT]` and its handler never ran (issue
+[090](../issues/090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md)). A
+synchronous handler runs in a worker thread, so it neither blocks other calls nor outlives
+the deadline from the caller's side. A timeout ends the caller's wait, not the controller
+activity: the worker that was serving the call finishes its current request (each is
+bounded by `UNIFI_TIMEOUT` and the retry settings) and its result is dropped; the call log's
+`slot_wait_ms` says how long each call queued.
 
 ### kiro-cli
 

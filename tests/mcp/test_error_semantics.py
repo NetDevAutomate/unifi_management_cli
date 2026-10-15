@@ -5,9 +5,12 @@ use a monkeypatched ``ensure_controller_credentials`` or fake family env values.
 """
 
 import anyio
+import anyio.to_thread
+import contextvars
 import json
 import pydantic_core
 import pytest
+import threading
 import time
 from mcp.types import CallToolResult, TextContent
 from pathlib import Path
@@ -192,22 +195,132 @@ async def test_an_async_handler_past_the_deadline_is_timeout(make_runner) -> Non
     assert time.monotonic() - started < 0.4  # the await was interrupted, not waited out
 
 
-async def test_a_sync_handler_is_not_interrupted_by_the_deadline(make_runner) -> None:
-    """Documented limitation (issue 012): the deadline cannot interrupt a blocking sync handler.
+# --- issue 090: sync handlers run in a worker thread; the deadline covers the slot wait ----
 
-    ``ToolRunner._execute`` opens ``anyio.fail_after`` inside the concurrency semaphore and
-    ``_call`` runs a sync handler inline on the event loop. A sync handler that blocks holds
-    the loop, so the deadline's timer cannot fire until the handler returns; by then the
-    cancel scope exits without having cancelled anything and the call is reported as a
-    success, having held its slot (and the whole loop) for the handler's full duration. Nine
-    shipped handlers are sync (the STP analysis and formatting tools). Cooperative
-    cancellation for sync handlers is a runner redesign, out of scope here.
-    """
+# This file's own sync handlers, registered through the manifest's ``extra`` entries
+# (``tests/mcp/fakes.py`` is shared by every MCP test and stays as it is).
+HANDLER_CALLS = {'count': 0}
+_CONTEXT: contextvars.ContextVar[str] = contextvars.ContextVar('error_semantics', default='unset')
+
+
+def counting_block(seconds: float = 0.2) -> dict[str, Any]:
+    """Count the invocation, then block, as a sync catalog handler does."""
+    HANDLER_CALLS['count'] += 1
+    time.sleep(seconds)
+    return {'blocked': seconds}
+
+
+def reads_context() -> dict[str, Any]:
+    """Report the calling context's value and the thread the handler ran on."""
+    return {'value': _CONTEXT.get(), 'thread': threading.get_ident()}
+
+
+LOCAL_TOOLS = ''.join(
+    f'  {name}:\n'
+    '    module: tests.mcp.test_error_semantics\n'
+    f'    handler: {name}\n'
+    f'    description: local {name}\n'
+    '    credentials: none\n'
+    for name in ('counting_block', 'reads_context')
+)
+
+
+@pytest.fixture
+def local_runner(make_runner):
+    """A runner over the fakes plus this file's own sync handlers."""
+
+    def _make(**settings: Any) -> ToolRunner:
+        HANDLER_CALLS['count'] = 0
+        return make_runner(extra=LOCAL_TOOLS, **settings)
+
+    return _make
+
+
+async def test_the_event_loop_stays_free_while_a_sync_handler_runs(local_runner) -> None:
+    """A sync handler runs in a worker thread, so a concurrent quick async call completes."""
+    runner = local_runner(max_concurrency=4)
     started = time.monotonic()
-    out = await make_runner(tool_timeout=0.05).run('blocks', {'seconds': 0.3})
+    finished: dict[str, float] = {}
+
+    async def quick() -> None:
+        out = await runner.run('sleeper', {'seconds': 0.05})
+        assert out.structuredContent == {'ok': True, 'result': {'slept': 0.05}}
+        finished['quick'] = time.monotonic() - started
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(runner.run, 'blocks', {'seconds': 0.5})
+        tg.start_soon(quick)
+    assert finished['quick'] < 0.3  # not after the 0.5 s block
+
+
+async def test_a_call_queued_for_a_slot_times_out_without_invoking_the_handler(
+    local_runner,
+) -> None:
+    """The deadline starts at the call, before the slot: a queued call can time out."""
+    runner = local_runner(max_concurrency=1, tool_timeout=0.1)
+    started = time.monotonic()
+    with anyio.fail_after(2):  # before issue 090 the call waited for the slot without end
+        async with runner._limit():  # the one slot is held by someone else
+            out = await runner.run('counting_block', {'seconds': 0.01})
     elapsed = time.monotonic() - started
-    assert out.structuredContent == {'ok': True, 'result': {'blocked': 0.3}}  # not [TIMEOUT]
-    assert elapsed >= 0.3  # the slot was held until the handler returned
+    assert out.structuredContent['error_code'] == ErrorCodes.TIMEOUT
+    assert HANDLER_CALLS['count'] == 0
+    assert 0.1 <= elapsed < 0.5
+
+
+async def test_a_timeout_during_a_sync_handler_returns_at_the_deadline(local_runner) -> None:
+    """[TIMEOUT] arrives at the deadline; the abandoned worker finishes on its own."""
+    runner = local_runner(tool_timeout=0.1)
+    started = time.monotonic()
+    out = await runner.run('counting_block', {'seconds': 0.6})
+    elapsed = time.monotonic() - started
+    assert out.structuredContent['error_code'] == ErrorCodes.TIMEOUT
+    assert 'UNIFI_MCP_TOOL_TIMEOUT' in out.structuredContent['message']
+    assert elapsed < 0.4  # not the handler's 0.6 s
+    assert HANDLER_CALLS['count'] == 1
+
+
+async def test_abandoned_sync_handlers_are_bounded_by_the_thread_limiter(local_runner) -> None:
+    """After N timeouts the live worker threads are bounded by the limiter, not by N.
+
+    A call whose deadline fires while it waits for a worker thread never invokes its
+    handler, so the unfinished work a wedged controller can pile up is the limiter's tokens.
+    """
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    original = limiter.total_tokens
+    limiter.total_tokens = 2
+    runner = local_runner(max_concurrency=8, tool_timeout=0.05)
+    outcomes: list[str] = []
+
+    async def one() -> None:
+        out = await runner.run('counting_block', {'seconds': 0.4})
+        outcomes.append(out.structuredContent['error_code'])
+
+    try:
+        async with anyio.create_task_group() as tg:
+            for _ in range(6):
+                tg.start_soon(one)
+        assert outcomes == [ErrorCodes.TIMEOUT] * 6
+        assert limiter.statistics().borrowed_tokens <= 2  # the abandoned threads, not six
+        assert HANDLER_CALLS['count'] == 2  # the four that never got a thread never ran
+        with anyio.fail_after(2):  # the abandoned workers run to their end and free the tokens
+            while limiter.statistics().borrowed_tokens:
+                await anyio.sleep(0.02)
+    finally:
+        limiter.total_tokens = original
+
+
+async def test_the_calling_context_reaches_a_sync_handler_in_its_thread(local_runner) -> None:
+    """Contextvars cross the thread hop (the per-call request_audit collector relies on it)."""
+    runner = local_runner()
+    token = _CONTEXT.set('call-7')
+    try:
+        out = await runner.run('reads_context', None)
+    finally:
+        _CONTEXT.reset(token)
+    result = out.structuredContent['result']
+    assert result['value'] == 'call-7'
+    assert result['thread'] != threading.get_ident()  # a worker thread, not the event loop's
 
 
 async def test_no_deadline_when_tool_timeout_is_none(make_runner) -> None:

@@ -1,5 +1,6 @@
 """Tests for the read-only port diagnostic MCP tools (no live controller)."""
 
+import ast
 import importlib
 import inspect
 import json
@@ -21,6 +22,7 @@ from tests.fixtures_unifi import (
     default_routes,
     fake_client,
 )
+from typing import Any
 from unifi_mapper.core.utils.readonly import ReadOnlySession, install_read_only_guard
 from unifi_mapper.diagnostics import port_diagnostics_tools as tools
 from unifi_mapper.mcp import server
@@ -267,6 +269,62 @@ async def test_login_failure_is_controller_unreachable(monkeypatch):
     monkeypatch.setattr('unifi_mapper.api_client.UnifiApiClient.login', lambda self: False)
     out = _envelope(await server.execute_tool('get_switch_ports', {'switch': SWITCH_NAME}))
     assert out['ok'] is False and out['error_code'] == 'CONTROLLER_UNREACHABLE'
+
+
+# ---------------------------------------------------------------------------
+# Issue 090 guards: a worker's unfinished controller work is bounded
+# ---------------------------------------------------------------------------
+
+SRC = Path(server.__file__).parents[1]
+
+
+def _sync_client_constructions() -> list[tuple[str, int, set[str]]]:
+    """Every ``UnifiApiClient(...)`` call under ``src/unifi_mapper``: file, line, keywords."""
+    found: list[tuple[str, int, set[str]]] = []
+    for path in sorted(SRC.rglob('*.py')):
+        for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, 'id', None)
+            if name in ('UnifiApiClient', 'EnhancedUnifiApiClient'):
+                keywords = {k.arg for k in node.keywords if k.arg}
+                found.append((str(path.relative_to(SRC)), node.lineno, keywords))
+    return found
+
+
+def test_every_sync_client_is_built_with_a_bounded_timeout():
+    """An abandoned worker (a [TIMEOUT] call) finishes its current request: that request
+    must itself be bounded, so no sync client may fall back to an unbounded wait."""
+    built = _sync_client_constructions()
+    assert built, 'no UnifiApiClient construction found: the scan is broken'
+    missing = [(f, line) for f, line, keywords in built if 'timeout' not in keywords]
+    assert missing == [], f'sync clients built without timeout=: {missing}'
+    assert 'diagnostics/port_diagnostics_tools.py' in {f for f, _, _ in built}
+
+
+async def test_get_recent_events_request_ceiling_is_the_documented_101(
+    fake_controller, monkeypatch
+):
+    """Per call: stat/event up to 20 pages, list/alarm once, four system-log classes up to 20
+    pages each = 101 requests behind one login (the 021 record's figure)."""
+    from unifi_mapper import port_history
+
+    seen: dict[str, Any] = {}
+    real = port_history.collect_recent_events
+
+    def recording(client, site, **kwargs):
+        seen.update(kwargs)
+        return real(client, site, **kwargs)
+
+    monkeypatch.setattr(port_history, 'collect_recent_events', recording)
+    out = _envelope(await server.execute_tool('get_recent_events', {'since_hours': 1}))
+    assert out['ok'] is True, out
+    assert 'max_pages' not in seen  # the tool takes the module default
+    per_source = inspect.signature(real).parameters['max_pages'].default
+    assert per_source == port_history.DEFAULT_MAX_PAGES == 20
+    assert len(port_history.SYSTEM_LOG_CLASS_FILTERS) == 4
+    assert per_source * (1 + len(port_history.SYSTEM_LOG_CLASS_FILTERS)) + 1 == 101
 
 
 # ---------------------------------------------------------------------------

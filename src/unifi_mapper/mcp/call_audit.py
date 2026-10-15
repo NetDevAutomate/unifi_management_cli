@@ -4,7 +4,10 @@ On by default. Each call through the runner (``execute_tool`` or the direct surf
 one line to ``$XDG_STATE_HOME/unifi_mapper/mcp-audit.jsonl`` (``state_dir()``, resolved at
 each write, never relative to the working directory): the time, the registered tool's name,
 the surface, the argument **keys** that are the tool's own parameter names (any other key is
-only counted), the duration and the outcome code (``ok``, the error code, or ``CANCELLED``).
+only counted), the duration, the time the call queued for a concurrency slot
+(``slot_wait_ms``, on every call that reached the execution step, including one the deadline
+ended while it was still queued; issue 090) and the outcome code (``ok``, the error code, or
+``CANCELLED``).
 Argument values, results and messages are never written, and a tool name the registry
 doesn't hold is client text, so it is written as ``<unregistered>`` with its length only.
 The meta-tools (``search_tools``, ``get_tool_info``, ``list_categories``) aren't logged.
@@ -311,6 +314,7 @@ class CallAuditLog:
         known_keys: Collection[str],
         duration_ms: float,
         outcome: str,
+        slot_wait_ms: float | None = None,
     ) -> None:
         """Write the buffered request lines, then one call line. Never raises.
 
@@ -324,6 +328,8 @@ class CallAuditLog:
                 every other key is counted in ``unknown_keys``.
             duration_ms: How long the call took.
             outcome: ``ok``, the error code, or :data:`CANCELLED`.
+            slot_wait_ms: How long the call queued for a concurrency slot (issue 090), whether
+                or not it got one; None when it was refused before queueing (not written).
         """
         if self._disabled:
             return
@@ -351,8 +357,10 @@ class CallAuditLog:
             'arg_keys': named,
             'unknown_keys': len(keys) - len(known),
             'duration_ms': round(duration_ms, 1),
-            'outcome': outcome,
         }
+        if slot_wait_ms is not None:
+            line['slot_wait_ms'] = round(slot_wait_ms, 1)
+        line['outcome'] = outcome
         self._write([*self._take_pending(), json.dumps(line)])
 
     def flush(self) -> None:
