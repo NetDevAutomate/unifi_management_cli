@@ -118,4 +118,63 @@ operator runs the CLI by hand and pastes the result. Breaks fresh clones, CI or 
 ## Decision needed
 
 Whether tier 2 (`gateway_http_check`, `get_active_flows`, `diagnose_client_connectivity`) joins
-tier 1 behind the same flag in 0.4.0, or waits for a later decision as recommended.
+tier 1 behind the same flag in 0.4.0, or waits for a later decision as recommended. Tier 1 is
+built behind the flag (see Progress); tier 2 is still pending this decision.
+
+## Progress (2026-10-15)
+
+Points 1 to 6 of the definition of done are built and pinned by tests; point 7 (live) could
+not be observed, so the record stays open.
+
+What changed:
+
+- **Registry.** `active_probe` (bool, default `false`) is a manifest key, parsed into
+  `ToolMetadata.active_probe`; an entry with both `active_probe` and `mutates` is a load error
+  (`tests/mcp/test_registry_keys.py`). A `ToolRegistry` holds active probes back unless built
+  with `active_probes=True`: they are loaded and checked, but no lookup, search, category or
+  count sees them, so the default catalog is unchanged and nothing can run a held probe.
+  `held_active_probes()` names them.
+- **Manifests.** `gateway_ping`, `gateway_traceroute`, `gateway_dns_check`
+  (`connectivity.yaml`) and `run_latency_matrix` (`analysis.yaml`) carry `active_probe: true`,
+  `cli:` mappings and descriptions that begin `Runs <command> on the gateway over SSH:`.
+- **Gate.** `UNIFI_MCP_ALLOW_ACTIVE_PROBES`, read once at start: `1` lists the four; unset or
+  empty holds them; any other value stops `unifi-mcp` (and `--check`) with exit 2, naming the
+  variable. Off, neither surface lists them, `search_tools`, `get_tool_info`,
+  `list_categories` and `unifi://catalog` do not show them, and `execute_tool` (or a
+  direct-surface call by name) returns `ACTIVE_PROBES_DISABLED` naming the variable, the
+  program and the `unifi-mapper` command, before any argument, credential or gateway is
+  touched; the call log records the refusal. The lifespan logs the held count at INFO, or a
+  WARNING naming the listed probes. `--check` reports `active_probes` (`enabled`, `held`).
+- **On.** The four list with `readOnlyHint: false`, `idempotentHint: false`,
+  `openWorldHint: true`, `destructiveHint: false`, and run through the ordinary `ToolRunner`.
+- **Parity.** The four commands left `CLI_ONLY`; `gateway http`, `gateway flows` and
+  `diagnose client-connectivity` cite tier 2, `diagnose bandwidth` its exclusion. The parity
+  report walks the held probes too.
+- **Docs.** `docs/mcp-server/MCP_SERVER_GUIDE.md` "Active probes (opt-in)", the environment and
+  error tables, the manifest-key table; `.env.example` lists the variable with a warning.
+
+Tests (`tests/mcp/test_active_probes.py`, over the real manifests): each listing surface hides
+the probes and `execute_tool` refuses each with the named error (point 2); with the flag on,
+each runs through `execute_tool` against a real asyncssh server (`tests/fake_gateway.py`, the
+server the issue 038 handshake test uses, now shared) and returns what its handler returns, and
+a planted `UNIFI_SSH_PASSWORD` value that reaches the handler's result or error never reaches
+the MCP result or error (point 3); a missing or changed host key reaches the client as
+`CONTROLLER_UNREACHABLE` naming `root@<gateway>` and the `ssh` command, with no password offered
+(point 4); the parity gate is green (point 5); a catalog-rule test requires every probe to be
+in a probe module, write nothing local, carry no writer name and keep the description shape.
+
+What a user sees: nothing, until the operator sets `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1` in the MCP
+client's `env` block; then an agent can ask the gateway to ping, trace or resolve, and a host
+that shows annotations marks those calls as not read-only.
+
+What remains:
+
+- **Point 7.** On 2026-10-15 `gateway_ping` through the real server objects with the flag on
+  (the controller's own address, `count` 3) and `unifi-mapper gateway ping <same> --count 3`
+  both stopped with the same `CONFIG_MISSING` ("UNIFI_SSH_PASSWORD is not set") before
+  connecting: the gateway's host key is recorded, but the config file in use has no
+  `UNIFI_SSH_PASSWORD`. With it set, run each once more and compare loss and round trips.
+- `tests/mcp/test_manifest_parity.py::test_rule6_strict_registry_loads_every_manifest` asserts
+  `len(ToolRegistry(strict=True)) == ` the raw entry count; with the probes held that is 96
+  against 100. The identity it means is `len(registry) + len(registry.held_active_probes())`,
+  which holds.
