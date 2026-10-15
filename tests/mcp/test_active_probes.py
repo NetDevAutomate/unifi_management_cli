@@ -13,6 +13,8 @@ import inspect
 import json
 import os
 import pytest
+import re
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from loguru import logger
@@ -28,6 +30,7 @@ from unifi_mapper.connectivity.gateway_probe import (
     gateway_ping,
     gateway_traceroute,
 )
+from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.mcp import server
 from unifi_mapper.mcp.call_audit import CallAuditSetting
 from unifi_mapper.mcp.catalog import annotations_for
@@ -35,6 +38,7 @@ from unifi_mapper.mcp.config import (
     ACTIVE_PROBES_ENV,
     ActiveProbesSettingError,
     ServerSettings,
+    active_probes_allowed,
     load_server_settings,
     parse_active_probes,
 )
@@ -82,36 +86,56 @@ def _names(tools: list[Any]) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ('raw', 'expected'), [(None, False), ('', False), (' ', False), ('1', True)]
-)
-def test_only_1_turns_the_probes_on(raw: str | None, expected: bool) -> None:
+# The gate's value table (issue 092, council pass A): unset or empty is off, exactly '1' is
+# on, and every other present value is a named start-up error, never a silent off and never a
+# truthy parse. One case per row.
+@pytest.mark.parametrize(('raw', 'expected'), [(None, False), ('', False), ('1', True)])
+def test_unset_and_empty_are_off_and_exactly_1_is_on(raw: str | None, expected: bool) -> None:
     assert parse_active_probes(raw) is expected
     env = {} if raw is None else {ACTIVE_PROBES_ENV: raw}
     assert load_server_settings(env, warn=pytest.fail).active_probes is expected
+    assert active_probes_allowed(env) is expected
 
 
-@pytest.mark.parametrize('raw', ['0', 'true', 'yes', 'on', '2', 'TRUE'])
-def test_any_other_value_is_a_named_config_error(raw: str) -> None:
-    with pytest.raises(ActiveProbesSettingError, match=ACTIVE_PROBES_ENV):
+@pytest.mark.parametrize('raw', ['0', 'true', 'yes', 'TRUE', ' 1 ', ' ', 'on', '2', '1\n'])
+def test_any_other_present_value_is_a_named_startup_error(raw: str) -> None:
+    pattern = re.escape(f'{ACTIVE_PROBES_ENV}={raw!r} is not exactly 1')
+    with pytest.raises(ActiveProbesSettingError, match=pattern) as info:
         parse_active_probes(raw)
-    with pytest.raises(ActiveProbesSettingError, match=ACTIVE_PROBES_ENV):
+    # The error says why this setting does not warn and fall back like the tool surface.
+    assert 'Unlike UNIFI_MCP_TOOL_SURFACE' in str(info.value)
+    assert 'agent-triggered SSH' in str(info.value)
+    with pytest.raises(ActiveProbesSettingError, match=pattern):
         load_server_settings({ACTIVE_PROBES_ENV: raw}, warn=pytest.fail)
+    # The fallback the registry uses before main() has validated the setting reads it as off,
+    # never as on; main() itself refuses to start (the test below).
+    assert active_probes_allowed({ACTIVE_PROBES_ENV: raw}) is False
+
+
+def test_the_tool_surface_warns_and_falls_back_where_the_gate_refuses() -> None:
+    # The contrast the guide documents: an invalid surface is a warning with a default.
+    seen: list[str] = []
+    surface = server.resolve_surface(None, {server.SURFACE_ENV: 'yes'})
+    assert surface == server.DEFAULT_SURFACE
+    with pytest.raises(ActiveProbesSettingError):
+        load_server_settings({ACTIVE_PROBES_ENV: 'yes'}, warn=seen.append)
+    assert seen == []  # no warning: the error is the whole response
 
 
 @pytest.mark.parametrize('argv', [[], ['--check']])
+@pytest.mark.parametrize('raw', ['0', 'true', 'yes', 'TRUE', ' 1 '])
 def test_main_refuses_to_start_on_a_bad_value(
-    argv: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    argv: list[str], raw: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ran: list[object] = []
     monkeypatch.setattr(server.UnifiFastMCP, 'run', lambda self, *a, **k: ran.append(a))
     monkeypatch.setattr(server, '_settings', None)
-    monkeypatch.setitem(server.os.environ, ACTIVE_PROBES_ENV, 'yes')
+    monkeypatch.setitem(server.os.environ, ACTIVE_PROBES_ENV, raw)
     with pytest.raises(SystemExit) as exc:
         server.main(argv)
     assert exc.value.code == 2
     err = capsys.readouterr().err
-    assert ACTIVE_PROBES_ENV in err and "'yes'" in err
+    assert f'{ACTIVE_PROBES_ENV}={raw!r} is not exactly 1' in err
     assert ran == []
 
 
@@ -270,13 +294,62 @@ def host_keys() -> tuple[asyncssh.SSHKey, asyncssh.SSHKey]:
     )
 
 
-@pytest.fixture
-def gate_on(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Probes on; controller and SSH credentials exported; the call log off."""
-    _use(monkeypatch, ServerSettings(active_probes=True, call_audit=CallAuditSetting('off')))
+def _gate_on(monkeypatch: pytest.MonkeyPatch, call_audit: CallAuditSetting) -> None:
+    """Probes on; controller and SSH credentials exported; the call log as given."""
+    _use(monkeypatch, ServerSettings(active_probes=True, call_audit=call_audit))
     monkeypatch.setenv('UNIFI_URL', f'https://{GATEWAY}')
     monkeypatch.setenv('UNIFI_CONSOLE_API_TOKEN', FAKE_TOKEN)
     monkeypatch.setenv('UNIFI_SSH_PASSWORD', PASSWORD)
+
+
+@pytest.fixture
+def gate_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Probes on; the call log off."""
+    _gate_on(monkeypatch, CallAuditSetting('off'))
+
+
+@pytest.fixture
+def gate_on_logged(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Probes on; the call log at a known path, returned."""
+    log = tmp_path / 'calls.jsonl'
+    _gate_on(monkeypatch, CallAuditSetting('path', log))
+    return log
+
+
+def _ssh_spy(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, Any]]]:
+    """Count every ``asyncssh.connect`` call (and refuse it); the probes must make none."""
+    connects: list[tuple[str, dict[str, Any]]] = []
+
+    async def connect(host: str, **options: Any) -> Any:
+        connects.append((host, options))
+        raise AssertionError('the probe reached asyncssh.connect')
+
+    monkeypatch.setattr(asyncssh, 'connect', connect)
+    return connects
+
+
+@asynccontextmanager
+async def _controller_spy(
+    monkeypatch: pytest.MonkeyPatch, routes: dict[str, Any] | None = None
+) -> AsyncIterator[tuple[FakeController, list[str]]]:
+    """A fake controller behind the shared client, plus a count of ``UniFiClient`` entries."""
+    entered: list[str] = []
+    real_aenter = UniFiClient.__aenter__
+
+    async def aenter(self: UniFiClient) -> Any:
+        entered.append(type(self).__name__)
+        return await real_aenter(self)
+
+    monkeypatch.setattr(UniFiClient, '__aenter__', aenter)
+    controller = FakeController(CONTROLLER_ROUTES if routes is None else routes)
+    async with serving(controller):
+        yield controller, entered
+
+
+def _error(out: Any) -> dict[str, Any]:
+    envelope = out.structuredContent
+    assert out.isError is True and envelope is not None and envelope['ok'] is False, envelope
+    return envelope
 
 
 @asynccontextmanager
@@ -530,3 +603,202 @@ def test_a_probe_declares_exactly_its_handlers_parameters(name: str) -> None:
         assert bool(spec.get('required')) is required, parameter
         if not required:
             assert spec.get('default') == signature.parameters[parameter].default, parameter
+
+
+# ---------------------------------------------------------------------------
+# Council pass A: the refusal touches nothing; writers stay refused; validators run first
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize('name', sorted(PROBES))
+async def test_a_refusal_opens_no_ssh_session_and_asks_the_controller_nothing(
+    gate_off: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    connects = _ssh_spy(monkeypatch)
+    monkeypatch.setenv('UNIFI_URL', f'https://{GATEWAY}')
+    monkeypatch.setenv('UNIFI_CONSOLE_API_TOKEN', FAKE_TOKEN)
+    monkeypatch.setenv('UNIFI_SSH_PASSWORD', PASSWORD)
+    async with _controller_spy(monkeypatch) as (controller, entered):
+        envelope = _error(await server.execute_tool(name, CALLS[name]))
+    assert envelope['error_code'] == 'ACTIVE_PROBES_DISABLED'
+    assert connects == []
+    assert controller.calls == [] and entered == []
+
+
+async def test_a_mutating_tool_stays_refused_with_the_gate_on(
+    gate_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    connects = _ssh_spy(monkeypatch)
+    for name in ('apply_stp_changes', 'apply_radio_optimization', 'restore_radio_config'):
+        envelope = _error(await server.execute_tool(name, {}))
+        assert envelope['error_code'] == 'MUTATION_REFUSED', envelope
+    listed = _names(await server.create_server('direct').list_tools())
+    assert not listed & {'apply_stp_changes', 'apply_radio_optimization', 'restore_radio_config'}
+    assert connects == []
+
+
+# Each row drives one require_* check through execute_tool and the runner. The expected code
+# is the handler's own; the probe must fail before asyncssh.connect and run no command.
+VALIDATOR_CASES: list[tuple[str, dict[str, Any], str, str]] = [
+    # a shell metacharacter in a target: not an address, looked up as a name, nothing matches
+    ('gateway_ping', {'target': '192.0.2.10; reboot'}, 'DEVICE_NOT_FOUND', 'metacharacter'),
+    # a leading-option target: likewise never reaches a command line
+    ('gateway_ping', {'target': '-c 9999'}, 'DEVICE_NOT_FOUND', 'leading option'),
+    # the same two shapes where the value goes on the command line directly (require_hostname)
+    ('gateway_dns_check', {'hostname': 'example.com; reboot'}, 'CONFIG_INVALID', 'metachar'),
+    ('gateway_dns_check', {'hostname': '-f'}, 'CONFIG_INVALID', 'leading option'),
+    ('gateway_dns_check', {'hostname': 'example.com', 'server': '1.2.3.4 -x'}, 'INVALID_IP', 'x'),
+    # bounds (require_bounded_int / require_bounded_float)
+    ('gateway_ping', {'target': '192.0.2.10', 'count': 101}, 'CONFIG_INVALID', 'count'),
+    ('gateway_ping', {'target': '192.0.2.10', 'interval': 0.1}, 'CONFIG_INVALID', 'interval'),
+    ('gateway_traceroute', {'target': '192.0.2.10', 'max_hops': 31}, 'CONFIG_INVALID', 'hops'),
+    ('run_latency_matrix', {'ping_count': 101}, 'CONFIG_INVALID', 'ping_count'),
+    ('run_latency_matrix', {'timeout': 61}, 'CONFIG_INVALID', 'timeout'),
+]
+
+
+@pytest.mark.parametrize(
+    ('name', 'params', 'code', 'kind'), VALIDATOR_CASES, ids=[c[3] for c in VALIDATOR_CASES]
+)
+async def test_a_validator_refuses_before_any_ssh_connect(
+    gate_on: None,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    params: dict[str, Any],
+    code: str,
+    kind: str,
+) -> None:
+    connects = _ssh_spy(monkeypatch)
+    empty = {f'{API}/stat/device': legacy([]), f'{API}/stat/sta': legacy([])}
+    async with _controller_spy(monkeypatch, empty) as (controller, _):
+        envelope = _error(await server.execute_tool(name, params))
+    assert envelope['error_code'] == code, envelope
+    assert connects == []
+    # Only a name lookup may ask the controller, and only for reads.
+    assert controller.methods <= {'GET'}
+
+
+async def test_a_controller_reported_address_is_checked_before_the_command_line(
+    gate_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A name matches a client whose address the controller reports with a shell
+    # metacharacter: require_ip refuses it; no SSH session is opened.
+    connects = _ssh_spy(monkeypatch)
+    routes = {
+        f'{API}/stat/device': legacy([]),
+        f'{API}/stat/sta': legacy(
+            [{'hostname': 'printer', 'mac': '02:00:00:00:00:03', 'ip': '192.0.2.40; reboot'}]
+        ),
+    }
+    async with _controller_spy(monkeypatch, routes):
+        envelope = _error(await server.execute_tool('gateway_ping', {'target': 'printer'}))
+    assert envelope['error_code'] == 'INVALID_IP', envelope
+    assert connects == []
+
+
+async def test_the_runner_rejects_a_wrong_type_before_the_handler(
+    gate_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    connects = _ssh_spy(monkeypatch)
+    envelope = _error(
+        await server.execute_tool('gateway_ping', {'target': '192.0.2.10', 'count': 'x'})
+    )
+    assert envelope['error_code'] == 'INVALID_PARAMETERS'
+    assert connects == []
+
+
+# ---------------------------------------------------------------------------
+# Council pass A: the planted password reaches none of the four outputs; the deadline
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def loguru_lines() -> list[str]:
+    """Every loguru line at DEBUG and above, as rendered (message plus the record's text)."""
+    seen: list[str] = []
+    sink = logger.add(lambda m: seen.append(str(m)), level='DEBUG', format='{level} {message}')
+    yield seen
+    logger.remove(sink)
+
+
+@pytest.mark.parametrize(
+    ('name', 'replies', 'outcome'),
+    [
+        ('gateway_traceroute', PLANTED['gateway_traceroute'], 'ok'),
+        ('gateway_dns_check', PLANTED['gateway_dns_check'], 'ok'),
+        ('gateway_ping', {'ping': ('', f'ping: {PASSWORD}: permission denied\n', 2)}, 'API_ERROR'),
+    ],
+    ids=['traceroute result', 'dns result', 'ping error'],
+)
+async def test_a_planted_ssh_password_reaches_no_result_error_log_line_or_audit_record(
+    gate_on_logged: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    host_keys: tuple[asyncssh.SSHKey, asyncssh.SSHKey],
+    loguru_lines: list[str],
+    name: str,
+    replies: dict[str, Reply],
+    outcome: str,
+) -> None:
+    key = host_keys[0]
+    async with _gateway(monkeypatch, key, key, replies):
+        out = await server.execute_tool(name, CALLS[name])
+    envelope = out.structuredContent
+    assert envelope is not None
+    assert (envelope.get('error_code') or 'ok') == outcome, envelope
+    # 1 the structured result or error, 2 the text block
+    assert PASSWORD not in json.dumps(envelope)
+    assert PASSWORD not in out.content[0].text  # type: ignore[union-attr]
+    # 3 every loguru line the call produced (a success logs none; the failed run logs its code)
+    if outcome != 'ok':
+        assert any(f'MCP tool {name} returned {outcome}' in line for line in loguru_lines)
+    assert all(PASSWORD not in line for line in loguru_lines), loguru_lines
+    # 4 the call-audit record
+    records = gate_on_logged.read_text(encoding='utf-8')
+    assert PASSWORD not in records
+    [line] = [json.loads(raw) for raw in records.splitlines()]
+    assert (line['tool'], line['outcome']) == (name, outcome)
+    assert set(line) & {'result', 'message', 'params', 'arguments', 'values'} == set()
+
+
+async def test_a_probe_finishes_well_inside_the_ordinary_deadline(
+    gate_on: None, monkeypatch: pytest.MonkeyPatch, host_keys: tuple[asyncssh.SSHKey, ...]
+) -> None:
+    # The probes run under the same per-call deadline as every tool, 270 s by default; a
+    # fake-gateway round trip takes a fraction of a second, so a [TIMEOUT] would mean an
+    # outage or a stalled gateway, not the probe's own length.
+    assert server.current_settings().tool_timeout == 270.0
+    assert server.get_runner().settings.tool_timeout == 270.0
+    key = host_keys[0]
+    started = time.monotonic()
+    async with _gateway(monkeypatch, key, key, REPLIES['gateway_ping']):
+        out = await server.execute_tool('gateway_ping', CALLS['gateway_ping'])
+    elapsed = time.monotonic() - started
+    _result(out)
+    assert elapsed < 10, elapsed
+
+
+async def test_a_probe_failure_text_holding_the_password_is_masked_in_the_log_line(
+    gate_on_logged: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    host_keys: tuple[asyncssh.SSHKey, asyncssh.SSHKey],
+    loguru_lines: list[str],
+) -> None:
+    # A TOOL_FAILED is the one outcome whose stderr line carries the exception's text (and,
+    # at DEBUG, its traceback): force one whose text holds the planted password.
+    from unifi_mapper.connectivity import gateway_probe
+
+    def blow_up(output: str) -> Any:
+        raise RuntimeError(f'parser failed on {PASSWORD}')
+
+    monkeypatch.setattr(gateway_probe, 'parse_traceroute_output', blow_up)
+    key = host_keys[0]
+    async with _gateway(monkeypatch, key, key, REPLIES['gateway_traceroute']):
+        out = await server.execute_tool('gateway_traceroute', CALLS['gateway_traceroute'])
+    envelope = _error(out)
+    assert envelope['error_code'] == 'TOOL_FAILED'
+    assert envelope['message'].startswith('RuntimeError: parser failed on ')
+    assert PASSWORD not in json.dumps(envelope)
+    failed = [line for line in loguru_lines if 'MCP tool gateway_traceroute failed' in line]
+    assert failed, loguru_lines
+    assert all(PASSWORD not in line for line in loguru_lines), loguru_lines
+    assert PASSWORD not in gate_on_logged.read_text(encoding='utf-8')

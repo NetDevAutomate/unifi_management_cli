@@ -210,7 +210,7 @@ Call it again with `offset: 200` for the last 30 clients (`next_offset` is then 
 | --- | --- | --- | --- |
 | `UNIFI_CONFIG` | unset | path to a readable env file | stderr warning; no file loaded; server starts |
 | `UNIFI_MCP_TOOL_SURFACE` | `discovery` | `discovery`, `direct` (case-insensitive) | stderr warning; `discovery` |
-| `UNIFI_MCP_ALLOW_ACTIVE_PROBES` | unset (off) | `1` lists the [active probes](#active-probes-opt-in); unset or empty holds them back | the server does not start: stderr names the variable, exit 2 (`--check` too) |
+| `UNIFI_MCP_ALLOW_ACTIVE_PROBES` | unset (off) | exactly `1` lists the [active probes](#active-probes-opt-in); unset or empty holds them back | the server does not start: stderr names the variable and the value, exit 2 (`--check` too). Deliberately not the warn-and-fall-back of the rows above: see [Active probes](#active-probes-opt-in) |
 | `UNIFI_MCP_TOOL_TIMEOUT` | 270 | seconds, 5–3600 | stderr warning; 270 |
 | `UNIFI_MCP_CREDENTIAL_TIMEOUT` | 15 | seconds, 1–120 | stderr warning; 15 |
 | `UNIFI_MCP_MAX_CONCURRENCY` | 4 | integer, 1–32 | stderr warning; 4 |
@@ -536,7 +536,10 @@ what does it resolve this name to. Four tools ask it by running a command on the
 SSH ([issue 092](../issues/092-gateway-probes-over-mcp-behind-an-opt-in.md)). They change no
 controller setting, but an agent that calls one opens an SSH session to the gateway as
 `UNIFI_SSH_USERNAME` (normally `root`) and sends traffic from it, which is a different trust
-class from a controller read. So they are **off by default**:
+class from a controller read. The flag is a **process-wide permission**: once the server is
+started with it, any caller of that server may choose probe destinations, within the bounds the
+validators in `analysis/gateway_ssh.py` enforce (an address or a controller-known name, an RFC
+1123 hostname, counts and hops in fixed ranges). So they are **off by default**:
 
 | Tool | Runs on the gateway | CLI counterpart |
 | --- | --- | --- |
@@ -556,8 +559,23 @@ not in the config file (the server reads `UNIFI_MCP_*` only from its own environ
 probes are listed like any catalog tool, with annotations `readOnlyHint: false`,
 `idempotentHint: false` and `openWorldHint: true`, and a description that begins
 `Runs <command> on the gateway over SSH:`, so a host that shows annotations shows the trust
-class. At start the server logs a WARNING naming them. Any other value (`true`, `yes`, `0`)
-stops the server with exit 2, so a typo can't leave the probes on or off by surprise.
+class. At start the server logs a WARNING naming them.
+
+**The value table.** Unset or empty: off. Exactly `1`: on. Any other present value (`0`,
+`true`, `yes`, `TRUE`, a whitespace-padded `" 1 "`): the server does not start, `unifi-mcp`
+and `unifi-mcp --check` exit 2 and stderr names the variable and the value. This deliberately
+differs from `UNIFI_MCP_TOOL_SURFACE` and the other `UNIFI_MCP_*` settings, which warn and use
+a default on an invalid value: those choose a listing or a limit, while this one permits
+agent-triggered SSH sessions to the gateway, so a typo must neither leave the probes off while
+the operator believes them on, nor on because the value looked truthy. The error text says so.
+
+**Deadline.** The probes run under the ordinary per-call deadline, `UNIFI_MCP_TOOL_TIMEOUT`
+(270 s by default), and a probe over a reachable gateway takes seconds (ping: `count` times
+`interval`, under 500 s at the CLI's own maximum, so `count` 100 at `interval` 5.0 does not
+fit the default deadline). A `[TIMEOUT]` on a probe is therefore indistinguishable from an
+outage: a gateway that does not answer SSH, a target that swallows every packet until the
+probe's own bound, or a stalled session all end the same way. Read it as "no answer within the
+deadline", not as a result, and prefer a smaller `count` or `max_hops` over a longer deadline.
 
 They run through the same `ToolRunner` as every tool: each input is checked by the bounds in
 `analysis/gateway_ssh.py` before it goes on a command line (an address, an RFC 1123 hostname,

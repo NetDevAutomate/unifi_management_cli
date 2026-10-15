@@ -474,27 +474,32 @@ class ActiveProbesSettingError(ValueError):
 
 
 def parse_active_probes(raw: str | None) -> bool:
-    """Read ``UNIFI_MCP_ALLOW_ACTIVE_PROBES``: ``1`` is on; unset or empty is off.
+    """Read ``UNIFI_MCP_ALLOW_ACTIVE_PROBES``: exactly ``1`` is on; unset or empty is off.
 
-    Any other value (``true``, ``yes``, even ``0``) is an error rather than a guess, so a
-    typo can neither leave the probes off while the operator thinks them on, nor the reverse.
+    Any other present value (``0``, ``true``, ``yes``, ``TRUE``, a whitespace-padded
+    ``" 1 "``) is a named start-up error, not a warning with a fallback as the other
+    ``UNIFI_MCP_*`` settings give: this one permits agent-triggered SSH sessions to the
+    gateway, so a typo must neither leave the probes off while the operator thinks them on,
+    nor the reverse, and must not be read as true because it looks truthy.
 
     Args:
         raw: The variable's value, or None when it is unset.
 
     Returns:
-        True for ``1`` (surrounding whitespace ignored), False for unset or empty.
+        True for ``'1'``, False for None or ``''``.
 
     Raises:
-        ActiveProbesSettingError: For any other value, naming the variable.
+        ActiveProbesSettingError: For any other value, naming the variable and the value.
     """
-    if raw is None or not raw.strip():
+    if raw is None or raw == '':
         return False
-    if raw.strip() == '1':
+    if raw == '1':
         return True
     raise ActiveProbesSettingError(
-        f'{ACTIVE_PROBES_ENV}={raw!r} is not 1: set it to 1 to list the tools that run a '
-        'command on the gateway over SSH, or unset it'
+        f'{ACTIVE_PROBES_ENV}={raw!r} is not exactly 1: set it to 1 to list the tools that '
+        'run a command on the gateway over SSH, or unset it. Unlike UNIFI_MCP_TOOL_SURFACE, an '
+        'invalid value here stops the server instead of warning and using a default, because '
+        'this setting permits agent-triggered SSH sessions to the gateway'
     )
 
 
