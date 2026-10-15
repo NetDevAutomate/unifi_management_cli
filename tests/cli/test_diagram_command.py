@@ -157,17 +157,20 @@ def fake_dot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 @pytest.mark.usefixtures('site', 'no_dot')
 @pytest.mark.parametrize('fmt', ['png', 'svg'])
-def test_a_placeholder_is_reported_and_exits_1(config: Path, tmp_path: Path, fmt: str) -> None:
-    """Issue 086: without Graphviz the renderer writes a placeholder; diagram says so."""
+def test_a_placeholder_is_reported_as_a_warning_and_exits_0(
+    config: Path, tmp_path: Path, fmt: str
+) -> None:
+    """Issue 086: without Graphviz the renderer writes a placeholder; diagram says so, and
+    exits 0 as issue 075 decided (a warning, not a failure)."""
     out = tmp_path / f'net.{fmt}'
     result = runner.invoke(
         app, ['--config', str(config), 'diagram', '--format', fmt, '-o', str(out)]
     )
 
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 0, result.output
     assert 'Diagram generated' not in result.output
-    assert 'No diagram drawn' in result.stderr
-    assert 'placeholder' in result.stderr
+    assert 'No diagram drawn' in result.output
+    assert 'placeholder' in result.output
     assert "Graphviz's dot program is not on PATH" in ' '.join(result.output.split())
     assert out.read_text(encoding='utf-8').startswith(f'{fmt.upper()} generation needs Graphviz')
 

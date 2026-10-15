@@ -3097,9 +3097,9 @@ def diagram(
     Generates a visual diagram of your UniFi infrastructure without
     performing any LLDP analysis or port name updates.
 
-    PNG and SVG need Graphviz. Without it the file is a placeholder that says why; the
-    command says so instead of reporting a diagram, and exits 1. --format html needs no
-    Graphviz.
+    PNG and SVG need Graphviz. Without it the file is a placeholder that says why, and the
+    command prints a warning instead of reporting a diagram (exit 0, as discover does).
+    --format html needs no Graphviz.
     """
     config = state.config_path
     debug = state.debug
@@ -3278,7 +3278,8 @@ def diagram(
             raise typer.Exit(1)
 
         if not_drawn:
-            err_console.print(
+            # Issue 075's decision: a placeholder is a warning, not a failure; the run exits 0
+            console.print(
                 f'⚠️ [bold yellow]No diagram drawn: {escape(str(diagram_path))} holds a '
                 f'placeholder. {escape(not_drawn)}[/bold yellow]'
             )
@@ -3293,12 +3294,6 @@ def diagram(
         console.print(f'❌ [bold red]Error: {_error_text(e)}[/bold red]')
         if debug:
             _print_debug_traceback(console)
-        raise typer.Exit(1)
-
-    if not_drawn:
-        # A placeholder is not the diagram asked for, so the run failed (issue 086). Exit 1, the
-        # reference's "an error ... a check could not run"; exit 2 would need this command named
-        # in the exit-code table's validation row of docs/reference/cli.md.
         raise typer.Exit(1)
 
 
