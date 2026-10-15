@@ -235,7 +235,8 @@ class DeviceStatistics(BaseModel):
     not know is kept in ``model_extra``. ``device_id`` is not part of the answer: the client
     sets it from the request. ``ports`` and ``temperature_celsius`` are not part of it either;
     they stay empty for an answer the client parses and are filled only by a caller that builds
-    the model itself.
+    the model itself. Both are deprecated and removed in 0.5.0 (issue 095); per-port counters
+    come from the classic ``stat/device`` path.
     """
 
     device_id: Annotated[str, Field(alias='deviceId')] = ''

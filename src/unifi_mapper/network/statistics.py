@@ -77,15 +77,23 @@ class PortMetrics:
 
 @dataclass
 class MetricsSnapshot:
-    """Snapshot of metrics at a point in time."""
+    """Snapshot of metrics at a point in time.
+
+    ``temperature_celsius`` and ``port_metrics`` are deprecated and removed in 0.5.0 (issue
+    095): the Integration API's ``statistics/latest`` sends neither a temperature nor per-port
+    counters, so for a live device they are always ``None`` and empty, as are
+    :attr:`total_throughput_bps`, :attr:`active_port_count`, :meth:`get_top_ports_by_throughput`
+    and :meth:`get_error_ports`. Per-port counters come from the classic ``stat/device`` path
+    (the port-diagnostics tools).
+    """
 
     timestamp: datetime
     device_id: str
     uptime_seconds: int = 0
     cpu_percent: float = 0.0
     memory_percent: float = 0.0
-    temperature_celsius: float | None = None
-    port_metrics: dict[int, PortMetrics] = field(default_factory=dict)
+    temperature_celsius: float | None = None  # deprecated, always None from the live endpoint
+    port_metrics: dict[int, PortMetrics] = field(default_factory=dict)  # deprecated, always empty
 
     @property
     def total_throughput_bps(self) -> int:

@@ -1,7 +1,7 @@
 ---
 title: "`DeviceMetricsCollector` per-port metrics are always empty: `statistics/latest` sends no ports"
 date: 2026-10-15
-status: open, decision needed
+status: open, decided
 severity: low
 components: [network/statistics, network/models]
 found_by: 0.4.0 lane 2a (issue 081 fix, live capture)
@@ -41,3 +41,18 @@ API collector and model, documenting that per-port counters come from the classi
 `stat/device` path; or (b) keep the fields and source them from the classic path inside the
 collector. (a) is the smaller change and matches what the endpoint sends; it is Breaking for
 library callers of `DeviceMetrics`.
+
+## Decision (2026-10-15)
+
+The 0.4.0 validation council (pass B, D-095, 4 of 5 seats) recommended removing the port
+aggregation and `temperature_celsius` in 0.4.0 under Breaking, with an explicit fallback: "if
+finishing-lane budget does not allow, document the unavailability now and remove in 0.5.0". The
+fallback is taken, on the merits as well as the budget: no CLI command or MCP tool reads these
+fields, so the removal is library-API churn with no user-visible effect, and the model already
+documented that the endpoint never fills them. 0.4.0 deprecates them (CHANGELOG Deprecated;
+docstrings on `DeviceStatistics`, `MetricsSnapshot` and the collector), and the removal lands
+in 0.5.0 as a Breaking entry: `DeviceStatistics.ports`, `DeviceStatistics.temperature_celsius`,
+`PortStatistics`, `PortMetrics`, `MetricsSnapshot.port_metrics`, `MetricsSnapshot.temperature_celsius`,
+`total_throughput_bps`, `active_port_count`, `get_top_ports_by_throughput`, `get_error_ports`
+and the collector's `_port_metrics` store, with `tests/network/test_statistics.py` rewritten to
+the remaining surface. The issue stays open until that commit.

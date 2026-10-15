@@ -1,7 +1,8 @@
 ---
 title: "ACL create helpers send filters without a `type` and with empty lists the API refuses"
 date: 2026-10-15
-status: open, decision needed
+status: resolved
+resolved_by: e31c00d
 severity: medium
 components: [network/acl, network/models]
 found_by: 0.4.0 lane 2a (issue 083 fix)
@@ -52,3 +53,15 @@ IPv4 helpers (Breaking for library callers) or add the MAC helper.
 ## Decision needed
 
 Remove `source_macs` from the IPv4 helpers, or add a `create_mac_rule` helper beside them.
+
+## Decision and resolution (2026-10-15)
+
+Decided by the 0.4.0 validation council (pass B, D-094, 4 of 5 seats, MODIFY): repair the IPv4
+helpers in 0.4.0 and defer a MAC-rule writer to 0.5.0 rather than add writer surface during the
+finishing lane. One `_typed_filter()` builds both sides for both helpers in the reference's
+tagged-union shape (`IP_ADDRESSES_OR_SUBNETS` with `ipAddressesOrSubnets` and an optional
+`portFilter`; `PORTS` with `portFilter` only); an empty list is never sent, and nothing given
+means no filter object. `create_block_rule(source_macs=...)` raises `ValueError` before any
+request. Pinned by five cases in `tests/network/test_acl_create_type.py` over the real client
+and a recording transport. Not exercised live (ACL writes are off-limits to agents). Breaking
+for library callers who passed `source_macs`; no shipped caller does.

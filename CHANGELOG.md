@@ -51,6 +51,11 @@ The current release is 0.3.0; only the latest release is supported.
 - Python callers of `unifi_mapper.network`: `DeviceStatistics.interfaces` is now a
   `DeviceStatisticsInterfaces` object (`radios`), not a `list[InterfaceStatistics]`; the
   endpoint sends an object. (Issue 081.)
+- Python callers of `unifi_mapper.network.acl`: `create_block_rule` refuses `source_macs` with a
+  `ValueError` (MAC addresses belong to a `MAC` rule, which these helpers do not build), and both
+  create helpers now send each side's filter in the API's shape, a `type` of
+  `IP_ADDRESSES_OR_SUBNETS` or `PORTS` with only the lists that were given; the untyped,
+  empty-list filters they sent before were refused by the API. (Issue 094.)
 
 ### Added
 
@@ -64,6 +69,16 @@ The current release is 0.3.0; only the latest release is supported.
   `0`, a padded `1`) stops the server with exit 2 rather than falling back, because it gates
   agent-triggered SSH to the gateway. `gateway http`, `gateway flows`, `diagnose bandwidth` and
   `diagnose client-connectivity` stay CLI-only. (Issue 092; tier 2 is a pending decision.)
+
+### Deprecated
+
+- Python callers of `unifi_mapper.network`: `DeviceStatistics.ports`, `DeviceStatistics.temperature_celsius`,
+  and on the metrics collector's snapshots `port_metrics`, `temperature_celsius`,
+  `total_throughput_bps`, `active_port_count`, `get_top_ports_by_throughput` and
+  `get_error_ports`. The Integration API's `statistics/latest` sends neither per-port counters
+  nor a temperature, so for a live device these have always been empty or `None`; they are
+  removed in 0.5.0. Per-port counters come from the classic `stat/device` path, which the
+  port-diagnostics tools already use. (Issue 095.)
 
 ### Changed
 
