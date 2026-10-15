@@ -180,6 +180,29 @@ def extract_db_gz(zip_data: bytes, max_bytes: Optional[int] = None) -> bytes:
         raise ExtractionError(f'ZIP extraction failed: {e}')
 
 
+def read_zip_member(zip_data: bytes, name: str, max_bytes: int) -> Optional[bytes]:
+    """Return one ZIP member's bytes, or None when the ZIP has no member of that name.
+
+    The member is read like the database (:func:`_read_member`): refused by its declared
+    size before any of it is inflated, and again as soon as its output passes ``max_bytes``.
+
+    Raises:
+        DatabaseTooLargeError: The member passed ``max_bytes``.
+        ExtractionError: The ZIP or the member could not be read.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_data), 'r') as zf:
+            if name not in zf.namelist():
+                return None
+            return _read_member(zf, name, max_bytes)
+    except DatabaseTooLargeError:
+        raise
+    except zipfile.BadZipFile as e:
+        raise ExtractionError(f'Invalid ZIP file: {e}') from e
+    except Exception as e:  # noqa: BLE001 - every other failure is an extraction failure
+        raise ExtractionError(f'ZIP member {name!r} could not be read: {e}') from e
+
+
 def _inflate_member(view: memoryview, start: int, out: bytearray, max_bytes: Optional[int]) -> int:
     """Inflate the gzip member at ``view[start:]`` onto ``out``; return the offset after it.
 
@@ -331,13 +354,50 @@ def collection_name(doc: Dict[str, Any]) -> Any:
     return collection
 
 
+SELECT_COMMAND = 'select'  # the ``__cmd`` of a Network 10.x collection marker
+
+
+def iter_collection_documents(
+    bson_data: bytes, errors: Optional[list[tuple[int, str]]] = None, *, strict: bool = False
+) -> Iterator[tuple[Any, Dict[str, Any]]]:
+    """Yield ``(collection, document)`` for each data document, in order.
+
+    Two layouts exist. Network 10.x opens each collection with a
+    ``{'__cmd': 'select', 'collection': <name>}`` marker and writes its documents after it
+    with no ``_type`` (measured on a 10.6.88 backup: 102 markers, 2,540 documents, 4 of them
+    with a ``_type`` that names no collection). The older layout tags every document with
+    its ``_type``. A marker sets the collection for every document until the next one and
+    outranks a document's own ``_type``; before the first marker the ``_type`` is used
+    (:func:`collection_name`). Markers and any other control document (one with ``__cmd``)
+    are not data and are not yielded. Parse errors are :func:`iter_bson_documents`'.
+
+    Args:
+        bson_data: Raw BSON bytes.
+        errors: A list to append each parse error to.
+        strict: Stop at the first failure and report leftover bytes.
+
+    Yields:
+        The collection (as :func:`collection_name` returns it, or a marker's name) and the
+        decoded document.
+    """
+    selected: Any = None
+    for doc in iter_bson_documents(bson_data, errors, strict=strict):
+        if '__cmd' in doc:
+            name = doc.get('collection')
+            if doc['__cmd'] == SELECT_COMMAND and isinstance(name, str):
+                selected = name
+            continue
+        yield (selected if selected is not None else collection_name(doc)), doc
+
+
 def parse_bson_documents(
     bson_data: bytes, errors: Optional[list[tuple[int, str]]] = None
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Parse concatenated BSON documents into collections.
 
-    UniFi backups contain multiple BSON documents concatenated together.
-    Each document typically has a '_type' field indicating the collection.
+    UniFi backups contain multiple BSON documents concatenated together, grouped by
+    :func:`iter_collection_documents`: by a Network 10.x ``select`` marker, else by the
+    document's ``_type``. Markers are not returned.
 
     Args:
         bson_data: Raw BSON bytes
@@ -347,8 +407,8 @@ def parse_bson_documents(
         Dictionary mapping collection names to lists of documents
     """
     collections: Dict[str, List[Dict[str, Any]]] = {}
-    for doc in iter_bson_documents(bson_data, errors):
-        collections.setdefault(collection_name(doc), []).append(doc)
+    for name, doc in iter_collection_documents(bson_data, errors):
+        collections.setdefault(name, []).append(doc)
     return collections
 
 

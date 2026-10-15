@@ -10,6 +10,7 @@ from .poc_decrypt import (
     extract_db_gz,
     decompress_db,
     iter_bson_documents,
+    iter_collection_documents,
     parse_bson_documents,
 )
 
@@ -23,5 +24,6 @@ __all__ = [
     'extract_db_gz',
     'decompress_db',
     'iter_bson_documents',
+    'iter_collection_documents',
     'parse_bson_documents',
 ]
