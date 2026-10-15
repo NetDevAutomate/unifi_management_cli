@@ -6,6 +6,7 @@ Contains the UnifiApiClient class for interacting with the UniFi Controller API.
 import datetime
 import hashlib
 import logging
+import re
 import requests
 import time
 from .exceptions import (
@@ -1191,8 +1192,14 @@ class UnifiApiClient:
                 self._build_mac_to_device_cache(site_id)
                 self._mac_cache_built_at = time.monotonic()
 
-            # FIX: LLDP data is already available in device details under 'lldp_table'
-            device_details = self.get_device_details(site_id, device_id)
+            # The site-wide stat/device record (fetched for the cache above) carries
+            # lldp_table on a current controller; the per-device path keyed by an _id does not
+            # (issue 096: live, 0 of 13 switches by _id, 43 rows site-wide). Read the site-wide
+            # record first; fetch per device only when it lacks the table.
+            records = getattr(self, '_device_records_by_key', {})
+            device_details = records.get(device_id) or records.get(device_id.lower())
+            if not device_details or 'lldp_table' not in device_details:
+                device_details = self.get_device_details(site_id, device_id)
 
             if device_details and 'lldp_table' in device_details:
                 lldp_table = device_details['lldp_table']
@@ -1279,9 +1286,21 @@ class UnifiApiClient:
                 return
 
             device_count = 0
+            # The site-wide records themselves, by _id and by MAC: get_lldp_info reads
+            # lldp_table from here (issue 096), so no per-device request is needed.
+            self._device_records_by_key: dict[str, dict[str, Any]] = {}
             for device in devices_response['data']:
                 mac = device.get('mac', '')
                 name = device.get('name', '')
+                if device.get('_id'):
+                    raw_id = str(device['_id'])
+                    self._device_records_by_key[raw_id] = device
+                    # A current controller's _id is a hyphenated UUID; callers pass it through
+                    # _validate_device_id, which strips every non-hex character, so the record
+                    # must also be reachable by that sanitised form.
+                    self._device_records_by_key[re.sub(r'[^a-fA-F0-9]', '', raw_id)] = device
+                if mac:
+                    self._device_records_by_key[mac.lower()] = device
 
                 # Skip if no MAC or no useful name
                 if not mac:
