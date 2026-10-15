@@ -56,9 +56,13 @@ What changed, in `ToolRunner._execute` (`src/unifi_mapper/mcp/runner.py`):
 - No cooperative stop flag. An abandoned worker finishes its current request, each bounded by
   the client's `UNIFI_TIMEOUT` and retry settings (a guard test checks every sync
   `UnifiApiClient` is built with a `timeout`). The unfinished work this can pile up is bounded
-  by the runner's own thread limiter (`max_concurrency` tokens, never anyio's default pool,
-  which the stdio transport reads stdin through), not by the number of timeouts: a call whose
-  deadline fires while it waits for a worker thread never starts one.
+  by one process worker budget (`core/utils/workers.py`, `max_concurrency` permits, never
+  anyio's default pool, which the stdio transport reads stdin through), not by the number of
+  timeouts. Both blocking hops draw on it: the runner's sync-handler hop and the async
+  port-diagnostics wrappers' `_run`. A permit is held until the worker thread exits, so an
+  abandoned worker keeps its permit and the next call cannot start a thread in its place
+  (the 0.4.0 validation council caught that an anyio `CapacityLimiter` releases on the
+  caller's cancellation, before the thread ends, and that `_run` hopped outside any budget).
 - The call log (`mcp/call_audit.py`) writes `slot_wait_ms` on every call that reached the
   execution step, including one the deadline ended while it was still queued.
 

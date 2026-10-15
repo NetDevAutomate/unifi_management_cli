@@ -215,13 +215,31 @@ def reads_context() -> dict[str, Any]:
     return {'value': _CONTEXT.get(), 'thread': threading.get_ident()}
 
 
+GATE = threading.Event()
+ENTERED = {'count': 0}
+
+
+def _blocking_collector() -> dict[str, Any]:
+    """A sync collector the way the port-diagnostics tools have them: enters, then waits."""
+    ENTERED['count'] += 1
+    GATE.wait(5)
+    return {'entered': ENTERED['count']}
+
+
+async def async_hops_via_run() -> dict[str, Any]:
+    """An ASYNC handler that hops to a thread through port_diagnostics_tools._run."""
+    from unifi_mapper.diagnostics import port_diagnostics_tools
+
+    return await port_diagnostics_tools._run(_blocking_collector)
+
+
 LOCAL_TOOLS = ''.join(
     f'  {name}:\n'
     '    module: tests.mcp.test_error_semantics\n'
     f'    handler: {name}\n'
     f'    description: local {name}\n'
     '    credentials: none\n'
-    for name in ('counting_block', 'reads_context')
+    for name in ('counting_block', 'reads_context', 'async_hops_via_run')
 )
 
 
@@ -280,15 +298,13 @@ async def test_a_timeout_during_a_sync_handler_returns_at_the_deadline(local_run
     assert HANDLER_CALLS['count'] == 1
 
 
-async def test_abandoned_sync_handlers_are_bounded_by_the_runner_s_own_limiter(
-    local_runner,
-) -> None:
+async def test_abandoned_sync_handlers_are_bounded_by_the_worker_budget(local_runner) -> None:
     """After N timeouts the live worker threads are bounded by max_concurrency, not by N.
 
-    The runner hops sync handlers on its OWN thread limiter, sized to ``max_concurrency``,
-    so a wedged controller can pile up at most that many abandoned workers, and the default
-    anyio pool the stdio transport reads stdin through is never borrowed from (issue 090,
-    the call log's limiter from issue 076 item 33 is the precedent).
+    Sync handlers hop on the server's worker budget, sized to ``max_concurrency``; a permit is
+    held until the thread exits, so a wedged controller can pile up at most that many abandoned
+    workers, and the default anyio pool the stdio transport reads stdin through is never
+    borrowed from (issue 090; the call log's own limiter from issue 076 item 33 is the precedent).
     """
     shared = anyio.to_thread.current_default_thread_limiter()
     runner = local_runner(max_concurrency=2, tool_timeout=0.05)
@@ -302,13 +318,48 @@ async def test_abandoned_sync_handlers_are_bounded_by_the_runner_s_own_limiter(
         for _ in range(6):
             tg.start_soon(one)
     assert outcomes == [ErrorCodes.TIMEOUT] * 6
-    own = runner._handler_limit()
-    assert own.total_tokens == 2
-    assert own.statistics().borrowed_tokens <= 2  # the abandoned threads, not six
+    budget = runner._worker_budget
+    assert budget.limit == 2
+    assert budget.borrowed <= 2  # the abandoned threads, not six
     assert shared.statistics().borrowed_tokens == 0  # the transport's pool is untouched
-    assert HANDLER_CALLS['count'] == 2  # the four that never got a thread never ran
-    with anyio.fail_after(2):  # the abandoned workers run to their end and free the tokens
-        while own.statistics().borrowed_tokens:
+    assert HANDLER_CALLS['count'] <= 2  # the calls that never got a permit never ran
+    with anyio.fail_after(2):  # the abandoned workers run to their end and free the permits
+        while budget.borrowed:
+            await anyio.sleep(0.02)
+
+
+async def test_an_async_handler_s_thread_hop_is_bounded_by_the_same_budget(local_runner) -> None:
+    """The port-diagnostics hop (``_run``) draws on the runner's handler budget too.
+
+    Council pass B (0.4.0): the sync-handler limiter alone does not bound the unfinished work,
+    because the async port-diagnostics wrappers hop to a thread themselves. With
+    ``max_concurrency=1`` and the first collector blocked: only one collector enters, later
+    calls time out without entering one, a quick async tool stays responsive, and releasing
+    the worker restores the budget.
+    """
+    GATE.clear()
+    ENTERED['count'] = 0
+    runner = local_runner(max_concurrency=1, tool_timeout=0.1)
+    outcomes: list[str] = []
+
+    async def one() -> None:
+        out = await runner.run('async_hops_via_run', {})
+        outcomes.append(out.structuredContent['error_code'])
+
+    try:
+        async with anyio.create_task_group() as tg:
+            for _ in range(4):
+                tg.start_soon(one)
+        assert outcomes == [ErrorCodes.TIMEOUT] * 4
+        budget = runner._worker_budget
+        assert ENTERED['count'] == 1, 'later calls must time out without entering a collector'
+        assert budget.borrowed == 1, 'the abandoned worker still holds its permit'
+        quick = await runner.run('returns_none', None)
+        assert quick.isError is False
+    finally:
+        GATE.set()
+    with anyio.fail_after(2):
+        while budget.borrowed:
             await anyio.sleep(0.02)
 
 

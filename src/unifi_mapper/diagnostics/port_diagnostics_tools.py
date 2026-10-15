@@ -50,7 +50,6 @@ never mislabelled by a generic exception handler:
 * ``READ_ONLY_VIOLATION``: a collector attempted a write (a bug)
 """
 
-import asyncio
 import contextvars
 import os
 import threading
@@ -63,6 +62,7 @@ from typing import Annotated, Any, Callable, Iterator, Optional, SupportsIndex, 
 from unifi_mapper.core.utils.auth import Credentials
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 from unifi_mapper.core.utils.readonly import ReadOnlySession, assert_guarded
+from unifi_mapper.core.utils.workers import run_blocking
 
 
 T = TypeVar('T')
@@ -492,11 +492,13 @@ async def _run(fn: Callable[..., T], *args: Any) -> T:
 
     The collector is set here, before the thread hop, so the copied context carries it into
     the worker; it is reset with its token when the call ends, however it ends. A worker the
-    runner's deadline abandoned keeps its copy of the context and its own collector.
+    runner's deadline abandoned keeps its copy of the context and its own collector. The hop
+    takes a permit from the MCP server's worker budget (issue 090), so abandoned collectors
+    are bounded with the sync handlers, not stacked on anyio's default pool.
     """
     token = _request_audit.set([])
     try:
-        return await asyncio.to_thread(_mapped, fn, *args)
+        return await run_blocking(_mapped, fn, *args)
     finally:
         _request_audit.reset(token)
 

@@ -61,6 +61,7 @@ from unifi_mapper.core.utils.redact import (
     mcp_secret_values,
     redact_traceback,
 )
+from unifi_mapper.core.utils.workers import configure_worker_budget, run_blocking
 
 
 Surface = Literal['execute_tool', 'direct']
@@ -293,11 +294,12 @@ class ToolRunner:
         self._config = config or (lambda: None)
         self._semaphore: anyio.Semaphore | None = None
         self._semaphore_loop: asyncio.AbstractEventLoop | None = None
-        # The sync handlers' own worker-thread budget, sized to max_concurrency (issue 090):
-        # an abandoned worker never borrows from anyio's default pool, which the stdio
-        # transport reads stdin through, so a wedged controller cannot stall request reading.
-        self._handler_limiter: anyio.CapacityLimiter | None = None
-        self._handler_limiter_loop: asyncio.AbstractEventLoop | None = None
+        # Every blocking hop (a sync handler here, a port-diagnostics collector in
+        # diagnostics/port_diagnostics_tools._run) draws on ONE process budget sized to
+        # max_concurrency; a permit is held until the worker thread exits, so abandoned workers
+        # are bounded, and anyio's default pool (which the stdio transport reads stdin through)
+        # is never borrowed from (issue 090).
+        self._worker_budget = configure_worker_budget(self.settings.max_concurrency)
 
     def is_direct(self, name: str) -> bool:
         """Return True if ``name`` is a catalog tool listed on the direct surface."""
@@ -310,14 +312,6 @@ class ToolRunner:
             self._semaphore = anyio.Semaphore(self.settings.max_concurrency)
             self._semaphore_loop = loop
         return self._semaphore
-
-    def _handler_limit(self) -> anyio.CapacityLimiter:
-        """Return the sync handlers' thread limiter for the running event loop."""
-        loop = asyncio.get_running_loop()
-        if self._handler_limiter is None or self._handler_limiter_loop is not loop:
-            self._handler_limiter = anyio.CapacityLimiter(self.settings.max_concurrency)
-            self._handler_limiter_loop = loop
-        return self._handler_limiter
 
     async def run(
         self, name: str, params: dict[str, Any] | None, surface: Surface = 'execute_tool'
@@ -563,19 +557,15 @@ class ToolRunner:
     async def _call(self, tool: Tool, kwargs: dict[str, Any]) -> Any:
         """Call the handler: awaited if async, else run in a worker thread.
 
-        The thread comes from the runner's own limiter (``max_concurrency`` tokens), not
-        anyio's default pool. It is abandoned when the await is cancelled (the deadline, or
-        the client going away): the caller returns at once and the worker runs to its end on
-        its own, its result dropped. The calling context (contextvars) is copied into the
-        thread.
+        The thread takes a permit from the process worker budget (``max_concurrency``
+        permits, held until the thread exits), never anyio's default pool. It is abandoned when
+        the await is cancelled (the deadline, or the client going away): the caller returns at
+        once and the worker runs to its end on its own, its result dropped. The calling context
+        (contextvars) is copied into the thread.
         """
         if tool.is_async:
             return await tool.fn(**kwargs)
-        result = await anyio.to_thread.run_sync(
-            functools.partial(tool.fn, **kwargs),
-            abandon_on_cancel=True,
-            limiter=self._handler_limit(),
-        )
+        result = await run_blocking(tool.fn, **kwargs)
         if inspect.isawaitable(result):
             return await result
         return result
