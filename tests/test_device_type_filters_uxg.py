@@ -93,3 +93,18 @@ async def test_mac_table_analyses_a_uxg_gateway() -> None:
 
     assert report.devices_analyzed == 1
     assert report.total_mac_entries == 1
+
+
+def test_a_uxg_or_udm_pro_gateway_is_assessed_for_port_naming() -> None:
+    """port_naming_capabilities kept its own device-type set (ugw, usg, udm, usw) after the
+    shared one was introduced, so a UXG or UDM Pro gateway's ports were silently skipped."""
+    from unifi_mapper.analysis.port_naming_capabilities import assess_port_naming
+
+    devices = [
+        {'type': 'uxg', 'model': 'UXGPRO', 'version': '4.1.0', 'name': 'gw'},
+        {'type': 'udmpro', 'model': 'UDMPRO', 'version': '4.1.0', 'name': 'gw2'},
+        {'type': 'uap', 'model': 'U6LR', 'version': '6.6.0', 'name': 'ap'},
+    ]
+    report = assess_port_naming(devices, timestamp='2026-10-15T00:00:00Z')
+    assessed = {d.name for d in report.devices}
+    assert assessed == {'gw', 'gw2'}, 'both gateways assessed, the AP skipped'
