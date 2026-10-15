@@ -25,7 +25,9 @@ one shared, read-only-guarded controller client that every tool borrows, and poi
 from __future__ import annotations
 
 import anyio
+import anyio.to_thread
 import argparse
+import functools
 import importlib.metadata
 import json
 import os
@@ -52,6 +54,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 from unifi_mapper.core.utils.client import SharedControllerClient, use_shared_controller_client
 from unifi_mapper.core.utils.readonly import configure_request_audit
+from unifi_mapper.diagnostics import port_diagnostics_tools as _sync_tools
 
 
 DIST_NAME = 'unifi-management-cli'
@@ -154,6 +157,14 @@ async def lifespan(server: FastMCP[Any]) -> AsyncIterator[AppState]:
             # Bounded and shielded: a slow logout must never hold the process after EOF.
             with anyio.move_on_after(SHUTDOWN_TIMEOUT_S, shield=True):
                 await shared.aclose()
+            # The sync tools' shared session (issue 021): wait for its workers, then log out.
+            with anyio.move_on_after(SHUTDOWN_TIMEOUT_S, shield=True):
+                await anyio.to_thread.run_sync(
+                    functools.partial(
+                        _sync_tools.shutdown_shared_sync_session, timeout=SHUTDOWN_TIMEOUT_S
+                    ),
+                    abandon_on_cancel=True,
+                )
 
 
 def _configure_request_audit(stack: ExitStack, call_audit: CallAuditLog | None) -> None:
