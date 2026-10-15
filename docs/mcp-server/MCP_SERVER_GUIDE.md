@@ -168,11 +168,22 @@ controller. If the controller answers a borrowed request with 401 (for example a
 password session), the shared client logs in again once and the request is retried once; a
 second 401 is reported as an error. Credentials are re-resolved for that login, but the
 config file is read into the process environment at start-up, so a token or password
-changed in the file still needs a server restart (issue 020). The sync port-diagnostics tools (`diagnose_switch_port`, `get_switch_ports`,
-`diff_port_profiles`, `get_client_history`, `get_device_events`, `get_port_counter_rates`,
-`audit_link_speeds`, `audit_port_profile_usage`, `inspect_switch_port`) keep one guarded login
-per call through the same `_readonly_sync_client()` helper (issue 021 step 1 brought
-`inspect_switch_port` onto it). The `network_api` and `protect` tools open their own guarded client per call
+changed in the file still needs a server restart (issue 020). The sync port-diagnostics tools
+(`diagnose_switch_port`, `get_switch_ports`, `diff_port_profiles`, `get_client_history`,
+`get_device_events`, `get_recent_events`, `get_port_counter_rates`, `audit_link_speeds`,
+`audit_port_profile_usage`, `inspect_switch_port`) share one guarded sync client the same
+way (issue [021](../issues/021-sync-diagnostic-path-logs-in-per-call.md)): logged in on the
+first call, the read-only guard installed straight after the login and kept through any
+re-login, logged out when the server shuts down (after a bounded wait for calls still
+running; a call still running at the bound keeps the session open). On a 401 the client
+logs in again once and replays the refused request once; a second 401 is reported as that
+request's failure. Each call's `request_audit` (and its `UNIFI_MCP_REQUEST_AUDIT` lines)
+still lists only that call's requests, including a replay: the collector travels with the
+call into its worker thread, so two concurrent calls never mix. One consequence of sharing:
+the client's LLDP neighbour-name cache (MAC to adopted-device name, built on the first
+`inspect_switch_port` or bundle) lives for the server process, so a device adopted or
+renamed afterwards resolves by name after a restart. The `network_api` and `protect` tools
+open their own guarded client per call
 (the Integration API's GET-only transport, and `ReadOnlyProtectApiClient`).
 
 `get_clients` returns one page, `{total, returned, offset, limit, next_offset, truncated,
@@ -430,8 +441,14 @@ The default is above the longest read-only tools (counter sampling blocks for ab
 and 30 s below the 300 s per-call limit the snippets below give the client: if the client's
 limit were the lower one, it would give up first and the server's `[TIMEOUT]` would never
 reach the model. If you raise one, keep the client's limit above the server's. The deadline
-interrupts an async handler; a handler that blocks the event loop runs to its end first
-(the issue records which tools and why).
+is measured from the call, so it includes any wait for one of the `UNIFI_MCP_MAX_CONCURRENCY`
+slots: a call still queued when it fires is `[TIMEOUT]` and its handler never ran (issue
+[090](../issues/090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md)). A
+synchronous handler runs in a worker thread, so it neither blocks other calls nor outlives
+the deadline from the caller's side. A timeout ends the caller's wait, not the controller
+activity: the worker that was serving the call finishes its current request (each is
+bounded by `UNIFI_TIMEOUT` and the retry settings) and its result is dropped; the call log's
+`slot_wait_ms` says how long each call queued.
 
 ### kiro-cli
 

@@ -1,8 +1,9 @@
 """inspect_switch_port runs behind the read-only guard and the opt-in request audit (issue 021).
 
 Since the issue's step 1 it takes the same path as its sibling port-diagnostics tools:
-``port_diagnostics_tools._readonly_sync_client()`` (one guarded login per call) under
-``_mapped``, keeping its own error codes and its result shape.
+``port_diagnostics_tools._readonly_sync_client()`` under ``_mapped``, keeping its own error
+codes and its result shape. Since step 2 that path is the process's one shared, guarded
+client: logged in on the first call, logged out by the server's shutdown drain.
 """
 
 import json
@@ -29,15 +30,24 @@ from unifi_mapper.diagnostics import port_diagnostics_tools as sibling_tools
 pytestmark = pytest.mark.usefixtures('block_network')
 
 
+@pytest.fixture(autouse=True)
+def fresh_shared_session() -> Any:
+    """Each test builds its own shared client and leaves none behind."""
+    sibling_tools._SHARED.reset()
+    yield
+    sibling_tools._SHARED.reset()
+
+
 @pytest.fixture
 def made(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
-    """Make ``_inspect_sync`` build an in-memory client; return the clients it built."""
+    """Make the shared client an in-memory one; return the clients built (one per test)."""
     monkeypatch.setenv('UNIFI_URL', BASE_URL)
     monkeypatch.setenv('UNIFI_CONSOLE_API_TOKEN', FAKE_TOKEN)  # pragma: allowlist secret
     clients: list[Any] = []
 
     def factory(**_: Any) -> Any:
         client = fake_client(FakeSession(default_routes()))
+        client.transport = client.session  # the FakeSession, kept visible behind the guard
         client.is_authenticated = False
         client.logged_out = False
 
@@ -69,11 +79,12 @@ async def test_inspect_switch_port_installs_the_read_only_guard(made):
 
     (client,) = made
     assert isinstance(client.session, ReadOnlySession)
-    audit = client.session.audit
-    assert audit, 'the guard recorded no requests'
-    assert {entry['method'] for entry in audit} == {'GET'}
-    assert client.logged_out is True
+    assert client.transport.calls, 'no request reached the session'
+    assert {call['method'] for call in client.transport.calls} == {'GET'}
+    assert client.logged_out is False  # the shared client stays logged in between calls
     assert result['port_idx'] == 2
+    assert sibling_tools.shutdown_shared_sync_session() is True
+    assert client.logged_out is True  # the server's shutdown drain logs it out
 
 
 async def test_inspect_switch_port_result_is_unchanged_by_the_guard(made, monkeypatch):
@@ -109,8 +120,8 @@ async def test_a_write_inside_inspect_is_refused_as_read_only_violation(made, mo
 
     assert excinfo.value.error_code == ErrorCodes.READ_ONLY_VIOLATION
     (client,) = made
-    assert client.logged_out is True
-    assert all(entry['method'] == 'GET' for entry in client.session.audit)
+    assert isinstance(client.session, ReadOnlySession)  # the shared guard stays on
+    assert all(call['method'] == 'GET' for call in client.transport.calls)  # the PUT never sent
 
 
 async def test_existing_error_codes_are_kept(made):

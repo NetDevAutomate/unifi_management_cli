@@ -4,15 +4,26 @@
 
 1. lookup, 2. mutation gate, 3. lazy catalog build, 4. alias rewrite,
 5. unknown-key check, 6. argument validation against the handler signature,
-7. credential gate by the tool's family, 8. execution under a concurrency cap and the
-per-call deadline (``UNIFI_MCP_TOOL_TIMEOUT``, 270 s by default), 9. error mapping to stable
-codes,
+7. credential gate by the tool's family, 8. execution under the per-call deadline
+(``UNIFI_MCP_TOOL_TIMEOUT``, 270 s by default) and a concurrency cap, 9. error mapping to
+stable codes,
 10. masking of every result and error text, 11. the result for the surface, then one line
 in the call log (``mcp/call_audit.py``) when the server gave the runner one.
 
 The runner never raises: every outcome is a ``CallToolResult``. On ``execute_tool``
 its single text block is exactly today's JSON envelope and ``structuredContent`` is the
 same dict; failures set ``isError`` (``ERRORS_SET_IS_ERROR``).
+
+Deadline semantics (issue 090). The deadline is measured from the call, so it covers the
+wait for a concurrency slot: a call still queued when it fires is ``[TIMEOUT]`` with its
+handler never invoked. A synchronous handler runs in a worker thread
+(``anyio.to_thread.run_sync``, abandoned on cancellation) so the event loop stays free and
+the deadline applies to the await. A timeout ends the caller's wait, not the controller
+activity: there is no cooperative stop flag, so an abandoned worker finishes its current
+request (each is bounded by the client's own timeout) and its result is dropped. The
+unfinished work this can pile up is bounded by the thread limiter, not by the number of
+timeouts: a call whose deadline fires while it waits for a worker thread never starts one.
+The time a call queued for its slot is written to the call log as ``slot_wait_ms``.
 """
 
 import anyio
@@ -219,6 +230,14 @@ class _Failure(Exception):
         )
 
 
+@dataclass
+class _Timing:
+    """When a call started and how long it queued for its slot (None: never queued)."""
+
+    started: float
+    slot_wait_ms: float | None = None
+
+
 def _log_tool_failure(name: str, exc: BaseException) -> None:
     """Log a failed tool call on stderr, its secrets masked.
 
@@ -300,11 +319,11 @@ class ToolRunner:
         Returns:
             The call result; never raises (a cancellation propagates, after it is logged).
         """
-        started = time.monotonic()
+        timing = _Timing(started=time.monotonic())
         outcome = TOOL_FAILED
         try:
             tool, kwargs = await self._prepare(name, dict(params or {}))
-            result = await self._execute(name, tool, kwargs)
+            result = await self._execute(name, tool, kwargs, timing)
             secrets = mcp_secret_values(os.environ)
             packaged = self._success(tool, result, secrets, surface)
             outcome = 'ok'
@@ -320,7 +339,7 @@ class ToolRunner:
             return self._failure(_Failure.tool_failed(e), mcp_secret_values(os.environ), surface)
         finally:
             if self.call_audit is not None:
-                await self._log_call(name, params, surface, started, outcome)
+                await self._log_call(name, params, surface, timing, outcome)
 
     def _known_keys(self, name: str) -> frozenset[str]:
         """The registered tool's parameter names (manifest, aliases and signature)."""
@@ -335,7 +354,12 @@ class ToolRunner:
         return frozenset(keys)
 
     async def _log_call(
-        self, name: str, params: dict[str, Any] | None, surface: str, started: float, outcome: str
+        self,
+        name: str,
+        params: dict[str, Any] | None,
+        surface: str,
+        timing: _Timing,
+        outcome: str,
     ) -> None:
         """Write the call's line in a worker thread, shielded, so a cancelled call is logged.
 
@@ -355,8 +379,9 @@ class ToolRunner:
                 surface=surface,
                 arg_keys=list(params or {}),
                 known_keys=self._known_keys(name) if registered else frozenset(),
-                duration_ms=(time.monotonic() - started) * 1000,
+                duration_ms=(time.monotonic() - timing.started) * 1000,
                 outcome=outcome,
+                slot_wait_ms=timing.slot_wait_ms,
             )
             if self._audit_limiter is None:
                 self._audit_limiter = anyio.CapacityLimiter(MAX_CONCURRENT_WRITES)
@@ -471,16 +496,17 @@ class ToolRunner:
 
     # --- steps 8-9 --------------------------------------------------------------------
 
-    async def _execute(self, name: str, tool: Tool, kwargs: dict[str, Any]) -> Any:
-        """Run the handler under the concurrency cap and the deadline (None: no deadline)."""
+    async def _execute(
+        self, name: str, tool: Tool, kwargs: dict[str, Any], timing: _Timing
+    ) -> Any:
+        """Run the handler under the deadline (None: none), which covers the slot wait."""
         timeout = self.settings.tool_timeout
         scope: anyio.CancelScope | None = None
         try:
-            async with self._limit():
-                if timeout is None:
-                    return await self._call(tool, kwargs)
-                with anyio.fail_after(timeout) as scope:
-                    return await self._call(tool, kwargs)
+            if timeout is None:
+                return await self._run_in_slot(tool, kwargs, timing)
+            with anyio.fail_after(timeout) as scope:
+                return await self._run_in_slot(tool, kwargs, timing)
         except CredentialsMissingError as e:
             raise _Failure.from_tool_error(e) from None
         except ToolError as e:
@@ -506,12 +532,34 @@ class ToolRunner:
             _log_tool_failure(name, e)
             raise _Failure.tool_failed(e) from None
 
+    async def _run_in_slot(self, tool: Tool, kwargs: dict[str, Any], timing: _Timing) -> Any:
+        """Take a concurrency slot, recording the wait, then call the handler.
+
+        The wait is recorded whether or not the slot is taken: a call the deadline ends while
+        it is still queued records the whole time it queued.
+        """
+        queued = time.monotonic()
+        try:
+            async with self._limit():
+                timing.slot_wait_ms = (time.monotonic() - queued) * 1000
+                return await self._call(tool, kwargs)
+        finally:
+            if timing.slot_wait_ms is None:
+                timing.slot_wait_ms = (time.monotonic() - queued) * 1000
+
     @staticmethod
     async def _call(tool: Tool, kwargs: dict[str, Any]) -> Any:
-        """Call the handler: awaited if async, else called directly (today's behaviour)."""
+        """Call the handler: awaited if async, else run in a worker thread.
+
+        The thread is abandoned when the await is cancelled (the deadline, or the client
+        going away): the caller returns at once and the worker runs to its end on its own,
+        its result dropped. The calling context (contextvars) is copied into the thread.
+        """
         if tool.is_async:
             return await tool.fn(**kwargs)
-        result = tool.fn(**kwargs)
+        result = await anyio.to_thread.run_sync(
+            functools.partial(tool.fn, **kwargs), abandon_on_cancel=True
+        )
         if inspect.isawaitable(result):
             return await result
         return result
