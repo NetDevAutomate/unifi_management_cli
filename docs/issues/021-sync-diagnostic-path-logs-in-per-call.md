@@ -1,7 +1,8 @@
 ---
 title: "The sync port-diagnostics MCP tools log in to the controller on every call"
 date: 2026-10-02
-status: open
+status: resolved
+resolved_by: 41665f0
 severity: medium
 components: [diagnostics/port_diagnostics_tools, diagnostics/inspect_port, api_client, core/utils/readonly]
 found_by: MCP uvx standards work
@@ -50,16 +51,16 @@ anything today.
    shared session, and re-login on a 401. Add a test that two concurrent calls each record
    only their own requests. Until then, keep the per-call login.
 
-## Partial resolution
+## Partial resolution (step 1)
 
-Step 1's goal, guarding `inspect_switch_port`, is done: `_inspect_sync` now calls
-`install_read_only_guard` straight after login, so its requests are refused if they would
-write (`READ_ONLY_VIOLATION`) and are recorded by `UNIFI_MCP_REQUEST_AUDIT`. It keeps its own
-client rather than `_readonly_sync_client()`/`_mapped`, so its login failure message, its
-`DEVICE_NOT_FOUND`/`INVALID_PORT` messages and its result (the golden) are unchanged.
+Step 1's goal, guarding `inspect_switch_port`, was done in two moves. First `_inspect_sync`
+called `install_read_only_guard` on a client of its own straight after login, so its requests
+were refused if they would write (`READ_ONLY_VIOLATION`) and recorded by
+`UNIFI_MCP_REQUEST_AUDIT`. Then (see Progress below) it moved onto
+`_readonly_sync_client()`/`_mapped`, the path its siblings take, keeping its login failure
+message, its `DEVICE_NOT_FOUND`/`INVALID_PORT` messages and its result (the golden).
 `tests/mcp/test_inspect_port_guard.py` covers the guard, the audit sink, a refused write and
-the kept error codes. Step 2 (one shared sync session) is still open, so this issue stays
-open.
+the kept error codes. Step 2 (one shared sync session) is resolved below.
 
 ## `get_recent_events` reads every page before it keeps the newest (0.2.0 port review)
 
@@ -91,3 +92,51 @@ messages, the `CONTROLLER_UNREACHABLE` text for a login that returns `False`,
 Still open, so the issue stays open: step 2 (one shared sync session with a per-call
 `request_audit` collector in a `ContextVar`, re-login on 401, a two-concurrent-calls test)
 and the `get_recent_events` early-stop decision above. Neither was in this lane's scope.
+
+## Resolution (2026-10-15)
+
+Step 2 is done; the 0.4.0 council (D-021) decided the design and kept the full
+`get_recent_events` read (the early-stop question above stays a separate decision, to be
+filed as its own issue).
+
+What changed (`src/unifi_mapper/diagnostics/port_diagnostics_tools.py`):
+
+- One process-wide sync `UnifiApiClient`, created lazily under a lock on the first call from
+  `Credentials.from_env()` and the `UNIFI_TIMEOUT`/`UNIFI_MAX_RETRIES`/`UNIFI_RETRY_DELAY`
+  settings (issue 087), logged in once, with the read-only guard installed straight after the
+  login and put back after any later login. Every sync tool, `inspect_switch_port` included,
+  borrows it through `_readonly_sync_client()`. A client built from other credentials or
+  settings than the environment holds is retired on the next call; a build that fails leaves
+  nothing behind, so the next call retries.
+- Per-call `request_audit`: a `contextvars.ContextVar` holds the call's collector, set by the
+  async handler before the thread hop (the context is copied into the worker) and reset with
+  its token when the call ends. The guard's audit list forwards to the current call's
+  collector, so `diagnose_switch_port`'s `request_audit` lists exactly that call's requests
+  even with concurrent calls, and a worker abandoned by the runner's deadline writes only to
+  its own.
+- Re-authentication: a 401 logs in again once and replays the refused request once (the
+  replay is checked and audited like any request); its answer is returned as it is, so there
+  is never a loop. The guard is verified after each refresh.
+- Concurrency: worker threads share the one `requests.Session` for their GET and POST reads
+  (urllib3's pool is thread-safe, the cookie jar locks itself, the client's per-request header
+  update writes constant values); only login and refresh take a lock.
+- Shutdown: the server's lifespan calls `shutdown_shared_sync_session()`, which waits (bounded)
+  for active workers, then logs out and closes; a worker still active at the bound keeps the
+  session open and the last one to finish closes it.
+
+Tests: `tests/mcp/test_shared_sync_session.py` (one login for many calls; two concurrent calls
+each record only their own requests; a 401 triggers exactly one refresh and one replay, a
+second 401 is returned, a concurrent call is unaffected; the guard is on the shared session and
+survives a refresh and a login the client runs itself; an abandoned worker cannot append to
+another call's collector or a published record; init failure resets; the drain waits, logs out,
+and leaves a still-active worker alone; the lifespan calls the drain; sixteen threads over a
+real `requests.Session` stay attributed). `tests/mcp/test_inspect_port_guard.py` pins
+`inspect_switch_port` on the shared session; its golden
+(`tests/data/inspect_switch_port_golden.json`) is unchanged.
+
+What a user sees differently: one login when the first sync tool runs and one logout when the
+server stops, instead of a pair per call, so the controller's admin log no longer fills with
+MCP logins during a session; a controller that expires the session gets one quiet re-login. The
+client's LLDP neighbour-name cache (MAC to adopted-device name) now lives for the server
+process: a device adopted or renamed afterwards resolves by name after a restart (the guide's
+per-process state section says so).
