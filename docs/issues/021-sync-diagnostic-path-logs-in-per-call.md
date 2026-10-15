@@ -75,6 +75,9 @@ source's `truncated` would turn true. Decision needed: accept that change, or ke
 read. The system log's page order has to be checked, read-only, before it could stop early
 too.
 
+Decided 2026-10-15 by the 0.4.0 planning council (D-021-EVENTS): the full read stays in 0.4.0;
+the early stop is its own decision, filed as issue 101.
+
 ## Progress
 
 2026-10-13 (`b37ec46`): step 1 is complete. `inspect_switch_port` runs inside
