@@ -77,7 +77,8 @@ class ErrorCodes:
     CONFIG_INVALID = 'CONFIG_INVALID'
     # The credentials a tool needs are not configured (no env/file keys, or the bounded
     # Keychain/1Password lookup did not finish). Raised by the MCP server, never by an MCP
-    # tool; the CLI-only SSH diagnostics raise it when UNIFI_SSH_PASSWORD is unset.
+    # tool; the SSH diagnostics (CLI, and MCP behind the opt-in) raise it when
+    # UNIFI_SSH_PASSWORD is unset.
     CONFIG_MISSING = 'CONFIG_MISSING'
     BACKUP_NOT_FOUND = 'BACKUP_NOT_FOUND'
 

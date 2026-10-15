@@ -183,7 +183,11 @@ def test_rule6_only_allow_listed_keys(stem: str, name: str, entry: dict[str, Any
 
 
 def test_rule6_strict_registry_loads_every_manifest() -> None:
-    assert len(ToolRegistry(MANIFESTS, strict=True)) == len(_raw_entries())
+    # Held active probes (issue 092) are loaded and checked but not registered, so they are
+    # counted on their own; registered + held must still be every raw entry.
+    registry = ToolRegistry(MANIFESTS, strict=True)
+    assert len(registry) + len(registry.held_active_probes()) == len(_raw_entries())
+    assert len(registry.held_active_probes()) == 4
 
 
 def test_rule7_names_are_valid_and_unique_across_files() -> None:

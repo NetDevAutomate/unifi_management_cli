@@ -6275,7 +6275,7 @@ def controller_config_changes(
     _print_dim_notes(result['notes'])
 
 
-# ─── Gateway probes (class B: SSH, CLI only) ─────────────────────────────────
+# ─── Gateway probes (class B: SSH; ping, traceroute, dns, latency-matrix also on MCP, 092) ─
 
 
 class _FlowState(StrEnum):
@@ -6488,7 +6488,7 @@ def gateway_flows_command(
         console.print(f'[dim]Showing the first {limit}.[/dim]')
 
 
-# ─── Composites (CLI only: lookup, AP counters and gateway probes) ──────────
+# ─── Composites (CLI only, 092 tier 2: lookup, AP counters and gateway probes) ────────
 
 
 def _duration_text(seconds: float) -> str:
