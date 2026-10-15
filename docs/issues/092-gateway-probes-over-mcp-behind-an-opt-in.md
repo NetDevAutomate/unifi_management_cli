@@ -195,3 +195,18 @@ What remains:
   `len(ToolRegistry(strict=True)) == ` the raw entry count; with the probes held that is 96
   against 100. The identity it means is `len(registry) + len(registry.held_active_probes())`,
   which holds.
+- **Packaged first run (2026-10-15, finishing lane).** Through the real entry point,
+  `uvx --python 3.12 --from <checkout> unifi-mcp` with `UNIFI_MCP_ALLOW_ACTIVE_PROBES=yes`
+  exits 2 with the one-line reason on stderr ("is not exactly 1: set it to 1 … or unset it")
+  and nothing on stdout, so a client that started the server with a mistyped value sees a
+  clean start-up failure rather than a corrupted stdio stream. With the variable unset the
+  same fresh server lists 86 tools on the direct surface and none of the four probes
+  (`scripts/live_check.py`, issue 039).
+
+## Tier-2 decision point (dated)
+
+Tier 2 (`gateway_http_check`, `get_active_flows`, `diagnose_client_connectivity`) is held for
+the maintainer's decision; the 0.4.0 council (pass A, D-092) kept it out of 0.4.0 until tier 1
+has run live. The decision is due once point 7 above has a `live comparison succeeded` entry,
+and no later than the 0.5.0 planning review; until then the three commands stay CLI-only and
+this issue stays open with tier 1 shipped behind the flag.
