@@ -821,8 +821,19 @@ class DNSPolicy(BaseModel):
     protocol: str | None = None
     port: int | None = None
     weight: int | None = None
+    # The same ``metadata.origin`` object an ACL rule carries (issue 084), so a user-defined
+    # policy can be told from a derived one; ``origin`` below reads through to it.
+    metadata: ACLRuleMetadata | None = None
 
     model_config = {'populate_by_name': True}
+
+    @property
+    def origin(self) -> str:
+        """``metadata.origin`` as a string (``USER_DEFINED``, ``DERIVED``), or ``''`` if unset."""
+        if self.metadata is None or self.metadata.origin is None:
+            return ''
+        origin = self.metadata.origin
+        return origin.value if isinstance(origin, ACLRuleOrigin) else origin
 
 
 # =============================================================================

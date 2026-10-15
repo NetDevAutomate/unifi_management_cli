@@ -274,3 +274,34 @@ class TestDNSReferenceTypes:
         client = _dns_client([])
         await getattr(DNSPolicyManager(client), create)('nas.lab.example', **kwargs)
         assert client.create_dns_policy.call_args.kwargs['policy_type'] == sent
+
+
+class TestDNSPolicyOrigin:
+    """``metadata.origin`` on a DNS policy, as on an ACL rule (issue 084)."""
+
+    def test_origin_is_read_from_metadata(self) -> None:
+        user = DNSPolicy.model_validate(
+            _policy('u1', 'A_RECORD', ipv4Address='192.0.2.5', metadata={'origin': 'USER_DEFINED'})
+        )
+        derived = DNSPolicy.model_validate(
+            _policy('d1', 'A_RECORD', ipv4Address='192.0.2.6', metadata={'origin': 'DERIVED'})
+        )
+        assert user.metadata is not None and user.metadata.origin == 'USER_DEFINED'
+        assert (user.origin, derived.origin) == ('USER_DEFINED', 'DERIVED')
+
+    def test_a_policy_without_metadata_has_no_origin(self) -> None:
+        policy = DNSPolicy.model_validate(_policy('n1', 'A_RECORD', ipv4Address='192.0.2.7'))
+        assert policy.metadata is None and policy.origin == ''
+
+    def test_an_unknown_origin_is_kept_as_sent(self) -> None:
+        policy = DNSPolicy.model_validate(
+            _policy('x1', 'A_RECORD', metadata={'origin': 'SOMETHING_NEW'})
+        )
+        assert policy.origin == 'SOMETHING_NEW'
+
+    def test_the_policy_round_trips_with_the_reference_keys(self) -> None:
+        sent = _policy(
+            'u1', 'A_RECORD', ipv4Address='192.0.2.5', metadata={'origin': 'USER_DEFINED'}
+        )
+        dumped = DNSPolicy.model_validate(sent).model_dump(by_alias=True, exclude_defaults=True)
+        assert dumped['metadata'] == {'origin': 'USER_DEFINED'}
