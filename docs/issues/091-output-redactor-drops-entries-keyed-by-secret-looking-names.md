@@ -1,7 +1,7 @@
 ---
 title: "The output redactor drops entries of any map keyed by a name that looks like a secret"
 date: 2026-10-15
-status: open, decision needed
+status: open
 severity: low
 components: [core/utils/redact, typer_cli._emit_json, mcp results]
 found_by: issue 066 fix (a real backup's report lost 27 documents)
@@ -102,3 +102,15 @@ The decision needed: accept the Breaking shape change for the two outputs in 0.4
 (recommended: silent loss of a firewall verdict for the network the user asked about is worse
 than a one-time shape change, and 0.3.0's consumers are a day old), or document the limitation
 and leave both as they are.
+
+## Decision (2026-10-15)
+
+Andy, verbatim: "Yes, reshape the two outputs in 0.4.0".
+
+What that binds: the recommended fix above is the fix, in 0.4.0, as lane 3 of the release
+plan. `connectivity_matrix` becomes a list of `{source, destination, verdict}` records and
+`upgradable` a list of `{device, offered}` records; the six audit probe cases become
+regression tests, inverted; the two fragile maps get their note. The change is recorded under
+Breaking in the CHANGELOG, because `--json` and MCP consumers of `diagnose firewall` /
+`firewall_check` and `get_firmware_drift` see a new shape. The issue stays open until that
+lands and is resolved with the fix hash. The alternative (document the limitation) is closed.
