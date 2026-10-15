@@ -24,6 +24,13 @@ The current release is 0.3.0; only the latest release is supported.
   `ACCESS_POINT` and `GATEWAY` with the Integration API's values (`switching`, `accessPoint`,
   `gateway`); `SWITCH` and `ROUTER` remain as aliases; `PROTECT` and `TALK` are removed (the
   reference has no such features). (Issues 081, 082.)
+- MCP: the per-call deadline (`UNIFI_MCP_TOOL_TIMEOUT`, 270 s by default) is now measured from
+  the call, before a concurrency slot is taken, so a call queued behind busy slots can return
+  `[TIMEOUT]` with its handler never run. Synchronous tools run in a worker thread from the
+  runner's own pool (sized to `UNIFI_MCP_MAX_CONCURRENCY`), so they no longer block other
+  calls, and one that overruns the deadline returns `[TIMEOUT]` at the deadline instead of a
+  late success; the abandoned worker finishes its current request and its result is dropped.
+  The MCP call log gains `slot_wait_ms`. (Issue 090.)
 
 ### Added
 
@@ -42,8 +49,22 @@ The current release is 0.3.0; only the latest release is supported.
 
 - `DeviceFeature` uses the Integration API's feature names, so its members match what live
   devices report. (Issue 082.)
+- MCP: the sync port-diagnostics tools (`diagnose_switch_port`, `get_switch_ports`,
+  `diff_port_profiles`, `get_client_history`, `get_device_events`, `get_recent_events`,
+  `get_port_counter_rates`, `audit_link_speeds`, `audit_port_profile_usage`,
+  `inspect_switch_port`) share one read-only-guarded controller session for the server
+  process: one login on the first call, one logout at shutdown after a bounded wait for running
+  calls, one re-login and one replay on a 401, instead of a login and logout per call. Each
+  call's `request_audit` still lists only its own requests. (Issue 021.)
 
 ### Fixed
+
+- A 401 or 403 part-way through a session now logs in again for real before the retry.
+  `get_devices`, `get_clients` and `get_device_details` called a login that returned without a
+  request while the client believed itself authenticated, so they reported "re-authentication
+  successful" and replayed the request on the same expired session. The device-name cache
+  `get_lldp_info` uses is rebuilt once it is older than 60 s, so a client that lives for a
+  server process sees devices adopted or renamed after its first call. (Found with issue 021.)
 
 - Topology diagrams draw a UXG gateway as the gateway in every format (it was drawn as an
   access point), `discover` and the smart port mapper no longer drop `uxg` devices, and

@@ -36,7 +36,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [018](018-read-only-tool-proposals.md) | Read-only tool proposals for the CLI and MCP | open |
 | [019](019-write-capable-cli-ideas.md) | Write-capable CLI ideas (plan, review, apply; never over MCP) | open, decision needed |
 | [020](020-mcp-protocol-follow-ups.md) | MCP protocol and runtime follow-ups | open |
-| [021](021-sync-diagnostic-path-logs-in-per-call.md) | The sync port-diagnostics MCP tools log in to the controller on every call | open, decision needed |
+| [021](021-sync-diagnostic-path-logs-in-per-call.md) | The sync port-diagnostics MCP tools log in to the controller on every call | resolved |
 | [022](022-search-tools-quality.md) | `search_tools` misses multi-word queries, tags and differently-cased categories | resolved (`0c98496`) |
 | [023](023-related-tools-hints-name-missing-tools.md) | Error hints send the model to `get_network_topology` and `vlan_info`, which don't exist | resolved (`a3efa2f`) |
 | [024](024-network-protect-tools-unguarded.md) | Network Integration API and Protect MCP tools run without a read-only guard or request audit | resolved (`e8050fe`) |
@@ -105,7 +105,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [087](087-retry-settings-skip-the-credentials-built-clients.md) | `UNIFI_MAX_RETRIES` and `UNIFI_RETRY_DELAY` do not reach clients built from `Credentials` | resolved |
 | [088](088-analyze-mac-table-reads-a-field-current-controllers-do-not-send.md) | `analyze mac-table` reads `device['mac_table']`, which current controllers do not send, so it reports nothing | resolved |
 | [089](089-trunk-detection-rule-exists-in-three-places.md) | The trunk-port rule is written three times and can disagree | resolved |
-| [090](090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md) | The MCP deadline cannot stop a synchronous handler or a worker thread it started | open |
+| [090](090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md) | The MCP deadline cannot stop a synchronous handler or a worker thread it started | resolved |
 | [091](091-output-redactor-drops-entries-keyed-by-secret-looking-names.md) | The output redactor drops entries of any map keyed by a name that looks like a secret | resolved |
 | [092](092-gateway-probes-over-mcp-behind-an-opt-in.md) | Expose the gateway SSH probes over MCP behind an explicit opt-in (tier 1 built in 0.4.0; live check and tier 2 pending) | open, decision needed |
 | [093](093-diagnose-firewall-verdicts-are-placeholder-heuristics.md) | `diagnose firewall` verdicts are placeholder heuristics, not derived from the rules | open, decision needed |
