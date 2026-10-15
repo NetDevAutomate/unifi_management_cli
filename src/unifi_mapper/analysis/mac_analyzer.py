@@ -38,7 +38,9 @@ async def analyze_mac_table(
     - When planning port security configurations
 
     How MAC analysis works:
-    - Collects MAC address tables from all switches
+    - Collects MAC address tables from all switches: the device's ``mac_table`` where the
+      controller sends one, otherwise the wired clients' ``sw_mac`` / ``sw_port`` from
+      ``stat/sta`` (current controllers send no ``mac_table``; issue 088), and says so
     - Identifies ports with excessive MAC counts (potential hubs/rogue APs)
     - Detects MAC flapping (same MAC moving between ports)
     - Tracks static vs dynamic MAC entries
@@ -96,6 +98,9 @@ async def analyze_mac_table(
 
             # Build client MAC lookup for reference (reserved for future use)
             _client_macs = {c.get('mac', '').lower() for c in clients if c.get('mac')}  # noqa: F841
+            # Where each wired client is learned, for switches that send no mac_table
+            client_rows = _client_mac_rows(clients)
+            switches_from_clients = 0
 
             # Track MAC locations for flapping detection
             mac_locations: dict[str, list[tuple[str, str, int, str]]] = defaultdict(list)
@@ -118,8 +123,13 @@ async def analyze_mac_table(
                 port_table = device.get('port_table', [])
                 port_info = {p.get('port_idx'): p for p in port_table}
 
-                # Process MAC table entries
-                mac_table = device.get('mac_table', [])
+                # Process MAC table entries: the switch's own table where the controller
+                # sends one, otherwise the wired clients learned on it (issue 088)
+                if 'mac_table' in device:
+                    mac_table = device.get('mac_table') or []
+                else:
+                    mac_table = client_rows.get(str(device.get('mac') or '').lower(), [])
+                    switches_from_clients += 1
                 port_macs: dict[int, list[str]] = defaultdict(list)
 
                 for entry in mac_table:
@@ -245,6 +255,8 @@ async def analyze_mac_table(
             recommendations = _generate_recommendations(
                 all_alerts, flapping_events, ports_exceeding
             )
+            if switches_from_clients:
+                recommendations.insert(0, _client_source_note(switches_from_clients))
 
             return MACAnalysisReport(
                 timestamp=datetime.now().isoformat(),
@@ -276,6 +288,43 @@ async def analyze_mac_table(
                 error_code=ErrorCodes.API_ERROR,
                 suggestion='Check controller status and try again',
             )
+
+
+def _client_mac_rows(clients: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Wired clients as ``mac_table`` rows, keyed by the lower-case MAC of their switch.
+
+    A current controller sends no ``mac_table`` on a switch's ``stat/device`` record (each
+    port has only ``mac_table_count``), but each wired ``stat/sta`` client names the switch
+    and port it is learned on in ``sw_mac`` and ``sw_port`` (issue 088). A wireless client,
+    or one without both fields, is learned on no switch port here.
+    """
+    rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for client in clients:
+        sw_mac = str(client.get('sw_mac') or '').lower()
+        port = client.get('sw_port')
+        if client.get('is_wired') is False or not sw_mac:
+            continue
+        if not isinstance(port, int) or isinstance(port, bool):
+            continue
+        vlan = client.get('vlan')
+        rows[sw_mac].append(
+            {
+                'mac': str(client.get('mac') or ''),
+                'port_idx': port,
+                'vlan': vlan if isinstance(vlan, int) and not isinstance(vlan, bool) else 1,
+            }
+        )
+    return rows
+
+
+def _client_source_note(switches: int) -> str:
+    """The report line that says the entries came from the client list (issue 088)."""
+    return (
+        f'MAC entries for {switches} switch(es) come from the client list (stat/sta sw_mac '
+        'and sw_port): the controller sends no mac_table for them, so a MAC that is not a '
+        'listed wired client is not counted, and a MAC moving between ports (flapping) '
+        'cannot be seen'
+    )
 
 
 def _is_trunk_port(
