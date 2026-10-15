@@ -11,6 +11,7 @@ from unifi_mapper.analysis.vlan_diagnostics import (
     PROFILE_VLAN_FIELDS,
     VLAN_LIST_KEYS,
     is_trunk_profile,
+    running_vlan_settings,
 )
 from unifi_mapper.core.utils.client import UniFiClient
 
@@ -220,16 +221,14 @@ def _is_trunk(
     profile: dict[str, Any] | None,
     override: dict[str, Any] | None,
 ) -> bool:
-    """``vlan_diagnostics.is_trunk_profile`` over the settings the port runs (issue 089).
+    """``vlan_diagnostics.is_trunk_profile`` over the settings the port runs (issues 089, 097).
 
-    The profile with the override on top, as ``diagnose vlans`` reads them. The port table
-    entry's own keys come first, so a hand-built record's ``is_trunk``, ``is_access`` or VLAN
-    lists still count, but not its copies of the profile's VLAN fields: a live port table
-    says ``forward: 'all'`` under an access profile.
+    :func:`running_vlan_settings` decides the VLAN fields (profile, then override; the row's
+    own only when no profile applies). The port table entry's other keys come first, so a
+    hand-built record's ``is_trunk``, ``is_access`` or VLAN lists still count.
     """
     settings = {key: value for key, value in port.items() if key not in PROFILE_VLAN_FIELDS}
-    settings.update(profile or {})
-    settings.update(override or {})
+    settings.update(running_vlan_settings(port, profile, override))
     return is_trunk_profile(settings)
 
 
@@ -391,20 +390,18 @@ def _running_port(
     profile: dict[str, Any] | None,
     override: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """The port table entry with the VLAN settings the port runs (issue 089).
+    """The port table entry with the VLAN settings the port runs (issues 089, 097).
 
-    :func:`_merge_profile_port`, then the profile's and the override's
-    :data:`PROFILE_VLAN_FIELDS` over the port table's copies, as ``diagnose vlans`` reads
-    them. The port table's own ``forward`` is dropped: a live controller reports
-    ``forward: 'all'`` there under access profiles. (``uplink_transparency`` keeps
-    :func:`_merge_profile_port` as it was.)
+    :func:`_merge_profile_port`, then :func:`running_vlan_settings` over the port table's
+    copies of the VLAN fields, as ``diagnose vlans`` reads them. Under a profile the row's own
+    ``forward`` is dropped (a live controller reports ``forward: 'all'`` there under access
+    profiles); with no profile the row is the running config and is kept.
     """
     merged = dict(_merge_profile_port(port, profile))
-    merged.pop('forward', None)
-    for source in (profile or {}, override or {}):
+    if profile is not None:
         for key in PROFILE_VLAN_FIELDS:
-            if key in source:
-                merged[key] = source[key]
+            merged.pop(key, None)
+    merged.update(running_vlan_settings(port, profile, override))
     return merged
 
 

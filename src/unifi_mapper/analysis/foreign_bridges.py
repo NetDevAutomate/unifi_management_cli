@@ -30,7 +30,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, cast
 from unifi_mapper.analysis.link_settings import effective_profile_id, port_override
-from unifi_mapper.analysis.vlan_diagnostics import is_trunk_profile
+from unifi_mapper.analysis.vlan_diagnostics import is_trunk_profile, running_vlan_settings
 from unifi_mapper.core.utils.client import UniFiClient
 
 
@@ -155,13 +155,12 @@ def _locate_bridge(
             profile_id, _source = effective_profile_id(device, port, idx)
             profile = profiles_by_id.get(profile_id or '')
             override = port_override(device, idx) or {}
-            if profile is None and not override:
-                continue
-            # The profile with the override on top, judged by the one trunk rule (issue 089)
-            settings = dict(profile or {})
-            settings.update(override)
-            if is_trunk_profile(settings):
-                trunks.append(str((profile or {}).get('name') or 'port override'))
+            # The settings the port runs, judged by the one trunk rule (issues 089, 097)
+            if is_trunk_profile(running_vlan_settings(port, profile, override)):
+                if profile is not None:
+                    trunks.append(str(profile.get('name') or profile_id))
+                else:
+                    trunks.append('port override' if override else 'port table')
     return attached, trunks
 
 

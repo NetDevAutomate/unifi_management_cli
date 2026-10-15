@@ -164,8 +164,7 @@ def diagnose_vlans_from_data(
                 continue
             profile_id, _source = effective_profile_id(device, port_entry, port_idx)
             profile = profiles_by_id.get(profile_id or '')
-            settings = dict(profile or {})
-            settings.update(port_override(device, port_idx) or {})
+            settings = running_vlan_settings(port_entry, profile, port_override(device, port_idx))
 
             native_vlan = _network_id_to_vlan(settings.get('native_networkconf_id'), networks)
             tagged_vlans = _tagged_vlans(settings, networks, all_vlan_ids)
@@ -260,6 +259,29 @@ PROFILE_VLAN_FIELDS = (
     'excluded_networkconf_ids',
     'voice_networkconf_id',
 )
+
+
+def running_vlan_settings(
+    port_entry: dict[str, Any],
+    profile: dict[str, Any] | None,
+    override: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The VLAN settings a port runs: profile, then override; the row only when no profile applies.
+
+    A port with a profile runs the profile's VLAN fields with the override's on top, and the
+    port table row's own copies are ignored: a live controller reports ``forward: 'all'`` on
+    rows under access profiles. A port with NO profile has no other source of its running mode,
+    so its row's :data:`PROFILE_VLAN_FIELDS` are the base and the override, if any, sits on top
+    (issue 097). Every analysis that judges a port's VLANs reads this one function, so they
+    agree (issue 089).
+    """
+    settings: dict[str, Any] = {}
+    if profile is None:
+        settings.update({k: port_entry[k] for k in PROFILE_VLAN_FIELDS if k in port_entry})
+    else:
+        settings.update(profile)
+    settings.update(override or {})
+    return settings
 
 
 def is_trunk_profile(settings: dict[str, Any]) -> bool:

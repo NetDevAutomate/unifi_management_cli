@@ -104,7 +104,7 @@ def _port(idx: int, **extra: Any) -> dict[str, Any]:
 def _switch() -> dict[str, Any]:
     """Port 1 an access profile (its row still says forward 'all'), port 2 the 'Access
     cameras' all-VLAN profile, port 3 no profile but an override with forward 'all', port 4 no
-    profile and no override."""
+    profile and no override: its row's forward 'all' is its running config (issue 097)."""
     return {
         '_id': 'switch-a',
         'name': 'Switch A',
@@ -120,7 +120,7 @@ def _switch() -> dict[str, Any]:
     }
 
 
-TRUNK_PORTS = {2, 3}
+TRUNK_PORTS = {2, 3, 4}  # port 1's row says forward 'all' too, but its access profile wins
 
 
 def test_diagnose_vlans_and_vlan_coverage_name_the_same_trunks() -> None:
@@ -141,4 +141,4 @@ def test_foreign_bridges_names_the_same_trunks() -> None:
     report = detect_foreign_bridges_from_data([_switch()], clients, PROFILES)
 
     (bridge,) = report.bridges
-    assert sorted(bridge.trunk_ports) == ['Access cameras', 'port override']
+    assert sorted(bridge.trunk_ports) == ['Access cameras', 'port override', 'port table']
