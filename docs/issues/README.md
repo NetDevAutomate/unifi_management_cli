@@ -112,4 +112,5 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [094](094-acl-create-helpers-send-filters-the-api-refuses.md) | ACL create helpers send filters without a `type` and with empty lists the API refuses | open, decision needed |
 | [095](095-metrics-collector-per-port-metrics-are-always-empty.md) | `DeviceMetricsCollector` per-port metrics are always empty: `statistics/latest` sends no ports | open, decision needed |
 | [096](096-get-lldp-info-returns-nothing-on-a-current-controller.md) | `get_lldp_info` returns no LLDP neighbours on a current controller, so diagrams draw no LLDP links | open |
-| [097](097-profile-less-port-forward-all-read-two-ways.md) | A profile-less port's own `forward: all` is honoured by one analysis and ignored by another | open, decision needed |
+| [097](097-profile-less-port-forward-all-read-two-ways.md) | A profile-less port's own `forward: all` is honoured by one analysis and ignored by another | resolved |
+| [098](098-vlan-coverage-and-diagnose-vlans-audit-different-devices.md) | `vlan-coverage` audits any device with a port table while `diagnose vlans` reads switches only, so an in-wall AP's port is a coverage finding `diagnose vlans` never sees | open |

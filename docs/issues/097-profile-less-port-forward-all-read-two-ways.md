@@ -1,7 +1,8 @@
 ---
 title: "A profile-less port's own `forward: all` is honoured by one analysis and ignored by another"
 date: 2026-10-15
-status: open, decision needed
+status: resolved
+resolved_by: 3b65ea8
 severity: low
 components: [analysis/vlan_coverage, analysis/uplink_transparency, analysis/vlan_diagnostics]
 found_by: 0.4.0 lane 2b (issue 089 live check)
@@ -46,3 +47,30 @@ why the running `forward` is not trusted.
 Related, from the same check: a `forward: customize` / `tagged_vlan_mgmt: auto` profile with no
 tagged ids is a trunk only by its name under both the old and the new rule; one live profile has
 this shape. Record the intended reading in the same decision.
+
+## Decision and resolution (2026-10-15)
+
+Decided by the 0.4.0 validation council (pass B, D-097, 4 of 5 seats, MODIFY: honour the row
+in both the trunk test and the carried-VLAN calculation, retaining profile and override
+precedence) and verified in source by the agent; the maintainer can revert before the release
+merges.
+
+`vlan_diagnostics.running_vlan_settings(row, profile, override)` is the one place the running
+VLAN settings are decided: the profile, then the override; the port table row's own VLAN
+fields only when no profile applies. `diagnose vlans`, `vlan-coverage` (`_is_trunk` and
+`_running_port`, so the carried VLANs too) and `foreign-bridges` all read it, so issue 089's
+one-rule invariant holds; `foreign-bridges` names a profile-less running trunk `port table`.
+Under a profile the row's copy of `forward` is still ignored, because a live controller reports
+`forward: 'all'` on rows under access profiles.
+
+Pinned by `tests/analysis/test_vlan_profile_less_forward.py` (the function's precedence; a
+profile-less `forward: all` row is a trunk carrying every VLAN for all three analyses while the
+access-profile and override cases are not; a profile-less `forward: all` uplink is not reported
+missing every VLAN) and the shared fixture in `tests/analysis/test_vlan_trunk_rule.py`, whose
+profile-less port is now a trunk for every analysis.
+
+What a user sees: on the maintainer's site, read-only, `diagnose vlans` names 64 trunks where it
+named 43, and `analyze vlan-coverage` audits 47 ports where it audited 39 and reports 1 finding
+where it reported 3; the three that cleared were the profile-less uplinks this issue describes.
+The `customize`/`auto` profile with no tagged ids stays a trunk only by its name under both the
+old and new rule; the name is not taken as proof of forwarding.
