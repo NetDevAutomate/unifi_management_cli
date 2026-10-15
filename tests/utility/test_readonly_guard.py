@@ -12,7 +12,6 @@ from tests.fixtures_unifi import (
     FakeSession,
     default_routes,
     fake_client,
-    fake_devices,
 )
 from types import SimpleNamespace
 from unifi_mapper.api_client import UnifiApiClient
@@ -275,20 +274,33 @@ def test_reinstalling_after_a_direct_session_swap_does_not_stack_login_wrappers(
     assert first == []
 
 
-def test_a_401_from_stat_device_is_retried_through_the_same_guard():
-    responses = iter([(401, {'meta': {'rc': 'error', 'msg': 'api.err.LoginRequired'}})])
+def test_a_401_from_stat_device_re_logs_in_and_retries_through_the_same_guard(monkeypatch):
+    """A 401 mid-session performs a REAL login (a request) and the retry stays guarded.
 
-    def devices(**_: object) -> object:
-        return next(responses, {'data': fake_devices()})
-
-    session = FakeSession(default_routes(devices=devices))
-    client = fake_client(session)
+    Before 0.4.0 the re-authentication step was ``login()``, which returns without a request
+    while ``is_authenticated`` is set, so the "retry" replayed the dead session (found by the
+    issue 021 shared-session work). The login replaces the session; the guard and its audit
+    list must follow it.
+    """
+    login_path = '/proxy/network/api/s/default/self'
+    first = FakeSession(
+        default_routes(devices=(401, {'meta': {'rc': 'error', 'msg': 'api.err.LoginRequired'}}))
+    )
+    client = fake_client(first)
     audit = install_read_only_guard(client, SITE)
+
+    second = FakeSession(
+        {**default_routes(), ('GET', rf'^{re.escape(login_path)}$'): {'data': []}}
+    )
+    monkeypatch.setattr(requests, 'Session', lambda: second)
+    monkeypatch.setattr(requests, 'get', lambda *_a, **_k: FakeResponse(200, {}))  # OS probe
 
     assert client.get_devices(SITE)['data']
 
+    assert login_path in second.paths('GET'), 'the 401 must trigger a real login request'
+    assert client.is_authenticated is True
     assert isinstance(client.session, ReadOnlySession)
-    assert audit == [STAT_DEVICE, STAT_DEVICE]
+    assert audit == [STAT_DEVICE, STAT_DEVICE]  # the failed read and the guarded retry
 
 
 @pytest.mark.parametrize(

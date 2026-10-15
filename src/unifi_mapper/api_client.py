@@ -22,6 +22,9 @@ from typing import Any, Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
+# How long get_lldp_info's MAC-to-device-name cache is trusted before it is rebuilt.
+MAC_CACHE_TTL_SECONDS = 60.0
+
 
 def _sanitize_for_logging(value: str, max_chars: int = 4) -> str:
     """Sanitize sensitive values for logging by showing only first/last few characters.
@@ -305,6 +308,16 @@ class UnifiApiClient:
                 )
         else:
             raise UniFiApiError(f'Request failed after {self.max_retries} attempts')
+
+    def _reauthenticate(self) -> bool:
+        """Log in again after the controller answered 401/403 on an established session.
+
+        :meth:`login` returns ``True`` without a request while ``is_authenticated`` is set, so
+        the session that just failed has to be marked stale first; otherwise the "retry" replays
+        the request on the same dead session (found with issue 021's shared sync session).
+        """
+        self.is_authenticated = False
+        return self.login()
 
     def login(self) -> bool:
         """Login to the UniFi Controller.
@@ -747,7 +760,7 @@ class UnifiApiClient:
                 log.warning(
                     'Authentication issue with devices endpoint. Attempting to re-authenticate...'
                 )
-                if self.login():
+                if self._reauthenticate():
                     log.info('Re-authentication successful, retrying devices retrieval')
                     response = self._retry_request(_try_get_devices)
                     if response.status_code == 200:
@@ -809,7 +822,7 @@ class UnifiApiClient:
                 log.warning(
                     'Authentication issue with clients endpoint. Attempting to re-authenticate...'
                 )
-                if self.login():
+                if self._reauthenticate():
                     log.info('Re-authentication successful, retrying clients retrieval')
                     response = self._retry_request(_try_get_clients)
                     if response.status_code == 200:
@@ -894,7 +907,7 @@ class UnifiApiClient:
                         log.warning(
                             'Authentication issue with device endpoint. Attempting to re-authenticate...'
                         )
-                        if self.login():
+                        if self._reauthenticate():
                             log.info(
                                 'Re-authentication successful, retrying device details retrieval'
                             )
@@ -1162,10 +1175,14 @@ class UnifiApiClient:
         port_lldp_info = {}
 
         try:
-            # Build MAC to device name cache if needed
-            if not hasattr(self, '_mac_to_device_cache'):
+            # Build the MAC-to-name cache when missing or older than MAC_CACHE_TTL_SECONDS.
+            # The client can now live for a whole MCP server process (issue 021), so a cache
+            # built once would miss a device adopted or renamed after the first call.
+            built_at = getattr(self, '_mac_cache_built_at', None)
+            if built_at is None or time.monotonic() - built_at > MAC_CACHE_TTL_SECONDS:
                 self._mac_to_device_cache = {}
                 self._build_mac_to_device_cache(site_id)
+                self._mac_cache_built_at = time.monotonic()
 
             # FIX: LLDP data is already available in device details under 'lldp_table'
             device_details = self.get_device_details(site_id, device_id)
