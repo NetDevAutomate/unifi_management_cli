@@ -9,6 +9,7 @@ registry holds them back: no surface lists them, ``search_tools``, ``get_tool_in
 from __future__ import annotations
 
 import asyncssh
+import inspect
 import json
 import os
 import pytest
@@ -17,8 +18,9 @@ from contextlib import asynccontextmanager
 from loguru import logger
 from pathlib import Path
 from tests.fake_controller import API, FakeController, legacy, serving
-from tests.fake_gateway import PASSWORD, REAL_CONNECT, Reply, serve, write_known_hosts
+from tests.fake_gateway import PASSWORD, REAL_CONNECT, USER, Reply, serve, write_known_hosts
 from tests.fixtures_unifi import FAKE_TOKEN
+from tests.mcp.test_execute import _names_a_write
 from typing import Any
 from unifi_mapper.analysis.latency_matrix import run_latency_matrix
 from unifi_mapper.connectivity.gateway_probe import (
@@ -444,3 +446,87 @@ def test_an_active_probe_is_never_annotated_read_only() -> None:
         False,
         True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Host-key refusal (issue 038) through execute_tool
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize('trusted', ['nothing', 'another key'])
+async def test_an_untrusted_host_key_is_the_038_error_and_no_password_is_sent(
+    gate_on: None,
+    monkeypatch: pytest.MonkeyPatch,
+    host_keys: tuple[asyncssh.SSHKey, asyncssh.SSHKey],
+    trusted: str,
+) -> None:
+    key, other = host_keys
+    known = None if trusted == 'nothing' else other
+    async with _gateway(monkeypatch, key, known, REPLIES['gateway_ping']) as (attempts, cmds, _):
+        out = await server.execute_tool('gateway_ping', CALLS['gateway_ping'])
+    envelope = out.structuredContent
+    assert out.isError is True and envelope is not None
+    assert envelope['error_code'] == 'CONTROLLER_UNREACHABLE', envelope
+    assert f'SSH connection to {USER}@{GATEWAY} refused' in envelope['message']
+    assert 'the password was not sent' in envelope['message']
+    assert f'Connect once with `ssh {USER}@{GATEWAY}` to record the key' in envelope['suggestion']
+    assert attempts == [] and cmds == []
+
+
+# ---------------------------------------------------------------------------
+# Catalog rule: only a probe module's read can carry the flag
+# ---------------------------------------------------------------------------
+
+PROBE_MODULES = frozenset(
+    {
+        'unifi_mapper.connectivity.gateway_probe',
+        'unifi_mapper.analysis.latency_matrix',
+        'unifi_mapper.diagnostics.client_connectivity',
+    }
+)
+
+
+def active_probe_rule_problems(registry: ToolRegistry) -> list[str]:
+    """Every way an ``active_probe`` entry breaks the issue 092 catalog rule, one line each."""
+    problems = []
+    for name, meta in sorted(registry.held_active_probes().items()):
+        if meta.writes_local:
+            problems.append(f'{name}: an active probe must not write a local file')
+        if _names_a_write(name):
+            problems.append(f'{name}: an active probe must not carry a writer name')
+        if meta.module not in PROBE_MODULES:
+            problems.append(f'{name}: {meta.module} is not a gateway probe module')
+        if not server.PROBE_DESCRIPTION.match(meta.description):
+            problems.append(f'{name}: description must begin "Runs <command> on the gateway"')
+    return problems
+
+
+def test_the_shipped_probes_keep_the_catalog_rule() -> None:
+    assert active_probe_rule_problems(ToolRegistry(strict=True)) == []
+
+
+def test_the_catalog_rule_catches_a_probe_that_is_not_one(tmp_path: Path) -> None:
+    (tmp_path / 'x.yaml').write_text(
+        'category: analysis\ntools:\n'
+        '  set_thing:\n    module: unifi_mapper.analysis.poe_budget\n    title: T\n'
+        '    active_probe: true\n    writes_local: true\n    description: Sets a thing\n'
+    )
+    assert active_probe_rule_problems(ToolRegistry(tmp_path, strict=True)) == [
+        'set_thing: an active probe must not write a local file',
+        'set_thing: an active probe must not carry a writer name',
+        'set_thing: unifi_mapper.analysis.poe_budget is not a gateway probe module',
+        'set_thing: description must begin "Runs <command> on the gateway"',
+    ]
+
+
+@pytest.mark.parametrize('name', sorted(PROBES))
+def test_a_probe_declares_exactly_its_handlers_parameters(name: str) -> None:
+    # test_manifest_parity's rule 2, which a default (holding) registry does not reach.
+    meta = ToolRegistry(strict=True).held_active_probes()[name]
+    signature = inspect.signature(HANDLERS[name])
+    assert set(meta.parameters) == set(signature.parameters)
+    for parameter, spec in meta.parameters.items():
+        required = signature.parameters[parameter].default is inspect.Parameter.empty
+        assert bool(spec.get('required')) is required, parameter
+        if not required:
+            assert spec.get('default') == signature.parameters[parameter].default, parameter
