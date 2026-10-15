@@ -5,6 +5,19 @@ The current release is 0.3.0; only the latest release is supported.
 
 ## [Unreleased]
 
+### Breaking
+
+- `diagnose firewall --json` and the MCP tool `firewall_check`: `vlan_matrix.connectivity_matrix`
+  was a map of source network name to `{destination name: verdict}`; it is now a list of
+  `{source, destination, verdict}` records, one per ordered pair of networks. A network whose
+  name looks like a secret (for example `IoT-PSK`) no longer loses its row and cells from the
+  CLI JSON or reads `***redacted***` over MCP. (Issue 091.)
+- The MCP tool `get_firmware_drift` and `inventory firmware-skew --json`: `upgradable` was a map
+  of device name to offered firmware; it is now a list of `{device, offered}` records. A device
+  named like a secret (for example `Guest-Token-AP`) no longer reads `***redacted***` over MCP;
+  the CLI path lost nothing before but prints the same model, so its shape changes too.
+  (Issue 091.)
+
 ### Fixed
 
 - `backup verify` (and the `verify_config_backup` tool) now reads a Network 10.x backup
