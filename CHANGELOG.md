@@ -1,11 +1,22 @@
 # Changelog
 
 All notable changes to this project. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-The current release is 0.2.0; only the latest release is supported.
+The current release is 0.3.0; only the latest release is supported.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `backup verify` (and the `verify_config_backup` tool) now reads a Network 10.x backup
+  correctly. Those backups open each collection with a marker document and their documents
+  carry no `_type`, so every document was counted under `other` and all four key sections
+  (`device`, `networkconf`, `wlanconf`, `setting`) were reported missing, a false warning on
+  a good backup. Collections are now named by those markers (older backups still by `_type`),
+  the version comes from the backup's `version` member, and the 64 collection names a Network
+  10.6.88 backup uses that the verifier did not know are now reported by name (98 of its 102). Four names the output redactor treats as secrets
+  (`api_key`, `api_key_privilege`, `ssooauthtoken`, `teleport_token`) are counted under `other`,
+  so `--json` totals match the backup. Checked on a real 10.6.88 backup: 2,540 documents in 52
+  collections, version `10.6.88`. (Issue 066.)
 
 ## [0.3.0] - 2026-10-13
 

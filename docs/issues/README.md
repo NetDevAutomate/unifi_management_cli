@@ -81,7 +81,7 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [063](063-execute-tool-result-cap.md) | No cap on `execute_tool` result size | resolved (`54b89b2`) |
 | [064](064-cli-reads-outside-the-read-only-transport.md) | CLI read commands that reach the controller outside the read-only transport | resolved (`02bec3a`) |
 | [065](065-pre-push-coverage-floor.md) | The pre-push pytest hook fails the 90% coverage floor | resolved (`1a7f2d7`) |
-| [066](066-backup-collections-unverified-on-a-real-backup.md) | `backup verify` names collections by `_type`, unverified on a real backup | open |
+| [066](066-backup-collections-unverified-on-a-real-backup.md) | `backup verify` names collections by `_type`, unverified on a real backup | resolved |
 | [067](067-mcp-tool-failure-helper-duplicated.md) | The network and Protect tools each carry a copy of the redacted-failure helper | resolved (`681497f`) |
 | [068](068-relative-xdg-config-home-is-honoured.md) | The config searches honour a relative `XDG_CONFIG_HOME`, so they can read a file under the working directory | resolved (`e4d8191`) |
 | [069](069-vlan-reports-read-tiers-without-recent-data.md) | VLAN traffic reports read rollup tiers that held no recent data, so `1w` was always empty | resolved (`0b19f3c`) |
@@ -106,3 +106,4 @@ history in October 2026 as release 0.2.0. Issues [059](059-prototype-work-not-po
 | [088](088-analyze-mac-table-reads-a-field-current-controllers-do-not-send.md) | `analyze mac-table` reads `device['mac_table']`, which current controllers do not send, so it reports nothing | open |
 | [089](089-trunk-detection-rule-exists-in-three-places.md) | The trunk-port rule is written three times and can disagree | open |
 | [090](090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md) | The MCP deadline cannot stop a synchronous handler or a worker thread it started | open |
+| [091](091-output-redactor-drops-entries-keyed-by-secret-looking-names.md) | The output redactor drops entries of any map keyed by a name that looks like a secret | open, decision needed |

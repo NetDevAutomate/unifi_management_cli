@@ -10,10 +10,14 @@ are accepted, so a crafted stream of many empty members can't hold a CPU either.
 The documents must parse cleanly: one that fails to decode, or bytes left after the last
 whole document (a truncated download), make the backup invalid.
 Documents are counted as they are decoded and none is kept, so the result never carries a
-setting, a password hash or a document's contents. Two strings do come from the backup, and
-each is checked first: the version only when it is a version number (``9.10.0``), else
-``<unrecognised>``, and a collection name only when it is one of :data:`KNOWN_COLLECTIONS`;
-every other document is counted under ``other``, so no name a document chose is echoed.
+setting, a password hash or a document's contents. Each document is counted under its
+collection as :func:`poc_decrypt.iter_collection_documents` names it: by the Network 10.x
+``select`` marker before it, else by its own ``_type`` (the older layout); markers are not
+counted. Two strings do come from the backup, and each is checked first: the version (the
+backup's ``version`` member, else a ``setting`` document's) only when it is a version number
+(``10.6.88``), else ``<unrecognised>``, and a collection name only when it is one of
+:data:`KNOWN_COLLECTIONS`; every other document is counted under ``other``, so no name a
+document chose is echoed.
 Expected failures (a foreign or corrupt file) are a result with ``valid: false`` and an
 ``errors`` list naming the stage and the exception class, never bytes or messages.
 
@@ -40,53 +44,125 @@ MAX_BACKUP_BYTES = 512 * 1024 * 1024  # the .unf file itself
 MAX_DB_BYTES = 1024 * 1024 * 1024  # the decompressed database
 MAX_GZIP_MEMBERS = 64  # gzip members in the database (a real backup's is one)
 BACKUP_SUFFIX = '.unf'
+VERSION_MEMBER = 'version'  # the zip member naming the Network version ('10.6.88')
+MAX_VERSION_BYTES = 64  # a version number is a few bytes; anything longer is not one
 # Collections whose presence shows the backup carries the network configuration.
 KEY_SECTIONS = ('device', 'networkconf', 'wlanconf', 'setting')
 # The UniFi Network application's collections that are reported by name; any other name a
-# document carries (or none) is counted under OTHER_COLLECTION.
+# collection marker or a document carries (or none) is counted under OTHER_COLLECTION.
+# The list holds the older documented names plus every collection a Network 10.6.88 backup
+# selects (measured 2026-10-15, issue 066), except four whose names look like secrets to the
+# output redactor (api_key, api_key_privilege, ssooauthtoken, teleport_token): reported by
+# name, their counts would be stripped from the CLI's and the tool's output, so they are
+# counted under OTHER_COLLECTION, which keeps the totals whole. A test pins that every name
+# here survives the redactor.
 KNOWN_COLLECTIONS = frozenset(
     {
         *KEY_SECTIONS,
         'account',
+        'acl_rule',
         'admin',
+        'admin_activity_log',
         'alarm',
+        'alert',
+        'alert_setting',
         'apgroup',
+        'appstate_log',
+        'av_group',
+        'bgp_router',
         'broadcastgroup',
         'channelplan',
+        'config_meta',
+        'content_filtering',
+        'crashlog',
         'dashboard',
+        'device_supervisor_link',
         'dhcpoption',
+        'diagnostics_config',
+        'digital_twin_layout',
+        'doh_servers',
+        'downtime',
         'dpiapp',
         'dpigroup',
         'dynamicdns',
         'event',
+        'featuremigration',
+        'firewall_policy',
+        'firewall_zone',
         'firewallgroup',
         'firewallrule',
+        'floorplan',
+        'floorplan_file',
+        'floorplan_shape',
+        'guest',
         'heatmap',
         'heatmappoint',
         'hotspot2conf',
         'hotspotop',
         'hotspotpackage',
+        'ipsalert',
+        'magic_site_to_site_vpn_cloud_config',
+        'managed_shadow_mode',
         'map',
+        'mclag_group',
         'mediafile',
+        'nat_rule',
+        'network_heartbeat',
+        'network_members_groups',
+        'network_offline',
+        'object_oriented_network_config',
+        'orchestration_applied_template_state',
+        'orchestration_state',
+        'ospf_router',
         'payment',
+        'pingtest',
         'portalfile',
         'portconf',
         'portforward',
+        'power_supervisor',
+        'predefined_firewall_rule',
         'privilege',
+        'qos_rule',
         'radiusprofile',
+        'reference_name_history',
         'rogue',
         'rogueknown',
         'routing',
         'scheduletask',
+        'sdwan_config',
+        'simple_app_block',
         'site',
+        'site_feature_migration',
         'spatialrecord',
+        'ssl_inspection_application_catalog',
+        'ssl_inspection_certificate',
+        'ssl_inspection_profile',
+        'stat',
+        'static_dns',
+        'switch_stacking',
+        'systemevent',
         'tag',
         'task',
+        'teleport_client',
+        'thread_dataset',
+        'traffic_route',
+        'traffic_rule',
+        'uisettings_backup',
+        'ulp_user',
+        'ulp_user_group',
+        'unifi_app_required_config',
+        'unifi_app_required_firewall_access',
         'user',
         'usergroup',
         'verification',
+        'version_history',
         'virtualdevice',
         'voucher',
+        'vpn_server_user',
+        'wan_sla',
+        'wifi_connectivity_event',
+        'wifiman_feedback',
+        'wireguard_user',
         'wlangroup',
     }
 )
@@ -101,18 +177,40 @@ def _error(stage: str, error: BaseException | str) -> dict[str, str]:
 
 
 def _version_of(doc: dict[str, Any]) -> str | None:
-    """The setting's version when it is a version number, ``<unrecognised>`` when it isn't."""
+    """The setting's version when it is a version number, ``<unrecognised>`` when it isn't.
+
+    A version that is not a string (Network 10.6's ``netflow`` setting carries its protocol
+    version as an int) is a feature's, not the controller's, and is ignored (None).
+    """
     version = doc.get('version') or doc.get('mgmt_cfgVersion')
-    if version is None or version == '':
+    if version is None or version == '' or not isinstance(version, str):
         return None
-    if isinstance(version, str) and _VERSION_NUMBER.fullmatch(version):
+    if _VERSION_NUMBER.fullmatch(version):
         return version
     return UNRECOGNISED_VERSION
 
 
-def _reported_name(doc: dict[str, Any]) -> str:
-    """A document's collection when it is a known one, else :data:`OTHER_COLLECTION`."""
-    name = poc_decrypt.collection_name(doc)
+def _version_member(zip_data: bytes) -> str | None:
+    """The backup's ``version`` member when it is a version number (None when absent).
+
+    The member is capped at :data:`MAX_VERSION_BYTES` before it is inflated; one that is
+    larger, unreadable, not ASCII or not a version number is ``<unrecognised>``.
+    """
+    try:
+        raw = poc_decrypt.read_zip_member(zip_data, VERSION_MEMBER, MAX_VERSION_BYTES)
+    except poc_decrypt.BackupDecryptError:
+        return UNRECOGNISED_VERSION
+    if raw is None:
+        return None
+    try:
+        text = raw.decode('ascii').strip()
+    except UnicodeDecodeError:
+        return UNRECOGNISED_VERSION
+    return text if _VERSION_NUMBER.fullmatch(text) else UNRECOGNISED_VERSION
+
+
+def _reported_name(name: Any) -> str:
+    """A collection name when it is a known one, else :data:`OTHER_COLLECTION`."""
     return name if isinstance(name, str) and name in KNOWN_COLLECTIONS else OTHER_COLLECTION
 
 
@@ -131,8 +229,9 @@ def verify_backup_bytes(data: bytes, *, max_db_bytes: int = MAX_DB_BYTES) -> dic
     Returns:
         ``valid`` (every stage worked, at least one document decoded and the stream parsed
         cleanly: no document failed to decode and no byte was left after the last one),
-        ``format`` (``bson`` when valid), ``version`` (the version number a ``setting``
-        document names, ``<unrecognised>`` when it names something else, or None),
+        ``format`` (``bson`` when valid), ``version`` (the version number the backup's
+        ``version`` member names, else the first a ``setting`` document names;
+        ``<unrecognised>`` when it names something else, or None),
         ``collections`` (each of :data:`KNOWN_COLLECTIONS` found, plus ``other``, to its
         document count),
         ``key_sections_present`` (each of :data:`KEY_SECTIONS` to bool),
@@ -161,6 +260,7 @@ def _verify(buffer: list[bytes], max_db_bytes: int) -> dict[str, Any]:
         payload = poc_decrypt.decrypt_backup(data)
         del data
         stage = 'extract'
+        member_version = _version_member(payload)
         payload = poc_decrypt.extract_db_gz(payload, max_db_bytes)
         stage = 'decompress'
         payload = poc_decrypt.decompress_db(payload, max_db_bytes, MAX_GZIP_MEMBERS)
@@ -175,10 +275,12 @@ def _verify(buffer: list[bytes], max_db_bytes: int) -> dict[str, Any]:
         return result
 
     counts: dict[str, int] = {}
-    version: str | None = None
+    version: str | None = member_version
     parse_errors: list[tuple[int, str]] = []
-    for doc in poc_decrypt.iter_bson_documents(payload, parse_errors, strict=True):
-        name = _reported_name(doc)
+    for collection, doc in poc_decrypt.iter_collection_documents(
+        payload, parse_errors, strict=True
+    ):
+        name = _reported_name(collection)
         counts[name] = counts.get(name, 0) + 1
         if name == 'setting' and version is None:
             version = _version_of(doc)

@@ -26,6 +26,7 @@ from tests.backup.synthetic_unf import (
     bson_stream,
     build_unf_bytes,
     encrypt_unf,
+    select_stream,
     zip_with,
 )
 from typer.testing import CliRunner
@@ -129,6 +130,148 @@ def test_a_missing_section_is_flagged_but_still_valid() -> None:
     assert result['valid'] is True
     assert result['key_sections_present']['wlanconf'] is False
     assert 'wlanconf' not in result['collections']
+
+
+# --- the Network 10.x layout (issue 066, measured on a 10.6.88 backup) ---------------------
+
+# The 102 collections a Network 10.6.88 backup selects, in sorted order (2026-10-15).
+NETWORK_10_6_COLLECTIONS = """
+account acl_rule admin admin_activity_log alert alert_setting apgroup api_key
+api_key_privilege appstate_log av_group bgp_router channelplan config_meta
+content_filtering crashlog device device_supervisor_link dhcpoption diagnostics_config
+digital_twin_layout doh_servers downtime dpiapp dpigroup dynamicdns featuremigration
+firewall_policy firewall_zone firewallgroup firewallrule floorplan floorplan_file
+floorplan_shape guest hotspot2conf hotspotop hotspotpackage ipsalert
+magic_site_to_site_vpn_cloud_config managed_shadow_mode mclag_group nat_rule
+network_heartbeat network_members_groups network_offline networkconf
+object_oriented_network_config orchestration_applied_template_state orchestration_state
+ospf_router payment pingtest portalfile portconf portforward power_supervisor
+predefined_firewall_rule privilege qos_rule radiusprofile reference_name_history rogue
+routing scheduletask sdwan_config setting simple_app_block site site_feature_migration
+spatialrecord ssl_inspection_application_catalog ssl_inspection_certificate
+ssl_inspection_profile ssooauthtoken stat static_dns switch_stacking systemevent task
+teleport_client teleport_token thread_dataset traffic_route traffic_rule
+uisettings_backup ulp_user ulp_user_group unifi_app_required_config
+unifi_app_required_firewall_access user usergroup verification version_history voucher
+vpn_server_user wan_sla wifi_connectivity_event wifiman_feedback wireguard_user wlanconf
+wlangroup
+""".split()
+
+
+def _select_backup(collections: dict[str, list[dict]], version: bytes | None = None) -> bytes:
+    members = None if version is None else {'version': version}
+    return build_unf_bytes(db_gz=_gz(select_stream(collections)), members=members)
+
+
+def test_a_select_layout_backup_counts_each_collection() -> None:
+    collections = {
+        'qos_rule': [{'_id': 'q1'}],
+        'portforward': [],  # a marker straight after a marker: an empty collection
+        **COLLECTIONS,
+        'device': [{'_id': 'dev1'}, {'_id': 'dev2'}],
+    }
+    result = verify_backup_bytes(_select_backup(collections))
+    assert result['valid'] is True and result['format'] == 'bson'
+    assert result['collections'] == {
+        'device': 2,
+        'networkconf': 1,
+        'qos_rule': 1,
+        'setting': 1,
+        'usergroup': 1,
+        'wlanconf': 1,
+    }  # the markers themselves are not counted, and an empty collection is not listed
+    assert all(result['key_sections_present'].values())
+    assert (result['bson_parse_errors'], result['errors']) == (0, [])
+
+
+def test_a_select_marker_outranks_a_document_s_own_type() -> None:
+    # Four of the real backup's task documents carry a _type that names no collection.
+    stream = select_stream({'task': [{'_id': 't1', '_type': 'device'}], 'device': []})
+    result = verify_backup_bytes(build_unf_bytes(db_gz=_gz(stream)))
+    assert result['collections'] == {'task': 1}
+    assert result['key_sections_present']['device'] is False
+
+
+def test_an_unknown_selected_collection_is_reported_as_other() -> None:
+    stream = select_stream({**COLLECTIONS, FAKE_SECRET: [{'_id': 'x1'}, {'_id': 'x2'}]})
+    result = verify_backup_bytes(build_unf_bytes(db_gz=_gz(stream)))
+    assert result['valid'] is True and result['collections']['other'] == 2
+    assert 'FAKE-PASSPHRASE' not in json.dumps(result)
+
+
+def test_a_control_document_that_is_not_a_select_marker_is_not_counted() -> None:
+    stream = (
+        select_stream({'device': [{'_id': 'dev1'}]})
+        + bson.encode({'__cmd': 'select', 'collection': 5})  # no string name: not a marker
+        + bson.encode({'__cmd': 'flush'})
+        + bson.encode({'_id': 'dev2'})  # still under the last valid marker
+    )
+    result = verify_backup_bytes(build_unf_bytes(db_gz=_gz(stream)))
+    assert result['valid'] is True and result['collections'] == {'device': 2}
+
+
+def test_every_collection_of_a_network_10_6_backup_is_known() -> None:
+    assert len(NETWORK_10_6_COLLECTIONS) == 102
+    # Four names look like secrets to the output redactor, so they are counted as other.
+    assert set(NETWORK_10_6_COLLECTIONS) - verify.KNOWN_COLLECTIONS == SECRET_SHAPED_NAMES
+    result = verify_backup_bytes(
+        _select_backup({n: [{'_id': n}] for n in NETWORK_10_6_COLLECTIONS})
+    )
+    assert result['collections']['other'] == len(SECRET_SHAPED_NAMES)
+    assert len(result['collections']) == 102 - len(SECRET_SHAPED_NAMES) + 1
+
+
+SECRET_SHAPED_NAMES = {'api_key', 'api_key_privilege', 'ssooauthtoken', 'teleport_token'}
+
+
+def test_every_known_collection_name_survives_the_output_redactor() -> None:
+    from unifi_mapper.core.utils.redact import strip_secrets
+
+    names = dict.fromkeys(verify.KNOWN_COLLECTIONS | {verify.OTHER_COLLECTION}, 1)
+    clean, removed = strip_secrets({'collections': names})
+    assert (removed, clean['collections']) == ([], names)
+
+
+def test_the_cli_json_keeps_every_document_count(tmp_path: Path) -> None:
+    backup = tmp_path / 'network-10.unf'
+    collections = {**COLLECTIONS, 'api_key': [{'_id': 'k1'}], 'teleport_token': [{'_id': 't1'}]}
+    backup.write_bytes(_select_backup(collections))
+    result = runner.invoke(app, ['backup', 'verify', str(backup), '--json'])
+    assert result.exit_code == 0, result.output
+    counted = json.loads(result.stdout)['collections']
+    assert sum(counted.values()) == sum(len(docs) for docs in collections.values())
+    assert counted['other'] == 2
+
+
+def test_the_backup_s_version_member_is_reported_first() -> None:
+    result = verify_backup_bytes(_select_backup(COLLECTIONS, version=b'10.6.88\n'))
+    assert result['version'] == '10.6.88'  # not the setting document's 9.10.0
+
+
+@pytest.mark.parametrize(
+    'member',
+    [FAKE_SECRET.encode(), b'10.6.88 ' + FAKE_SECRET.encode(), b'\xff\xfe', b'1' * 4096],
+    ids=['secret', 'secret after a version', 'not text', 'oversized'],
+)
+def test_a_version_member_that_is_not_a_version_number_is_unrecognised(member: bytes) -> None:
+    result = verify_backup_bytes(_select_backup(COLLECTIONS, version=member))
+    assert result['valid'] is True and result['version'] == '<unrecognised>'
+    assert 'FAKE-PASSPHRASE' not in json.dumps(result)
+
+
+def test_a_setting_s_non_string_version_is_not_the_controller_s() -> None:
+    # The real backup's netflow setting carries its protocol version as an int.
+    settings = [{'_id': 'nf', 'key': 'netflow', 'version': 9}, {'_id': 's2', 'key': 'mgmt'}]
+    result = verify_backup_bytes(_select_backup({**COLLECTIONS, 'setting': settings}))
+    assert result['valid'] is True and result['version'] is None
+
+
+def test_the_cli_reports_a_select_layout_backup(tmp_path: Path) -> None:
+    backup = tmp_path / 'network-10.unf'
+    backup.write_bytes(_select_backup(COLLECTIONS, version=b'10.6.88'))
+    result = runner.invoke(app, ['backup', 'verify', str(backup)])
+    assert result.exit_code == 0, result.output
+    assert 'networkconf' in result.stdout and 'Missing key sections' not in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -413,6 +556,14 @@ def test_parse_bson_documents_keeps_today_s_result_and_reports_errors() -> None:
     }
     assert [offset for offset, _ in errors] == [len(good)]  # the corrupt document's offset
     assert parse_bson_documents(good) == parse_bson_documents(good, [])
+
+
+def test_parse_bson_documents_groups_a_select_layout_by_its_markers() -> None:
+    stream = select_stream({'device': [{'_id': 'dev1'}], 'task': [{'_id': 't1', '_type': 'x'}]})
+    assert parse_bson_documents(stream) == {
+        'device': [{'_id': 'dev1'}],
+        'task': [{'_id': 't1', '_type': 'x'}],
+    }
 
 
 def test_the_poc_cli_still_prints_its_warnings_and_summary(

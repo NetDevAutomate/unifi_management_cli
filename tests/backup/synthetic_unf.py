@@ -1,8 +1,10 @@
 """Build synthetic UniFi ``.unf`` backups for tests (never a real backup).
 
 ``build_unf_bytes`` reproduces the controller's format: BSON documents, gzipped as
-``db.gz``, zipped, then AES-128-CBC encrypted with the controller's fixed, public backup key
-and IV. Every value in the documents is a documentation value.
+``db.gz``, zipped (with any extra members, such as ``version``), then AES-128-CBC encrypted
+with the controller's fixed, public backup key and IV. ``bson_stream`` writes the older
+``_type``-tagged layout; ``select_stream`` the Network 10.x layout, where a marker document
+opens each collection. Every value in the documents is a documentation value.
 """
 
 import bson
@@ -42,18 +44,40 @@ def bson_stream(collections: dict[str, list[dict]]) -> bytes:
     )
 
 
-def zip_with(name: str, payload: bytes) -> bytes:
-    """A zip holding one member."""
+def select_stream(collections: dict[str, list[dict]]) -> bytes:
+    """The layout Network 10.x writes (measured on a 10.6.88 backup).
+
+    Each collection opens with a ``{'__cmd': 'select', 'collection': <name>}`` marker and
+    its documents follow, carrying no ``_type``. A collection may hold no documents, so a
+    marker can be followed straight away by the next marker.
+    """
+    return b''.join(
+        bson.encode({'__cmd': 'select', 'collection': name})
+        + b''.join(bson.encode(doc) for doc in docs)
+        for name, docs in collections.items()
+    )
+
+
+def zip_with(name: str, payload: bytes, extra: dict[str, bytes] | None = None) -> bytes:
+    """A zip holding ``name`` and any ``extra`` members (a real backup also has ``version``)."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w') as zf:
         zf.writestr(name, payload)
+        for member, data in (extra or {}).items():
+            zf.writestr(member, data)
     return buffer.getvalue()
 
 
 def build_unf_bytes(
-    collections: dict[str, list[dict]] | None = None, *, db_gz: bytes | None = None
+    collections: dict[str, list[dict]] | None = None,
+    *,
+    db_gz: bytes | None = None,
+    members: dict[str, bytes] | None = None,
 ) -> bytes:
-    """A synthetic ``.unf``: ``collections`` (default :data:`COLLECTIONS`) or a raw ``db.gz``."""
+    """A synthetic ``.unf``: ``collections`` (default :data:`COLLECTIONS`) or a raw ``db.gz``.
+
+    ``members`` adds other zip members beside ``db.gz``, such as ``version``.
+    """
     if db_gz is None:
         db_gz = gzip.compress(bson_stream(COLLECTIONS if collections is None else collections))
-    return encrypt_unf(zip_with('db.gz', db_gz))
+    return encrypt_unf(zip_with('db.gz', db_gz, members))
