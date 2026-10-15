@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from .api_client import _is_mac_address
+from .core.device_types import NETWORK_DEVICE_TYPES, SWITCHING_TYPES
 from .models import DeviceInfo, PortInfo
 from .network_topology import NetworkTopology
 from .report_generator import generate_port_mapping_report
@@ -393,7 +394,7 @@ def get_devices_and_lldp_data(port_mapper, site_id):
     all_devices = devices_response['data']
 
     # Filter for network devices
-    network_devices = [d for d in all_devices if d.get('type') in ['ugw', 'usg', 'udm', 'usw']]
+    network_devices = [d for d in all_devices if d.get('type') in SWITCHING_TYPES]
 
     log.info(f'Found {len(network_devices)} network devices for smart analysis')
 
@@ -458,12 +459,8 @@ def run_port_mapper(
     log.info(f'Found {len(all_devices)} devices')
 
     # Filter for routers, switches, and APs
-    network_devices = [
-        d for d in all_devices if d.get('type') in ['ugw', 'usg', 'udm', 'usw', 'uap']
-    ]
-    routers_and_switches = [
-        d for d in all_devices if d.get('type') in ['ugw', 'usg', 'udm', 'usw']
-    ]
+    network_devices = [d for d in all_devices if d.get('type') in NETWORK_DEVICE_TYPES]
+    routers_and_switches = [d for d in all_devices if d.get('type') in SWITCHING_TYPES]
     adopted_access_points = [d for d in all_devices if d.get('type') == 'uap']
     log.info(f'Found {len(routers_and_switches)} routers and switches')
     log.info(f'Found {len(adopted_access_points)} adopted access points')

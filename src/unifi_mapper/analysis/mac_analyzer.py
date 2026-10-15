@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, cast
 from unifi_mapper.analysis.link_settings import effective_profile_id, port_override
 from unifi_mapper.analysis.vlan_diagnostics import is_trunk_profile
+from unifi_mapper.core.device_types import SWITCHING_TYPES
 from unifi_mapper.core.models import (
     MACAlert,
     MACAlertSeverity,
@@ -107,7 +108,7 @@ async def analyze_mac_table(
 
             for device in devices:
                 device_type = device.get('type', '')
-                if device_type not in ('usw', 'switch', 'udm', 'udmpro'):
+                if device_type not in SWITCHING_TYPES:
                     continue
 
                 # Filter to specific device if requested
