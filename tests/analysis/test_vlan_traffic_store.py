@@ -331,16 +331,19 @@ def test_no_tier_claims_to_smooth_peaks() -> None:
 def test_coverage_counts_rows_and_gaps_by_tier(tmp_path: Path) -> None:
     path = tmp_path / 'store.sqlite3'
     base = 1_000_000
+    # Four samples a minute apart measure a 60 s cadence (grace 5 min, so a raw gap is a pair
+    # over 10 min apart, as report rates it; issue 089), then one 20 min later.
+    last = base + 180 + GAP_THRESHOLD_SECONDS + 900
     with _writable(path) as conn:
-        for ts in (base, base + 60, base + 60 + GAP_THRESHOLD_SECONDS + 900):
+        for ts in (base, base + 60, base + 120, base + 180, last):
             _insert_raw(conn, ts, 10, 'LAN', ts, ts)
         for i in range(3):
             _insert_rollup(conn, 'hourly_rollup', 3_600_000 + i * 3600, 10, 1.0, 1.0, 2, 2, 60)
     periods = read_vlan_traffic_periods(path)
     assert periods['raw'] == {
         'earliest': base,
-        'latest': base + 60 + GAP_THRESHOLD_SECONDS + 900,
-        'count': 3,
+        'latest': last,
+        'count': 5,
         'gaps_over_5min': 1,
     }
     assert (periods['hourly']['count'], periods['hourly']['gaps_over_5min']) == (3, 0)

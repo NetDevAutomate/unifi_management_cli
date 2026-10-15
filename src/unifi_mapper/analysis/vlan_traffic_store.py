@@ -876,7 +876,12 @@ def read_vlan_traffic_report(
 
 
 def _coverage(timestamps: Iterable[int], expected_spacing: int) -> dict[str, Any]:
-    """Earliest, latest, count and gaps (spacing plus 5 min exceeded) of one tier's rows."""
+    """Earliest, latest, count and gaps (spacing plus 5 min exceeded) of one tier's rows.
+
+    For the raw tier ``expected_spacing`` is the measured grace, so the cutoff is
+    :func:`max_measured_interval`, the bound ``report`` rates a pair of samples by, and the
+    two agree on what a gap is (issue 089).
+    """
     ts = sorted(timestamps)
     if not ts:
         return {'earliest': None, 'latest': None, 'count': 0, 'gaps_over_5min': 0}
@@ -893,7 +898,9 @@ def read_vlan_traffic_periods(path: Path | None = None) -> dict[str, Any]:
 
     Returns:
         ``raw``, ``hourly`` and ``daily``, each ``{earliest, latest, count,
-        gaps_over_5min}`` (None and 0 for an empty tier).
+        gaps_over_5min}`` (None and 0 for an empty tier). A raw gap is a pair of sample
+        times further apart than :func:`max_measured_interval`, the same bound ``report``
+        rates by (issue 089); an hourly or daily gap is a bucket spacing plus 5 minutes.
 
     Raises:
         ToolError: ``NO_DATA`` for a missing store, ``API_ERROR`` for one that can't be read.
@@ -905,7 +912,7 @@ def read_vlan_traffic_periods(path: Path | None = None) -> dict[str, Any]:
 
         return {
             'raw': _coverage(
-                stamps('SELECT DISTINCT ts_utc FROM raw_samples'), DEFAULT_SAMPLE_INTERVAL_SECONDS
+                stamps('SELECT DISTINCT ts_utc FROM raw_samples'), _measured_grace(conn)
             ),
             'hourly': _coverage(stamps('SELECT DISTINCT hour_utc FROM hourly_rollup'), 3600),
             'daily': _coverage(stamps('SELECT DISTINCT day_utc FROM daily_rollup'), 86400),

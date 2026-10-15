@@ -3096,9 +3096,15 @@ def diagram(
 
     Generates a visual diagram of your UniFi infrastructure without
     performing any LLDP analysis or port name updates.
+
+    PNG and SVG need Graphviz. Without it the file is a placeholder that says why, and the
+    command prints a warning instead of reporting a diagram (exit 0, as discover does).
+    --format html needs no Graphviz.
     """
     config = state.config_path
     debug = state.debug
+    # Why the PNG or SVG renderer wrote a placeholder instead of an image (issue 086)
+    not_drawn: Optional[str] = None
 
     if not state.debug:
         setup_logging(debug=False)
@@ -3148,8 +3154,10 @@ def diagram(
         else:
             all_devices_list = cast(list[JsonDict], all_devices_response)
 
-        # Filter to UniFi infrastructure devices (gateway, switches, APs)
-        unifi_types = ['ugw', 'usg', 'udm', 'usw', 'uap']
+        # Filter to UniFi infrastructure devices (gateway, switches, APs); a UXG gateway's
+        # stat/device type is 'uxg' (issue 085)
+        gateway_types = ['ugw', 'usg', 'udm', 'uxg']
+        unifi_types = [*gateway_types, 'usw', 'uap']
         infrastructure_devices = [d for d in all_devices_list if d.get('type') in unifi_types]
 
         # Get LLDP data for devices that support it
@@ -3159,7 +3167,7 @@ def diagram(
             device_id = str(device.get('_id') or '')
             device_type = str(device.get('type') or '')
             # Only switches and gateways have LLDP data
-            if device_type in ['ugw', 'usg', 'udm', 'usw'] and device_id:
+            if device_type in [*gateway_types, 'usw'] and device_id:
                 device_lldp = port_mapper.api_client.get_lldp_info(unifi_config.site, device_id)
                 if device_lldp:
                     lldp_data[device_id] = device_lldp
@@ -3178,7 +3186,7 @@ def diagram(
             device_type = str(device_data.get('type') or '')
 
             # Count device types for debug
-            if device_type in ['ugw', 'usg', 'udm']:
+            if device_type in gateway_types:
                 routers_found += 1
             elif device_type == 'usw':
                 switches_found += 1
@@ -3260,16 +3268,23 @@ def diagram(
 
         # Generate diagram
         if format.lower() == 'png':
-            topology.generate_png_diagram(str(diagram_path))
+            not_drawn = topology.generate_png_diagram(str(diagram_path))
         elif format.lower() == 'svg':
-            topology.generate_svg_diagram(str(diagram_path))
+            not_drawn = topology.generate_svg_diagram(str(diagram_path))
         elif format.lower() == 'html':
             topology.generate_html_diagram(str(diagram_path), all_devices)
         else:
             console.print(f'❌ [bold red]Unsupported format: {format}[/bold red]')
             raise typer.Exit(1)
 
-        console.print(f'✅ [bold green]Diagram generated: {diagram_path}[/bold green]')
+        if not_drawn:
+            # Issue 075's decision: a placeholder is a warning, not a failure; the run exits 0
+            console.print(
+                f'⚠️ [bold yellow]No diagram drawn: {escape(str(diagram_path))} holds a '
+                f'placeholder. {escape(not_drawn)}[/bold yellow]'
+            )
+        else:
+            console.print(f'✅ [bold green]Diagram generated: {diagram_path}[/bold green]')
         console.print(
             f'📊 Devices: [cyan]{len(devices)}[/cyan], '
             f'Connections: [cyan]{len(topology_connections)}[/cyan]'
