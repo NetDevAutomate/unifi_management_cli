@@ -20,6 +20,7 @@ from unifi_mapper.core.models import (
     FirmwareDriftReport,
     InventoryDevice,
 )
+from unifi_mapper.core.models.analysis import FirmwareUpgradeOffer
 from unifi_mapper.core.utils.client import UniFiClient
 from unifi_mapper.core.utils.errors import ErrorCodes, ToolError
 
@@ -197,11 +198,15 @@ def firmware_drift(
             )
         )
     devices = [d for group in kept.values() for d in group]
-    upgradable = {
-        str(d['name']): str(d.get('upgrade_to_firmware') or 'available')
+    # One record per offer, never a map keyed by device name (issue 091): the redactors act
+    # on mapping keys, so a device named like a secret would lose its offer.
+    upgradable = [
+        FirmwareUpgradeOffer(
+            device=str(d['name']), offered=str(d.get('upgrade_to_firmware') or 'available')
+        )
         for d in devices
         if d.get('upgradable')
-    }
+    ]
     offline = sorted(str(d['name']) for d in devices if d.get('state') != 1)
     recommendations: list[str] = []
     for entry in models:
@@ -327,8 +332,9 @@ async def get_firmware_drift(
     """Models whose devices run mixed firmware versions (`inventory firmware-skew`). Read-only.
 
     Per skewed model: each version's devices, the newest version any of them runs and the
-    devices behind it; plus the upgrades the controller currently offers and the kept devices
-    that are not connected (their version is the last one reported).
+    devices behind it; plus the upgrades the controller currently offers (``upgradable``, one
+    ``{device, offered}`` record per device) and the kept devices that are not connected
+    (their version is the last one reported).
 
     Args:
         device_type: ``all`` or one type to keep.

@@ -837,9 +837,18 @@ class FirmwareDriftModel(BaseModel):
     """One model whose devices run more than one firmware version."""
 
     model: str = Field(description='Model code')
+    # Keyed by firmware version (controller vocabulary, never an operator-chosen name), so
+    # neither output redactor can match a key; the device names are list items (issue 091).
     versions: dict[str, list[str]] = Field(description='Firmware version -> device names')
     fleet_newest: str = Field(description='The newest version any device of this model runs')
     devices_behind: list[str] = Field(description='Devices on an older version than fleet_newest')
+
+
+class FirmwareUpgradeOffer(BaseModel):
+    """One kept device and the firmware the controller offers it."""
+
+    device: str = Field(description='Device name')
+    offered: str = Field(description="The offered version, or 'available' when none is named")
 
 
 class FirmwareDriftReport(BaseModel):
@@ -852,8 +861,11 @@ class FirmwareDriftReport(BaseModel):
     devices_analyzed: int = Field(description='Devices the filter kept')
     models_with_skew: int = Field(description='Models running more than one version')
     models: list[FirmwareDriftModel] = Field(description='The skewed models, by model code')
-    upgradable: dict[str, str] = Field(
-        description='Device name -> the firmware the controller offers, for kept devices'
+    # A list of records, not a map keyed by device name: the redactors act on mapping keys,
+    # so a device named like a secret ('Guest-Token-AP') lost its offer over MCP (issue 091).
+    upgradable: list[FirmwareUpgradeOffer] = Field(
+        description='The upgrades the controller offers: one record per kept device that has '
+        'one, in inventory order (by type, then name)'
     )
     offline: list[str] = Field(description='Kept devices the controller reports as not connected')
     recommendations: list[str] = Field(default_factory=list, description='Recommendations')

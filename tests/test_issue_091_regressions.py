@@ -4,9 +4,12 @@ The output redactors (``strip_secrets`` on the CLI's ``--json``, ``mask_secrets`
 runner) act on mapping KEYS, which is right for controller objects and wrong for a report
 keyed by names the operator chose. The 2026-10-15 audit drove six cases through the real
 paths over the fake controller and proved loss in the two name-keyed outputs. 0.4.0 reshapes
-both into lists of records, and these are the audit's cases inverted: each one now asserts
-that a network named ``IoT-PSK`` keeps its name and its verdicts.
+both into lists of records, and these are the audit's six cases inverted: each one now
+asserts that a network named ``IoT-PSK`` and a device named ``Guest-Token-AP`` keep their
+names and their values.
 
+1. ``inventory firmware-skew --json`` (no redactor on this path; it shares the shape).
+2. ``get_firmware_drift`` through the MCP runner, both surfaces.
 3. ``diagnose firewall Office IoT-PSK --json`` through ``_emit_json``.
 4. ``firewall_check`` through the MCP runner, both surfaces.
 5. ``snapshot_stp_topology``: keyed by device id, so a secret-looking switch name survives.
@@ -30,6 +33,7 @@ from unifi_mapper.typer_cli import app
 
 
 runner = CliRunner()
+LOOKALIKE_DEVICE = 'Guest-Token-AP'
 LOOKALIKE_NETWORK = 'IoT-PSK'
 GATE_ENV = {
     'UNIFI_URL': 'https://192.0.2.1',
@@ -79,6 +83,60 @@ def _untouched_by_both_redactors(payload: Any) -> None:
     stripped, removed = strip_secrets(payload)
     assert stripped == payload and removed == []
     assert _mcp_masked(payload) == payload
+
+
+# --- the firmware drift report: upgradable is a list of {device, offered} records -----------
+
+DEVICES = [
+    {'_id': 'd1', 'mac': '02:00:00:00:00:01', 'type': 'uap', 'model': 'U7PG2', 'state': 1,
+     'name': LOOKALIKE_DEVICE, 'version': '6.5.28', 'upgradable': True,
+     'upgrade_to_firmware': '6.6.77'},
+    {'_id': 'd2', 'mac': '02:00:00:00:00:02', 'type': 'uap', 'model': 'U7PG2', 'state': 1,
+     'name': 'Hall-AP', 'version': '6.5.28', 'upgradable': True,
+     'upgrade_to_firmware': '6.6.77'},
+    {'_id': 'd3', 'mac': '02:00:00:00:00:03', 'type': 'uap', 'model': 'U7PG2', 'state': 1,
+     'name': 'Kitchen-AP', 'version': '6.6.77', 'upgradable': False},
+]  # fmt: skip
+OFFERED = [
+    {'device': LOOKALIKE_DEVICE, 'offered': '6.6.77'},
+    {'device': 'Hall-AP', 'offered': '6.6.77'},
+]
+
+
+def test_cli_firmware_skew_json_lists_every_offered_upgrade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Case 1: the CLI prints the drift report through its own JSON path, in the new shape."""
+    from unifi_mapper import inventory_cli
+    from unifi_mapper.analysis.device_inventory import categorize_devices
+
+    class _NoClient:
+        def logout(self) -> None:
+            return None
+
+    def no_client(config_path: Any = None) -> tuple[_NoClient, str]:
+        return _NoClient(), 'default'
+
+    monkeypatch.setattr(inventory_cli, 'get_api_client', no_client)
+    monkeypatch.setattr(
+        inventory_cli, 'fetch_and_categorize_devices', lambda _c, _s: categorize_devices(DEVICES)
+    )
+    result = runner.invoke(app, ['inventory', 'firmware-skew', '--json'])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)['upgradable'] == OFFERED
+
+
+async def test_mcp_get_firmware_drift_keeps_the_secret_looking_device(
+    shipped: ToolRunner,
+) -> None:
+    """Case 2: through the real runner's masking, Guest-Token-AP keeps its offered version."""
+    controller = FakeController({f'{API}/stat/device': legacy(DEVICES)})
+    async with serving(controller):
+        results = await _through_runner(shipped, 'get_firmware_drift', {})
+    for result in results:
+        assert result['upgradable'] == OFFERED
+        assert REDACTED not in json.dumps(result)
+    assert controller.methods == {'GET'}
 
 
 # --- the firewall check: connectivity_matrix is a list of {source, destination, verdict} -----
@@ -172,3 +230,13 @@ async def test_the_matrix_records_are_out_of_the_pair_rules_reach() -> None:
     assert stripped['rows'] == [{'name': 'Guest-Token'}]
     masked = mask_secrets({'rows': [{'name': 'Guest-Token', 'value': 'up'}]}, frozenset())
     assert masked['rows'][0]['value'] == REDACTED
+
+
+def test_the_upgrade_records_are_out_of_the_pair_rules_reach() -> None:
+    """Case 6, the drift report: both redactors keep every field of every offer record."""
+    from unifi_mapper.analysis.device_inventory import categorize_devices, firmware_drift
+
+    drift = firmware_drift(categorize_devices(DEVICES), {'all'}, timestamp='t')
+    payload = drift.model_dump(mode='json')
+    assert payload['upgradable'] == OFFERED
+    _untouched_by_both_redactors(payload)
