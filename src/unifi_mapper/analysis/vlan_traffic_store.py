@@ -876,11 +876,13 @@ def read_vlan_traffic_report(
 
 
 def _coverage(timestamps: Iterable[int], expected_spacing: int) -> dict[str, Any]:
-    """Earliest, latest, count and gaps (spacing plus 5 min exceeded) of one tier's rows.
+    """Earliest, latest, count and gaps of one tier's rows.
 
-    For the raw tier ``expected_spacing`` is the measured grace, so the cutoff is
-    :func:`max_measured_interval`, the bound ``report`` rates a pair of samples by, and the
-    two agree on what a gap is (issue 089).
+    A gap is one pair of consecutive samples further apart than ``expected_spacing`` plus
+    :data:`GAP_THRESHOLD_SECONDS`. For the raw tier ``expected_spacing`` is the measured grace,
+    so that bound is :func:`max_measured_interval`, the one ``report`` rates a pair of samples
+    by, and the two agree on what a gap is (issue 089). The key is still ``gaps_over_5min``
+    for the readers that have it.
     """
     ts = sorted(timestamps)
     if not ts:

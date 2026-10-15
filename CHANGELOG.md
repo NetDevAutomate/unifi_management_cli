@@ -29,8 +29,11 @@ The current release is 0.3.0; only the latest release is supported.
   `[TIMEOUT]` with its handler never run. Synchronous tools run in a worker thread from the
   runner's own pool (sized to `UNIFI_MCP_MAX_CONCURRENCY`), so they no longer block other
   calls, and one that overruns the deadline returns `[TIMEOUT]` at the deadline instead of a
-  late success; the abandoned worker finishes its current request and its result is dropped.
-  The MCP call log gains `slot_wait_ms`. (Issue 090.)
+  late success. The abandoned handler is not interrupted: it runs on in its thread, through
+  any further controller requests it makes, until it returns, and its result is dropped; it
+  keeps its worker-budget permit until then, so repeated timeouts can hold slots. At shutdown
+  the server waits up to 3 s for such workers and otherwise leaves the controller session open
+  rather than closing it under them. The MCP call log gains `slot_wait_ms`. (Issue 090.)
 - `diagnose firewall` and the MCP tool `firewall_check` no longer report an `allow` or `deny`
   verdict. The verdict and every `connectivity_matrix` cell are `not assessed`, and a new
   `basis` field says what was checked: the enabled rules whose protocol and destination port
@@ -67,7 +70,12 @@ The current release is 0.3.0; only the latest release is supported.
   and not idempotent, run as the SSH user only after the gateway's host key is verified, and are
   bounded by the ordinary per-call deadline. Any other value of the variable (`true`, `yes`,
   `0`, a padded `1`) stops the server with exit 2 rather than falling back, because it gates
-  agent-triggered SSH to the gateway. `gateway http`, `gateway flows`, `diagnose bandwidth` and
+  agent-triggered SSH to the gateway. The opt-in is a switch, not an allow-list: once on, the
+  agent chooses the probe targets at call time (any host or name the gateway can reach), so turn
+  it on only for an agent you would let run `ping` and `traceroute` from the gateway yourself.
+  The tools are pinned against a fake gateway; the comparison against the CLI's SSH path on a
+  live gateway has not been run yet (no SSH password in the maintainer's environment), so the
+  issue stays open until it has. `gateway http`, `gateway flows`, `diagnose bandwidth` and
   `diagnose client-connectivity` stay CLI-only. (Issue 092; tier 2 is a pending decision.)
 
 ### Deprecated
@@ -94,6 +102,13 @@ The current release is 0.3.0; only the latest release is supported.
 
 ### Fixed
 
+- MCP: a controller session that expires mid-run is renewed by exactly one login, and no tool
+  request can slip past the read-only guard while that login is in flight. The client used to
+  swap in its new, still-unauthenticated session before logging in on it, with the guard put
+  back only afterwards, so a concurrent tool call in that window ran on an unguarded, unaudited
+  session; and a call that started during the renewal logged in again on its own. The new
+  session is now handed over only once authenticated, already behind the guard, and a tool's
+  own login waits for the renewal instead of adding another.
 - Diagrams and the smart port mapper get their LLDP links back on a current controller.
   `get_lldp_info` read each switch's neighbours through a per-device request keyed by a device
   id the client had stripped of its hyphens (a current controller's ids are UUIDs), so the
