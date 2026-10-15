@@ -17,12 +17,14 @@ same dict; failures set ``isError`` (``ERRORS_SET_IS_ERROR``).
 Deadline semantics (issue 090). The deadline is measured from the call, so it covers the
 wait for a concurrency slot: a call still queued when it fires is ``[TIMEOUT]`` with its
 handler never invoked. A synchronous handler runs in a worker thread
-(``anyio.to_thread.run_sync``, abandoned on cancellation) so the event loop stays free and
-the deadline applies to the await. A timeout ends the caller's wait, not the controller
-activity: there is no cooperative stop flag, so an abandoned worker finishes its current
-request (each is bounded by the client's own timeout) and its result is dropped. The
-unfinished work this can pile up is bounded by the thread limiter, not by the number of
-timeouts: a call whose deadline fires while it waits for a worker thread never starts one.
+(:func:`unifi_mapper.core.utils.workers.run_blocking`, abandoned on cancellation) so the
+event loop stays free and the deadline applies to the await. A timeout ends the caller's wait,
+not the controller activity: there is no cooperative stop flag, so an abandoned worker runs on
+through any further requests its handler makes (each bounded by the client's own timeout) until
+the handler returns, and its result is dropped. The unfinished work this can pile up is bounded
+by the worker budget (one permit per running or abandoned worker, sized to the concurrency
+limit), not by the number of timeouts: a call whose deadline fires while it waits for a permit
+never starts a worker.
 The time a call queued for its slot is written to the call log as ``slot_wait_ms``.
 """
 

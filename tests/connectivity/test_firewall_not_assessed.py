@@ -132,3 +132,27 @@ def test_the_help_text_does_not_promise_a_verdict() -> None:
     text = ' '.join(out.output.split())  # the help wraps across lines
     assert 'allow/deny' not in text
     assert 'not assessed' in text
+
+
+@pytest.mark.usefixtures('_env')
+async def test_the_basis_lists_the_enabled_matching_rules_in_evaluation_order() -> None:
+    """Council pass C: the basis must be checkable, not only the absence of a verdict. Two
+    enabled rules out of index order and one disabled rule: the enabled ones are listed in
+    evaluation order (ascending rule_index), the disabled one is not, and the protocol/port
+    filter still applies (a UDP-only rule does not match TCP 443)."""
+    rules = [
+        {**RULES[0], '_id': 'r-late', 'name': 'Late', 'rule_index': 3000},
+        {**RULES[0], '_id': 'r-early', 'name': 'Early', 'rule_index': 1000},
+        {**RULES[0], '_id': 'r-off', 'name': 'Disabled', 'rule_index': 500, 'enabled': False},
+        {**RULES[0], '_id': 'r-udp', 'name': 'UDP only', 'rule_index': 100, 'protocol': 'udp'},
+    ]
+    controller = FakeController(
+        {**_controller().routes, f'{API}/rest/firewallrule': legacy(rules)}
+    )
+    async with serving(controller):
+        result = await firewall_check(
+            source='Office', destination='IoT', protocol='tcp', port='443'
+        )
+    assert [r['name'] for r in result['matching_rules']] == ['Early', 'Late']
+    assert result['rule_evaluation_order'] == [1000, 3000]
+    assert result['verdict'] == 'not assessed' and result['basis']

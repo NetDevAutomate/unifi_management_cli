@@ -289,9 +289,9 @@ class ACLManager:
         """
         if source_macs:
             raise ValueError(
-                'MAC addresses belong to a MAC rule (type MAC, a networkIdFilter and a '
-                'MAC_ADDRESSES filter), not to an IPV4 rule; create_block_rule builds IPV4 '
-                'rules only (issue 094).'
+                'MAC addresses need a MAC-type ACL rule (type MAC with a networkIdFilter and '
+                'a MAC_ADDRESSES filter); create_block_rule builds IPV4 rules only and there is '
+                'no MAC-rule helper yet (planned for 0.5.0). Leave source_macs unset.'
             )
         source_filter = self._typed_filter(source_ips, source_ports)
         destination_filter = self._typed_filter(destination_ips, destination_ports)

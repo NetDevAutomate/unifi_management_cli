@@ -446,8 +446,11 @@ slots: a call still queued when it fires is `[TIMEOUT]` and its handler never ra
 [090](../issues/090-mcp-deadline-cannot-stop-sync-handlers-or-worker-threads.md)). A
 synchronous handler runs in a worker thread, so it neither blocks other calls nor outlives
 the deadline from the caller's side. A timeout ends the caller's wait, not the controller
-activity: the worker that was serving the call finishes its current request (each is
-bounded by `UNIFI_TIMEOUT` and the retry settings) and its result is dropped. Every blocking
+activity: the abandoned handler is not interrupted and runs on in its thread, through any
+further controller requests it makes (each bounded by `UNIFI_TIMEOUT` and the retry settings),
+until it returns; its result is dropped, never delivered. At
+shutdown the server waits up to 3 s for such workers and otherwise exits leaving the
+controller session open rather than closing it under them; restarting clears them. Every blocking
 hop, a synchronous handler or a port-diagnostics collector, takes a permit from one worker
 budget sized to `UNIFI_MCP_MAX_CONCURRENCY`; the permit is held until the worker thread exits,
 not until the caller stops waiting, so at most that many abandoned workers can exist however
