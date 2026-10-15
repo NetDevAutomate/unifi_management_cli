@@ -3,6 +3,7 @@
 import pytest
 import re
 import requests
+import threading
 from tests.fixtures_unifi import (
     BASE_URL,
     FAKE_PW,
@@ -14,6 +15,7 @@ from tests.fixtures_unifi import (
     fake_client,
 )
 from types import SimpleNamespace
+from typing import Any
 from unifi_mapper.api_client import UnifiApiClient
 from unifi_mapper.core.utils.readonly import (
     ReadOnlySession,
@@ -362,3 +364,40 @@ def test_a_network_path_reference_is_refused_not_collapsed(path):
         assert 'network-path reference' in detail
     allowed, detail = get_only_request_allowed('GET', path)
     assert allowed is False and 'network-path reference' in detail
+
+
+def test_the_client_s_session_is_never_raw_while_a_login_is_in_flight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Council pass B, verify item (a): ``_perform_login`` replaced ``client.session`` with the
+    new ``requests.Session`` before authenticating on it, and the guard came back only after
+    the login returned; a worker reading ``client.session`` meanwhile got the raw session,
+    unguarded and unaudited."""
+    client = fake_client(FakeSession(default_routes()))
+    install_read_only_guard(client, SITE)
+    second = FakeSession(
+        {**default_routes(), ('GET', r'^/proxy/network/api/s/default/self$'): {'data': []}}
+    )
+    in_login, finish = threading.Event(), threading.Event()
+    inner = second._respond
+
+    def blocking(*args: Any, **kwargs: Any) -> FakeResponse:
+        in_login.set()
+        assert finish.wait(5)
+        return inner(*args, **kwargs)
+
+    second._respond = blocking  # type: ignore[method-assign]
+    monkeypatch.setattr(requests, 'Session', lambda: second)
+    monkeypatch.setattr(requests, 'get', lambda *_a, **_k: FakeResponse(200, {}))  # OS probe
+    client.is_authenticated = False
+
+    worker = threading.Thread(target=client.login)
+    worker.start()
+    assert in_login.wait(5)
+    seen_during_login = client.session  # what a concurrent worker would send through now
+    finish.set()
+    worker.join(5)
+
+    assert isinstance(seen_during_login, ReadOnlySession)
+    assert isinstance(client.session, ReadOnlySession)
+    assert client.is_authenticated is True

@@ -141,7 +141,8 @@ class _Record:
     active: int = 0
     retired: bool = False
     closing: bool = False
-    refresh_lock: threading.Lock = field(default_factory=threading.Lock)
+    # Re-entrant: refresh() holds it across api.login(), whose wrapper takes it again.
+    refresh_lock: threading.RLock = field(default_factory=threading.RLock)
 
 
 class _RawSession:
@@ -292,14 +293,34 @@ def _adopt_session(record: _Record) -> None:
     record.api.session = record.guarded
 
 
+def _publish_session(record: _Record, session: Any) -> None:
+    """Receive a freshly authenticated session from the client: swap the raw one, keep the guard.
+
+    ``api.session`` stays ``record.guarded`` throughout; only ``record.raw`` changes, in one
+    store, so a worker mid-request finishes on the session it started on and the next request
+    from any worker uses the new one. No thread ever sees a raw ``requests.Session``.
+    """
+    record.raw = session
+    if record.api.session is not record.guarded:
+        record.api.session = record.guarded
+
+
 def _guard_after_login(record: _Record, original: Callable[..., Any]) -> Callable[..., Any]:
-    """Wrap a login method so the guard is back on the client however the login ends."""
+    """Wrap a login method: one login at a time, and the guard back however the login ends.
+
+    The lock is the record's ``refresh_lock``, so a worker whose getter found
+    ``is_authenticated`` False while :meth:`_SharedSyncSession.refresh` is logging in waits
+    for that login and then takes ``login()``'s already-authenticated short-cut, instead of
+    logging in beside it (a second session per concurrent worker, and a controller that
+    rate-limits logins).
+    """
 
     def login_then_guard(*args: Any, **kwargs: Any) -> Any:
-        try:
-            return original(*args, **kwargs)
-        finally:
-            _adopt_session(record)
+        with record.refresh_lock:
+            try:
+                return original(*args, **kwargs)
+            finally:
+                _adopt_session(record)
 
     return login_then_guard
 
@@ -449,6 +470,7 @@ class _SharedSyncSession:
         record = _Record(api=api, site=creds.site, key=key, raw=api.session)
         record.guarded = _SharedSession(record, creds.site, _CallAudit())
         api.session = record.guarded
+        api._publish_session = lambda session: _publish_session(record, session)
         for name in _LOGIN_METHODS:
             method = getattr(api, name, None)
             if callable(method):

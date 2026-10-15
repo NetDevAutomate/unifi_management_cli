@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 from tests.fixtures_unifi import (
     API,
+    API_RE,
     BASE_URL,
     FAKE_TOKEN,
     NAS_MAC,
@@ -535,3 +536,86 @@ def test_concurrent_reads_through_one_requests_session_stay_attributed(
     assert adapter.count == 16 * 30
     for n, collector in collectors.items():
         assert [c['path'] for c in collector] == [f'{API}/stat/sta/{n}-{i}' for i in range(30)]
+
+
+# --- council pass B, verify item (a): a login in flight never exposes a raw session, and a
+# worker's own login waits for the refresh instead of logging in beside it
+
+
+def _real_client_record(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """The shared record around a real UnifiApiClient (its real login and _perform_login)."""
+    monkeypatch.setenv('UNIFI_URL', BASE_URL)
+    monkeypatch.setenv('UNIFI_CONSOLE_API_TOKEN', FAKE_TOKEN)  # pragma: allowlist secret
+    monkeypatch.setattr(
+        api_client, 'UnifiApiClient', lambda **_: fake_client(FakeSession(default_routes()))
+    )
+    return tools._SHARED.acquire()
+
+
+def _blocking_login_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[FakeSession, threading.Event, threading.Event, list[int]]:
+    """A second session whose auth GET blocks until released; every Session() is counted."""
+    second = FakeSession({**default_routes(), ('GET', rf'^{API_RE}/self$'): {'data': []}})
+    in_login, finish = threading.Event(), threading.Event()
+    inner = second._respond
+
+    def blocking(*args: Any, **kwargs: Any) -> Any:
+        in_login.set()
+        assert finish.wait(5)
+        return inner(*args, **kwargs)
+
+    second._respond = blocking  # type: ignore[method-assign]
+    built: list[int] = []
+
+    def session_factory() -> FakeSession:
+        built.append(1)
+        return second
+
+    monkeypatch.setattr(api_client.requests, 'Session', session_factory)
+    monkeypatch.setattr(api_client.requests, 'get', lambda *_a, **_k: FakeResponse(200, {}))
+    return second, in_login, finish, built
+
+
+def test_the_shared_client_s_session_stays_guarded_while_a_refresh_logs_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _real_client_record(monkeypatch)
+    second, in_login, finish, _ = _blocking_login_session(monkeypatch)
+    before = record.raw
+
+    refresher = threading.Thread(target=tools._SHARED.refresh, args=(record, record.generation))
+    refresher.start()
+    assert in_login.wait(5)
+    seen_during_login = record.api.session
+    raw_during_login = record.raw
+    finish.set()
+    refresher.join(5)
+
+    assert seen_during_login is record.guarded, 'a worker must never pick up the raw session'
+    assert raw_during_login is before, 'the old session serves until the new one is logged in'
+    assert record.raw is second and record.api.session is record.guarded
+    tools._SHARED.release(record)
+
+
+def test_a_worker_s_own_login_waits_for_the_refresh_instead_of_logging_in_beside_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _real_client_record(monkeypatch)
+    _, in_login, finish, built = _blocking_login_session(monkeypatch)
+    api = record.api
+
+    refresher = threading.Thread(target=tools._SHARED.refresh, args=(record, record.generation))
+    refresher.start()
+    assert in_login.wait(5)
+    # A worker whose getter finds is_authenticated False calls login() itself.
+    worker = threading.Thread(target=api.get_devices, args=(SITE,))
+    worker.start()
+    time.sleep(0.05)  # long enough for an unserialised login to have started
+    finish.set()
+    refresher.join(5)
+    worker.join(5)
+
+    assert len(built) == 1, 'one login per expiry: the worker must wait for the refresh'
+    assert api.is_authenticated is True
+    tools._SHARED.release(record)

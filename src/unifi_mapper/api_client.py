@@ -365,6 +365,17 @@ class UnifiApiClient:
             log.error(f'Unexpected error during login: {e}')
             raise UniFiApiError(f'Login failed: {e}')
 
+    def _publish_session(self, session: requests.Session) -> None:
+        """Make ``session`` the client's session, in one store.
+
+        ``_perform_login`` builds its session locally and hands it over here once it is
+        authenticated. A guard (the read-only guard, the MCP tools' shared session) replaces
+        this method on the instance so that its wrapper stays in front: ``session`` then goes
+        from one guarded object to the next without a concurrent worker ever picking up the
+        raw ``requests.Session`` in between.
+        """
+        self.session = session
+
     def _perform_login(self) -> bool:
         """Internal method to perform the actual login process.
 
@@ -392,9 +403,11 @@ class UnifiApiClient:
             log.debug(f'UniFi OS detection failed: {e}')
             self.is_unifi_os = False
 
-        # Set up the session with proper SSL handling for self-signed certificates
-        self.session = requests.Session()
-        self.session.verify = self.verify_ssl
+        # Build the new session locally and publish it only once it is authenticated: the
+        # client's ``session`` never points at a half-configured or unguarded object, so a
+        # concurrent worker keeps using the previous session until the hand-over.
+        session = requests.Session()
+        session.verify = self.verify_ssl
 
         # For self-signed certificates, we need to disable SSL warnings if verify_ssl is False
         if not self.verify_ssl:
@@ -404,7 +417,7 @@ class UnifiApiClient:
             log.debug('SSL verification disabled - suitable for self-signed certificates')
 
         # Set up headers
-        self.session.headers.update(self.legacy_headers)
+        session.headers.update(self.legacy_headers)
 
         # Try to authenticate
         if self.auth_method == 'token':
@@ -416,26 +429,27 @@ class UnifiApiClient:
                 raise UniFiValidationError(
                     'API token authentication selected but no token provided'
                 )
-            self.session.headers.update({'X-API-KEY': self._api_token})
+            session.headers.update({'X-API-KEY': self._api_token})
 
             try:
 
                 def _try_api_key_auth():
                     if self.is_unifi_os:
                         # For UniFi OS devices, try the /proxy/network/api/s/{site}/self endpoint
-                        return self.session.get(
+                        return session.get(
                             f'{self.base_url}/proxy/network/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
                     else:
                         # For legacy controllers, try the /api/s/{site}/self endpoint
-                        return self.session.get(
+                        return session.get(
                             f'{self.base_url}/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
 
                 response = self._retry_request(_try_api_key_auth)
                 if response.status_code == 200:
+                    self._publish_session(session)
                     self.is_authenticated = True
                     self.successful_endpoint = 'api_token'
                     log.info(
@@ -453,26 +467,27 @@ class UnifiApiClient:
                 raise UniFiConnectionError(f'SSL error: {e}')
 
             # If X-API-KEY header didn't work, try Authorization header
-            self.session.headers.update({'Authorization': f'Bearer {self._api_token}'})
+            session.headers.update({'Authorization': f'Bearer {self._api_token}'})
 
             try:
 
                 def _try_bearer_auth():
                     if self.is_unifi_os:
                         # For UniFi OS devices, try the /proxy/network/api/s/{site}/self endpoint
-                        return self.session.get(
+                        return session.get(
                             f'{self.base_url}/proxy/network/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
                     else:
                         # For legacy controllers, try the /api/s/{site}/self endpoint
-                        return self.session.get(
+                        return session.get(
                             f'{self.base_url}/api/s/{self.site}/self',
                             timeout=self.timeout,
                         )
 
                 response = self._retry_request(_try_bearer_auth)
                 if response.status_code == 200:
+                    self._publish_session(session)
                     self.is_authenticated = True
                     self.successful_endpoint = 'bearer_token'
                     log.info(
@@ -499,10 +514,11 @@ class UnifiApiClient:
                             'username': self._username,
                             'password': self._password,
                         }
-                        return self.session.post(login_url, json=login_data, timeout=self.timeout)
+                        return session.post(login_url, json=login_data, timeout=self.timeout)
 
                     response = self._retry_request(_try_unifi_os_login)
                     if response.status_code == 200:
+                        self._publish_session(session)
                         self.is_authenticated = True
                         self.successful_endpoint = 'unifi_os_login'
                         log.info(
@@ -517,10 +533,11 @@ class UnifiApiClient:
                             'username': self._username,
                             'password': self._password,
                         }
-                        return self.session.post(login_url, json=login_data, timeout=self.timeout)
+                        return session.post(login_url, json=login_data, timeout=self.timeout)
 
                     response = self._retry_request(_try_legacy_login)
                     if response.status_code == 200:
+                        self._publish_session(session)
                         self.is_authenticated = True
                         self.successful_endpoint = 'legacy_login'
                         log.info(
@@ -539,7 +556,8 @@ class UnifiApiClient:
             except Exception as e:
                 log.debug(f'Username/password authentication failed: {e}')
 
-        # If we got here, authentication failed
+        # If we got here, authentication failed; the client keeps its previous session.
+        session.close()
         log.error('Authentication failed - all methods exhausted')
         return False
 
