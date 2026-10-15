@@ -137,9 +137,14 @@ What changed:
 - **Manifests.** `gateway_ping`, `gateway_traceroute`, `gateway_dns_check`
   (`connectivity.yaml`) and `run_latency_matrix` (`analysis.yaml`) carry `active_probe: true`,
   `cli:` mappings and descriptions that begin `Runs <command> on the gateway over SSH:`.
-- **Gate.** `UNIFI_MCP_ALLOW_ACTIVE_PROBES`, read once at start: `1` lists the four; unset or
-  empty holds them; any other value stops `unifi-mcp` (and `--check`) with exit 2, naming the
-  variable. Off, neither surface lists them, `search_tools`, `get_tool_info`,
+- **Gate.** `UNIFI_MCP_ALLOW_ACTIVE_PROBES`, read once at start: exactly `1` lists the four;
+  unset or empty holds them; any other present value (`0`, `true`, `yes`, `TRUE`, a
+  whitespace-padded `" 1 "`) stops `unifi-mcp` (and `--check`) with exit 2, naming the
+  variable and the value, never a silent off and never a truthy parse. The error text says this
+  deliberately differs from `UNIFI_MCP_TOOL_SURFACE`'s warn-and-fall-back because the setting
+  permits agent-triggered SSH to the gateway; the flag is a process-wide permission that lets
+  any caller of that server choose probe destinations within the validators' bounds. Off,
+  neither surface lists them, `search_tools`, `get_tool_info`,
   `list_categories` and `unifi://catalog` do not show them, and `execute_tool` (or a
   direct-surface call by name) returns `ACTIVE_PROBES_DISABLED` naming the variable, the
   program and the `unifi-mapper` command, before any argument, credential or gateway is
@@ -162,6 +167,14 @@ the MCP result or error (point 3); a missing or changed host key reaches the cli
 `CONTROLLER_UNREACHABLE` naming `root@<gateway>` and the `ssh` command, with no password offered
 (point 4); the parity gate is green (point 5); a catalog-rule test requires every probe to be
 in a probe module, write nothing local, carry no writer name and keep the description shape.
+From the council's review of the implementation: a refusal with the gate off makes zero
+`asyncssh.connect` calls and zero controller requests (spies at 0); `mutates: true` stays
+refused with the gate on; the `require_*` checks run through `execute_tool` before any SSH
+connect (a shell metacharacter and a leading-option target, a count, interval, hop count and
+timeout over their bounds, a controller-reported address with a metacharacter); the planted
+password reaches none of the result, the error text, any loguru line or the call-audit record,
+a forced `TOOL_FAILED` included; and a probe over the fake gateway finishes in under 10 s with
+the runner's deadline at its default 270 s.
 
 What a user sees: nothing, until the operator sets `UNIFI_MCP_ALLOW_ACTIVE_PROBES=1` in the MCP
 client's `env` block; then an agent can ask the gateway to ping, trace or resolve, and a host
@@ -169,11 +182,15 @@ that shows annotations marks those calls as not read-only.
 
 What remains:
 
-- **Point 7.** On 2026-10-15 `gateway_ping` through the real server objects with the flag on
-  (the controller's own address, `count` 3) and `unifi-mapper gateway ping <same> --count 3`
-  both stopped with the same `CONFIG_MISSING` ("UNIFI_SSH_PASSWORD is not set") before
-  connecting: the gateway's host key is recorded, but the config file in use has no
-  `UNIFI_SSH_PASSWORD`. With it set, run each once more and compare loss and round trips.
+- **Point 7, live state: `credentials unavailable`.** (The four states a live attempt is
+  recorded as: `live comparison succeeded`; `host-key refusal (expected 038 behaviour; live
+  comparison not run)`; `credentials unavailable`; `deferred`.) On 2026-10-15 `gateway_ping`
+  through the real server objects with the flag on (the controller's own address, `count` 3)
+  and `unifi-mapper gateway ping <same> --count 3` both stopped with the same `CONFIG_MISSING`
+  ("UNIFI_SSH_PASSWORD is not set") before connecting: the gateway's host key is recorded, but
+  the config file in use has no `UNIFI_SSH_PASSWORD`. Nothing was verified live. With the
+  password set, run each once more and compare loss and round trips; a host-key refusal on
+  that run is the 038 behaviour, not a verification.
 - `tests/mcp/test_manifest_parity.py::test_rule6_strict_registry_loads_every_manifest` asserts
   `len(ToolRegistry(strict=True)) == ` the raw entry count; with the probes held that is 96
   against 100. The identity it means is `len(registry) + len(registry.held_active_probes())`,
