@@ -29,7 +29,8 @@ from __future__ import annotations
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Any, cast
-from unifi_mapper.analysis.link_settings import effective_profile_id
+from unifi_mapper.analysis.link_settings import effective_profile_id, port_override
+from unifi_mapper.analysis.vlan_diagnostics import is_trunk_profile
 from unifi_mapper.core.utils.client import UniFiClient
 
 
@@ -153,16 +154,15 @@ def _locate_bridge(
             attached.append((name, idx))
             profile_id, _source = effective_profile_id(device, port, idx)
             profile = profiles_by_id.get(profile_id or '')
-            if profile and _is_trunk(profile):
-                trunks.append(str(profile.get('name') or ''))
+            override = port_override(device, idx) or {}
+            if profile is None and not override:
+                continue
+            # The profile with the override on top, judged by the one trunk rule (issue 089)
+            settings = dict(profile or {})
+            settings.update(override)
+            if is_trunk_profile(settings):
+                trunks.append(str((profile or {}).get('name') or 'port override'))
     return attached, trunks
-
-
-def _is_trunk(profile: dict[str, Any]) -> bool:
-    return (
-        str(profile.get('forward') or '').lower() == 'all'
-        and str(profile.get('tagged_vlan_mgmt') or '').lower() != 'block_all'
-    )
 
 
 def _findings_for(bridge: ForeignBridge) -> list[ForeignBridgeFinding]:
