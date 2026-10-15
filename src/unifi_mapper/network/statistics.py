@@ -242,10 +242,8 @@ class DeviceMetricsCollector:
             timestamp=now,
             device_id=device_id,
             uptime_seconds=stats.uptime_seconds,
-            cpu_percent=stats.cpu_memory.cpu_utilization_percent if stats.cpu_memory else 0.0,
-            memory_percent=stats.cpu_memory.memory_utilization_percent
-            if stats.cpu_memory
-            else 0.0,
+            cpu_percent=stats.cpu_utilization_pct or 0.0,
+            memory_percent=stats.memory_utilization_pct or 0.0,
             temperature_celsius=stats.temperature_celsius,
             port_metrics=self._port_metrics[device_id].copy(),
         )

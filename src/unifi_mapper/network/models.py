@@ -193,21 +193,63 @@ class InterfaceStatistics(BaseModel):
     model_config = {'populate_by_name': True}
 
 
+class DeviceUplinkRates(BaseModel):
+    """``uplink`` of a device's latest statistics: the uplink's current rates."""
+
+    tx_rate_bps: Annotated[int, Field(ge=0, alias='txRateBps')] = 0
+    rx_rate_bps: Annotated[int, Field(ge=0, alias='rxRateBps')] = 0
+
+    model_config = {'populate_by_name': True, 'extra': 'allow'}
+
+
+class RadioStatistics(BaseModel):
+    """One entry of a device's latest ``interfaces.radios`` (access points only)."""
+
+    frequency_ghz: Annotated[str | None, Field(alias='frequencyGHz')] = None
+    tx_retries_pct: Annotated[float | None, Field(alias='txRetriesPct')] = None
+
+    model_config = {'populate_by_name': True, 'extra': 'allow'}
+
+
+class DeviceStatisticsInterfaces(BaseModel):
+    """``interfaces`` of a device's latest statistics: an object, empty for a switch."""
+
+    radios: list[RadioStatistics] = Field(default_factory=list)
+
+    model_config = {'populate_by_name': True, 'extra': 'allow'}
+
+
 class DeviceStatistics(BaseModel):
-    """Real-time statistics for an adopted device."""
+    """Latest statistics for an adopted device (``.../devices/{id}/statistics/latest``).
+
+    The aliases are the keys the endpoint sends, as Ubiquiti's Network API reference documents
+    and a live switch answered on 2026-10-15 (issue 081). A figure the device did not send is
+    ``None``, not 0, so a missing CPU reading cannot pass for an idle CPU; a key this model does
+    not know is kept in ``model_extra``. ``device_id`` is not part of the answer: the client
+    sets it from the request. ``ports`` and ``temperature_celsius`` are not part of it either;
+    they stay empty for an answer the client parses and are filled only by a caller that builds
+    the model itself.
+    """
 
     device_id: Annotated[str, Field(alias='deviceId')] = ''
-    uptime_seconds: Annotated[int, Field(ge=0, alias='uptimeSeconds')] = 0
-    last_seen: Annotated[datetime | None, Field(alias='lastSeen')] = None
-    cpu_memory: Annotated[CPUMemoryStats | None, Field(alias='cpuMemory')] = None
+    uptime_seconds: Annotated[int, Field(ge=0, alias='uptimeSec')] = 0
+    last_heartbeat_at: Annotated[datetime | None, Field(alias='lastHeartbeatAt')] = None
+    next_heartbeat_at: Annotated[datetime | None, Field(alias='nextHeartbeatAt')] = None
+    cpu_utilization_pct: Annotated[
+        float | None, Field(ge=0, le=100, alias='cpuUtilizationPct')
+    ] = None
+    memory_utilization_pct: Annotated[
+        float | None, Field(ge=0, le=100, alias='memoryUtilizationPct')
+    ] = None
+    load_average_1m: Annotated[float | None, Field(alias='loadAverage1Min')] = None
+    load_average_5m: Annotated[float | None, Field(alias='loadAverage5Min')] = None
+    load_average_15m: Annotated[float | None, Field(alias='loadAverage15Min')] = None
+    uplink: DeviceUplinkRates | None = None
+    interfaces: DeviceStatisticsInterfaces = Field(default_factory=DeviceStatisticsInterfaces)
     ports: list[PortStatistics] = Field(default_factory=list)
-    interfaces: list[InterfaceStatistics] = Field(default_factory=list)
     temperature_celsius: Annotated[float | None, Field(alias='temperatureCelsius')] = None
-    load_average_1m: Annotated[float | None, Field(alias='loadAverage1m')] = None
-    load_average_5m: Annotated[float | None, Field(alias='loadAverage5m')] = None
-    load_average_15m: Annotated[float | None, Field(alias='loadAverage15m')] = None
 
-    model_config = {'populate_by_name': True}
+    model_config = {'populate_by_name': True, 'extra': 'allow'}
 
     @property
     def uptime_human(self) -> str:
